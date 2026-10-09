@@ -1,0 +1,84 @@
+{
+  "at": "2026-10-08T20:37:19.458020+00:00",
+  "origin": "https://89.169.99.188",
+  "apps": {
+    "admet-ai": {
+      "execution_spec_preserved": true,
+      "phase": "Ready",
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 2,
+        "minReplicas": 0,
+        "pollingIntervalSeconds": 5,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/toxicology/admet-ai@sha256:2a6d0ee5e0f48d761d295eb20c91f25bfbb652ce5223bf9ba80425092dfeefdf"
+    },
+    "ctoxpred2": {
+      "execution_spec_preserved": true,
+      "phase": "Ready",
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 2,
+        "minReplicas": 0,
+        "pollingIntervalSeconds": 5,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/toxicology/ctoxpred2@sha256:d7579452d45024fa159a8e25929f112fe4cf5569d6bcd17dec956655cba8aa2c"
+    }
+  },
+  "deployments": {
+    "fs2-serve-control-plane-model-controller": {
+      "ready": 2,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:71dd5ea5a352c91aabfedd55c4baa6e83f6f31376d9d86c0b53a37cdc2c33756"
+      ]
+    },
+    "fs2-serve-control-plane": {
+      "ready": 3,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:71dd5ea5a352c91aabfedd55c4baa6e83f6f31376d9d86c0b53a37cdc2c33756"
+      ]
+    },
+    "scientific-ai-website": {
+      "ready": 2,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/scientific-ai-website@sha256:0b814885a4f9e6265354ef125cc200958bc60b99e64e69a1b991c0488d95ac07",
+        "nginx@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94"
+      ]
+    }
+  },
+  "qualified_selections": "fs2-toxicology-37e3489429db9acb",
+  "envelope": "fs2-toxicology-b740dccb30340079",
+  "qa_policy_restored": true,
+  "post_publication_requests": [
+    {
+      "model": "admet-ai",
+      "path": "mcp",
+      "operation_id": "8a77e130-fbe4-4af5-9285-36cb5216d678",
+      "passed": true
+    },
+    {
+      "model": "admet-ai",
+      "path": "rest",
+      "operation_id": "393ceb61-a22d-4ab0-a0db-bbde5f67f3a7",
+      "passed": true
+    },
+    {
+      "model": "ctoxpred2",
+      "path": "rest",
+      "operation_id": "9baff3f1-e279-4d50-9965-29109d8a9e51",
+      "passed": true
+    },
+    {
+      "model": "ctoxpred2",
+      "path": "mcp",
+      "operation_id": "e1da2ee6-1b44-48db-9224-1b1c24ebfa3f",
+      "passed": true
+    }
+  ]
+}

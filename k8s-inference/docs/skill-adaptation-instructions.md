@@ -80,9 +80,9 @@ not an admin bootstrap credential.
 
 | Model contract | HTTPS call | MCP call |
 | --- | --- | --- |
-| OpenAI-compatible serving | Advertised route such as `/v1/chat/completions`; normal model-specific OpenAI payload | `invoke_model` with the exact advertised protocol, e.g. `openai-chat` |
-| Native HTTP serving | `POST /v1/models/{model_id}:invoke` with `{"operation":"<advertised operation>","payload":{...}}` | `invoke_model` with `protocol: "native"` and the **inner model payload**, not the HTTP wrapper |
-| Scientific batch profile | `POST /v1/models/{model_id}:submit` with the scientific run document | `submit_scientific_run` with `model_id` and `request` containing that document |
+| OpenAI-compatible serving | Advertised route such as `/v1/chat/completions`; normal model-specific OpenAI payload | Named tool from `get_model_schema`, with flat model fields and controls |
+| Native HTTP serving | `POST /v1/models/{model_id}:invoke` with `{"operation":"<advertised operation>","payload":{...}}` | Named tool from `get_model_schema`, with flat model fields and controls |
+| Scientific batch profile | `POST /v1/models/{model_id}:submit` with the scientific run document | Named scientific tool with flat run fields and `idempotency_key` |
 
 For new MCP integrations prefer the named tool returned by `get_model_schema`.
 Pass its model fields directly, plus optional `idempotency_key` and (serving
@@ -93,6 +93,15 @@ compatibility; do not describe them as the primary contract. The generic
 `invoke_model` remains available with `model_id`, `protocol`, `payload`,
 `idempotency_key`, and `wait_seconds`. Generic scientific submission still uses
 `submit_scientific_run(model_id, request, idempotency_key)`.
+
+When implementing that generic serving fallback, put only model fields inside
+`payload`; keep `idempotency_key` and `wait_seconds` at the outer level. Never
+copy a named tool's entire argument object into `payload`. The Stockholm
+remediation source accepts unambiguous legacy nested controls, but conflicting
+duplicates fail before admission with `gateway_control_validation`. Correct the
+reported issue rather than retrying the conflicting envelope. Verify the actual
+installed LibreChat/skill tool trace, including the selected tool and argument
+shape; repository instructions alone are not proof that the client uses them.
 
 Use a real Streamable HTTP SDK, the exact `/mcp` path (no trailing slash), normal
 bearer authentication and TLS verification. Let the SDK negotiate MCP protocol
@@ -397,4 +406,3 @@ claims that no schema API exists, that named tools have only generic objects,
 or that Cosmos/Evo2/imaging field names must be guessed by live GPU probes.
 If an essential feature is absent from the published contract, report that
 specific gap instead of substituting a different scientific workflow.
-

@@ -1,0 +1,49 @@
+{
+  "collected_at": "2026-09-16T18:42:07.913840+00:00",
+  "http_status": 200,
+  "run_id": "0783b3d4-45d7-4e10-9260-9d0a83dea83e",
+  "turn_index": 3,
+  "segment_index": 1,
+  "correlation": "CP logs show workshop Pod GET polling this operation and result retrieval at18:38:27.341; segment retained at18:38:27.349",
+  "id": "23e7345c-f777-4e02-beb5-6e3a590ff8f4",
+  "model_id": "nemotron-speech-en-0-6b",
+  "model_revision": "dynamic:sha256:6ee84c404b2d34de177f5dd8225e17436414cbe9088bda66464ad83bb4a1486e",
+  "operation": "transcribe",
+  "status": "succeeded",
+  "accepted_at": "2026-09-16T18:36:05.212124Z",
+  "deadline_at": "2026-09-16T20:36:05.203711Z",
+  "max_queue_seconds_in_public_schema": false,
+  "activation_started_at": "2026-09-16T18:36:05.237747Z",
+  "ready_at": "2026-09-16T18:38:23.699681Z",
+  "started_at": "2026-09-16T18:38:23.703726Z",
+  "completed_at": "2026-09-16T18:38:26.501118Z",
+  "cold_start_seconds": 138.487557,
+  "estimated_gpu_seconds": 7200,
+  "reserved_gpu_seconds": 0,
+  "modality_usage": [
+    {
+      "modality": "audio",
+      "direction": "input",
+      "unit": "seconds",
+      "amount": 44.535875
+    }
+  ],
+  "runtime": {
+    "pod_uid": "c7d2f95b-af74-432d-ab93-8bf2936d1c1a",
+    "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+    "gpu_uuids": [
+      "GPU-237a8e9f-8ab5-6eff-d4d6-1c02fdcbbc02"
+    ],
+    "gpu_count": 1,
+    "preemptible": false
+  },
+  "attempt": 2,
+  "max_attempts": 3,
+  "outcome": "succeeded",
+  "error_code": null,
+  "accepted_to_activation_seconds": 0.025623,
+  "activation_to_ready_seconds": 138.461934,
+  "ready_to_started_seconds": 0.004045,
+  "accepted_to_started_seconds": 138.491602,
+  "running_seconds": 2.797392
+}

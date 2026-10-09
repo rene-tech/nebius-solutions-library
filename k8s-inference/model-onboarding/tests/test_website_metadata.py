@@ -43,11 +43,23 @@ class WebsiteMetadataTests(unittest.TestCase):
         self.payload["models"][0]["attribution"] = None
         self.assertIn("NVIDIA model card has no NVIDIA credit", "\n".join(MODULE.metadata_issues(self.ids, self.payload)))
 
+    def test_nvidia_distribution_credit_is_distinct_from_community_authorship(self):
+        row = self.payload["models"][0]
+        row.update(id="namd", aliases=[], domain="molecular-dynamics",
+                   homepage="https://www.ks.uiuc.edu/Research/namd/")
+        row["attribution"].update(relationship="distribution",
+                                  source="https://catalog.ngc.nvidia.com/orgs/nvidia/containers/namd")
+        self.assertEqual(MODULE.metadata_issues({"namd"}, self.payload), [])
+
     def test_other_is_not_an_accepted_onboarding_category(self):
         self.payload["models"][0]["domain"] = "other"
         self.assertIn("invalid category", "\n".join(MODULE.metadata_issues(self.ids, self.payload)))
 
-    def test_physical_ai_category_and_existing_general_purpose_are_accepted(self):
+    def test_reviewed_physical_ai_category_matches_current_website(self):
+        self.payload["models"][0]["domain"] = "physical-ai-robotics"
+        self.assertEqual(MODULE.metadata_issues(self.ids, self.payload), [])
+
+    def test_existing_general_purpose_categories_are_accepted(self):
         for domain in ("physical-ai-robotics", "general-ai", "generative-media"):
             with self.subTest(domain=domain):
                 self.payload["models"][0]["domain"] = domain

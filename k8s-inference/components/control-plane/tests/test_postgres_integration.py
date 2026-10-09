@@ -88,10 +88,16 @@ from fs2_serve.models import (
     TokenCreate,
     UsageDirection,
 )
+from fs2_serve.operation_metrics import customer_operation_metrics
 from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_audit_detail
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
-from fs2_serve.scientific_artifacts import FinalizeArtifactUpload, PostgresArtifactRepository, ScientificArtifactService
+from fs2_serve.scientific_artifacts import (
+    ArtifactVerificationError,
+    FinalizeArtifactUpload,
+    PostgresArtifactRepository,
+    ScientificArtifactService,
+)
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
@@ -474,6 +480,14 @@ async def test_scientific_bridge_replays_directly_into_postgres_lifecycle_reposi
     assert detail.rollup.device_allocated_gpu_seconds == 7
     assert detail.rollup.active_gpu_seconds == 3
     assert len([value for value in detail.signals if value.phase is LifecyclePhase.RELEASE]) == 1
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_scientific_dcgm_capture_replays_into_existing_postgres_ledger(postgres_store: PostgresStore) -> None:
+    from test_scientific_activity import verify_durable_capture
+
+    await verify_durable_capture(PostgresLifecycleRepository(postgres_store.pool))
 
 
 @pytest.mark.postgres
@@ -2141,6 +2155,9 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
         assert len(key_usage) == 1
         assert key_usage[0].token_id == principal.token_id
         assert key_usage[0].terminal_operations == 1
+        customer_metrics = await customer_operation_metrics(runtime_pool)
+        assert sum(row.operations for row in customer_metrics) == 1
+        assert {row.outcome for row in customer_metrics} == {"failed"}
 
         async with runtime_pool.acquire() as runtime_connection:
             for statement in (
@@ -2978,6 +2995,7 @@ async def test_last_allowed_attempt_shutdown_release_terminalizes_and_cannot_be_
 @pytest.mark.asyncio
 async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention_and_back_safe_views(
     postgres_store: PostgresStore,
+    scientific_runtime_pool: asyncpg.Pool,
 ) -> None:
     principal = await add_token(postgres_store, max_concurrency=2)
     first = await append(postgres_store, principal, "terminal-fact-first-0001")
@@ -2991,6 +3009,11 @@ async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention
     cancelled = next(row for row in accounting if row.outcome == "token_revoked")
     assert cancelled.operations == 2
     assert cancelled.estimated_gpu_seconds == 5
+    # Production metrics must work through the actual runtime role, not only
+    # through a database-owner fixture with implicit access to all columns.
+    projected = await customer_operation_metrics(scientific_runtime_pool)
+    assert sum(row.operations for row in projected) == 2
+    assert {row.outcome for row in projected} == {"cancelled"}
 
     async with postgres_store.pool.acquire() as connection:
         assert await connection.fetchval("SELECT count(*) FROM fs2_usage_facts") == 2
@@ -3039,12 +3062,17 @@ async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention
             "input_tokens",
             "output_tokens",
             "modality_usage",
+            "tenant_id",
+            "model_id",
+            "protocol",
+            "status",
+            "occurred_at",
         ):
             assert await connection.fetchval(
                 "SELECT has_column_privilege('fs2_serve_runtime','fs2_usage_facts',$1,'SELECT')",
                 column,
             )
-        for column in ("tenant_id", "principal_id", "model_id", "outcome"):
+        for column in ("principal_id", "outcome"):
             assert not await connection.fetchval(
                 "SELECT has_column_privilege('fs2_serve_runtime','fs2_usage_facts',$1,'SELECT')",
                 column,
@@ -3078,6 +3106,27 @@ async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention
         assert await connection.fetchval("SELECT count(*) FROM fs2_operations") == 0
         assert await connection.fetchval("SELECT count(*) FROM fs2_usage_facts") == 2
         assert await connection.fetchval("SELECT sum(operations) FROM fs2_reporting_model_usage") == 2
+    retained = await customer_operation_metrics(scientific_runtime_pool)
+    assert sum(row.operations for row in retained) == 2
+    assert {row.outcome for row in retained} == {"cancelled"}
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+@pytest.mark.parametrize("column", ["tenant_id", "model_id", "protocol", "status", "occurred_at"])
+async def test_runtime_schema_gate_requires_customer_metrics_columns(
+    postgres_store: PostgresStore, column: str
+) -> None:
+    database_url = os.environ["FS2_TEST_DATABASE_URL"]
+    async with postgres_store.pool.acquire() as connection:
+        # Column identifiers come only from the fixed pytest parameter list.
+        await connection.execute(f"REVOKE SELECT ({column}) ON fs2_usage_facts FROM fs2_serve_runtime")  # noqa: S608
+    try:
+        with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+            await PostgresStore.wait_for_schema(database_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
+    finally:
+        await PostgresStore.migrate_database(database_url, CONTROL_ROOT / "migrations")
+    await PostgresStore.wait_for_schema(database_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
 
 
 @pytest.mark.postgres
@@ -3333,17 +3382,29 @@ async def test_admin_reporting_queries_are_bounded_paginated_and_payload_free(
     )
     row = next(item for item in usage.rows if item.model_id == "qwen3-8b")
     assert row.terminal_operations == 3 and row.error_operations == 3
+    assert row.accepted_to_ready_operations == 0
     assert row.input_tokens == row.output_tokens == row.token_reported_operations == 0
     assert 0 <= row.latency_p50_seconds <= row.latency_p95_seconds <= row.latency_p99_seconds
     assert usage.latency_p50_seconds is not None
     assert usage.latency_p95_seconds is not None
     assert usage.latency_p99_seconds is not None
 
+    # SQL COUNT(non-null) distinguishes a real zero-duration span from absent evidence.
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_operations SET cold_start_seconds=0 WHERE id=$1", operations[0].id,
+        )
+    with_zero = await postgres_store.admin_usage_window(from_at=query.from_at, to_at=query.to_at)
+    observed = next(item for item in with_zero.rows if item.model_id == "qwen3-8b")
+    assert observed.accepted_to_ready_operations == 1 and observed.cold_start_seconds == 0
+
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+@pytest.mark.parametrize("valid", [True, False])
 async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
     postgres_store: PostgresStore,
+    valid: bool,
 ) -> None:
     principal = await add_token(postgres_store)
     repository = PostgresArtifactRepository(postgres_store.pool)
@@ -3380,7 +3441,24 @@ async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
             tenant_id=principal.tenant_id,
         )
     )
-    object_store.put(intent.storage_key, payload, "text/x-fasta")
+    object_store.put(intent.storage_key, payload if valid else payload + b"X", "text/x-fasta")
+    if not valid:
+        for _ in range(2):
+            with pytest.raises(ArtifactVerificationError):
+                await uploads.finalize(principal=principal, operation_id=begun.operation_id, upload_id=begun.upload_id)
+        operation = await postgres_store.get_operation(begun.operation_id, tenant_id=principal.tenant_id)
+        assert operation.status is OperationStatus.FAILED
+        assert operation.error_code == "artifact_verification_failed"
+        assert operation.reserved_gpu_seconds == 0
+        async with postgres_store.pool.acquire() as connection:
+            assert await connection.fetchval(
+                "SELECT count(*) FROM fs2_scientific_artifacts WHERE operation_id=$1", begun.operation_id,
+            ) == 0
+            assert await connection.fetchval(
+                "SELECT count(*) FROM fs2_operation_events WHERE operation_id=$1 "
+                "AND event='artifact_verification_failed'", begun.operation_id,
+            ) == 1
+        return
     pointer = await uploads.finalize(
         principal=principal,
         operation_id=begun.operation_id,
@@ -3483,6 +3561,29 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
     ).accepted_at
     assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
 
+    async def prove_active_retention():
+        await postgres_store.pool.execute(
+            "UPDATE fs2_operations SET payload_expires_at=clock_timestamp()-interval '15 days' WHERE id=$1",
+            frozen.operation_id,
+        )
+        # The actual deployed CronJob uses this restricted maintenance role.
+        # No new table/column grants may be required for the retention fix.
+        pool = await asyncpg.create_pool(
+            os.environ["FS2_TEST_DATABASE_URL"], min_size=1, max_size=1,
+            server_settings={"role": "fs2_serve_maintenance"},
+        )
+        try:
+            assert await PostgresMaintenanceStore(pool).purge_expired_payloads() == 0
+        finally:
+            await pool.close()
+        stored = await postgres_store.pool.fetchrow(
+            "SELECT status,payload_purged_at,request_ciphertext FROM fs2_operations WHERE id=$1",
+            frozen.operation_id,
+        )
+        assert stored["status"] == "queued"
+        assert stored["payload_purged_at"] is None and stored["request_ciphertext"] is not None
+
+    await prove_active_retention()  # before the durable outbox is materialized
     input_attempt_id = uuid4()
     input_digest = "sha256:" + "1" * 64
     async with postgres_store.pool.acquire() as connection:
@@ -3537,6 +3638,13 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
     await postgres_store.complete_scientific_admission(frozen.operation_id)
     assert recovered == frozen
     assert await postgres_store.get_scientific_admission(frozen.operation_id) is None
+    await prove_active_retention()  # durable batch now owns it; no outbox exists
+    await postgres_store.pool.execute(
+        "UPDATE fs2_operations SET status='succeeded',completed_at=clock_timestamp() WHERE id=$1",
+        frozen.operation_id,
+    )
+    assert await postgres_store.purge_expired_payloads() == 1
+    assert (await postgres_store.get_operation(frozen.operation_id)).status is OperationStatus.SUCCEEDED
 
 
 @pytest.mark.postgres

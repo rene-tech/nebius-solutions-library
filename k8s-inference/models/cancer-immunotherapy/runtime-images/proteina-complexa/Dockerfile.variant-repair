@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1.7
+FROM ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a AS uv
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca
+USER root
+COPY --from=uv /uv /usr/local/bin/uv
+COPY --chmod=0444 variant-repair-requirements.lock /opt/fs2/variant-repair-requirements.lock
+COPY --chmod=0444 patch_variant_runtime.py /opt/fs2/patch_variant_runtime.py
+COPY --chmod=0444 validate_jit_prerequisites.py /opt/fs2/validate_jit_prerequisites.py
+# Triton's CUDA driver helper compiles a Python extension at first GPU use.
+# The predecessor had gcc but no Python.h. Pin the matching Ubuntu 3.12.3
+# development package; apt also applies its matching distro patch revision.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libpython3.12-dev=3.12.3-1ubuntu0.17 && rm -rf /var/lib/apt/lists/* && \
+    /opt/venv/bin/python /opt/fs2/validate_jit_prerequisites.py --cpu-only
+RUN uv pip install --python /opt/venv/bin/python --no-deps --require-hashes \
+      -r /opt/fs2/variant-repair-requirements.lock && \
+    /opt/venv/bin/python /opt/fs2/patch_variant_runtime.py --source /opt/fs2/source && \
+    /opt/venv/bin/python -c "import torch; from importlib.metadata import version; from torch.fx._symbolic_trace import is_fx_tracing; assert torch.__version__ == '2.7.0+cu126'; assert all(version(p) == '0.9.0' for p in ('cuequivariance', 'cuequivariance-torch', 'cuequivariance-ops-cu12', 'cuequivariance-ops-torch-cu12'))"
+# CuEq extension import itself requires the GPU driver (libcuda.so.1), which
+# CPU BuildKit does not provide. Actual extension import and execution belong
+# to the mandatory isolated H100 gate, not a guessed CPU-build success.
+ARG FS2_SOURCE_COMMIT
+LABEL ai.nebius.fs2.variant-repair.source-commit="${FS2_SOURCE_COMMIT}" \
+      ai.nebius.fs2.variant-repair.scope="Hydra-list-ligands,torch27-compatible-cueq09,python-jit-headers,folding-error-propagation"
+# The historical base pointed writable caches at the read-only model-artifact
+# namespace. Match the current full Dockerfile's task-local cache policy.
+ENV HOME=/tmp/fs2-home \
+    HF_HOME=/tmp/fs2-home/huggingface \
+    XDG_CACHE_HOME=/tmp/fs2-home/xdg \
+    MPLCONFIGDIR=/tmp/fs2-home/matplotlib \
+    NUMBA_CACHE_DIR=/tmp/fs2-home/numba \
+    TRITON_CACHE_DIR=/tmp/fs2-home/triton
+USER 10001:10001
+RUN /opt/venv/bin/python -c "import os,pathlib; [pathlib.Path(os.environ[p]).mkdir(parents=True, exist_ok=True) for p in ('HOME','HF_HOME','XDG_CACHE_HOME','MPLCONFIGDIR','NUMBA_CACHE_DIR','TRITON_CACHE_DIR')]"

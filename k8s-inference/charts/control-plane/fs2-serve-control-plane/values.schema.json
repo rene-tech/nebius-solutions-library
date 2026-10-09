@@ -28,6 +28,71 @@
     "scientificArtifacts"
   ],
   "properties": {
+    "workbenches": {
+      "type": "object", "additionalProperties": false,
+      "required": ["executorEnabled", "releases", "protectedEndpoints"],
+      "properties": {
+        "executorEnabled": {"type": "boolean"},
+        "releases": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[^@\\s]+@sha256:[a-f0-9]{64}$"}},
+        "protectedEndpoints": {"type": "array", "items": {"type": "string", "pattern": "^aiendpoint-[a-z0-9]+$"}, "uniqueItems": true}
+      }
+    },
+    "benchmarkWorkers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "image", "sourceCommit", "replicas", "credentialSecret", "credentialKey", "resources", "nodeSelector", "tolerations"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"type": "string"},
+        "sourceCommit": {"type": "string"},
+        "replicas": {"type": "integer", "minimum": 1, "maximum": 16},
+        "credentialSecret": {"type": "string"},
+        "credentialKey": {"type": "string", "minLength": 1},
+        "nodeSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+        "tolerations": {"type": "array", "items": {"type": "object"}},
+        "resources": {"type": "object"}
+      },
+      "allOf": [{
+        "if": {"properties": {"enabled": {"const": true}}},
+        "then": {"properties": {
+          "image": {"pattern": "^[^@\\s]+@sha256:[a-f0-9]{64}$"},
+          "sourceCommit": {"pattern": "^[a-f0-9]{40}$"},
+          "credentialSecret": {"minLength": 1}
+        }}
+      }]
+    },
+    "customerStorage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "projectId", "region", "defaultMode", "quotaBytes", "excludedTenants", "secretName"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "projectId": {"type": "string"},
+        "region": {"type": "string"},
+        "defaultMode": {"enum": ["tenant", "user"]},
+        "quotaBytes": {"type": "integer", "minimum": 1},
+        "excludedTenants": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "secretName": {"type": "string"},
+        "starterPack": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "image", "manifestSha256"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "image": {"type": "string"},
+            "manifestSha256": {"type": "string"},
+            "tenants": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+          },
+          "allOf": [{
+            "if": {"properties": {"enabled": {"const": true}}},
+            "then": {"properties": {
+              "image": {"pattern": "^[^@\\s]+@sha256:[a-f0-9]{64}$"},
+              "manifestSha256": {"pattern": "^[a-f0-9]{64}$"}
+            }}
+          }]
+        }
+      }
+    },
     "replicaCount": {
       "type": "integer",
       "minimum": 2
@@ -842,6 +907,21 @@
           "required": ["schema", "models"],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/scientific-execution-map/v3"},
+            "qualification_baselines": {
+              "description": "Historical ordered model sets. The renderer accepts their receipts only when current rows reconstruct the exact original digest.",
+              "type": "object",
+              "maxProperties": 32,
+              "patternProperties": {
+                "^[a-f0-9]{64}$": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "items": {"type": "string", "minLength": 1, "maxLength": 63}
+                }
+              },
+              "additionalProperties": false
+            },
             "snapshot_bundles": {
               "description": "Optional qualified startup bundles; the scientific renderer validates each complete runtime-specific bundle.",
               "type": "object",
@@ -867,7 +947,18 @@
         "pollSeconds": {"type": "string", "pattern": "^(?:0\\.(?:0[5-9]|[1-9][0-9]*)|[1-9](?:\\.[0-9]+)?|[1-5][0-9](?:\\.[0-9]+)?|60(?:\\.0+)?)$"},
         "leaseSeconds": {"type": "string", "pattern": "^(?:[5-9]|[1-9][0-9]|[12][0-9]{2}|300)$"},
         "apiTimeoutSeconds": {"type": "string", "pattern": "^(?:0\\.[5-9][0-9]*|[1-9](?:\\.[0-9]+)?|[12][0-9](?:\\.[0-9]+)?|30(?:\\.0+)?)$"},
-        "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600}
+        "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600},
+        "toolsImage": {"type": "string", "pattern": "^$|^[^\\s@]+@sha256:[a-f0-9]{64}$"},
+        "poolRecovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "failureConfirmationSeconds": {"type": "integer", "minimum": 30, "maximum": 1800},
+            "admittedUnscheduledTimeoutSeconds": {"type": "integer", "minimum": 30, "maximum": 86400},
+            "backoffBaseSeconds": {"type": "integer", "minimum": 1, "maximum": 1800},
+            "backoffMaxSeconds": {"type": "integer", "minimum": 1, "maximum": 1800}
+          }
+        }
       },
       "additionalProperties": false
     },
@@ -955,6 +1046,11 @@
       ],
       "properties": {
         "enabled": {"type": "boolean"},
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^$|^[^@\\s]+@sha256:[a-f0-9]{64}$"
+        },
         "modelNamespace": {"$ref": "#/$defs/dnsName"},
         "namespaces": {
           "type": "array",
@@ -1041,6 +1137,14 @@
         "evidencePersistentVolumeClaimName": {
           "type": "string",
           "minLength": 1
+        },
+        "customerReadinessConfigMapName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "customerReadinessKey": {
+          "const": "verdict-index.json"
         },
         "rolloutDigest": {
           "type": "string",
@@ -1576,11 +1680,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e"},
-            "migrationSetSha256": {"const": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2"},
-            "migrationCount": {"const": 29},
+            "contractPayloadSha256": {"const": "98996da86d1a85fdb397558cd38a3b046c4cb07fc43e207b638fcc50a7b80ba1"},
+            "migrationSetSha256": {"const": "f5569a923378a5cd4fee62a6e25936df6310fc9adb2ee057a1dc1448340472d3"},
+            "migrationCount": {"const": 38},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0029_request_debug.sql"},
+            "lastMigrationVersion": {"const": "0038_scientific_claimable_index.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false
@@ -1614,6 +1718,14 @@
         },
         "backendRequestTimeout": {
           "const": "40s"
+        },
+        "speechStreamTimeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,4}s$"
+        },
+        "artifactTransferTimeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,4}s$"
         }
       },
       "additionalProperties": false
@@ -1926,11 +2038,18 @@
         "maxQueueAgeSeconds",
         "maxQueueDepth",
         "maxSyncWaitSaturations",
-        "maxAuthenticationFailures"
+        "maxAuthenticationFailures",
+        "maxSemanticFailures"
       ],
       "properties": {
         "enabled": {
           "type": "boolean"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "maxQueueAgeSeconds": {
           "type": "integer",
@@ -1948,6 +2067,11 @@
           "maximum": 1000000
         },
         "maxAuthenticationFailures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "maxSemanticFailures": {
           "type": "integer",
           "minimum": 0,
           "maximum": 1000000

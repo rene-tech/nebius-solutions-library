@@ -1,0 +1,179 @@
+# MindGuard safety classifiers and private clinician intake
+
+`mindguard-4b` and `mindguard-8b` are English mental-health **safety classifiers**.
+They are separate from the private MindGuard v2 clinician. Results are observations;
+they never block, censor, rewrite or stop a conversation. Their checkpoint chat
+templates evaluate **only the last user message**, using preceding context. A
+complete transcript needs one prefix evaluation per user turn.
+
+The public model revisions, source dataset revision and existing Scientific AI
+runtime image are pinned in `public-models.lock.json`. The files were accessed with
+the configured authorized Hugging Face identity. Tokens and weights are not stored
+in Git. The public checkpoints contain float32 weights; this candidate serves them
+as BF16 with vLLM, the delivered configs' native 32768-token context limit,
+temperature zero, seed zero and at most 15 generated tokens. The delivered chat
+template is explicitly loaded from the same pinned snapshot. Oversized inputs fail
+visibly; they are never silently truncated. Initial comparison evidence used the
+model-card's 4096-token serving example; evidence explicitly records its profile.
+The workshop profile extends this to native 32768 tokens and has separate boundary
+and runtime qualification evidence.
+
+## Integration contract
+
+Import `MindGuardMessage`, `assess_mindguard`, and
+`assess_mindguard_transcript` from `fs2_serve.mindguard`. The async helpers use the
+caller-owned `httpx.AsyncClient` and an operator-configured runtime base URL ending
+in `/v1`; an absent endpoint returns `unavailable`. Model IDs are restricted to the
+two public classifiers. Caller code must persist the returned typed results and
+errors alongside its authenticated run, with ordinary tenant and admin visibility.
+The helpers do not create a second authorization or storage path.
+
+`mindguard_routes.mindguard_router(principal=existing_pat_dependency,
+endpoints={"mindguard-4b": settings.mindguard_4b_endpoint,
+"mindguard-8b": settings.mindguard_8b_endpoint})` mounts
+`POST /v1/mindguard/assess`. Body: `model`, `messages`, optional `language: "en"`.
+It requires both `inference.invoke` and the selected classifier model grant;
+a `mindeval` grant alone is insufficient. Reuse the enclosing app's request
+telemetry. No new audit store or classifier-enforcement policy is created.
+
+With the registered App, the router receives the ordinary `admission`, `store`
+and `model_namespace` and creates one durable operation for the entire transcript.
+The existing worker executes every user-prefix assessment, records each upstream
+exchange, aggregates reported tokens and uses the normal queue, concurrency,
+budget, cancellation and GPU-lifecycle accounting. The replica is owned by the
+existing ModelDeployment/KEDA controller; queued/activating/running operations
+wake it, and normal cooldown returns it to zero. There is no second scaler.
+
+Clients should provide `Idempotency-Key` and may set `x-fs2-wait-seconds: 0..30`
+(default30). A completed inline result remains HTTP200. A cold/in-progress request
+returns HTTP202 with its operation ID, `Location` and `Retry-After`; this is **not
+a classification**. Poll `/v1/operations/{id}` and fetch
+`/v1/operations/{id}/result` after `succeeded`. Failed/cancelled/expired operations
+do not produce a Safe label. Cancel through the ordinary
+`POST /v1/operations/{id}:cancel`. Large results use the standard immutable
+artifact envelope and checksum-verified download. Typed MCP tools
+`assess_mindguard_4b_native` and `assess_mindguard_8b_native` use the same lane.
+
+The MindEval worker polls this contract with a stable run/model idempotency key;
+shutdown leaves the durable operation recoverable on explicit Resume. It stores
+the complete assessment under its run and handles observer failures independently
+of clinician evaluation. The unregistered legacy preview remains available only
+during migration, explicitly `observational_unbilled`; it still rejects
+budget-constrained keys. Once registered, a disabled or failed App never falls
+back to that bypass. See `acceptance/idle-scale-zero-20261005/README.md` for the
+exact deployment and cold-path verification status; source availability alone is
+not a live qualification claim.
+
+Each assessment contains model identity/revision, observational role, status,
+safety label, category codes (`S1`: self-harm risk; `S2`: threats to others including
+abuse/neglect), latency, token usage and exact context/target coverage. Failed,
+malformed, incomplete or wrong-model responses have no safety label. The transcript
+result retains every assessment and reports evaluated/total user turns and flagged
+message indices. It does not reinterpret the final user turn as whole-conversation
+safety, judge clinician quality or produce a clinical diagnosis.
+
+## Reproduce the preview and measurements
+
+Create a virtual environment and install `requirements.lock` with hash checking.
+The runtime itself is the immutable OCI image in the model lock; the environment
+here is only for measurement and handoff validation.
+
+```bash
+uv venv .venv
+uv pip install --python .venv/bin/python --require-hashes -r requirements.lock
+python render_preview.py mindguard-4b --replicas 0 --node EXISTING_FREE_L40S_NODE
+```
+
+The renderer defaults to **zero replicas** and is a legacy preview source, not
+the deployment command for a managed Scientific AI App. The two original live
+previews were adopted into ModelDeployment/KEDA on 2026-10-05, retaining their
+Service names and cached PVC. Never apply the preview over those owned objects:
+use the admin App availability settings for hot floors. An isolated standalone
+preview needs an explicit `--replicas 1` and does not have request-driven waking.
+
+The renderer emits a preview PVC, Deployment and internal Service in
+`fs2-models`. Its init container expects Secret `fs2-mindguard-r20260916-hf`, key
+`token`, containing an already authorized HF credential. The credential is mounted
+only into the downloader environment; the serving container is offline and mounts
+the exact model snapshot read-only. Never include credential values in commands,
+reports or Git. Validate the rendered manifest with `kubectl apply --dry-run=client`
+using the explicit intended kubeconfig/context before applying. GPU topology and
+node are operator choices; the current renderer reserves one existing regular
+L40S because the preemptible H100 nodes were unavailable during this run. It does
+not create capacity, change quotas or alter shared services.
+
+Pin both comparison runs to the same node and use one GPU at a time. Record the
+first startup, repeat with warm image/weights, then measure each checkpoint:
+
+```bash
+python capture_runtime_evidence.py \
+  --kubeconfig /SECURE/PATH/kubeconfig --context TARGET_CONTEXT \
+  --model mindguard-4b --cache-state cold-image-cold-weights \
+  --output /SECURE/EVIDENCE/4b-runtime.json
+.venv/bin/python benchmark.py --model mindguard-4b \
+  --endpoint http://127.0.0.1:18144/v1 --source representative --repeat 3 \
+  --hardware-evidence /SECURE/EVIDENCE/4b-runtime.json \
+  --output /SECURE/EVIDENCE/4b-representative.json
+.venv/bin/python benchmark.py --model mindguard-4b \
+  --endpoint http://127.0.0.1:18144/v1 --source model-card --repeat 10 \
+  --output /SECURE/EVIDENCE/4b-model-card.json
+.venv/bin/python benchmark.py --model mindguard-4b \
+  --endpoint http://127.0.0.1:18144/v1 --source testset --concurrency 4 \
+  --output /SECURE/EVIDENCE/4b-sword-testset.json
+```
+
+Use the corresponding model ID and local port for 8B. The exact model-card example
+is extracted from its pinned source at runtime. The testset adapter loads all 1134
+rows from pinned Parquet, appends each annotated `user_message` to its `prompt`
+history, and maps the dataset's `safe`, `self_harm` and `harm_others` labels.
+`--source mindeval --input /PRIVATE/transcripts.jsonl` accepts completed transcripts
+and expands all user-turn prefixes. Each JSONL row has `id` and `messages`; optional
+`expected_by_user_index` maps an input message index to `safety` and `categories`.
+Without supplied labels this is a runtime/coverage test, not an accuracy estimate.
+Alternatively, pass an unchanged completed report `.json`, the rehearsal wrapper
+with a `report` field, or an array of those wrappers. The adapter requires completed
+runs and maps `patient` to `user`, `clinician` to `assistant`, including the initial
+patient seed. Rubric scores are never treated as classifier safety labels.
+
+The report separates first-request, warmup and measured requests, excludes warmup
+from percentiles/throughput, counts errors explicitly, and records per-case input
+hashes without transcript text. A measured run needs at least ten requests.
+Throughput uses the whole concurrent measurement wall time. Accuracy, category
+agreement, false positives and false negatives are calculated only for completed
+labeled cases; completion rate is always shown. AUROC remains null because discrete
+labels do not establish a calibrated risk score. Representative probe results must
+not be presented as clinical validation or replace the Sword testset.
+
+Live evidence lives in `evidence/`. The source testset is not redistributed. Runtime
+evidence includes pod/node/GPU identity, immutable image, software versions, observed
+GPU allocation/utilization and startup clocks, with cache state kept separate.
+
+## Private MindGuard v2 intake
+
+No private v2 bundle has been supplied. `MindGuardV2Bundle` in
+`fs2_serve.mindguard_artifacts` requires the delivered source location/revision,
+approval-record digest, config, tokenizer/config, chat template, all safetensors
+shards/index and known-good serving configuration. File size and SHA-256 checks
+cover the entire manifest; paths cannot escape the artifact root. The supplied
+config must support 32768 tokens and serving uses an immutable image with BF16.
+Public Qwen base checkpoints and public MindGuard classifiers are rejected as v2
+substitutes. Source references must not embed credentials or signed URLs.
+
+```bash
+.venv/bin/python validate_private_bundle.py \
+  /PRIVATE/approved-manifest.json /PRIVATE/delivered-bundle
+```
+
+This verifies supplied artifact integrity only. It never claims GPU readiness or
+MindEval acceptance. `MindGuardV2EventBinding` binds an approved manifest digest to
+an internal `mindguard-v2-event-EVENT_ID` service, ordinary gateway admission, BF16,
+32k context and at least one hot replica. Production endpoints, production fallback,
+zero hot replicas and unqualified FP8 are rejected. Do not deploy until the exact
+bundle is supplied and its known-good runtime is reproduced. Deterministic prompts,
+32k-context behavior, multi-turn MindEval, load, recovery and rollback still need
+measurement. FP8 needs a separate BF16 parity qualification before any activation.
+
+Source references: [MindGuard-4B](https://huggingface.co/swordhealth/MindGuard-4B),
+[MindGuard-8B](https://huggingface.co/swordhealth/MindGuard-8B),
+[MindGuard-testset](https://huggingface.co/datasets/swordhealth/MindGuard-testset),
+[MindEval](https://github.com/SWORDHealth/mind-eval).

@@ -1,0 +1,40 @@
+{
+  "schema": "fs2-serve.nebius.ai/qualification-cleanup/v1",
+  "verified_at": "2026-10-06T15:20:28Z",
+  "context": "nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a",
+  "namespace": "fs2-models",
+  "owner_label": "fs2-serve.nebius.ai/qualification-owner=scvi-whitelab-20261006",
+  "deleted_jobs": [
+    "scvi-whitelab-api-20261006",
+    "scvi-whitelab-api-20261006-r2",
+    "scvi-whitelab-atlas-20261006-r5",
+    "scvi-whitelab-atlas-20261006-r6",
+    "scvi-whitelab-atlas-20261006-r7",
+    "scvi-whitelab-atlas-export-20261006",
+    "scvi-whitelab-components-20261006-r7",
+    "scvi-whitelab-core-export-20261006",
+    "scvi-whitelab-qualification-20261006-r1",
+    "scvi-whitelab-qualification-20261006-r2",
+    "scvi-whitelab-qualification-20261006-r3",
+    "scvi-whitelab-qualification-20261006-r4",
+    "scvi-whitelab-qualification-20261006-r5"
+  ],
+  "deleted_test_configmaps": [
+    "scvi-whitelab-atlas-harness-20261006-r5",
+    "scvi-whitelab-atlas-harness-20261006-r6",
+    "scvi-whitelab-atlas-harness-20261006-r7",
+    "scvi-whitelab-tests-20261006-r7"
+  ],
+  "deleted_scratch_pvcs": [
+    {"name": "scvi-whitelab-qualification-20261006", "uid": "2b6aa2e1-c5c6-4832-b261-acd85f4d4bd4", "size_gib": 64},
+    {"name": "scvi-whitelab-atlas-20261006", "uid": "d31b8b8d-b289-4e60-9241-0c7c93db0a92", "size_gib": 128}
+  ],
+  "remaining_task_owned_jobs_pods_pvcs": 0,
+  "remaining_test_configmaps": 0,
+  "backend_ready_replicas": 3,
+  "controller_ready_replicas": 2,
+  "live_execution_configmaps_preserved": true,
+  "node_groups_customer_keys_quotas_unchanged": true,
+  "retained": "Public-input immutable artifacts, hosted results in existing system workspace, full downloaded artifacts and hash/row checks, exported direct-runtime outputs and failed component evidence in /home/tux/secure-handoff/fs2-scvi-whitelab-20261006/",
+  "scratch_recoverability": "Scratch PVC contents are not retained in-cluster; exported evidence/results are retained, original public inputs are downloadable again."
+}

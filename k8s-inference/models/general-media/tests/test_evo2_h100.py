@@ -16,7 +16,9 @@ class H100TopologyTests(unittest.TestCase):
         runtime._tool_identity = lambda _: {}
         spec = importlib.util.spec_from_file_location("evo2_h100", Path(__file__).parents[1] / "evo2_h100.py")
         self.module = importlib.util.module_from_spec(spec)
-        with patch.dict(sys.modules, {"evo2_deep": types.ModuleType("evo2_deep"), "evo2_deep.runtime": runtime}):
+        with patch.object(sys, "path", [str(Path(__file__).parents[1]), *sys.path]), patch.dict(
+            sys.modules, {"evo2_deep": types.ModuleType("evo2_deep"), "evo2_deep.runtime": runtime}
+        ):
             spec.loader.exec_module(self.module)
 
     def test_accepts_exact_two_h100(self):

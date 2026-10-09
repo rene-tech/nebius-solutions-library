@@ -1,0 +1,273 @@
+{
+  "schema": "fs2-serve.nebius.ai/lerobot-public-acceptance/v1",
+  "status": "passed",
+  "operation_id": "b6875f1d-49d3-4696-a5bb-5f13e93f5f71",
+  "release": 170,
+  "scientist": "scientist-10",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
+  "coordinator_node": "computeinstance-e00np06w11et5qq9xp",
+  "native_runtime_witnesses": [
+    {
+      "pod": "cosmos3-nano-burst-h100-1x-6d89757c76-pjtwr",
+      "uid": "1de3b4c1-1c9d-4a12-8e91-d71856f8458b",
+      "node": "computeinstance-e00rdppqt3kg2y00gj",
+      "images": [
+        {
+          "name": "bounded-json-adapter",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32"
+        },
+        {
+          "name": "vllm-omni",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32"
+        }
+      ],
+      "gpu_identity": "NVIDIA H100 80GB HBM3, GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7, 580.159.04, 81559 MiB",
+      "gpu_identity_observation": "direct GPU read",
+      "ready_pod_captured": true,
+      "strict_snapshot": true,
+      "events_receipt": "runtime-witness/cosmos3-nano-burst-h100-1x-6d89757c76-pjtwr-events.json",
+      "restore": {
+        "action": "restore",
+        "records": [
+          {
+            "command": [
+              "/tools/lib/ld-linux-x86-64.so.2",
+              "--library-path",
+              "/tools/lib",
+              "/tools/criu",
+              "restore",
+              "--images-dir",
+              "/checkpoints/cosmos-r7/images",
+              "--work-dir",
+              "/tmp/fs2-checkpoint-work",
+              "--shell-job",
+              "--restore-detached",
+              "--log-file",
+              "restore.log",
+              "-v4",
+              "--file-locks",
+              "--tcp-established",
+              "--manage-cgroups=ignore",
+              "--libdir",
+              "/tmp/empty-criu-plugins"
+            ],
+            "seconds": 30.54606259299908,
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          {
+            "command": [
+              "/tools/cuda-checkpoint",
+              "--action",
+              "restore",
+              "--pid",
+              "302",
+              "--device-map",
+              "GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8=GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7"
+            ],
+            "seconds": 5.7496577100027935,
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          {
+            "command": [
+              "/tools/cuda-checkpoint",
+              "--action",
+              "restore",
+              "--pid",
+              "174",
+              "--device-map",
+              "GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8=GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7"
+            ],
+            "seconds": 0.03473726300217095,
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          {
+            "command": [
+              "/tools/cuda-checkpoint",
+              "--action",
+              "unlock",
+              "--pid",
+              "302"
+            ],
+            "seconds": 0.016012519001378678,
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          {
+            "command": [
+              "/tools/cuda-checkpoint",
+              "--action",
+              "unlock",
+              "--pid",
+              "174"
+            ],
+            "seconds": 0.015132976001041243,
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        ],
+        "status": "passed",
+        "runtime_identity": {
+          "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+          "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+          "kernel_release": "6.11.0-1016-nvidia",
+          "runtime_id": "cosmos3-nano",
+          "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+          "gpu_uuid": "GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7",
+          "gpu_name": "NVIDIA H100 80GB HBM3",
+          "driver_version": "580.159.04",
+          "compute_capability": "9.0",
+          "snapshot_source_sha256": {
+            "process_checkpoint.py": "4378066b4aa7e73c4bb605e320f4ce8aecfd9eafe306b30e07b801bbc4194124",
+            "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+            "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+            "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+            "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+            "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+            "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+          }
+        },
+        "cuda_pids": [
+          302,
+          174
+        ]
+      }
+    }
+  ],
+  "native_snapshot_used": true,
+  "observed_end_to_end_seconds": 174.54271364212036,
+  "children": [
+    {
+      "id": "ca2df09b-6d29-4c93-8ea3-edfdf63246fd",
+      "episode_index": 0,
+      "status": "succeeded",
+      "started_at": "2026-09-19T00:22:42.028219Z",
+      "completed_at": "2026-09-19T00:22:58.169240Z",
+      "active_inference_seconds": 16.141021,
+      "input_video_sha256": "3a7aad57488e57db15ca091b9098662de8e187b4a3cd9b551ccb644ca8f2b1ab",
+      "output_video_sha256": "02e1df8ca8fc36cb7a2823ea7cd191eda1582fe92d94a280450b7cba0050d27f"
+    },
+    {
+      "id": "81ba2a07-20c7-44d4-a13e-a19b2157d554",
+      "episode_index": 1,
+      "status": "succeeded",
+      "started_at": "2026-09-19T00:23:07.504212Z",
+      "completed_at": "2026-09-19T00:23:22.065518Z",
+      "active_inference_seconds": 14.561306,
+      "input_video_sha256": "e8532ceb7831be935f8a90ea7296adb4cf153ed573d27ae4e7e0a6696e2fe85e",
+      "output_video_sha256": "59cbcdd9685a17535583164c865cf251d78131ff6b11a59030de6a5947e050b2"
+    }
+  ],
+  "augmentation": {
+    "conditioning": {
+      "controls": [],
+      "frame_indexes": [
+        0
+      ],
+      "keep": "first"
+    },
+    "dimensions": [
+      {
+        "instruction": "cooler indoor lighting, blue-shifted color temperature",
+        "name": "lighting",
+        "strength": 1
+      }
+    ],
+    "guidance_scale": 6,
+    "mode": "video-to-video",
+    "num_inference_steps": 35,
+    "prompt_template": "Change the recorded indoor scene lighting to cooler indoor lighting (blue-shifted color temperature) while strictly preserving the ALOHA robot, objects, camera geometry, camera viewpoint and all motion."
+  },
+  "scope": "Two genuine recorded ALOHA-derived episodes,128 frames,two cameras; actual ordinary MCP GPU children and complete output readback",
+  "validation": {
+    "reader": "lerobot==0.6.1",
+    "status": "passed",
+    "episodes": 2,
+    "frames": 128,
+    "cameras": 2,
+    "decoded_frames_each": 256,
+    "nonvideo_values_compared": 6144,
+    "nonvideo_values_exact": true,
+    "unselected_pixels_bit_exact": false,
+    "unselected_max_frame_mae_limit": 6,
+    "visual_comparison": [
+      {
+        "episode_index": 0,
+        "camera": "observation.images.cam_high",
+        "selected": true,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 35.22930820286274,
+        "max_frame_mean_absolute_pixel_difference": 53.32592010498047,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 0,
+        "camera": "observation.images.cam_right_wrist",
+        "selected": false,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 1.298381669446826,
+        "max_frame_mean_absolute_pixel_difference": 1.5057562589645386,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 1,
+        "camera": "observation.images.cam_high",
+        "selected": true,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 41.94744145870209,
+        "max_frame_mean_absolute_pixel_difference": 54.406551361083984,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 1,
+        "camera": "observation.images.cam_right_wrist",
+        "selected": false,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 1.2629009177908301,
+        "max_frame_mean_absolute_pixel_difference": 1.6621863842010498,
+        "changed_frames": 63
+      }
+    ],
+    "physical_alignment_verified": false
+  },
+  "source_bundle_sha256": "1721d4018c0e38390695059a8cab79d23f679d70b3bdc878d509c9f68bef7be7",
+  "request_sha256": "25b6f0a830d4070dc2cf6dc4c6d9b4982f54dccd0a216498ceedc7b73dba22c6",
+  "independent_validation_sha256": "f9f58f65d2e3f0be12c79c5321104eb223237910cddc44a71660903e111dded4",
+  "outputs": [
+    {
+      "artifact": {
+        "artifact_id": "8af84bda-cd29-4451-b8b5-6ca03af1e2af",
+        "compression": "none",
+        "media_type": "application/json",
+        "sha256": "16b287fdee312c7223fe98c8433797c989a8f590d0d42f78892ad9a0f4c84352",
+        "size_bytes": 686
+      },
+      "name": "result",
+      "semantic_type": "lerobot-augmentation-result/v1"
+    },
+    {
+      "artifact": {
+        "artifact_id": "43ecb4a6-4983-420f-a980-dc2765379d0b",
+        "compression": "zstd",
+        "media_type": "application/x-tar",
+        "sha256": "5c5f520584ab80f0a1c9eed3f8a14dbba356b616766c1c5497dad2856058b453",
+        "size_bytes": 2032295
+      },
+      "name": "variant-00",
+      "semantic_type": "lerobot-v3-augmented-bundle/v1"
+    }
+  ],
+  "limitations": [
+    "Data/format/workflow evidence is not physical-motion correctness or robot-policy efficacy.",
+    "Unselected cameras are reencoded within declared codec tolerance, not pixel-bit-identical.",
+    "End-to-end waiting, image pulls, startup and artifact work are not GPU inference time.",
+    "Other datasets/cameras/controls and sustained maximum-bound throughput require separate coverage."
+  ]
+}

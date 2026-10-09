@@ -1,0 +1,227 @@
+{
+  "model_id": "diffdock",
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+      "runtime_image_digest": "sha256:0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9",
+      "service": {
+        "name": "diffdock-b300",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "e00b3acda36808f529dc32ec0db59041d7a716a0122e0fb7573dd217ccf9b694",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "07f9e5676a10e61a127bd80e5b197ee8d03ce1f41f049182018d07ba76f5db1d"
+    },
+    "model_id": "diffdock",
+    "policy": {
+      "commercial_use": "license-dependent",
+      "license_id": "MIT",
+      "non_clinical": false
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "nim_artifact_parity": "unverified",
+      "relationship": "exact-model",
+      "repository": "github.com/gcorso/DiffDock",
+      "source_kind": "git",
+      "variant_id": "diffdock-upstream-portable"
+    },
+    "states": {
+      "cold_start_qualified": false,
+      "elasticity_qualified": false,
+      "http_mcp_qualified": false,
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true
+    },
+    "variant_id": "diffdock-upstream-portable"
+  },
+  "record": {
+    "cache": {
+      "artifact": {
+        "capacity_bound_bytes": 8589934592,
+        "expanded_bytes": 2744917458,
+        "kind": "weights",
+        "manifest_digest": "75368bdd1d6126faa99bb716aac4409215f2217fb827750aed117b273bee889b",
+        "minimum_bytes": 2744917458,
+        "staged": false,
+        "state": "platform-verified"
+      },
+      "local_path": "/var/lib/fs2-serve/cache/models/diffdock",
+      "owner": "fs2-serve-localizer",
+      "pre_pull_image": true,
+      "shared_path": "/mnt/fs2-serve-cache/models/diffdock"
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 SXM5 80GB; SM90; driver580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "645b80dc5c0e5d51ba4d13c0b3e42b001572b5f2",
+        "summary": "Three isolated fresh processes and two distinct semantic requests per process PASS; production route acceptance remains pending. See acceptance/h100-fleet/bionemo-structure/fragments/diffdock.json."
+      },
+      {
+        "classification": "measured-platform",
+        "hardware": "Two NVIDIA H100 80GB HBM3 GPUs; SM90; driver580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "a5583e15957b1766c0668dba5af265a72f054f8b",
+        "summary": "48 exact-image isolated calls,192 generated poses; same-input matched-order results equal across two fresh processes. Within-process repeats satisfy original0.01Å/0.001confidence tolerances (not all byte-identical). Request-seeded conformers, deterministic CUDA and fixed local import-time normalization RNG; unchanged weights/budgets. Generated SDF3D tags verified independently. Residual runtime warnings, reference metadata warnings, variable docking accuracy and one~705.87Å low-confidence pose retained. Public HTTP/MCP, cold start, scaling and snapshot acceptance pending. Receipt SHA256 e65773bf3554fc578fd928038a9a8fe1e961050801c5b7878ef8814303c7aa77."
+      },
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3, GPU-a49a2242-2714-1f6d-f372-97b06758b88e, 580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "7e8c0f0f830b071505c53756aa6644a4f36dda6d",
+        "summary": "12 exact-image HTTP requests,48 generated 3D poses, all response identity headers passed. One matched-order pass equals frozen r6 reference coordinates/confidences; no general byte-identity claim. Wrapper-only derivative preserves weights and seeded model logic. Public multi-replica attribution remains pending. Portable evidence SHA256 07f9e5676a10e61a127bd80e5b197ee8d03ce1f41f049182018d07ba76f5db1d."
+      }
+    ],
+    "interface": {
+      "endpoints": {
+        "native": "/molecular-docking/diffdock/generate"
+      },
+      "execution_mode": "http",
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      },
+      "policy": {
+        "commercial_use": "license-dependent",
+        "license_enforced": true,
+        "non_clinical": false,
+        "operations": [
+          "dock"
+        ]
+      },
+      "protocols": [
+        "native"
+      ],
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 900
+      },
+      "warmup": null
+    },
+    "model": {
+      "display_name": "DiffDock",
+      "family": "bionemo-nim",
+      "id": "diffdock",
+      "source": {
+        "entitlement": {
+          "credential_contract": null,
+          "notes": "Public upstream weights in the tested independent runtime.",
+          "required": false,
+          "state": "not-required"
+        },
+        "kind": "git",
+        "license": {
+          "artifact": {
+            "sha256": "8efe3b8dac5c278ba290a66887e46261056f71dec75c2815c7da75451856cf1f",
+            "url": "https://raw.githubusercontent.com/gcorso/DiffDock/85c49b60d3e0b0182a59ee43a34a6d7036981284/LICENSE"
+          },
+          "id": "MIT",
+          "notes": "Pinned source/model license evidence in acceptance/h100-fleet/bionemo-structure/fragments/diffdock.json; NIM package parity is not claimed.",
+          "state": "verified"
+        },
+        "repository": "github.com/gcorso/DiffDock",
+        "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284"
+      },
+      "tested_lane": true
+    },
+    "provenance": [
+      {
+        "classification": "measured-handoff",
+        "commit": "645b80dc5c0e5d51ba4d13c0b3e42b001572b5f2",
+        "path": "k8s-inference/acceptance/h100-fleet/bionemo-structure/fragments/diffdock.json",
+        "tree": "4e04aa6d939748fbe298b6dd20f81a4d8ee25c1f"
+      },
+      {
+        "classification": "measured-handoff",
+        "commit": "8fe9d037ebb32456a733d289ffe07a38549d136b",
+        "path": "k8s-inference/models/structure/runtime/diffdock-seeded/qualification/retained-r6-r7.json",
+        "tree": "da2044081ea658b285e4cd43b4e3053d929d63a1"
+      }
+    ],
+    "resources": {
+      "cpu_millis": 8000,
+      "gpu": {
+        "alternatives": [],
+        "b300_state": "unverified",
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "placement": null,
+        "topology": "single-gpu"
+      },
+      "host_ram_min_bytes": null,
+      "memory_bytes": 68719476736,
+      "scaler_owner": "nebius-managed-node-group-autoscaler"
+    },
+    "runtime": {
+      "command": [
+        "python3",
+        "/opt/fs2/runtime/common/server.py"
+      ],
+      "image": {
+        "digest": "sha256:0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9",
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9",
+        "state": "resolved"
+      },
+      "kind": "custom",
+      "version": "portable-h100-http-identity-20260919"
+    },
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "semantic_validator": {
+      "contract": "two-distinct-docking-responses/v1",
+      "distinct_requests": true,
+      "distinct_responses": true,
+      "fixture_path": "k8s-inference/catalog/runtime/validators/assets/diffdock-b300.json",
+      "fixture_sha256": "15d1ef9002112821f21554c3f2ec48fe123b0d6e4a8e0184bfbef74f15a08a62",
+      "kind": "repository-command",
+      "request_count": 2,
+      "source_path": "k8s-inference/catalog/runtime/validators/validate_structure_open_runtime.py",
+      "source_sha256": "24a3551d4895643c29c3a57b1b2c85be1d3674d658d5b645609fb3d594c7c724"
+    },
+    "startup": {
+      "default": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "gate": "fresh-pod-restore-with-original-semantic-output",
+          "mechanism": "snapshot",
+          "reason": "This exact H100 portable runtime has not completed a fresh-pod GPU restore test. Earlier B300 timing results remain historical and do not qualify or disqualify this runtime.",
+          "state": "gated"
+        }
+      ],
+      "fallback": "conventional",
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "support": {
+      "limitations": [
+        "Exact upstream model in an independent runtime; NVIDIA NIM package/numerical parity is not claimed.",
+        "H100 direct inference passed; public routes, scalability and optional GPU snapshots are qualified separately.",
+        "This exact repaired image has isolated H100 repeated-request evidence only; historical public, cold-start, elasticity and GPU snapshot receipts do not qualify it.",
+        "Six reference complexes/two seeds expose variable docking accuracy and one distant low-confidence pose. Valid output and numerical repeatability are not experimental affinity, plausible-pose guarantees or paper reproduction.",
+        "The HTTP-identity wrapper successor has isolated exact-image evidence only; no inherited public or snapshot qualification."
+      ],
+      "non_clinical": false,
+      "route_exposed": false,
+      "state": "qualified"
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "variant_id": "diffdock-upstream-portable"
+}

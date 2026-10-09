@@ -1,0 +1,611 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-003",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Larry, it's good to see you again. Thanks for reaching out today.\n\nHow have things been going since we last connected? Is there anything particular on your mind that you'd like to talk about, or any area you'd like to focus on today?\n\nI'm here to listen and support you however feels most useful."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I’ve been… not great. Not sleeping. Like, I’m in bed for hours, but it’s just tossing, not really resting. I keep thinking about the grocery list, or if I locked the door, or what if something happens to my kid while I’m distracted. It’s like my brain won’t shut off.  \n\nI tried to do laundry yesterday. Just a small load. But halfway through, I started wondering if I’d forgotten something, or if the machine was going to break, or if I was doing it wrong. I ended up just stopping. Left the clothes in the washer.  \n\nIt’s not like I’m scared of the laundry. It’s just… everything feels like it could go wrong. And then I start remembering things—like when my brother left the stove on when I was a kid. Not that it mattered, but it sticks.  \n\nI don’t know. I just feel like I’m running on this loop."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds incredibly exhausting, Larry. I can hear how worn down you are by it — and honestly, it makes sense. When your brain is running that kind of loop, of course sleep feels impossible, and even basic tasks like laundry start feeling like minefields.\n\nA few things stand out to me in what you're sharing:\n\n**The loop itself** — it's not just worry, it's this spiraling pattern where one thought leads to another, and another, until even something simple feels overwhelming. And then you end up stopping, which probably doesn't feel great either.\n\n**The \"what if\" quality** — it's not that something *is* wrong, it's that something *could* be. Your mind is constantly scanning for the next problem, even when there isn't one.\n\n**The old memories** — like your brother and the stove. It's interesting that your brain reaches back to things like that. Almost like it's collecting evidence that yes, things *do* go wrong, so you better stay alert.\n\nI'm curious — when you're in that loop, have you noticed whether there's any particular time of day it's worse, or does it feel pretty constant?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s worse in the quiet. Like, when it’s dark and the house is still. That’s when the thoughts come in waves. I’ll be lying there, trying to breathe slow, and then—boom—there’s the door. Did I lock it? I mean, I *think* I did. But what if I didn’t? What if someone came in while I was asleep?  \n\nAnd then it’s not just the door. It’s the window. The smoke detector battery. The way my kid’s jacket is on the floor. I know it’s not a big deal, but the thought of it—like, what if they trip on it? What if they get hurt? I keep seeing it in my head, like a slow-motion version.  \n\nIt’s not that I don’t trust myself. I just… I can’t stop the feeling that if I don’t check, if I don’t *think* about it, something bad will happen. And then I feel guilty for not being able to just let it go.  \n\nI don’t know. It’s like my brain’s trying to protect me, but it’s doing it in a way that just makes everything worse."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I really appreciate how clearly you're describing this. You have a lot of insight into what's happening — maybe more than you're giving yourself credit for.\n\nThat line at the end really stays with me: *your brain is trying to protect you, but it's making everything worse.* That's a remarkably accurate way to describe what's going on. It's like an alarm system that's working too hard — firing not just when there's real danger, but at every creak and shadow. And the dark and quiet just turn the volume up on everything.\n\nI notice two layers of suffering here:\n\n**First**, there's the anxiety itself — the checking, the what-ifs, the slow-motion images. That's exhausting.\n\n**But second**, there's the guilt. The way you're judging yourself for not being able to \"just let it go.\" And that layer might actually be feeding the first one — because now you're not just worrying about the door, you're also worrying about the fact that you're worrying about the door.\n\nCan I ask — when you notice yourself feeling that guilt, what does it sound like? Is it your voice, or does it almost feel like someone else's?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s not a voice. Not really. It’s more like… a weight. Like I’m carrying something I shouldn’t have to carry.  \n\nIt’s not even about the door or the jacket. It’s like I’m supposed to be the one who’s steady. The one who’s got it together. I’ve spent my whole life trying to be the reliable one—good student, good worker, good parent. But now I can’t even do the laundry without falling apart.  \n\nAnd when I think about that, it’s not just guilt. It’s shame. Like I’m failing at something basic. Like if I can’t handle this, what does that mean about me?  \n\nI don’t know. It’s not like I’m angry at myself. It’s more like… I’m sad. That I can’t do the thing I’m supposed to do. That I can’t just be present.  \n\nI keep thinking about my brother. He never worried. Not like this. He’d just walk into a room, do what needed doing, and leave. I used to think he was careless. Now I think he was just… different. Maybe calmer. I don’t know.  \n\nBut I can’t be like that. I can’t just *be*. I have to think. I have to check. I have to plan. And now even that feels like it’s failing."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, thank you for going there with me. That took courage, and I want you to know I'm hearing all of it.\n\nThere's something really important in what you just said. You distinguished guilt from shame, and that matters. Guilt says *I did something wrong.* Shame says *I am something wrong.* And what you're describing — this sense of failing at something basic, of being unable to do what you're \"supposed to do\" — that's shame. That's deeper. That's about who you believe you're supposed to *be*.\n\nAnd here's what strikes me. You said you've spent your whole life being the reliable one. The steady one. The one who thinks, checks, plans. That wasn't just a strategy — that became *who you are*. Your identity is woven into being the person who holds it all together.\n\nSo when the anxiety gets this bad, it's not just uncomfortable. It threatens the story you've told yourself about who you are. That's not a small thing. That's existential.\n\nAnd then the sadness you mentioned — I think it's grief. You're grieving the version of yourself that could just handle things. And maybe also grieving that you never got to be the brother who just walked into a room, did what needed doing, and left without a second thought.\n\nCan I ask something? Was there a time — maybe earlier in life — when being the reliable one felt like it worked? Like it was a strength and not a burden?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I remember when I was in grad school. I was working on my dissertation. I had this one advisor who was always late, always vague. I’d sit there, waiting, and I’d just… take over. I’d restructure the timeline, rewrite the section, send emails to the committee. I wasn’t supposed to do that. But I did. And it worked. The project moved forward.  \n\nI remember one time, the whole department was scrambling because someone else had dropped the ball. I stayed up all night organizing everything. I even printed out copies for everyone. And when I handed them out the next morning, someone said, “How did you even know what to do?”  \n\nI didn’t say anything. But I felt… solid. Like I was useful. Like I mattered.  \n\nIt wasn’t just about the work. It was about being the one who could make things happen. Not because I wanted to, but because I *could*.  \n\nNow? I don’t know. I feel like I’m just… waiting for the next thing to fall apart. And I don’t even know how to fix it anymore.  \n\nI used to think I was strong because I could handle it. Now I think I’m just… stuck."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I'm really glad you shared that memory. Because it tells me something important.\n\nWhen you describe that moment — staying up all night, organizing everything, handing out copies — you weren't just being reliable. You were being *needed*. And that need gave you a place in the world. A reason to exist in that space. You said it yourself: *I felt solid. Like I mattered.*\n\nBut here's what I want to gently point out. Even back then, the pattern had a cost. You stayed up all night. You took on things that weren't yours to carry. You couldn't just wait for your advisor — you had to manage the uncertainty yourself. It worked, yes. But it worked because you poured yourself into it completely.\n\nAnd now the context has changed. You're not in a department with dropped balls and vague advisors. You're at home. With your kid. In the quiet. And the stakes feel different — it's not a dissertation, it's your child's safety, your home, your life.\n\nBut the mechanism is the same. You're still trying to manage uncertainty by controlling it. Only now, the uncertainty is bigger and less controllable. You can't restructure a timeline for \"what if someone breaks in.\" You can't send an email to fix \"what if my kid trips on a jacket.\"\n\nSo the tool that used to work — hyper-vigilance, taking over, checking everything — is still running. But it's hitting walls everywhere. And instead of feeling useful, you feel stuck.\n\nCan I ask — when you transitioned from that academic world to being home full-time, what was that like for you?"
+    },
+    {
+      "role": "patient",
+      "content": "It wasn’t a transition. It was more like… falling.  \n\nI didn’t plan it. I just… stopped. The job wasn’t working anymore. The politics, the meetings, the way people talked over each other — I couldn’t breathe in that space. I remember sitting in a faculty meeting once, and I just… couldn’t follow the conversation. My mind went to the way my mom used to fold laundry when I was a kid. The exact way she’d press the corners. And I was thinking, *I could do that. I could do that better.*  \n\nI didn’t even know what I was thinking until I said it out loud. The room went quiet. I don’t know if I said it, or if I just thought it. But I remember feeling like I’d stepped out of the room. Like I wasn’t in my body.  \n\nSo I left. Not because I wanted to be a stay-at-home parent. I didn’t even know what that meant. I just knew I couldn’t keep doing the other thing.  \n\nNow I’m here. I’m supposed to be the one who holds it together. But I don’t even know what “holding it together” looks like anymore. I used to hold it together with work. With structure. With deadlines. Now the only structure is my kid’s schedule. And I can’t even keep up with that.  \n\nI feel like I’m trying to do the job of someone who’s still at work — but without the tools. Without the system. Without the place.  \n\nAnd the worst part? I don’t even know if I want to go back. Not really. I don’t know who I’d be if I did."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I want to slow down for a second because what you just said feels really important.\n\nYou described a moment in that faculty meeting where you stepped out of your body. Where your mind went somewhere else entirely. And you're not even sure if you said something out loud or just thought it.\n\nThat's not just stress. That sounds like your mind was already leaving before the rest of you caught up. Like the system you'd built — the reliable one, the one who holds it together — was starting to crack under its own weight. And your brain found a way out before you even consciously decided.\n\nAnd now you're in this space where you left the old structure but never fully arrived in a new one. You're in between. And the anxiety, the checking, the loops — I wonder if part of what's driving them is that you don't actually know what you're building toward. The old identity was clear: be the one who fixes things. But here, in this life, what's the identity? What's the version of you that you're trying to be?\n\nBecause you said something really honest at the end. You don't even know if you want to go back. And I think there's something underneath that. Maybe part of you knows the old way wasn't sustainable. That staying up all night and taking over and being needed wasn't just a strength — it was also a cage.\n\nSo here's what I'm hearing: you're not just anxious about doors and jackets. You're anxious because you're living inside a question you haven't let yourself ask directly. *Who am I if I'm not the one who holds it together?*\n\nDoes that resonate at all, or does that feel like I'm pushing too far?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s not pushing. It’s… close.  \n\nI’ve never said it out loud. Not like that.  \n\nBut yeah. That’s it.  \n\nI’m not the one who holds it together anymore. And I don’t know who I am without that.  \n\nI used to think being needed was a good thing. Like it meant I mattered. But now I wonder — was I ever really *there*? Or was I just… performing?  \n\nI think about my kid sometimes. They’re so quiet. They don’t ask for help. They just… do things. They put their shoes on without being told. They clean up their toys. They don’t wait for me to fix it.  \n\nAnd I watch them, and I feel… small. Not in a bad way. But like I’m not needed in the way I used to be. Like I’m not the one who has to carry it all.  \n\nAnd that’s not just okay. It’s… kind of a relief. But also terrifying.  \n\nBecause if I’m not the one who holds it together, then who am I?  \n\nI don’t know. I just… don’t know."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I want to just sit with what you said for a moment. Because I think you just said something that many people never get to.\n\nYou said \"I don't know.\" Three times. And I want you to hear what that actually is.\n\nIt's not failure. It's not weakness. It's the first honest thing you've said about yourself in maybe a very long time. Because the old Larry — the reliable one — would never say \"I don't know.\" He'd have an answer. He'd fix it. He'd restructure the timeline.\n\nBut you're not that person right now. And instead of forcing yourself to be, you're actually letting yourself not know. That takes more courage than staying up all night organizing someone else's mess.\n\nAnd that moment with your kid — watching them put their shoes on, clean up without being asked — I think that's not just about you feeling small. I think it's about your kid showing you something you haven't let yourself believe. That the world doesn't fall apart when you stop holding it together. That people can be okay without you carrying everything.\n\nThe relief you felt? That's your body telling you something. That carrying it all was never the only option. That there's a life where you don't have to be the answer to every problem.\n\nThe terror? That's the old identity fighting to stay relevant. Because if you're not the one who holds it together, what's your purpose?\n\nBut here's what I notice. Your kid isn't asking you to hold it together. They're just being a kid. Putting on shoes. Cleaning up toys. Living.\n\nSo maybe the question isn't *who am I if I'm not the one who holds it together.* Maybe it's something gentler. Something like — *what would it look like to just be here, without needing to be needed?*\n\nI don't have an answer for you. But I think you're closer to finding one than you think. Not because you've figured it out, but because you've finally stopped pretending you have.\n\nHow does that land?"
+    },
+    {
+      "role": "patient",
+      "content": "It lands like… quiet.  \n\nNot relief. Not peace. But quiet. Like the kind you get after a long storm, when the rain’s stopped, and the air is still wet but the sky’s clearing.  \n\nI keep thinking about my kid. How they don’t ask for permission to do things. They just do them. And I don’t have to fix it. I don’t have to check. I don’t have to be the one who knows.  \n\nAnd for the first time in a long time, I don’t feel like I’m failing for not knowing.  \n\nI just… don’t know.  \n\nAnd that’s okay.  \n\nI don’t know what this is. I don’t know what comes next. But I don’t have to know. Not right now.  \n\nI can just… be here.  \n\nEven if it’s messy. Even if I’m not doing it right.  \n\nEven if I don’t have the answer.  \n\nI can just be here."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I'm not going to say much right now. Because I think what you just said deserves its own space.\n\nBut I will say this. Earlier you told me that focusing inward feels uncomfortable. That it leads to overthinking. And I understood that. But what you just did right now — that wasn't overthinking. That was the opposite. You stopped thinking your way through it and just... arrived. Right here. In this moment. With yourself.\n\nAnd I think that's worth noticing. That you found a way to be present not by forcing it, not by trying to meditate or breathe slow or clear your mind. But by letting yourself not know. By letting the question just be a question.\n\nThat's yours. Nobody gave you that. You found it.\n\nI want to be honest about something though. This feeling — this quiet — it may not last. The loop might come back tonight. The checking, the what-ifs, the noise. That doesn't mean this moment wasn't real. It means you're at the beginning of something, not the end.\n\nAnd beginnings are messy. They don't have timelines you can restructure or committees you can email. They just take time.\n\nSo here's what I'd like to ask. Would you be willing to just notice, without judging it, the next time you feel even a small crack of that quiet? Not to hold onto it. Not to recreate it. Just to notice it happened.\n\nCan you try that?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I can try.  \n\nNot to hold on. Not to fix it. Just… notice.  \n\nLike when I see my kid smile at something small. Or when the sun hits the floor at a certain angle in the morning. Or when I don’t check the door three times.  \n\nJust… noticing.  \n\nNot because it means anything. Not because it’s a win.  \n\nJust because it’s there.  \n\nAnd if it’s there, maybe I don’t have to run from it.  \n\nMaybe I can just… stay."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry.\n\nYeah.\n\nJust stay.\n\nThat's it for today. You did something hard and honest here, and I don't want to talk past it.\n\nI'll see you next time."
+    },
+    {
+      "role": "patient",
+      "content": "Okay.  \n\nThanks.  \n\nI’ll try to stay."
+    },
+    {
+      "role": "clinician",
+      "content": "You're welcome, Larry.\n\nI mean it — thank you for trusting me with this today.\n\nAnd remember — staying doesn't mean staying perfect. It just means staying.\n\nTake care of yourself. I'll be here when you're ready to talk again."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \n\nI’ll be here.  \n\nNot perfect. Just here."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 237,
+        "prompt_tokens": 226,
+        "total_tokens": 463,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 170,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 226,
+        "reasoning_tokens": 170
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 1739.437,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 197,
+        "prompt_tokens": 1864,
+        "total_tokens": 2061,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1792
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 5313.889,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 391,
+        "prompt_tokens": 492,
+        "total_tokens": 883,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 148,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 492,
+        "reasoning_tokens": 148
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 2826.101,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 245,
+        "prompt_tokens": 2312,
+        "total_tokens": 2557,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2048
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 7846.619,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 728,
+        "prompt_tokens": 982,
+        "total_tokens": 1710,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 483,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 982,
+        "reasoning_tokens": 483
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 6610.376,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 285,
+        "prompt_tokens": 2810,
+        "total_tokens": 3095,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1792
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.07,
+        "latency_ms": 4459.582,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 962,
+        "prompt_tokens": 1514,
+        "total_tokens": 2476,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 654,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1514,
+        "reasoning_tokens": 654
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 5564.444,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 257,
+        "prompt_tokens": 3411,
+        "total_tokens": 3668,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3088
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 3306.195,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 682,
+        "prompt_tokens": 2081,
+        "total_tokens": 2763,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 341,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2081,
+        "reasoning_tokens": 341
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 3867.732,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 349,
+        "prompt_tokens": 4017,
+        "total_tokens": 4366,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3664
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 5229.55,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 948,
+        "prompt_tokens": 2773,
+        "total_tokens": 3721,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 593,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2773,
+        "reasoning_tokens": 593
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 6016.772,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 240,
+        "prompt_tokens": 4729,
+        "total_tokens": 4969,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2544
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 3901.66,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 881,
+        "prompt_tokens": 3370,
+        "total_tokens": 4251,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 453,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3370,
+        "reasoning_tokens": 453
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 4895.642,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 203,
+        "prompt_tokens": 5405,
+        "total_tokens": 5608,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4960
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 3752.201,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 667,
+        "prompt_tokens": 4003,
+        "total_tokens": 4670,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 365,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4003,
+        "reasoning_tokens": 365
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 4152.738,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 111,
+        "prompt_tokens": 5918,
+        "total_tokens": 6029,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5600
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.037,
+        "latency_ms": 3364.359,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 308,
+        "prompt_tokens": 4418,
+        "total_tokens": 4726,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 269,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4418,
+        "reasoning_tokens": 269
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 1611.222,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 13,
+        "prompt_tokens": 6076,
+        "total_tokens": 6089,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4352
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 455.059,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 135,
+        "prompt_tokens": 4472,
+        "total_tokens": 4607,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 83,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4472,
+        "reasoning_tokens": 83
+      },
+      "telemetry": {
+        "queue_ms": 0.073,
+        "latency_ms": 1060.914,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 16,
+        "prompt_tokens": 6149,
+        "total_tokens": 6165,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6080
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 437.474,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 60,
+        "prompt_tokens": 24262,
+        "total_tokens": 24322,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 4525.626,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.75,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 80.946
+}

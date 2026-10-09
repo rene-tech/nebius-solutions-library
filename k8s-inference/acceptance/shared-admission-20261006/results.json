@@ -1,0 +1,218 @@
+{
+  "schema": "fs2-shared-admission-qualification/v1",
+  "recorded_at": "2026-10-06T16:23:41.885726+00:00",
+  "scope": "best-effort GPU placement; not complete unattended customer readiness",
+  "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "scheduling_sha256": "75bdc12794d274e890a6489c82496f9f02102be1dc0a455c651ea486ea690b4b",
+  "policy_commit": "c5f90edcd",
+  "observed_ready_gpu_inventory": {
+    "L40S": 12,
+    "H100": 28,
+    "H200_not_added_to_model_eligibility": 2
+  },
+  "unit_and_render_checks": {
+    "planner_and_capacity": 18,
+    "terraform_module": 27,
+    "backend_regression": 40,
+    "route_resolutions": 40,
+    "pod_fit_shapes": 3,
+    "terraform_validate": "passed"
+  },
+  "capacity_tests": [
+    {
+      "run": "fs2-admission-qa-20261006b",
+      "passed": true,
+      "simultaneous": {
+        "md": 8,
+        "single-cell": 8
+      },
+      "backlog": {
+        "admittedWorkloads": 16,
+        "pendingWorkloads": 2
+      },
+      "completed": 18,
+      "cleanup_requested": 22,
+      "evidence_directory": "capacity-r2",
+      "maximum_observed_running": 16
+    },
+    {
+      "run": "fs2-admission-qa-20261006c",
+      "passed": true,
+      "simultaneous": {
+        "md": 8,
+        "single-cell": 8
+      },
+      "backlog": {
+        "admittedWorkloads": 16,
+        "pendingWorkloads": 2
+      },
+      "completed": 18,
+      "cleanup_requested": 22,
+      "evidence_directory": "capacity-final-a",
+      "maximum_observed_running": 16
+    },
+    {
+      "run": "fs2-admission-qa-20261006d",
+      "passed": false,
+      "single_cell_shape": "atlas",
+      "cleanup_requested": 20,
+      "error": "Sixteen GPU-shaped jobs did not become ready in eight minutes",
+      "evidence_directory": "capacity-final-b",
+      "maximum_observed_running": 12
+    },
+    {
+      "run": "fs2-admission-qa-20261006e",
+      "passed": true,
+      "single_cell_shape": "atlas",
+      "target": {
+        "md": 8,
+        "single-cell": 4
+      },
+      "simultaneous": {
+        "md": 8,
+        "single-cell": 4
+      },
+      "backlog": {
+        "admittedWorkloads": 12,
+        "pendingWorkloads": 2
+      },
+      "completed": 14,
+      "cleanup_requested": 18,
+      "evidence_directory": "capacity-atlas-four",
+      "maximum_observed_running": 12
+    }
+  ],
+  "actual_public_mixed_operations": [
+    {
+      "model": "gromacs",
+      "cohort": "a",
+      "protocol": "rest",
+      "operation_id": "f0982992-d216-4e5f-94d7-2f87128fc156",
+      "status": "succeeded",
+      "idempotency_key": "gromacs-hosted-20261006-shared-admission-a",
+      "replay_reused": true,
+      "verified_entries": 38,
+      "verified_entry_bytes": 2038809,
+      "pools": [
+        "l40s-4x"
+      ],
+      "semantic_checks": {
+        "status": "passed",
+        "successful_commands": 10,
+        "md_repeats": 3,
+        "durable_step_per_repeat": 10000,
+        "worker_files": 37,
+        "customer_performance_claimed": false
+      }
+    },
+    {
+      "model": "scvi-scanvi",
+      "cohort": "a",
+      "protocol": "mcp",
+      "operation_id": "a2c4c89a-8ee0-458d-a52d-38ed3206cb8a",
+      "status": "succeeded",
+      "idempotency_key": "scvi-scanvi-hosted-20261006-shared-admission-a",
+      "replay_reused": true,
+      "verified_entries": 41,
+      "verified_entry_bytes": 892057657,
+      "pools": [
+        "h100-ondemand-1x"
+      ],
+      "semantic_checks": {
+        "status": "passed",
+        "operation_id": "a2c4c89a-8ee0-458d-a52d-38ed3206cb8a",
+        "cells": 584944,
+        "latent_dimensions": 10,
+        "files_verified": 40,
+        "bytes_verified": 892050319,
+        "annotation_validated": true,
+        "maximum_probability_sum_error": 3.3129936194420395e-7,
+        "biological_accuracy_or_convergence_claimed": false
+      }
+    },
+    {
+      "model": "gromacs",
+      "cohort": "b",
+      "protocol": "mcp",
+      "operation_id": "950e8a61-41f3-4c0f-8dd0-f892e83daaea",
+      "status": "succeeded",
+      "idempotency_key": "gromacs-hosted-20261006-shared-admission-b",
+      "replay_reused": true,
+      "verified_entries": 38,
+      "verified_entry_bytes": 2038847,
+      "pools": [
+        "l40s-4x"
+      ],
+      "semantic_checks": {
+        "status": "passed",
+        "successful_commands": 10,
+        "md_repeats": 3,
+        "durable_step_per_repeat": 10000,
+        "worker_files": 37,
+        "customer_performance_claimed": false
+      }
+    },
+    {
+      "model": "scvi-scanvi",
+      "cohort": "b",
+      "protocol": "rest",
+      "operation_id": "dd799d76-a687-4eed-9591-d86c96cf743e",
+      "status": "succeeded",
+      "idempotency_key": "scvi-hosted-20261006-shared-admission-b",
+      "replay_reused": true,
+      "verified_entries": 41,
+      "verified_entry_bytes": 892057648,
+      "pools": [
+        "h100-ondemand-1x"
+      ],
+      "semantic_checks": {
+        "status": "passed",
+        "operation_id": "dd799d76-a687-4eed-9591-d86c96cf743e",
+        "cells": 584944,
+        "latent_dimensions": 10,
+        "files_verified": 40,
+        "bytes_verified": 892050309,
+        "annotation_validated": true,
+        "maximum_probability_sum_error": 3.3129936194420395e-7,
+        "biological_accuracy_or_convergence_claimed": false
+      }
+    }
+  ],
+  "qa_identity": {
+    "tenant": "system",
+    "principal": "qa",
+    "max_concurrency_unchanged": 2,
+    "customer_credentials_used": false
+  },
+  "cleanup": {
+    "remaining_temporary_pods_jobs_workloads_queues_configmaps": 0,
+    "remaining_gpu_jobs_for_four_completed_api_operations": 0,
+    "qa_artifacts_retained": true,
+    "customer_resources_deleted": false
+  },
+  "readiness": {
+    "api_replicas_ready": 3,
+    "api_replicas_desired": 3,
+    "kueue_replicas_ready": 1,
+    "latest_direct_http_samples": [
+      200,
+      200
+    ],
+    "scientific_consecutive_failures_in_latest_samples": [
+      1,
+      1
+    ],
+    "earlier_http_503_observed": true,
+    "additional_single_curl_probe_timed_out_seconds": 20,
+    "curl_timeout_cause": "not established; subsequent direct HTTP checks returned 200",
+    "unattended_customer_readiness_claimed": false,
+    "open_ticket": "fs2-scientific-failed-receipt-isolation-r20261006"
+  },
+  "limits": [
+    "Capacity holders test GPU scheduling/device visibility, not eight public model operations.",
+    "Production queue weights 2:1 are best-effort historical admission fairness, not immediate reservations; sustained ratio not benchmarked.",
+    "Atlas eight-concurrent hypothesis failed due to scratch-disk reservations; four plus eight MD passed.",
+    "WhiteLab identity/key not created; route is prepared for intended whitelab tenant.",
+    "No changes to images, cloud nodes, cloud quotas or customer credentials."
+  ]
+}

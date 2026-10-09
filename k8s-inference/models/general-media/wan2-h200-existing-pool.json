@@ -1,0 +1,51 @@
+{
+  "schema": "fs2-existing-accelerator-pool-registration/v1",
+  "context": "nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a",
+  "node_group_id": "mk8snodegroup-e00prf74rw5vnbqcxq",
+  "nodes": ["computeinstance-e00kav59ncd1by9c86", "computeinstance-e00qjtj5t3p0n2ap56"],
+  "envelope": {
+    "poolId": "wan2-h200-1x",
+    "acceleratorClass": "nvidia-h200-sxm5-141gb",
+    "resourceName": "nvidia.com/gpu",
+    "capacityType": "regular",
+    "acceleratorsPerNode": 1,
+    "allocatableCpuMillis": 15900,
+    "allocatableMemoryBytes": 199305945088,
+    "minNodes": 2,
+    "maxNodes": 2,
+    "nodeSelector": {
+      "accelerator.fs2.nebius/class": "nvidia-h200-sxm5-141gb",
+      "accelerator.fs2.nebius/pool-id": "wan2-h200-1x",
+      "capacity.fs2.nebius/gpu-count": "1",
+      "capacity.fs2.nebius/type": "regular",
+      "local-nvme.fs2.nebius/eligible": "false",
+      "snapshot.fs2.nebius/eligible": "false",
+      "topology.fs2.nebius/scope": "standalone",
+      "workload.fs2.nebius/gpu": "true"
+    },
+    "tolerations": [{"effect": "NoSchedule", "key": "dedicated", "operator": "Equal", "value": "fs2-inference"}],
+    "startupScenario": "prepared-node-zero-pod",
+    "fastStartEnvironmentBindings": []
+  },
+  "resource_flavor": {
+    "apiVersion": "kueue.x-k8s.io/v1beta1",
+    "kind": "ResourceFlavor",
+    "metadata": {"name": "inference-wan2-h200-1x"},
+    "spec": {
+      "nodeLabels": {
+        "accelerator.fs2.nebius/class": "nvidia-h200-sxm5-141gb",
+        "accelerator.fs2.nebius/pool-id": "wan2-h200-1x"
+      },
+      "nodeTaints": [{"key": "dedicated", "value": "fs2-inference", "effect": "NoSchedule"}]
+    }
+  },
+  "cluster_queue": "inference-accelerators",
+  "flavor_quota": {
+    "name": "inference-wan2-h200-1x",
+    "resources": [
+      {"name": "nvidia.com/gpu", "nominalQuota": "2", "borrowingLimit": "0"},
+      {"name": "cpu", "nominalQuota": "31800m", "borrowingLimit": "0"},
+      {"name": "memory", "nominalQuota": "380144Mi", "borrowingLimit": "0"}
+    ]
+  }
+}

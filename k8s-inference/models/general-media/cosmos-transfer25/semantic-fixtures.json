@@ -1,0 +1,51 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos-transfer25-semantic-fixtures/v1",
+  "source": "https://github.com/NVIDIA/paidf-augmentation/tree/bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+  "note": "Public NVIDIA intersection video, explicitly prepared before invocation; no hidden resize/trim.",
+  "requests": [
+    {
+      "id": "transfer-weather-0",
+      "source": {
+        "width": 1280,
+        "height": 720,
+        "frames": 153,
+        "fps": 30,
+        "duration_seconds": 5.1,
+        "audio": [],
+        "size_bytes": 2183869,
+        "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+      },
+      "prompt_sha256": "f021eac01848d74abbe8f5652948bcde59df21842c8c69f849756dae5e380c3f",
+      "parameters": {
+        "seed": 42,
+        "num_steps": 35,
+        "guidance": 7,
+        "control_weight": 1.0,
+        "output_delivery": "artifact"
+      },
+      "request_sha256": "caee6dc6fb8ba9d9f8127aa66db9a54a51740a5c0b461df2f7e4b784c38d0e28"
+    },
+    {
+      "id": "transfer-weather-1",
+      "source": {
+        "width": 1280,
+        "height": 720,
+        "frames": 153,
+        "fps": 30,
+        "duration_seconds": 5.1,
+        "audio": [],
+        "size_bytes": 2183869,
+        "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+      },
+      "prompt_sha256": "6cba142530c7e77575516cc665e9b5dc5878dcb7933fa776e0a4bfe4f585efb5",
+      "parameters": {
+        "seed": 43,
+        "num_steps": 35,
+        "guidance": 7,
+        "control_weight": 1.0,
+        "output_delivery": "artifact"
+      },
+      "request_sha256": "6bfaf3c286e6004210202c9120da5b47e123cc3db2d1d62c2e7003ce80f0e477"
+    }
+  ]
+}

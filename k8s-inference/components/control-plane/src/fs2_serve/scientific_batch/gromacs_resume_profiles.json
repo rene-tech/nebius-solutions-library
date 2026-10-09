@@ -1,0 +1,22 @@
+{
+  "profiles": [
+    {
+      "id": "single-gpu-list200-v1",
+      "runtime_image_digest": "sha256:ca863f44c7d17c8096267ec43939cda8b9546f0d3b11440e62bcf9149bc94a1e",
+      "tpr_sha256": [
+        "e2ee73571f0dd9855709d2a957e41e5ad52316b3f1d2b1808e65476f4bd8ef10",
+        "d10c5b789fbd8a0f82c167306aada7d987c981e39adca6551457a561ececd534"
+      ],
+      "threads": 8,
+      "mdrun_defaults": {
+        "-nb": "gpu",
+        "-bonded": "gpu",
+        "-pme": "auto",
+        "-update": "auto",
+        "-pin": "auto",
+        "-nstlist": "200"
+      },
+      "evidence": "acceptance/lynx-demo-resume-20261005/README.md"
+    }
+  ]
+}

@@ -20,6 +20,37 @@ CHECKPOINT = UPSTREAM / "vanilla_model_weights/v_48_020.pt"
 ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
 
 
+def validated_chain_output(
+    chain_id: str,
+    sequence: str,
+    native_sequence: str,
+    backbone_mask: list[float],
+) -> dict[str, Any]:
+    """Keep explicit unresolved positions without pretending they were designed.
+
+    ProteinMPNN preserves its native X at numbering gaps where the N/CA/C/O
+    backbone mask is zero. Deleting or filling that slot would change the
+    structure-to-sequence alignment. X anywhere else remains an error.
+    """
+    if len(sequence) != len(native_sequence) or len(sequence) != len(backbone_mask):
+        raise RuntimeError("generated chain alignment differs from the parsed backbone")
+    incomplete, unresolved = [], []
+    for position, (residue, native, present) in enumerate(zip(sequence, native_sequence, backbone_mask, strict=True), 1):
+        if not present:
+            incomplete.append(position)
+            if residue != native:
+                raise RuntimeError("generated sequence changed a nondesignable backbone position")
+        if residue == "X":
+            if present or native != "X":
+                raise RuntimeError("generated sequence has an unexpected X at a resolved position")
+            unresolved.append(position)
+        elif residue not in ALPHABET:
+            raise RuntimeError("generated sequence contains an unsupported residue")
+    return {"chain_id": chain_id, "sequence": sequence, "length": len(sequence),
+            "incomplete_backbone_positions_1based": incomplete,
+            "unresolved_sequence_positions_1based": unresolved}
+
+
 class Adapter:
     paths = {"/v1/infer", "/biology/ipd/proteinmpnn/predict"}
     native_response_paths = frozenset({"/biology/ipd/proteinmpnn/predict"})
@@ -223,18 +254,22 @@ class Adapter:
         outputs = []
         for index in range(count):
             sequence = self.utils._S_to_seq(sequences[index], chain_mask[index])
+            native_masked = self.utils._S_to_seq(native[index], chain_mask[index])
+            backbone_masked = mask[index][chain_mask[index] > 0].tolist()
             chain_ids = masked_lists[index]
             chain_lengths = masked_lengths[index]
             cursor = 0
             chain_chunks = []
             for chain_id, chain_length in zip(chain_ids, chain_lengths, strict=True):
-                chain_sequence = sequence[cursor : cursor + chain_length]
-                cursor += chain_length
-                chain_chunks.append(
-                    {"chain_id": chain_id, "sequence": chain_sequence, "length": chain_length}
+                stop = cursor + chain_length
+                chain_sequence = sequence[cursor:stop]
+                chain_output = validated_chain_output(
+                    chain_id, chain_sequence, native_masked[cursor:stop], backbone_masked[cursor:stop]
                 )
+                cursor += chain_length
+                chain_chunks.append(chain_output)
             chains = sorted(chain_chunks, key=lambda item: item["chain_id"])
-            if cursor != len(sequence) or any(set(item["sequence"]) - set(ALPHABET) for item in chains):
+            if cursor != len(sequence):
                 raise RuntimeError("generated sequence failed the adapter semantic gate")
             outputs.append(
                 {
@@ -278,8 +313,27 @@ class Adapter:
                     sample["sequence"],
                 ]
             )
-        return {
+        response = {
             "mfasta": "\n".join(records) + "\n",
             "scores": [sample["score"] for sample in output["sequences"]],
             "probs": [sample["probabilities"] for sample in output["sequences"]],
         }
+        coverage = [
+            {"chain_id": chain["chain_id"], "length": chain["length"],
+             "incomplete_backbone_positions_1based": chain["incomplete_backbone_positions_1based"],
+             "unresolved_sequence_positions_1based": chain["unresolved_sequence_positions_1based"]}
+            for chain in output["sequences"][0].get("chains", [])
+            if chain.get("incomplete_backbone_positions_1based")
+        ]
+        if coverage:
+            response["backbone_coverage"] = {
+                "complete": False,
+                "position_basis": "1-based positions within each returned chain; upstream PDB numbering gaps retained",
+                "chains": coverage,
+                "policy": "Incomplete backbone positions retain native identity; unresolved sequence positions remain X, not designed residues.",
+            }
+            response["warnings"] = [{
+                "code": "incomplete_backbone",
+                "message": "Some input residues lack complete N/CA/C/O coordinates. Explicit X placeholders need a deliberate downstream gap policy; do not treat them as designed amino acids.",
+            }]
+        return response

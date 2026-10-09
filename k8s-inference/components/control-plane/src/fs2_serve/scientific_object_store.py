@@ -116,6 +116,30 @@ class S3ArtifactObjectStore:
     def bucket(self) -> str:
         return self._config.bucket
 
+    async def multipart_upload(self, *, intent, command) -> dict[str, Any]:
+        from .scientific_multipart import operate
+
+        try:
+            return await asyncio.to_thread(operate, self._client, bucket=self.bucket,
+                storage_key=intent.storage_key, media_type=intent.media_type,
+                compression=intent.compression.value if intent.compression else None,
+                expected_size_bytes=intent.expected_size_bytes, command=command)
+        except ClientError as error:
+            if str(error.response.get("Error", {}).get("Code")) == "NoSuchUpload":
+                if command.action == "abort":
+                    return {"status": "aborted"}
+                if command.action == "complete":
+                    # A client may lose the successful completion response.
+                    stored = await self.inspect(intent.storage_key, max_bytes=intent.expected_size_bytes)
+                    if (stored.digest, stored.size_bytes, stored.media_type, stored.compression) == (
+                        intent.expected_digest, intent.expected_size_bytes, intent.media_type, intent.compression
+                    ):
+                        return {"status": "uploaded", "size_bytes": stored.size_bytes, "finalized": False}
+                raise ArtifactNotFoundError("multipart upload not found") from None
+            raise ArtifactStorageUnavailableError("multipart object operation failed") from error
+        except BotoCoreError as error:
+            raise ArtifactStorageUnavailableError("multipart object storage is unavailable") from error
+
     @staticmethod
     def _window(ttl: timedelta) -> tuple[int, datetime]:
         """Anchor the handle deadline to the same wall clock the SDK signs with.

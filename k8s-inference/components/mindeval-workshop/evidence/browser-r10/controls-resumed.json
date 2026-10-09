@@ -1,0 +1,23 @@
+{
+  "kind": "browser-controls-resumed",
+  "run_id": "e5239f6b-1b01-4e83-840f-1cbbe162e026",
+  "initial_attempt": {
+    "outcome": "test_deadline_exceeded",
+    "stage": "queued patient takeover",
+    "timeout_seconds": 90
+  },
+  "checks": [
+    "same queued run retained",
+    "Take over accepted",
+    "Speak as selected role accepted",
+    "patient typed message retained",
+    "Take over accepted",
+    "Speak as selected role accepted",
+    "clinician typed message retained",
+    "Resume model accepted",
+    "resume returns role to model",
+    "Abort accepted",
+    "abort and exclusion retained"
+  ],
+  "passed": true
+}

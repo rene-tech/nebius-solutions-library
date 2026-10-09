@@ -1,0 +1,107 @@
+{
+  "observed_at": "2026-09-16T16:24:31.005739+00:00",
+  "context": "fs2-storage-h100",
+  "namespace": "fs2-models",
+  "region": "eu-north1",
+  "capacity_type": "regular",
+  "preemptible": false,
+  "capacity_reason": "Existing free L40S; preemptible H100 nodes were NotReady at scheduling.",
+  "model_id": "mindguard-4b",
+  "cache_state": "warm-image-warm-weights",
+  "pod_name": "fs2-mindguard-r20260916-4b-697f946847-lj967",
+  "pod_uid": "5e48ddaa-d9bd-479e-96a5-404b81541d8e",
+  "node": "computeinstance-e00sa78kng1kwhej6q",
+  "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+  "runtime_args": [
+    "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+    "--served-model-name",
+    "mindguard-4b",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8000",
+    "--dtype",
+    "bfloat16",
+    "--max-model-len",
+    "4096",
+    "--tensor-parallel-size",
+    "1",
+    "--gpu-memory-utilization",
+    "0.80",
+    "--generation-config",
+    "vllm",
+    "--chat-template",
+    "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2/chat_template.jinja",
+    "--enforce-eager"
+  ],
+  "requested_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+  "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+  "gpu_csv_fields": "name,uuid,memory.total,memory.used,utilization.gpu,driver_version",
+  "gpu_csv": "NVIDIA L40S, GPU-5fad413e-4ffa-5ca2-281f-f532c1df2bae, 46068 MiB, 37255 MiB, 0 %, 580.173.02",
+  "software": {
+    "vllm": "0.28.0",
+    "torch": "2.13.0+cu130",
+    "transformers": "5.15.1",
+    "cuda": "13.0"
+  },
+  "clocks": {
+    "pod_created_at": "2026-09-16T16:22:00Z",
+    "ready_at": "2026-09-16T16:23:20Z",
+    "hydrate_started_at": "2026-09-16T16:22:01Z",
+    "hydrate_finished_at": "2026-09-16T16:22:02Z",
+    "runtime_started_at": "2026-09-16T16:22:03Z",
+    "pod_to_ready_seconds": 80.0,
+    "hydrate_seconds": 1.0,
+    "runtime_to_ready_seconds": 77.0
+  },
+  "events": [
+    {
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/fs2-mindguard-r20260916-4b-697f946847-lj967 to computeinstance-e00sa78kng1kwhej6q",
+      "first_at": "2026-09-16T16:22:00Z",
+      "last_at": "2026-09-16T16:22:00Z"
+    },
+    {
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod",
+      "first_at": "2026-09-16T16:22:01Z",
+      "last_at": "2026-09-16T16:22:01Z"
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "first_at": "2026-09-16T16:22:01Z",
+      "last_at": "2026-09-16T16:22:01Z"
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "first_at": "2026-09-16T16:22:01Z",
+      "last_at": "2026-09-16T16:22:01Z"
+    },
+    {
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod",
+      "first_at": "2026-09-16T16:22:02Z",
+      "last_at": "2026-09-16T16:22:02Z"
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "first_at": "2026-09-16T16:22:02Z",
+      "last_at": "2026-09-16T16:22:02Z"
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "first_at": "2026-09-16T16:22:03Z",
+      "last_at": "2026-09-16T16:22:03Z"
+    },
+    {
+      "reason": "Unhealthy",
+      "message": "Startup probe failed: Get \"http://10.6.109.223:8000/health\": dial tcp 10.6.109.223:8000: connect: connection refused",
+      "first_at": "2026-09-16T16:22:10Z",
+      "last_at": "2026-09-16T16:23:10Z"
+    }
+  ]
+}

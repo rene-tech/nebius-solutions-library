@@ -1,0 +1,1029 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "annotations": {
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:d6ee37506a17e644b59b17b2d7b09b5b2111d51ec9f845062f104a886f714b4e",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+                    "fs2-serve.nebius.ai/workload-role": "burst",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "1",
+                    "kueue.x-k8s.io/pod-suspending-parent": "deployment",
+                    "kueue.x-k8s.io/role-hash": "d20cc1f2",
+                    "kueue.x-k8s.io/workload": "pod-nemotron-speech-multilingual-0-6b-burst-h100-1x-9659dbdcd-gb46r-6af4e",
+                    "telemetry.fs2.nebius.ai/gpu-allocation-observed-at": "2026-09-16T11:42:52.829093Z",
+                    "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds": "1.0",
+                    "telemetry.fs2.nebius.ai/gpu-uuids": "[\"GPU-8d007e5a-5ee5-9d6c-7830-44ac2a0b089f\"]"
+                },
+                "creationTimestamp": "2026-09-16T11:42:52Z",
+                "deletionGracePeriodSeconds": 7230,
+                "deletionTimestamp": "2026-09-16T13:51:18Z",
+                "generateName": "nemotron-speech-multilingual-0-6b-burst-h100-1x-9659dbdcd-",
+                "generation": 3,
+                "labels": {
+                    "app.kubernetes.io/component": "model-runtime",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+                    "kueue.x-k8s.io/cluster-queue-name": "inference-accelerators",
+                    "kueue.x-k8s.io/local-queue-name": "inference-models",
+                    "kueue.x-k8s.io/managed": "true",
+                    "kueue.x-k8s.io/podset": "main",
+                    "kueue.x-k8s.io/priority-class": "standard",
+                    "kueue.x-k8s.io/queue-name": "inference-models",
+                    "pod-template-hash": "9659dbdcd",
+                    "topology.kubernetes.io/region": "eu-north1"
+                },
+                "name": "nemotron-speech-multilingual-0-6b-burst-h100-1x-9659dbdcd-gb46r",
+                "namespace": "fs2-models",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "ReplicaSet",
+                        "name": "nemotron-speech-multilingual-0-6b-burst-h100-1x-9659dbdcd",
+                        "uid": "8728c50e-9333-46ca-994d-26839bd42a10"
+                    }
+                ],
+                "resourceVersion": "44434652",
+                "uid": "97142f98-d058-4511-9bcb-aecd3a068671"
+            },
+            "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                    {
+                        "command": [
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                        ],
+                        "env": [
+                            {
+                                "name": "FS2_SPEECH_PROFILE_JSON",
+                                "value": "{\"model\":\"nemotron-speech-multilingual-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                                "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                                "valueFrom": {
+                                    "configMapKeyRef": {
+                                        "key": "artifact-hosts",
+                                        "name": "fs2-speech-runtime-settings"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "OMP_NUM_THREADS",
+                                "value": "2"
+                            },
+                            {
+                                "name": "TORCHINDUCTOR_CACHE_DIR",
+                                "value": "/cache/inductor"
+                            },
+                            {
+                                "name": "TRITON_CACHE_DIR",
+                                "value": "/cache/triton"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "imagePullPolicy": "IfNotPresent",
+                        "lifecycle": {
+                            "preStop": {
+                                "exec": {
+                                    "command": [
+                                        "python",
+                                        "-c",
+                                        "import time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain', method='POST'), timeout=5).read(); time.sleep(5)"
+                                    ]
+                                }
+                            }
+                        },
+                        "livenessProbe": {
+                            "failureThreshold": 4,
+                            "httpGet": {
+                                "path": "/healthz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 15,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "name": "runtime",
+                        "ports": [
+                            {
+                                "containerPort": 8000,
+                                "name": "http",
+                                "protocol": "TCP"
+                            }
+                        ],
+                        "readinessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/readyz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 3,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 2
+                        },
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "8Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                                "drop": [
+                                    "ALL"
+                                ]
+                            }
+                        },
+                        "startupProbe": {
+                            "failureThreshold": 120,
+                            "httpGet": {
+                                "path": "/readyz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 5,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "cache"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "nodeName": "computeinstance-e00j20a9hkb508cn4a",
+                "nodeSelector": {
+                    "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                    "accelerator.fs2.nebius/pool-id": "h100-1x",
+                    "capacity.fs2.nebius/gpu-count": "1",
+                    "capacity.fs2.nebius/type": "preemptible",
+                    "local-nvme.fs2.nebius/eligible": "false",
+                    "snapshot.fs2.nebius/eligible": "false",
+                    "topology.fs2.nebius/scope": "standalone",
+                    "workload.fs2.nebius/gpu": "true"
+                },
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {
+                    "fsGroup": 10001,
+                    "runAsGroup": 10001,
+                    "runAsNonRoot": true,
+                    "runAsUser": 10001
+                },
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 7230,
+                "tolerations": [
+                    {
+                        "effect": "NoSchedule",
+                        "key": "dedicated",
+                        "operator": "Equal",
+                        "value": "fs2-inference"
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoSchedule",
+                        "key": "nvidia.com/gpu",
+                        "operator": "Exists"
+                    }
+                ],
+                "volumes": [
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "8Gi"
+                        },
+                        "name": "cache"
+                    },
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "2Gi"
+                        },
+                        "name": "tmp"
+                    },
+                    {
+                        "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "1Gi"
+                        },
+                        "name": "shm"
+                    }
+                ]
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:42:53Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:42:52Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:45:34Z",
+                        "observedGeneration": 2,
+                        "status": "False",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:44:12Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:42:52Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:50:48Z",
+                        "message": "Taint manager: deleting due to NoExecute taint",
+                        "observedGeneration": 2,
+                        "reason": "DeletionByTaintManager",
+                        "status": "True",
+                        "type": "DisruptionTarget"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "2",
+                            "ephemeral-storage": "8Gi",
+                            "memory": "16Gi",
+                            "nvidia.com/gpu": "1"
+                        },
+                        "containerID": "containerd://788c4c3c6b46d58a516cb05c0d3eb30f9438b9e9ce0ba15beb7253df198f8e75",
+                        "image": "sha256:b4ad7e539f505b1a6cb47be0803a162e46cd24cd0e3139ae20fc4674fdc285f0",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "lastState": {},
+                        "name": "runtime",
+                        "ready": true,
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "8Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": true,
+                        "state": {
+                            "running": {
+                                "startedAt": "2026-09-16T11:42:53Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 10001,
+                                "supplementalGroups": [
+                                    10001
+                                ],
+                                "uid": 10001
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "cache"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "10.6.83.26",
+                "hostIPs": [
+                    {
+                        "ip": "10.6.83.26"
+                    }
+                ],
+                "observedGeneration": 2,
+                "phase": "Running",
+                "podIP": "10.6.67.244",
+                "podIPs": [
+                    {
+                        "ip": "10.6.67.244"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "startTime": "2026-09-16T11:42:52Z"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "annotations": {
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:d6ee37506a17e644b59b17b2d7b09b5b2111d51ec9f845062f104a886f714b4e",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+                    "fs2-serve.nebius.ai/workload-role": "burst",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "1",
+                    "kueue.x-k8s.io/pod-suspending-parent": "deployment",
+                    "kueue.x-k8s.io/role-hash": "d20cc1f2",
+                    "kueue.x-k8s.io/workload": "pod-nemotron-speech-multilingual-0-6b-burst-h100-1x-9659dbdcd-gg226-24168"
+                },
+                "creationTimestamp": "2026-09-16T11:50:48Z",
+                "generateName": "nemotron-speech-multilingual-0-6b-burst-h100-1x-9659dbdcd-",
+                "generation": 2,
+                "labels": {
+                    "app.kubernetes.io/component": "model-runtime",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/workload-role": "burst-h100-1x",
+                    "kueue.x-k8s.io/cluster-queue-name": "inference-accelerators",
+                    "kueue.x-k8s.io/local-queue-name": "inference-models",
+                    "kueue.x-k8s.io/managed": "true",
+                    "kueue.x-k8s.io/podset": "main",
+                    "kueue.x-k8s.io/priority-class": "standard",
+                    "kueue.x-k8s.io/queue-name": "inference-models",
+                    "pod-template-hash": "9659dbdcd"
+                },
+                "name": "nemotron-speech-multilingual-0-6b-burst-h100-1x-9659dbdcd-gg226",
+                "namespace": "fs2-models",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "ReplicaSet",
+                        "name": "nemotron-speech-multilingual-0-6b-burst-h100-1x-9659dbdcd",
+                        "uid": "8728c50e-9333-46ca-994d-26839bd42a10"
+                    }
+                ],
+                "resourceVersion": "44434698",
+                "uid": "b99e0c0e-b7fd-4465-8360-3bcf7305496d"
+            },
+            "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                    {
+                        "command": [
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                        ],
+                        "env": [
+                            {
+                                "name": "FS2_SPEECH_PROFILE_JSON",
+                                "value": "{\"model\":\"nemotron-speech-multilingual-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                                "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                                "valueFrom": {
+                                    "configMapKeyRef": {
+                                        "key": "artifact-hosts",
+                                        "name": "fs2-speech-runtime-settings"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "OMP_NUM_THREADS",
+                                "value": "2"
+                            },
+                            {
+                                "name": "TORCHINDUCTOR_CACHE_DIR",
+                                "value": "/cache/inductor"
+                            },
+                            {
+                                "name": "TRITON_CACHE_DIR",
+                                "value": "/cache/triton"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "imagePullPolicy": "IfNotPresent",
+                        "lifecycle": {
+                            "preStop": {
+                                "exec": {
+                                    "command": [
+                                        "python",
+                                        "-c",
+                                        "import time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain', method='POST'), timeout=5).read(); time.sleep(5)"
+                                    ]
+                                }
+                            }
+                        },
+                        "livenessProbe": {
+                            "failureThreshold": 4,
+                            "httpGet": {
+                                "path": "/healthz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 15,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "name": "runtime",
+                        "ports": [
+                            {
+                                "containerPort": 8000,
+                                "name": "http",
+                                "protocol": "TCP"
+                            }
+                        ],
+                        "readinessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/readyz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 3,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 2
+                        },
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "8Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                                "drop": [
+                                    "ALL"
+                                ]
+                            }
+                        },
+                        "startupProbe": {
+                            "failureThreshold": 120,
+                            "httpGet": {
+                                "path": "/readyz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 5,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "cache"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "nodeSelector": {
+                    "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                    "accelerator.fs2.nebius/pool-id": "h100-1x",
+                    "capacity.fs2.nebius/gpu-count": "1",
+                    "capacity.fs2.nebius/type": "preemptible",
+                    "local-nvme.fs2.nebius/eligible": "false",
+                    "snapshot.fs2.nebius/eligible": "false",
+                    "topology.fs2.nebius/scope": "standalone",
+                    "workload.fs2.nebius/gpu": "true"
+                },
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {
+                    "fsGroup": 10001,
+                    "runAsGroup": 10001,
+                    "runAsNonRoot": true,
+                    "runAsUser": 10001
+                },
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 7230,
+                "tolerations": [
+                    {
+                        "effect": "NoSchedule",
+                        "key": "dedicated",
+                        "operator": "Equal",
+                        "value": "fs2-inference"
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoSchedule",
+                        "key": "nvidia.com/gpu",
+                        "operator": "Exists"
+                    }
+                ],
+                "volumes": [
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "8Gi"
+                        },
+                        "name": "cache"
+                    },
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "2Gi"
+                        },
+                        "name": "tmp"
+                    },
+                    {
+                        "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "1Gi"
+                        },
+                        "name": "shm"
+                    }
+                ]
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:50:48Z",
+                        "message": "0/20 nodes are available: 1 Insufficient nvidia.com/gpu, 12 node(s) didn't match Pod's node affinity/selector, 7 node(s) had untolerated taint(s). no new claims to deallocate, preemption: 0/20 nodes are available: 1 No preemption victims found for incoming pod, 19 Preemption is not helpful for scheduling.",
+                        "observedGeneration": 2,
+                        "reason": "Unschedulable",
+                        "status": "False",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "phase": "Pending",
+                "qosClass": "Burstable"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "annotations": {
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:d6ee37506a17e644b59b17b2d7b09b5b2111d51ec9f845062f104a886f714b4e",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+                    "fs2-serve.nebius.ai/workload-role": "hot",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "0",
+                    "kueue.x-k8s.io/pod-suspending-parent": "deployment",
+                    "kueue.x-k8s.io/role-hash": "d74e2e31",
+                    "kueue.x-k8s.io/workload": "pod-nemotron-speech-multilingual-0-6b-hot-h100-reserved-8x-6f6549pt-0f82e",
+                    "telemetry.fs2.nebius.ai/gpu-allocation-observed-at": "2026-09-16T11:28:10.558158Z",
+                    "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds": "1.0",
+                    "telemetry.fs2.nebius.ai/gpu-uuids": "[\"GPU-facf5f91-1954-6615-4fbf-418efd69bd0c\"]"
+                },
+                "creationTimestamp": "2026-09-16T11:28:09Z",
+                "generateName": "nemotron-speech-multilingual-0-6b-hot-h100-reserved-8x-6f6cf45b5d-",
+                "generation": 2,
+                "labels": {
+                    "app.kubernetes.io/component": "model-runtime",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x",
+                    "kueue.x-k8s.io/cluster-queue-name": "inference-accelerators",
+                    "kueue.x-k8s.io/local-queue-name": "inference-models",
+                    "kueue.x-k8s.io/managed": "true",
+                    "kueue.x-k8s.io/podset": "main",
+                    "kueue.x-k8s.io/priority-class": "standard",
+                    "kueue.x-k8s.io/queue-name": "inference-models",
+                    "pod-template-hash": "6f6cf45b5d",
+                    "topology.kubernetes.io/region": "eu-north1"
+                },
+                "name": "nemotron-speech-multilingual-0-6b-hot-h100-reserved-8x-6f6549pt",
+                "namespace": "fs2-models",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "ReplicaSet",
+                        "name": "nemotron-speech-multilingual-0-6b-hot-h100-reserved-8x-6f6cf45b5d",
+                        "uid": "fb51af69-2418-4753-9a69-0ca81182e83c"
+                    }
+                ],
+                "resourceVersion": "44376868",
+                "uid": "c9e9b45c-af4c-44b0-99e5-b5605073d9bc"
+            },
+            "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                    {
+                        "command": [
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                        ],
+                        "env": [
+                            {
+                                "name": "FS2_SPEECH_PROFILE_JSON",
+                                "value": "{\"model\":\"nemotron-speech-multilingual-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                                "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                                "valueFrom": {
+                                    "configMapKeyRef": {
+                                        "key": "artifact-hosts",
+                                        "name": "fs2-speech-runtime-settings"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "OMP_NUM_THREADS",
+                                "value": "2"
+                            },
+                            {
+                                "name": "TORCHINDUCTOR_CACHE_DIR",
+                                "value": "/cache/inductor"
+                            },
+                            {
+                                "name": "TRITON_CACHE_DIR",
+                                "value": "/cache/triton"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "imagePullPolicy": "IfNotPresent",
+                        "lifecycle": {
+                            "preStop": {
+                                "exec": {
+                                    "command": [
+                                        "python",
+                                        "-c",
+                                        "import time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain', method='POST'), timeout=5).read(); time.sleep(5)"
+                                    ]
+                                }
+                            }
+                        },
+                        "livenessProbe": {
+                            "failureThreshold": 4,
+                            "httpGet": {
+                                "path": "/healthz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 15,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "name": "runtime",
+                        "ports": [
+                            {
+                                "containerPort": 8000,
+                                "name": "http",
+                                "protocol": "TCP"
+                            }
+                        ],
+                        "readinessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/readyz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 3,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 2
+                        },
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "8Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                                "drop": [
+                                    "ALL"
+                                ]
+                            }
+                        },
+                        "startupProbe": {
+                            "failureThreshold": 120,
+                            "httpGet": {
+                                "path": "/readyz",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 5,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "cache"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "nodeName": "computeinstance-e00p3acr87k9k4mckj",
+                "nodeSelector": {
+                    "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                    "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+                    "capacity.fs2.nebius/gpu-count": "8",
+                    "capacity.fs2.nebius/source": "capacity-block",
+                    "capacity.fs2.nebius/type": "regular",
+                    "local-nvme.fs2.nebius/eligible": "false",
+                    "snapshot.fs2.nebius/eligible": "false",
+                    "topology.fs2.nebius/scope": "standalone",
+                    "workload.fs2.nebius/gpu": "true"
+                },
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {
+                    "fsGroup": 10001,
+                    "runAsGroup": 10001,
+                    "runAsNonRoot": true,
+                    "runAsUser": 10001
+                },
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 7230,
+                "tolerations": [
+                    {
+                        "effect": "NoSchedule",
+                        "key": "dedicated",
+                        "operator": "Equal",
+                        "value": "fs2-inference"
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoSchedule",
+                        "key": "nvidia.com/gpu",
+                        "operator": "Exists"
+                    }
+                ],
+                "volumes": [
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "8Gi"
+                        },
+                        "name": "cache"
+                    },
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "2Gi"
+                        },
+                        "name": "tmp"
+                    },
+                    {
+                        "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "1Gi"
+                        },
+                        "name": "shm"
+                    }
+                ]
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:28:12Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:28:09Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:29:29Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:29:29Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T11:28:09Z",
+                        "observedGeneration": 2,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "2",
+                            "ephemeral-storage": "8Gi",
+                            "memory": "16Gi",
+                            "nvidia.com/gpu": "1"
+                        },
+                        "containerID": "containerd://8816bdb1dd1f22039a34ee8a4d305aaa206db97f508f6b09610585591f82fe9a",
+                        "image": "sha256:b4ad7e539f505b1a6cb47be0803a162e46cd24cd0e3139ae20fc4674fdc285f0",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "lastState": {},
+                        "name": "runtime",
+                        "ready": true,
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "8Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": true,
+                        "state": {
+                            "running": {
+                                "startedAt": "2026-09-16T11:28:11Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 10001,
+                                "supplementalGroups": [
+                                    10001
+                                ],
+                                "uid": 10001
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "cache"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "10.0.0.31",
+                "hostIPs": [
+                    {
+                        "ip": "10.0.0.31"
+                    }
+                ],
+                "observedGeneration": 2,
+                "phase": "Running",
+                "podIP": "10.6.122.196",
+                "podIPs": [
+                    {
+                        "ip": "10.6.122.196"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "startTime": "2026-09-16T11:28:09Z"
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

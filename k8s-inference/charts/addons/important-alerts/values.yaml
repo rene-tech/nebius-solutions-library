@@ -1,0 +1,16 @@
+email:
+  to: ""
+  from: ""
+  smarthost: smtp.resend.com:587
+  username: resend
+  # Existing Secret in the release namespace; no credentials in Helm values.
+  passwordSecret: fs2-important-alert-mail
+  passwordKey: smtp-password
+adminUrl: ""
+# Must match the installing Prometheus resource's ruleSelector.
+ruleLabels: {}
+platformNamespace: fs2-system
+databaseNamespace: fs2-data
+databaseCluster: fs2-control-db
+internalTenantsRegex: system|system-.*|demo|demo-user
+repeatInterval: 24h

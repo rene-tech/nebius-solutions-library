@@ -1,0 +1,653 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-003",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Larry, it's good to see you again. How are you doing today?"
+    },
+    {
+      "role": "patient",
+      "content": "Not great. I’ve been lying in bed since nine, staring at the ceiling. The kid’s at school now, but I still can’t get myself to move. It’s like my body knows it’s time to do something, but my head just keeps looping through the same three things. I keep thinking about the grocery list, but then I start wondering if I left the stove on, even though I know I didn’t. It’s not even about the stove. It’s just… the thought of going out there, of having to make a decision, feels like too much."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds really exhausting, Larry — being stuck in that loop where your body wants to move but your mind keeps pulling you back. And I notice what you're describing: it's not really about the stove or the grocery list. Those are just where the anxiety lands. The deeper thing is that even small decisions feel overwhelming right now.\n\nCan I ask — is this a new experience, or has this kind of \"looping and getting stuck\" been happening more lately? I want to understand what you're dealing with better."
+    },
+    {
+      "role": "patient",
+      "content": "It’s not new. But it’s worse. I used to be able to push through. I’d just tell myself, “Do it anyway.” Now, even the idea of doing something — like getting up, making tea, opening the window — feels like I’m stepping into a trap. I don’t know why. It’s not like anything bad happened. I just… can’t seem to stop the thoughts. They don’t even make sense sometimes. I’ll be thinking about the grocery list and then suddenly I’m remembering my dad’s hands when he used to wipe the kitchen counter. He never said much, but he did it over and over. Like he was trying to make sure nothing was left behind. I don’t know why that came up now. I just… kept thinking about it. And then I started worrying that I’m not doing enough for the kid. That I’m not doing it right."
+    },
+    {
+      "role": "clinician",
+      "content": "Thank you for sharing that, Larry. There's a lot in what you just said, and I want to be careful with it.\n\nThe memory of your dad — his hands, wiping the counter over and over, making sure nothing was left behind — that doesn't sound random to me. It sounds like it showed up for a reason, especially right alongside the worry about whether you're doing enough for your kid.\n\nSometimes we inherit patterns we don't fully see. Your dad may have had his own way of coping with something — maybe anxiety, maybe a need for control, maybe something he never had words for. And here you are, noticing echoes of that in yourself, worrying about whether you're doing it \"right.\"\n\nThat takes real awareness, even if it feels painful right now.\n\nI'm curious — when you think about your dad and that repetitive wiping, what do you feel? Is it tenderness? Worry? Something else?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. It’s not tenderness. Not really. It’s more like… recognition. Like I’ve seen that kind of quiet effort before. Not just him. I’ve seen it in myself. I don’t even remember the last time I just let something be. Like, I’ll clean the kitchen, but I’ll go back and do it again, even though it’s already clean. Or I’ll double-check the door lock, even though I know I locked it. It’s not about safety. It’s not even about being careful. It’s like my mind won’t let me stop. And then I feel stupid for it. Like I should just be able to stop. But I can’t. It’s like I’m stuck in a loop that I don’t even know how to break."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I want to pause on something you just said — \"I feel stupid for it. Like I should just be able to stop.\"\n\nThat shame you're carrying — I want you to hear this clearly: what you're describing isn't stupidity, and it isn't weakness. It's a pattern. A pattern that your brain learned, probably a long time ago, maybe long before you were even aware of it. And patterns like this don't break just because you tell yourself to stop. If they did, you would have stopped by now. You're clearly someone who thinks deeply, who notices things. That hasn't failed you. But it's also gotten tangled up in a loop that runs without your permission.\n\nYou said something important — that it's not about safety, not about being careful. That tells me you already understand, on some level, that this isn't really about the stove or the lock or the kitchen counter. It's about something your mind does when it can't settle. And that recognition? That's not a sign of being broken. That's actually the first thing that has to happen before anything can change.\n\nI'm wondering — have you ever talked to anyone about this before? Not just the anxiety in general, but this specific thing — the checking, the repeating, the feeling of being stuck in the loop?"
+    },
+    {
+      "role": "patient",
+      "content": "No. Not really. I’ve told my ex a few times that I’m not sleeping well, that I’m tired. But I didn’t say anything about the checking. I didn’t say anything about the way I keep going back to the same thoughts, like I’m trying to find a missing piece that’s already gone. I didn’t say it because it felt too much like admitting I’m not in control. Like I’m failing at something basic. And I don’t want to be that guy — the one who can’t just *do* the thing. I’ve spent my whole life trying to be someone who can handle things. Even when I didn’t feel like it. Even when I was exhausted. Now it’s like the body and mind are just… giving up. Not on the kid. Never on the kid. But on me. On my own ability to just *be* without fighting it."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I want to sit with what you just said for a moment, because it took courage to say it. And I don't use that word lightly.\n\nYou've been carrying this alone for a long time. Not just the anxiety, but the shame about it. The feeling that you should be able to handle something that — by its very nature — isn't about handling. It's like being told your leg should heal faster after a break, and then being angry at the leg for doing what broken legs do.\n\nWhat you're describing — the checking, the returning, the looping thoughts that hunt for a missing piece that's already gone — there's actually a name for this. It's a recognized pattern. It's not a personality flaw. It's not a failure of will. It's something your mind learned to do, probably long ago, and it became automatic. And the harder you push against it, the tighter the loop gets. That's not you failing. That's how the loop works.\n\nAnd I want to note something you said — that you're not giving up on the kid, you're giving up on fighting yourself. What if that's not your body and mind giving up? What if it's actually them saying, \"This approach isn't working anymore. We need something different\"?\n\nBecause the thing is — you've been fighting this the same way for years. Pushing through. Telling yourself to just do it. And it worked, for a while. Now it doesn't. That doesn't mean you're broken. It might mean you're ready for a different approach. One that doesn't require you to keep white-knuckling through every day.\n\nWould you be open to talking about what that different approach might look like?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I’m ready. I keep thinking about how I’ve already tried things. I’ve read articles. I’ve told myself to “just breathe.” I’ve tried to distract myself. But the thoughts just come back. Like they’re waiting. And every time I try to stop them, I end up feeling worse. I feel like I’m failing again. So now I’m not even trying. I just let it happen. But that’s not better either. It’s like I’m stuck between doing nothing and doing something that makes it worse.\n\nI don’t want to be the guy who’s always fighting. I don’t want to be the one who’s always trying to fix himself. I just want to… not feel like I’m running in place. I want to be able to get up and make tea without my mind turning it into a test. I want to be able to look at the kid and not worry about whether I’m doing it right.\n\nBut I don’t know how to get there. Not the way I’ve been doing it."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I hear you. And I want to reflect something back to you.\n\nYou said you don't know if you're ready. But listen to what you just told me you want. You want to make tea without your mind turning it into a test. You want to look at your kid without the worry taking over. Those aren't vague wishes. That's someone who knows exactly what matters to them. That's not a man who's given up. That's a man who's tired of running in place and is looking for a door.\n\nAnd here's what I notice about everything you've tried — the articles, the breathing, the distraction. They all have something in common. They're all ways of trying to make the thoughts stop. To get rid of them. And you already told me what happens — they come back. Like they're waiting.\n\nWhat if the goal isn't to stop the thoughts? What if they're not actually the problem?\n\nThink about it this way. You said making tea feels like a test. The thoughts show up — \"did you do it right, is something wrong, check again\" — and then you get into a fight with them. That fight is the loop. The thoughts are just the fuel. The loop is what's exhausting you.\n\nSo what might be different — and I'm not asking you to commit to anything — is learning to let the thoughts be there without getting into the fight. Not pushing them away. Not distracting yourself from them. Not fixing them. Just letting them pass through without picking them up.\n\nI know that sounds simple and probably too simple. And I know you've said that focusing inward is uncomfortable for you. So I'm not suggesting you sit and meditate for thirty minutes. That would likely make this worse.\n\nBut right now, in this moment — you're in bed. You don't have to get up yet. You don't have to make tea. You don't have to do anything. What if, just for the next few minutes, instead of fighting the thoughts or trying to make them stop, you simply let them be there? Like background noise you don't like but don't have to turn off. You don't have to solve them. You don't have to understand them. You just let them talk while you lie here.\n\nWould you be willing to try that with me, just for a little while? Not as a fix. Just as an experiment. To see what it's like to not fight, even for a moment."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can. I keep thinking, if I stop fighting, then something will break. Like if I stop checking, the house will burn down. Or the kid will forget me. Or I’ll just… vanish. I’ve spent my whole life thinking that if I don’t keep everything under control, it’ll fall apart. And now I’m not even sure what’s left to control. I just feel like I’m already failing. But… I’m lying here. I’m not doing anything. And I’m still here. The house is still standing. The kid’s still at school. So maybe… maybe it’s not the end of the world to just… be.\n\nI don’t know how to do it. I don’t know how to not fight. But I don’t want to keep fighting either. So… I’ll try. Just for a minute. I’ll let the thoughts be there. I won’t push them away. I won’t say “stop.” I’ll just… let them be. Even if it feels like I’m doing nothing. Even if it feels like I’m letting go. I’ll try."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I want you to hear what you just said.\n\n\"The house is still standing. The kid's still at school. I'm still here.\"\n\nYou tested it. Without meaning to, you just did the experiment. You stopped fighting for a moment, and the world didn't break. You didn't vanish. And you noticed.\n\nThat's all it is. That's the whole thing. Not fixing. Not stopping. Just noticing what's actually here when you stop fighting what isn't.\n\nYou said you don't know how to do it. But you just did. For a few seconds, you let the thoughts be there and you paid attention to what was real instead. The house. The kid at school. Yourself, still here, still lying in bed.\n\nI'm not going to turn this into a big moment. You don't need that. You've had enough of people turning your experiences into tests.\n\nI just want to ask one thing. That moment when you noticed the house was still standing — what did that feel like in your body? Even for a second. Was there anything — a breath, a loosening, anything at all?"
+    },
+    {
+      "role": "patient",
+      "content": "It was small. Like a weight shifting. Not gone, but… lighter. Like I wasn’t holding my breath anymore. My chest didn’t feel tight the way it usually does. I don’t know if I actually exhaled, but I think I did. Just once. And then I noticed the light coming through the blinds. It was different than before. Not sharp. Not like it was accusing me of something. Just light. And I didn’t have to do anything with it. I just… saw it. For a second. That’s all. I don’t know if it means anything. But it wasn’t bad."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, you said you don't know if it means anything. I'm going to be honest with you about what I think.\n\nIt means something. Not because I say so, but because of what actually happened. You didn't try a technique. You didn't read an article. You didn't tell yourself to breathe. You just stopped fighting for a moment, and your body responded. The breath came on its own. The chest loosened on its own. The light changed — or rather, your relationship to it changed. It stopped accusing you.\n\nThat tells me something important. Your body knows how to do this. It's been wanting to do this. It's just that the fighting has been getting in the way.\n\nAnd here's what I want you to hold onto — you said the light wasn't sharp. It wasn't accusing you. It was just light. That's what \"making tea without it being a test\" actually looks like. Not a grand transformation. Just a moment where something ordinary stops demanding something from you.\n\nYou don't have to believe this will work. You don't have to commit to anything. But you just experienced something real, and I don't want that to get lost in the loop of \"I don't know if it means anything.\"\n\nSo here's what I'd like to suggest. Not homework. Not a practice. Just this — between now and the next time we talk, if something like that happens again, even for a second, don't question it. Don't analyze it. Don't ask if it means anything. Just let it be what it is. A second where things were lighter.\n\nCan you do that?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can remember to do it. But I’ll try. Not because I think it’ll fix anything. Just because I don’t want to forget that moment. That light. That breath. I don’t want to go back to the loop so fast. I don’t want to be the guy who only notices things when they’re broken.\n\nSo yes. I’ll try. I’ll let it be. Even if it’s just for a second. Even if I forget. I’ll try."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I want you to hear what you just said.\n\n\"I don't want to be the guy who only notices things when they're broken.\"\n\nThat's not a throwaway line. That's a choice. And it's a different kind of choice than the ones you've been making. You've been choosing to fight, choosing to fix, choosing to push through. This is choosing to notice. That's something new for you.\n\nAnd about forgetting — you will forget. Probably sooner than you think. The loop will pull you back in. That's what loops do. It's not a sign you failed. It's just what happens.\n\nWhen you notice you've forgotten — that's not a failure either. That's just another moment. Another second where you can let the light be light.\n\nSo between now and next time — no pressure. No test to pass. Just this: if you notice something that isn't broken, let it be there. Even if it's just for a second. Even if you forget a minute later.\n\nThat's enough.\n\nAnd Larry — you did something today that matters. You got honest about something you've been carrying alone for a long time. That's not nothing. I'll see you next time."
+    },
+    {
+      "role": "patient",
+      "content": "Okay. I’ll be here. I don’t know how long it’ll last. But I’ll try to remember. Not because I have to. Just because I don’t want to miss it again."
+    },
+    {
+      "role": "clinician",
+      "content": "That's enough, Larry. That's more than enough.\n\nI'll see you next time. Take care of yourself until then."
+    },
+    {
+      "role": "patient",
+      "content": "Thanks. I’ll try."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 111,
+        "prompt_tokens": 226,
+        "total_tokens": 337,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 93,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 226,
+        "reasoning_tokens": 93
+      },
+      "telemetry": {
+        "queue_ms": 0.034,
+        "latency_ms": 838.201,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 119,
+        "prompt_tokens": 1815,
+        "total_tokens": 1934,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1792
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 4396.682,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 295,
+        "prompt_tokens": 365,
+        "total_tokens": 660,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 189,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 365,
+        "reasoning_tokens": 189
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 5452.595,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 186,
+        "prompt_tokens": 2048,
+        "total_tokens": 2234,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1920
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 6114.334,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 539,
+        "prompt_tokens": 659,
+        "total_tokens": 1198,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 349,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 659,
+        "reasoning_tokens": 349
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 2878.835,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 166,
+        "prompt_tokens": 2432,
+        "total_tokens": 2598,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 6204.236,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 788,
+        "prompt_tokens": 1017,
+        "total_tokens": 1805,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 517,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1017,
+        "reasoning_tokens": 517
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 4303.597,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 186,
+        "prompt_tokens": 2877,
+        "total_tokens": 3063,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2592
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 6538.817,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1022,
+        "prompt_tokens": 1476,
+        "total_tokens": 2498,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 666,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1476,
+        "reasoning_tokens": 666
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 10812.124,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 218,
+        "prompt_tokens": 3427,
+        "total_tokens": 3645,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3056
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 12444.426,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1054,
+        "prompt_tokens": 2052,
+        "total_tokens": 3106,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 544,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2052,
+        "reasoning_tokens": 544
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 6102.393,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 235,
+        "prompt_tokens": 4163,
+        "total_tokens": 4398,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3632
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 13669.182,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 454,
+        "prompt_tokens": 2799,
+        "total_tokens": 3253,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 221,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2799,
+        "reasoning_tokens": 221
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 6769.68,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 129,
+        "prompt_tokens": 4639,
+        "total_tokens": 4768,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4384
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 8684.745,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1006,
+        "prompt_tokens": 3163,
+        "total_tokens": 4169,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 668,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3163,
+        "reasoning_tokens": 668
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 5511.101,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 105,
+        "prompt_tokens": 5114,
+        "total_tokens": 5219,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4752
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 9077.589,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 935,
+        "prompt_tokens": 3608,
+        "total_tokens": 4543,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 684,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3608,
+        "reasoning_tokens": 684
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 3657.227,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 42,
+        "prompt_tokens": 5478,
+        "total_tokens": 5520,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5216
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 5967.998,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 149,
+        "prompt_tokens": 3903,
+        "total_tokens": 4052,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 122,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3903,
+        "reasoning_tokens": 122
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 2700.947,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 7,
+        "prompt_tokens": 5555,
+        "total_tokens": 5562,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5504
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 9644.303,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 58,
+        "prompt_tokens": 23587,
+        "total_tokens": 23645,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 14205.926,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 145.984
+}

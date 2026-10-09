@@ -14,6 +14,7 @@ from .models import Principal, Scope
 from .store import ConflictError, NotFoundError
 from .user_models import InferenceUser, UserAppChoice, UserCreate, UserDetail, UserList, UserPatch, UserRow, owner_id
 from .user_repository import UserRepository
+from .user_storage import UserStorageService
 
 
 class UserService:
@@ -27,6 +28,7 @@ class UserService:
         self.repository = repository
         self.access = access
         self.app_catalog = app_catalog
+        self.storage: UserStorageService | None = None
 
     async def apps(self) -> list[UserAppChoice]:
         return await self.app_catalog() if self.app_catalog else []
@@ -75,7 +77,12 @@ class UserService:
         keys = await self.access._project_keys(
             [token for token in tokens if token.principal_id == user.principal_id], tenant_id=user.tenant_id
         )
-        return UserDetail(user=await self._row(user, context), keys=keys, apps=await self.apps())
+        return UserDetail(
+            user=await self._row(user, context),
+            keys=keys,
+            apps=await self.apps(),
+            storage=await self.storage.view(user.tenant_id, user.principal_id) if self.storage else None,
+        )
 
     async def create(self, identity: OperatorPrincipal, request: UserCreate) -> InferenceUser:
         await self.access.authorize(identity, OperatorRole.OPERATOR, action="user.create", tenant_id=request.tenant_id)

@@ -1,0 +1,24 @@
+[
+  {
+    "adapter": "cosmos", "cache_condition": "uncontrolled", "case_id": "01-cosmos3-nano",
+    "fixture_ref": "catalog/runtime/validators/assets/cosmos3-nano.json",
+    "fixture_sha256": "467bfa7484ec20dc1fc30a109b8e0e7e23d3b443061f1c0a9b659dfce30c82de",
+    "model_id": "cosmos3-nano", "repetitions": 3, "workload_class": "two-256p-25-frame-videos"
+  },
+  {
+    "adapter": "bio-pair", "cache_condition": "uncontrolled", "case_id": "02-diffdock",
+    "fixture_ref": "diffdock", "fixture_sha256": "5c62b4e9d12d5b5c87eb63bba876c10bd0e36935bc49b0dc72738ba49c181bef",
+    "model_id": "diffdock", "repetitions": 3, "workload_class": "two-native-semantic-requests"
+  },
+  {
+    "adapter": "bio-pair", "cache_condition": "uncontrolled", "case_id": "03-genmol",
+    "fixture_ref": "genmol", "fixture_sha256": "be58de2db437f1bf9331d9a6cb134ef9b9460e309d114224d73e271a38d66f8d",
+    "model_id": "genmol", "repetitions": 3, "workload_class": "two-native-semantic-requests"
+  },
+  {
+    "adapter": "scientific", "cache_condition": "uncontrolled", "case_id": "04-boltzgen",
+    "fixture_ref": "models/cancer-immunotherapy/runtime-images/boltzgen/activation/fragment.json",
+    "fixture_sha256": "7f64733bba570421f2e97eee7eb14fb0898fcfc57fbc275174d59b9fd4b74bcb",
+    "model_id": "boltzgen", "repetitions": 3, "workload_class": "committed-scientific-fixture"
+  }
+]

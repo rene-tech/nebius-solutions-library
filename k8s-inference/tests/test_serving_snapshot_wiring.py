@@ -39,3 +39,12 @@ def test_snapshot_registry_and_dependencies_reach_the_existing_controller():
     assert "kubernetes_persistent_volume_claim_v1.serving_snapshots" in helm
     for hardcoded_gpu in ("h100", "b300", "sm90"):
         assert hardcoded_gpu not in resources.lower()
+
+
+def test_versioned_log_wrapper_does_not_rewrite_historical_bundle_bytes():
+    resources = (ROOT / "stages/workloads/serving_snapshots.tf").read_text()
+    assert 'for filename in ["serving_entrypoint.py", "serving_entrypoint_logging.py"]' in resources
+    assert "lookup(local.serving_snapshot_entrypoint_sources, bundle.entrypoint_sha256" in resources
+    assert "contains(keys(local.serving_snapshot_entrypoint_sources), bundle.entrypoint_sha256)" in resources
+    source = ROOT / "models/scientific-snapshot"
+    assert (source / "serving_entrypoint.py").read_bytes() != (source / "serving_entrypoint_logging.py").read_bytes()

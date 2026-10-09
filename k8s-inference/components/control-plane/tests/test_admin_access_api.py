@@ -472,7 +472,11 @@ def test_tenant_and_role_isolation_key_disclosure_rotation_and_cross_origin(
     assert issued.text.count(secret) == 1
     assert secret not in listed.text
     assert "secret" not in listed.json()["data"]["items"][0]
-    assert listed.json()["data"]["items"][0]["usage"]["estimated_gpu_seconds"]["state"] == "estimated"
+    key_projection = listed.json()["data"]["items"][0]
+    assert key_projection["usage"]["conservative_attempted_gpu_seconds"]["state"] == "estimated"
+    assert "gpu_seconds_used" not in key_projection
+    assert "admission_budget_consumed_gpu_seconds" in key_projection
+    assert "not measured" in key_projection["usage"]["conservative_attempted_gpu_seconds"]["reason"]
     assert listed.json()["data"]["items"][0]["usage"]["input_tokens"]["state"] == "available"
     assert tenant_mismatch.status_code == viewer_issue.status_code == cross_origin.status_code == 403
     assert len(runtime.store.tokens) == 2

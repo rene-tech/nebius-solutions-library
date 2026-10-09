@@ -169,12 +169,40 @@ def gateway_deployment(documents: list[dict]) -> dict:
     )
 
 
+def test_workbench_lifecycle_is_explicit_and_preserves_owner_holds() -> None:
+    defaults = gateway_deployment(render())["spec"]["template"]["spec"]["containers"][0]["env"]
+    values = {item["name"]: item.get("value") for item in defaults}
+    assert values["FS2_WORKBENCH_EXECUTOR_ENABLED"] == "false"
+    assert json.loads(values["FS2_WORKBENCH_RELEASES"]) == {}
+    assert json.loads(values["FS2_WORKBENCH_PROTECTED_ENDPOINTS"]) == []
+    selected = gateway_deployment(render(
+        "--set", "workbenches.executorEnabled=true",
+        "--set-string", "workbenches.releases.candidate=registry.example/client@" + TEST_DIGEST,
+        "--set", "workbenches.protectedEndpoints[0]=aiendpoint-held",
+    ))["spec"]["template"]["spec"]["containers"][0]["env"]
+    values = {item["name"]: item.get("value") for item in selected}
+    assert values["FS2_WORKBENCH_EXECUTOR_ENABLED"] == "true"
+    assert json.loads(values["FS2_WORKBENCH_RELEASES"]) == {"candidate": "registry.example/client@" + TEST_DIGEST}
+    assert json.loads(values["FS2_WORKBENCH_PROTECTED_ENDPOINTS"]) == ["aiendpoint-held"]
+
+
 def gateway_network_policy(documents: list[dict]) -> dict:
     return next(
         document
         for document in documents
         if document["kind"] == "NetworkPolicy" and document["metadata"]["name"] == "fs2-serve-control-plane"
     )
+
+
+@pytest.mark.parametrize("extra,limit", [((), "512Mi"), (("--set", "temporaryStorage.sizeLimit=1Gi"), "1Gi")])
+def test_gateway_has_writable_bounded_multipart_scratch(extra, limit):
+    pod = gateway_deployment(render(*extra))["spec"]["template"]["spec"]
+    runtime = next(container for container in pod["containers"] if container["name"] == "control-plane")
+    assert runtime["securityContext"]["readOnlyRootFilesystem"] is True
+    assert {"name": "upload-tmp", "mountPath": "/tmp"} in runtime["volumeMounts"]  # noqa: S108 - manifest assertion
+    assert next(volume for volume in pod["volumes"] if volume["name"] == "upload-tmp")["emptyDir"] == {
+        "sizeLimit": limit
+    }
 
 
 def application_route(documents: list[dict]) -> dict:
@@ -300,6 +328,12 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     container = pod_spec["containers"][0]
     assert daemonset["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
     assert pod_spec["nodeSelector"] == {"nebius.com/gpu": "true"}
+    # A stopped preemptible GPU remains registered while its provider replaces
+    # it. Do not count it as an eligible observer rollout target by tolerating
+    # every NoSchedule taint (including provider shutdown and unreachable).
+    assert pod_spec["tolerations"] == [
+        {"key": "dedicated", "operator": "Exists", "effect": "NoSchedule"}
+    ]
     assert container["args"] == ["gpu-allocation-observer"]
     environment = {item["name"]: item.get("value") for item in container["env"]}
     assert environment["FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES"] == '["fs2-academic-poc","fs2-models"]'
@@ -345,6 +379,41 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         for document in legacy_documents
         if document["kind"] == "Role" and document["metadata"]["name"] == legacy_daemonset["metadata"]["name"]
     } == {"legacy-models"}
+
+
+def test_gpu_observer_accepts_explicit_pool_tolerations_without_a_wildcard() -> None:
+    documents = render(
+        "--set", "runtimeAttribution.enabled=true",
+        "--set-json",
+        'runtimeAttribution.tolerations=[{"key":"nvidia.com/gpu","operator":"Exists","effect":"NoSchedule"}]',
+    )
+    daemonset = next(document for document in documents if document["kind"] == "DaemonSet")
+    assert daemonset["spec"]["template"]["spec"]["tolerations"] == [
+        {"key": "nvidia.com/gpu", "operator": "Exists", "effect": "NoSchedule"}
+    ]
+
+
+def test_pinned_gpu_observer_does_not_roll_for_gateway_only_image_change() -> None:
+    observer_digest = "sha256:" + "a" * 64
+    override = "registry.example/observer@" + observer_digest
+    before, after = (
+        render("--set", "runtimeAttribution.enabled=true", "--set", f"runtimeAttribution.image={override}",
+               "--set", "image.digest=sha256:" + digit * 64)
+        for digit in ("b", "c")
+    )
+    old = next(document for document in before if document["kind"] == "DaemonSet")
+    new = next(document for document in after if document["kind"] == "DaemonSet")
+    assert old == new
+    pod = new["spec"]["template"]
+    assert pod["spec"]["containers"][0]["image"] == override
+    assert pod["metadata"]["annotations"]["fs2.nebius.ai/image-digest"] == observer_digest
+
+
+def test_unpinned_gpu_observer_retains_gateway_image_default() -> None:
+    documents = render("--set", "runtimeAttribution.enabled=true")
+    pod = next(document for document in documents if document["kind"] == "DaemonSet")["spec"]["template"]
+    expected_digest = pod["metadata"]["annotations"]["fs2.nebius.ai/image-digest"]
+    assert pod["spec"]["containers"][0]["image"].endswith("@" + expected_digest)
 
 
 def test_admin_console_renders_digest_bound_workload_route_and_network_boundary() -> None:
@@ -772,6 +841,7 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
     assert "secretKeyRef" in database["valueFrom"]
     evidence_env = next(item for item in pod["containers"][0]["env"] if item["name"] == "FS2_EVIDENCE_ROOT")
     assert evidence_env["value"] == "/etc/fs2-serve/evidence"
+    assert "FS2_CUSTOMER_READINESS_VERDICTS_FILE" not in {item["name"] for item in pod["containers"][0]["env"]}
     assert "FS2_MIGRATIONS_DIR" not in {item["name"] for item in pod["containers"][0]["env"]}
     evidence_volume = next(item for item in pod["volumes"] if item["name"] == "evidence")
     assert evidence_volume["persistentVolumeClaim"]["readOnly"] is True
@@ -839,6 +909,26 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
     assert all(document["kind"] != "Secret" for document in documents)
     assert "private-key" not in rendered.lower() and "private_key" not in rendered.lower()
     assert "Kueue" not in rendered and "kueue" not in rendered
+
+
+def test_customer_readiness_verdict_index_is_an_explicit_read_only_evidence_input() -> None:
+    documents = render("--set", "catalog.customerReadinessConfigMapName=fs2-customer-readiness")
+    pod = gateway_deployment(documents)["spec"]["template"]["spec"]
+    env = {item["name"]: item for item in pod["containers"][0]["env"]}
+    assert env["FS2_CUSTOMER_READINESS_VERDICTS_FILE"]["value"] == (
+        "/etc/fs2-serve/customer-readiness/verdict-index.json"
+    )
+    readiness = next(item for item in pod["containers"][0]["volumeMounts"] if item["name"] == "customer-readiness")
+    assert readiness == {
+        "name": "customer-readiness",
+        "mountPath": "/etc/fs2-serve/customer-readiness",
+        "readOnly": True,
+    }
+    volume = next(item for item in pod["volumes"] if item["name"] == "customer-readiness")
+    assert volume["configMap"] == {
+        "name": "fs2-customer-readiness",
+        "items": [{"key": "verdict-index.json", "path": "verdict-index.json"}],
+    }
 
 
 def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_the_gateway_chart() -> None:
@@ -1075,6 +1165,7 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
             "verbs": ["get", "create", "delete"],
         },
         {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+        {"apiGroups": [""], "resources": ["events"], "verbs": ["list"]},
         {"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]},
         {"apiGroups": ["kueue.x-k8s.io"], "resources": ["workloads"], "verbs": ["get", "list"]},
     ]
@@ -1158,12 +1249,15 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         for item in named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]["containers"][0]["env"]
     }
     assert gateway_env["FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL"]["value"] == (
+        "http://fs2-serve-control-plane.fs2-system.svc:8080"
+    )
+    assert gateway_env["FS2_SCIENTIFIC_BATCH_INTERNAL_FALLBACK_API_URL"]["value"] == (
         "http://fs2-serve-control-plane-scientific-artifacts.fs2-system.svc:8080"
     )
     flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]
     assert flavor_role["rules"] == [
         {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]},
-        {"apiGroups": [""], "resources": ["nodes"], "verbs": ["get"]},
+        {"apiGroups": [""], "resources": ["nodes"], "verbs": ["get", "list"]},
     ]
     assert named[("ClusterRoleBinding", "fs2-serve-control-plane-scientific-batch-flavors")]["subjects"] == [
         {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
@@ -1267,6 +1361,22 @@ def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> 
     rendered_sha256 = hashlib.sha256(rendered_bytes).hexdigest()
     assert rendered["metadata"]["annotations"]["fs2-serve.nebius.ai/execution-map-sha256"] == rendered_sha256
     profiles_by_id = {item["model_id"]: item for item in profiles}
+    rendered_map = json.loads(rendered_bytes)
+    assert rendered_map == execution_map
+    map_rows = {item["model_id"]: item for item in rendered_map["models"]}
+    normal_sha256 = hashlib.sha256(json.dumps(
+        {"schema": rendered_map["schema"], "models": rendered_map["models"]},
+        sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest()
+    # An image-only successor must not relabel unchanged siblings' historical
+    # acceptance. Their retained projection must hash the actual rendered rows.
+    baselines = rendered_map.get("qualification_baselines", {})
+    for digest, model_ids in baselines.items():
+        projection = {"schema": rendered_map["schema"], "models": [map_rows[mid] for mid in model_ids]}
+        projection_sha256 = hashlib.sha256(
+            json.dumps(projection, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        assert projection_sha256 == digest
     for map_model in execution_map["models"]:
         profile = profiles_by_id[map_model["model_id"]]
         identity = profile["execution_identity"]
@@ -1277,7 +1387,8 @@ def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> 
             assert map_model["execution_identity_sha256"] is None
             continue
 
-        assert profile["qualification"]["execution_map_sha256"] == rendered_sha256
+        qualification_sha256 = profile["qualification"]["execution_map_sha256"]
+        assert qualification_sha256 == normal_sha256 or map_model["model_id"] in baselines.get(qualification_sha256, [])
         identity_payload = {key: value for key, value in identity.items() if key != "execution_identity_sha256"}
         expected_identity = hashlib.sha256(
             json.dumps(identity_payload, separators=(",", ":"), sort_keys=True).encode()
@@ -1912,6 +2023,29 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     ]
 
 
+def test_prometheus_rule_selector_labels_preserve_defaults_and_only_change_rule_metadata() -> None:
+    baseline = render()
+    configured = render("--set", "prometheusRule.labels.release=fs2-unit-monitoring")
+    original_rule = next(document for document in baseline if document["kind"] == "PrometheusRule")
+    selected_rule = next(document for document in configured if document["kind"] == "PrometheusRule")
+    assert "release" not in original_rule["metadata"]["labels"]
+    assert selected_rule["metadata"]["labels"] == {
+        **original_rule["metadata"]["labels"],
+        "release": "fs2-unit-monitoring",
+    }
+    original_rule["metadata"]["labels"]["release"] = "fs2-unit-monitoring"
+    assert configured == baseline
+
+    # Workloads must derive the selector label from the same run-scoped
+    # monitoring release identity as foundation, never a customer literal.
+    workloads = (SOLUTION_ROOT / "stages/workloads/control_plane.tf").read_text()
+    foundation = (SOLUTION_ROOT / "stages/foundation/releases.tf").read_text()
+    assert re.search(r'prometheusRule\s*=\s*\{.*?release\s*=\s*"fs2-\$\{var.run_id\}-monitoring"', workloads, re.S)
+    assert re.search(
+        r'resource "helm_release" "monitoring"\s*\{\s*name\s*=\s*"fs2-\$\{var.run_id\}-monitoring"', foundation
+    )
+
+
 def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() -> None:
     documents = render()
     prometheus_rule = next(document for document in documents if document["kind"] == "PrometheusRule")
@@ -1925,6 +2059,8 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
         "Fs2ServeQueueDepthHigh",
         "Fs2ServeSyncWaitSaturation",
         "Fs2ServeAuthenticationFailureSpike",
+        "Fs2ServePublicSemanticFailureSpike",
+        "Fs2ServeCustomerOperationFailureRate",
         "Fs2ServeLifecycleReconciliationFailed",
         "Fs2ServeLifecycleOccupancyUnclassified",
         "Fs2ServePublicCertificateNotReady",
@@ -1937,6 +2073,7 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
     assert 'fs2_serve_operations{state=\\"queued\\"}' in rendered
     assert "fs2_serve_sync_wait_saturated_total" in rendered
     assert "fs2_serve_authentication_failures_total" in rendered
+    assert "fs2_serve_public_exchanges_total" in rendered
     assert "fs2_serve_lifecycle_workloads_total" in rendered
     assert "fs2_serve_lifecycle_unclassified_gpu_seconds_total" in rendered
     assert "kube_deployment_status_replicas_available" in rendered
@@ -1944,8 +2081,66 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
     assert "certmanager_certificate_renewal_timestamp_seconds" in rendered
     assert "certmanager_certificate_expiration_timestamp_seconds" in rendered
     assert rendered.count("absent(certmanager_certificate_") == 3
-    for forbidden in ("principal", "tenant", "token", "prompt", "response", "bearer"):
+    # Tenant/model are intentional bounded customer-outcome labels. Individual
+    # principals, key IDs and request bodies must never become alert dimensions.
+    assert "sum by (tenant,model)" in rules["Fs2ServeCustomerOperationFailureRate"]["expr"]
+    for forbidden in ("principal", "token", "prompt", "response", "bearer"):
         assert forbidden not in rendered.lower()
+
+
+def test_customer_outcome_alert_promql_counts_failed_operations_not_http_acceptance(tmp_path) -> None:
+    promtool = shutil.which("promtool")
+    if promtool is None:
+        pytest.skip("requires promtool for actual Prometheus evaluation")
+    documents = render()
+    group = next(document for document in documents if document["kind"] == "PrometheusRule")["spec"]["groups"][0]
+    rule = next(row for row in group["rules"] if row["alert"] == "Fs2ServeCustomerOperationFailureRate")
+    rules_file = tmp_path / "rules.yaml"
+    rules_file.write_text(yaml.safe_dump({"groups": [group]}))
+    # Two gateways project the same durable facts. Four failures must not turn
+    # into eight operations and cross the five-operation minimum.
+    scenarios = []
+    for failures, successes, should_fire in ((4, 0, False), (5, 5, True), (0, 10, False)):
+        series = []
+        for pod in ("gateway-a", "gateway-b"):
+            for outcome, count, error in (("failed", failures, "upstream"), ("succeeded", successes, "none")):
+                series.append(
+                    {
+                        "series": 'fs2_serve_customer_operations_last_10m{tenant="stockholm",model="openfold2",'
+                        f'protocol="native",outcome="{outcome}",workload_class="serving",error_class="{error}",pod="{pod}"}}',
+                        "values": f"{count}+0x5",
+                    }
+                )
+        # Edge HTTP successes must not mask the failed durable operations.
+        series.append({"series": 'http_requests_total{status="200"}', "values": "100+100x5"})
+        scenarios.append(
+            {
+                "interval": "1m",
+                "input_series": series,
+                "alert_rule_test": [
+                    {
+                        "eval_time": "3m",
+                        "alertname": rule["alert"],
+                        "exp_alerts": [
+                            {
+                                "exp_labels": {"tenant": "stockholm", "model": "openfold2", "severity": "warning"},
+                                "exp_annotations": rule["annotations"],
+                            }
+                        ]
+                        if should_fire
+                        else [],
+                    }
+                ],
+            }
+        )
+    test_file = tmp_path / "tests.yaml"
+    test_file.write_text(
+        yaml.safe_dump({"rule_files": [str(rules_file)], "evaluation_interval": "1m", "tests": scenarios})
+    )
+    result = subprocess.run(  # noqa: S603 - resolved promtool binary and test-owned YAML
+        [promtool, "test", "rules", str(test_file)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_grafana_dashboard_is_discoverable_in_the_foundation_watch_namespace() -> None:
@@ -2174,6 +2369,10 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
     }
     assert paths == {
         "/v1": "PathPrefix",
+        "/v1/artifacts": "PathPrefix",
+        "/v1/scientific-artifacts/uploads": "PathPrefix",
+        "/v1/audio/stream": "Exact",
+        "/v1/voice": "PathPrefix",
         "/mcp": "Exact",
         "/admin/api/v1": "PathPrefix",
         "/.well-known/oauth-protected-resource": "Exact",
@@ -2194,6 +2393,13 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
         "request": "40s",
         "backendRequest": "40s",
     }
+    artifact_rule = route["spec"]["rules"][1]
+    assert artifact_rule["timeouts"] == {"request": "900s", "backendRequest": "900s"}
+    assert artifact_rule["filters"] == route["spec"]["rules"][0]["filters"]
+    assert artifact_rule["backendRefs"] == route["spec"]["rules"][0]["backendRefs"]
+    stream_rule = route["spec"]["rules"][2]
+    assert stream_rule["timeouts"] == {"request": "7500s", "backendRequest": "7500s"}
+    assert stream_rule["filters"] == route["spec"]["rules"][0]["filters"]
     assert redirect["spec"] == {
         "parentRefs": [
             {
@@ -2229,6 +2435,14 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
     rule = rate_limit["spec"]["rateLimit"]["local"]["rules"][0]
     assert rule == {"limit": {"requests": 200, "unit": "Second"}}
     assert rate_limit["spec"]["mergeType"] == "StrategicMerge"
+
+
+def test_artifact_timeout_override_does_not_lengthen_model_calls():
+    route = application_route(render("--set", "httpRoute.artifactTransferTimeout=1800s"))
+    assert "hostnames" not in route["spec"]
+    assert route["spec"]["rules"][0]["timeouts"] == {"request": "40s", "backendRequest": "40s"}
+    assert route["spec"]["rules"][1]["timeouts"] == {"request": "1800s", "backendRequest": "1800s"}
+    assert route["spec"]["rules"][2]["timeouts"] == {"request": "7500s", "backendRequest": "7500s"}
 
 
 def test_enabled_public_route_rejects_an_incomplete_edge() -> None:
@@ -3014,6 +3228,8 @@ def test_grafana_dashboard_is_valid_and_separates_estimate_dcgm_and_principal_le
     assert "fs2_serve_lifecycle_gpu_seconds_total" in rendered
     assert "fs2_serve_lifecycle_clock_gpu_seconds_total" in rendered
     assert "fs2_serve_lifecycle_reconciliation_delta_seconds_total" in rendered
+    assert "fs2_serve_public_exchanges_total" in rendered
+    assert "independent of HTTP status" in rendered
     assert "fs2_reporting_lifecycle_workloads" in rendered
     assert "occupied idle" in rendered.lower()
     assert '"uid": "fs2-serve-reporting"' in rendered
@@ -3128,6 +3344,7 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
     )
     assert model_role["rules"] == [
         {"apiGroups": [""], "resources": ["pods", "services", "events"], "verbs": ["list"]},
+        {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"], "verbs": ["list"]},
         {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["list"]},
         {
             "apiGroups": ["autoscaling"],

@@ -3,6 +3,23 @@
 This policy is mandatory for every customer, event, proof of concept, and
 hackathon deployment of `k8s-inference`.
 
+## Durable access and availability
+
+Customer API keys are non-expiring by default. Do not add automatic expiry,
+rotation deadlines, or short-lived route-registration windows without an
+explicit operator requirement. Explicit revocation and model grants remain
+effective. A signing-evidence timestamp is not the service lifetime of an
+operator-configured deployment: native Serverless registrations remain active
+until removed or revoked, with their signatures and exact identities verified
+on every reload. Controller leadership leases and signed download URLs are
+separate operational mechanisms, not customer API-key lifetime policies.
+
+Optional App registration failures must not make unrelated Apps or the public
+API unready. Test both process startup and periodic reload with expired signing
+evidence, a missing registration file, a malformed entry, and revoked trust.
+Include a clock-advance regression and real public-API execution; a successful
+catalog listing alone does not establish availability.
+
 ## Governing rule
 
 **A capability may be described as customer-ready only after it succeeds
@@ -34,9 +51,13 @@ from the customer contract.
 The release owner must preserve a machine-readable receipt proving all of the
 following against the exact candidate release:
 
-1. **Customer identity:** use a disposable canary principal in the real customer
-   tenant with the same grants, scopes, concurrency and budget policy. An
-   internal operator or administrator key is not equivalent.
+1. **Customer-shaped identity:** internal qualification uses the existing
+   `system/qa` or `system/development` inference identity, with an explicitly
+   recorded grants, scopes, concurrency and budget profile. Never use an actual
+   customer's key, change their limits, or create a canary in their tenant just
+   to run an internal test. Testing a customer's exact identity/storage binding
+   needs specific owner approval; without it, report that binding as untested.
+   An internal operator or administrator key is not an inference test identity.
 2. **Customer client:** exercise every supported customer client and integration
    that is part of the handoff, including the actual MCP client, installed
    skills, configuration and tool refresh behavior. A raw MCP client alone does
@@ -96,6 +117,11 @@ identities, hashes, status and timings without credentials or private inputs.
 - The release owner—not an individual component task—owns the combined verdict.
 
 ## Incident-derived requirement
+
+Event-specific preparation, archive and identity-retirement steps are in
+[the event closeout runbook](docs/event-closeout.md). Export outcomes before
+retention expires; do not confuse transport GETs with model requests, loaded
+alert rules with delivered notifications, or event closure with full qualification.
 
 This rule was formalized after the September 2026 Stockholm deployment. Narrow
 typed-tool and sequential snapshot checks passed, but the event exercised a

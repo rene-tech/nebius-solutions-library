@@ -1,0 +1,613 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-000",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Dennis, it's good to hear from you. How are you doing today?"
+    },
+    {
+      "role": "patient",
+      "content": "Not great, honestly. Woke up at 3am again, chest tight, mind racing about the dental office schedule. I keep thinking I forgot something, even though I checked everything. It’s like my brain won’t shut off."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds like a really exhausting way to start your day. Waking up with your chest tight and your mind already going — that's a lot to deal with, especially when you've already checked everything and your brain is still sounding the alarm.\n\nThe work stuff clearly weighs on you. Is it mostly about making mistakes, or does it feel more like a general pressure that lingers no matter what you do?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s both. I mean, I know I’m not actually making mistakes — I double-check everything. But the fear of it, the idea that someone could notice something I didn’t… it’s like my brain picks up on the smallest thing and runs with it. Like last week, I kept thinking I left a tool in the autoclave. I went back, checked, it was fine. But I kept going back. And now I’m just… tired. Not just tired, but like my body knows something’s wrong but my brain won’t stop spinning."
+    },
+    {
+      "role": "clinician",
+      "content": "That pattern you're describing — checking, feeling okay for a moment, then the doubt creeping back in — sounds really relentless. And the fact that you *know* you didn't do anything wrong but your brain keeps insisting you might have… that's a specific kind of exhausting. It's like you can't trust your own eyes.\n\nAnd I hear what you're saying about your body. The tight chest, the 3am wake-ups, the physical tiredness — your body is basically running on high alert all the time, even when there's nothing actually wrong. That takes a real toll.\n\nCan I ask — when you're at work, in the middle of the day, does that same checking loop happen? Or is it more that it hits you when you're alone and trying to sleep?"
+    },
+    {
+      "role": "patient",
+      "content": "It hits me both ways. At work, it’s like… I’ll be prepping for a procedure and suddenly I’m not sure if I used the right instrument, or if I labeled the tray right. I’ll stop, go back, check it again. And then someone says something, or the phone rings, and I snap back — but the thought’s still there. Like a loop in my head.  \n\nBut at night… that’s when it gets worse. I’m lying there, and my mind just… starts playing back every little thing from the day. Not just the work stuff. The texts I sent today. The way I laughed too loud at dinner. Did I say something weird? Did I overdo it? I don’t even know why I’m thinking about that. It’s like my brain’s trying to find a mistake in my life, even when there isn’t one."
+    },
+    {
+      "role": "clinician",
+      "content": "Dennis, I really appreciate you laying all of that out. What I'm hearing is that this isn't just a work thing — it's like your brain has developed this habit of scanning *everything* for errors. The instrument trays, the autoclave, the texts, the way you laughed at dinner. It's running the same program no matter what the content is.\n\nAnd that matters, because it tells us something. It's not that you actually have a problem with your work or your social life. It's that your mind has gotten into a pattern where \"find the mistake\" is the default setting. And then your body responds like there's a real threat — chest tight, sleep broken, exhausted.\n\nThat loop you described at work — stop, check, feel okay for a second, doubt comes back — and then the same thing at night with texts and conversations. That sounds like it's become almost automatic.\n\nCan I ask — have you noticed whether anything makes that voice quieter, even temporarily? Or does it feel pretty constant?"
+    },
+    {
+      "role": "patient",
+      "content": "Not really. I mean, I’ll get distracted by something — the cat meowing, a funny video, a song on the radio — and for a few minutes I don’t think about it. But then it comes back. Like I’m just… waiting for it to come back.  \n\nI tried walking after work yesterday. Just a short walk. It helped for like ten minutes. Then I got home, sat down, and the thoughts were back. I even told myself, “Just don’t think about it,” but that just made it worse. Like my brain heard “don’t think” and went, “Oh, now I *have* to think about it.”  \n\nIt’s like I’m stuck in a room with the same song on repeat. I know it’s not real, but I can’t turn it off."
+    },
+    {
+      "role": "clinician",
+      "content": "That metaphor of the song on repeat — that's a really clear way of putting it. And the fact that you *know* it's not real but can't turn it off, that's one of the hardest parts of what you're dealing with. It's not a logic problem. You already have the logic.\n\nAnd that thing you noticed — that telling yourself \"don't think about it\" made it worse — that's actually a really sharp observation. Your brain basically took the instruction and turned it into the thing it focused on. That's not you failing. That's just how minds work when they're stuck in that alert mode.\n\nThe walk helping for ten minutes — that's worth something too. It tells us your brain *can* shift, even briefly. It just doesn't hold.\n\nI'm curious about something. You came here today and you're laying all of this out pretty clearly. What's your sense of what you're looking for? Is it more about understanding what's happening, finding ways to get some relief, or just having a place to say this stuff out loud? I want to make sure we're heading in a direction that actually feels useful to you."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I just… don’t want to feel like this all the time. Like I’m running on a loop that no one else can see. I don’t want to keep checking the same thing over and over. I don’t want to wake up at 3am with my chest tight and my mind racing about nothing.\n\nI guess I’m here because I’m tired of it. Not just tired — like, I’m scared it’s going to get worse. Like one day I’ll just… shut down. Or lose my job. Or push everyone away. I don’t want that. I just want to feel like I can breathe. Like I can be in the room without my brain screaming at me to fix something that isn’t broken."
+    },
+    {
+      "role": "clinician",
+      "content": "Dennis, thank you for saying that so honestly. What you just described — the fear of it getting worse, of losing your job, of pushing people away — that tells me this isn't just annoying. It's wearing you down in a way that's scaring you. And that fear makes complete sense given what you're living with every day.\n\nI want to be straight with you about something. The pattern you're describing — the checking, the doubting, the mind scanning everything for mistakes, the thoughts that get louder when you try to push them away — that's a recognizable pattern. You're not broken. Your brain has essentially gotten too good at its job of protecting you, and now it can't turn off.\n\nAnd here's the thing that I think is actually important for you to hear. You said you're scared it's going to get worse. But you're here. You're describing this clearly. You're noticing what makes it better and what makes it worse. That means you're not passively watching this happen. You're already pushing back, even if it doesn't feel like it.\n\nI also want to acknowledge something. You said you don't want to feel like this all the time. That's a reasonable, human thing to want. And I think we can work on this together. Not by telling you to \"just stop thinking\" — you already know that doesn't work. But by looking at how this loop actually operates and finding real ways to interrupt it.\n\nWould you be willing to start there? Just looking at how the loop works, not fixing everything at once, but understanding the pattern so we can start finding the seams in it?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I think I can do that. Not fix it all, just… look at it. Like, if I can see where it starts, maybe I can stop it before it drags me under. I don’t want to keep pretending I’m fine when I’m not. I just need to stop feeling like I’m drowning in my own head.  \n\nAnd if we can just… find one small thing that breaks the loop, even for a minute — that’d be something. I don’t need it to go away. Just to stop for a second. That’d be enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Okay. Let's do that. And Dennis — what you said about not wanting to pretend anymore — that matters. Holding this inside while acting like everything's fine takes a kind of energy you don't have to spare right now. So let's use some of that energy differently.\n\nYou already gave me a clear example — the autoclave. Let me map it out and you tell me if I'm getting it right.\n\n1. You're at work, doing your job\n2. A thought pops in — \"Did I leave something in the autoclave?\"\n3. Your body reacts — tension, doubt\n4. You go check\n5. It's fine — brief relief\n6. The doubt comes back\n7. You check again\n8. Repeat\n\nIs that close to what it feels like from the inside?\n\nAnd here's what I'm curious about. If you look at those steps — where does the loop actually get its energy? What keeps it spinning?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah, that’s it. Exactly.  \n\nBut the thing is — it’s not just the autoclave. It’s like the thought doesn’t even need a reason. It just shows up. Like a ghost in the room. And once it’s there, my body tenses up, my breath gets shallow, and I can’t just let it go. I have to *do* something.  \n\nAnd the energy? I think it’s the fear of what happens if I don’t check. Like if I don’t go back, something bad will happen. Not that I believe it will — but the thought is so loud, it feels like I have to act, even if I know I’m overreacting.  \n\nIt’s like my brain says, “Better safe than sorry,” but the “sorry” part is always worse than the actual mistake. I mean, I’ve never actually left something in the autoclave. But the fear of it feels real. Like it’s not just a worry — it’s a threat."
+    },
+    {
+      "role": "clinician",
+      "content": "Dennis, you just named something really important. The loop isn't running on the actual risk. It's running on the *fear of what happens if you don't check*. The checking isn't really about the autoclave anymore. It's about getting away from that feeling of threat.\n\nAnd here's the hard part. Every time you check, your brain learns something. It doesn't learn \"everything is fine.\" It learns \"checking is what keeps me safe.\" So the next time the thought shows up, the urge to check is even stronger, because your brain has proof that checking is the answer.\n\nThat's why the relief never lasts. You're not actually turning off the alarm. You're just hitting snooze.\n\nSo here's a thought. What if the small thing isn't stopping the thought — you already know that doesn't work. What if it's changing what you do when the thought shows up?\n\nNot refusing to check forever. Not white-knuckling through it. Just — when that thought pops up and the tension hits, what if you paused for thirty seconds before checking? Just sat with it. Noticed where it lives in your body. Let it be there for half a minute.\n\nNot because it'll feel good. It won't. But because it teaches your brain something different. That the feeling is uncomfortable, not dangerous.\n\nHow does that land? Too much, or worth trying?"
+    },
+    {
+      "role": "patient",
+      "content": "It sounds… weird. Like, why would I sit with it? It’s not going to go away. It’s just going to stay there, making me feel worse.\n\nBut… I don’t know. I’m tired of the checking. I’m tired of the loop. Even if it feels stupid, even if it makes me feel worse for thirty seconds — I’d rather try that than keep doing the same thing that’s not working.\n\nSo yeah. Maybe. I’ll try it. Just thirty seconds. Not to fix it. Not to make it go away. Just to… sit with it. Like, watch it. See what happens.\n\nI don’t know if it’ll help. But I don’t know what else to do."
+    },
+    {
+      "role": "clinician",
+      "content": "Dennis, I want you to know — that skepticism you're showing? That's not a problem. That's actually useful. You're not blindly following something. You're saying \"I don't know if this'll work, but I'm willing to find out.\" That's a stronger position than you might think.\n\nHere's what I'd suggest. When the thought shows up — and it will — and you feel that pull to check:\n\n**Don't argue with it. Don't try to push it away. Just say one thing to yourself:** \"There's the checking thought.\" Name it. Not \"I need to check the autoclave.\" Just — \"There's the checking thought.\"\n\nThen sit. Thirty seconds. Watch what your body does. Where's the tension? Your chest? Your shoulders? Your breathing?\n\nThat's it. That's the whole thing. After thirty seconds, if you still need to check, check. This isn't about stopping the checking. It's about putting a tiny gap between the thought and the action.\n\nAnd if you're willing — next time we talk, tell me what you noticed. Even if it didn't work. Even if the thirty seconds felt like an hour. Just tell me what happened.\n\nOne more thing. You said something earlier that I want to come back to. You said you don't want to keep pretending you're fine. You just did something different than that today. You showed up and said you're not fine. That counts for something.\n\nIs there anything else on your mind before we wrap up?"
+    },
+    {
+      "role": "patient",
+      "content": "No, that’s it. I think I can do that. Just name it. \"There’s the checking thought.\" Not fight it. Not believe it. Just say it.\n\nAnd if I notice the tension, I’ll try to breathe through it. Not fix it. Just… be with it for thirty seconds.\n\nI don’t know if it’ll help. But I’m tired of the same thing. I’d rather try something that feels stupid than keep doing what’s not working.\n\nAnd… thanks. For not making me feel worse for feeling this way. That matters."
+    },
+    {
+      "role": "clinician",
+      "content": "Dennis, you don't need to thank me for that. You showed up today and were honest about something that's hard to say out loud. That's not nothing. That's actually the part most people never get to.\n\nYou've got a clear plan. Name the thought. Sit with it. Thirty seconds. That's it. No magic required. Just a small crack in the loop.\n\nAnd if it goes sideways — if the thirty seconds feels impossible or the thought just screams louder — that's information too. Bring it back next time. This isn't pass or fail. We're just looking at what happens.\n\nOne last thing. That 3am wake-up with the tight chest — that's your body running the same loop while you're trying to sleep. If it hits you tonight, same thing. \"There's the checking thought.\" Thirty seconds. Just let it be there.\n\nTake care of yourself, Dennis. And give your cat a pat from me. Talk soon."
+    },
+    {
+      "role": "patient",
+      "content": "I will. And I will tell the cat you said hi.  \n\nThanks. I’ll try."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 167,
+        "prompt_tokens": 234,
+        "total_tokens": 401,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 149,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 234,
+        "reasoning_tokens": 149
+      },
+      "telemetry": {
+        "queue_ms": 0.033,
+        "latency_ms": 1253.195,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 49,
+        "prompt_tokens": 1858,
+        "total_tokens": 1907,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1824
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 1250.343,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 200,
+        "prompt_tokens": 303,
+        "total_tokens": 503,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 117,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 303,
+        "reasoning_tokens": 117
+      },
+      "telemetry": {
+        "queue_ms": 0.042,
+        "latency_ms": 1402.155,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 116,
+        "prompt_tokens": 1998,
+        "total_tokens": 2114,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1984
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.08,
+        "latency_ms": 184798.334,
+        "retries": 1,
+        "retry_codes": [
+          "transport_error"
+        ],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 367,
+        "prompt_tokens": 504,
+        "total_tokens": 871,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 205,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 504,
+        "reasoning_tokens": 205
+      },
+      "telemetry": {
+        "queue_ms": 0.041,
+        "latency_ms": 2464.158,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 183,
+        "prompt_tokens": 2284,
+        "total_tokens": 2467,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1824
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.041,
+        "latency_ms": 5257.387,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 629,
+        "prompt_tokens": 851,
+        "total_tokens": 1480,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 418,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 851,
+        "reasoning_tokens": 418
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 4616.922,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 170,
+        "prompt_tokens": 2686,
+        "total_tokens": 2856,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2112
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 3207.442,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 628,
+        "prompt_tokens": 1234,
+        "total_tokens": 1862,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 388,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1234,
+        "reasoning_tokens": 388
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 4180.328,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 155,
+        "prompt_tokens": 3104,
+        "total_tokens": 3259,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2848
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 2692.779,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 727,
+        "prompt_tokens": 1631,
+        "total_tokens": 2358,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 388,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1631,
+        "reasoning_tokens": 388
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 6499.431,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 120,
+        "prompt_tokens": 3606,
+        "total_tokens": 3726,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3248
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 2062.001,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 2417,
+        "prompt_tokens": 2092,
+        "total_tokens": 4509,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 2218,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2092,
+        "reasoning_tokens": 2218
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 12863.982,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 211,
+        "prompt_tokens": 3933,
+        "total_tokens": 4144,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2464
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 6004.345,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 901,
+        "prompt_tokens": 2504,
+        "total_tokens": 3405,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 613,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2504,
+        "reasoning_tokens": 613
+      },
+      "telemetry": {
+        "queue_ms": 0.078,
+        "latency_ms": 5502.086,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 151,
+        "prompt_tokens": 4440,
+        "total_tokens": 4591,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3712
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 2015.644,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 592,
+        "prompt_tokens": 2945,
+        "total_tokens": 3537,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 274,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2945,
+        "reasoning_tokens": 274
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 3745.436,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 117,
+        "prompt_tokens": 4917,
+        "total_tokens": 5034,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4128
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 2081.813,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 389,
+        "prompt_tokens": 3382,
+        "total_tokens": 3771,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 189,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3382,
+        "reasoning_tokens": 189
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 4527.785,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 21,
+        "prompt_tokens": 5242,
+        "total_tokens": 5263,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5024
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 650.94,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 59,
+        "prompt_tokens": 23184,
+        "total_tokens": 23243,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 2049.853,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.125,
+    "Therapeutic Relationship & Alliance": 4.375,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 259.135
+}

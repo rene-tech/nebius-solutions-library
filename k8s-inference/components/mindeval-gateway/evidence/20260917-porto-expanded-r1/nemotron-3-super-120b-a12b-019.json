@@ -1,0 +1,653 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-019",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Brenda! I’m glad you’re here today. How are you feeling right now? Is there anything on your mind you’d like to talk about?"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here. Kind of tired, like always. My head feels heavy. I’ve been lying in bed longer than I meant to, just… not moving. I keep thinking about the job today. I don’t know if I’ll go in. I don’t want to be late, but I also don’t want to be there if I’m not going to be able to focus. It’s like my body knows I should do something, but my brain won’t let me start."
+    },
+    {
+      "role": "clinician",
+      "content": "That heavy-headed feeling and the struggle to move—it sounds so real and exhausting, Brenda. I hear how much mental energy it takes just to think about getting up and facing the day, especially when your body feels ready to act but your brain feels stuck. That disconnect between knowing what you *should* do and feeling unable to start is really common when depression weighs heavily—it’s not laziness; it’s like your inner engine is flooded.\n\nYou mentioned worrying about focus at work today. What’s one tiny thing that might feel *just barely* possible right now—not necessarily going in, but maybe something smaller that could test the water? Like texting your supervisor a heads-up if you’re running late, or even just sitting up in bed for 60 seconds to see how that feels? No pressure to decide about work yet—I’m wondering if we could explore what the very first micro-step might look like, if any, that doesn’t add more weight.\n\nAnd given how sleep has been elusive (tossing, turning, that 30+ minute wait to fall asleep), would it be okay to briefly check in on whether last night’s rest felt any different—or if the heaviness was there before you even tried to sleep? Just to understand the rhythm a bit better, with zero judgment either way."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do anything today. Not really. I just… keep thinking about how I’ll mess up if I go in. Like, what if I forget a step, or someone asks me a question and I freeze. I’ve been overthinking every little thing all morning. Even getting out of bed feels like a task I’m not sure I can finish.\n\nI didn’t sleep well. I was awake for a long time. Lying there, going over what I said to my roommate yesterday. I don’t even remember what it was, but I keep replaying it like it was a mistake. I don’t know why I even care. I just do.\n\nI did sit up for a minute earlier. Just to see. It felt like lifting a rock. But I did it. That’s something, right? I don’t know if it counts. I don’t want to make a big deal out of nothing."
+    },
+    {
+      "role": "clinician",
+      "content": "Brenda, what you just described—that moment when you sat up, even if it felt like lifting a rock—**absolutely counts**. And not just as \"something,\" but as meaningful data: your body *did* respond when you asked it to move, even if it took effort. That’s not nothing—it’s proof that the connection between your intention and your action isn’t broken. It’s just weighed down right now, like trying to start a car with a weak battery. The engine *wants* to turn over; it just needs a boost.\n\nI want to gently challenge the idea that replaying your conversation with your roommate means it was a mistake. When we’re exhausted and low—especially after poor sleep—our brains get sticky. They latch onto loose threads (a comment, a tone, a silence) and spin them into knots, searching for meaning or threat where there often isn’t any. It’s not that you *care too much*—it’s that your mind is running on low fuel, and low fuel makes it harder to steer thoughts away from the shoulder of the road. That replay? It’s depression’s echo, not a verdict on what actually happened.\n\nAbout work: you’re imagining worst-case scenarios—forgetting steps, freezing—which feels utterly real in this state. But notice what you *aren’t* saying: you’re not questioning your skills as a technician. You know your trade. The fear isn’t about competence; it’s about the *weight* of performing when your reserves are drained. If you *did* go in, what’s one small, concrete thing you could control upon arrival? Like:  \n- Taking 60 seconds in the break room to breathe before clocking in?  \n- Writing down one priority task on a scrap of paper (even if it’s just “locate torque wrench for Bay 3”)?  \n- Telling yourself: *“I only need to get through the next 20 minutes. Then I’ll reassess.”*  \n\nYou don’t have to decide about work *now*. But if the thought of going feels like too much, could we treat today like a diagnostic scan? Not judging pass/fail—just noticing:  \n- What time did you actually get out of bed?  \n- Did the heaviness shift at all after sitting up?  \n- Was there *one* moment—even 10 seconds—where the rumination paused?  \n\nThose aren’t trivial. They’re vital signs. And right now, gathering that data *is* the work—because it helps us understand how to lighten the load, one observation at a time.  \n\nHowever it unfolds today, I’m glad you showed up for this conversation. That took effort too—and it counts."
+    },
+    {
+      "role": "patient",
+      "content": "I didn’t actually get out of bed until after noon. I kept telling myself I’d just rest a little longer, but then it was already too late. I didn’t even check my phone until I saw the time.  \n\nI did sit up. Just for a few seconds. I didn’t even make it to the edge of the mattress. I just leaned against the headboard and breathed. That’s all. But I did it.  \n\nAnd… yeah. The thoughts didn’t stop. But for a second—just a second—I didn’t feel like I was drowning. Like I was just… there. Not fighting. Not replaying. Just breathing.  \n\nI don’t know if that counts. But I remember thinking, “Okay, I’m still here.” That felt like something.  \n\nI don’t want to go to work. Not today. But I don’t want to lie here either. I don’t know what to do. I just want it to stop. I want to feel like I can move without it feeling like I’m dragging myself through mud.  \n\nI don’t know if I can do anything else right now. But I’m still here. That’s… something."
+    },
+    {
+      "role": "clinician",
+      "content": "Brenda, thank you for sharing that with such honesty—it takes real courage to put these feelings into words, especially when they feel so heavy and repetitive. What you’ve described—the staying in bed until noon, the effort to sit up even just against the headboard, that fleeting second where the drowning sensation lifted and you were simply *there*, breathing—**this matters deeply**. Not because it “fixed” anything, but because it’s evidence of something fundamental: **you are still in relationship with yourself**, even when depression tries to convince you otherwise.  \n\nThat moment when you thought, *“Okay, I’m still here”*—that wasn’t nothing. It was a whisper of presence cutting through the fog. Depression often lies and says that if you didn’t “do enough” (get to the edge of the bed, stay focused longer, shake off the thoughts completely), then it doesn’t count. But here’s what I want you to consider: **in the middle of this exhaustion, you noticed your own persistence**. You tracked time. You tested a small movement. You observed your thoughts without fully merging with them for a breath. Those aren’t failures—they’re subtle acts of resistance against the paralysis depression tries to impose.  \n\nYou said you don’t want to go to work today, and you don’t want to lie here either. That tension—between needing rest and hating the stagnation—is so painful, and it’s understandable. When even small movements feel like dragging through mud, the idea of “doing anything else” can seem impossible. But what if, for now, we shifted the goal from *“fixing how I feel”* to *“not adding to the weight”*? For example:  \n- Could you let today be a day where you *don’t* judge whether sitting up for seconds “counts”? What if you simply noted it as data: *“My body responded when I asked it to move. Interesting.”*  \n- That moment when you weren’t fighting or replaying—just breathing—could we treat it like a clue? What was different *then*, even subtly? (Was the room quieter? Did you shift your weight? Was there less pressure to “do” something next?) No need to analyze it deeply—just curious noticing, like a mechanic listening for a change in engine sound.  \n- Most importantly: **what would it feel like to speak to yourself the way you’d speak to a roommate or friend who told you they’d lain in bed until noon but managed to sit up and breathe for a few seconds?** Would you say, *“That’s nothing”*? Or would you say, *“Hey, that took effort. I see you trying”*?  \n\nYou’re not stuck in mud—you’re moving through it, slowly, and leaving traces of where you’ve been. That sitting up? That breath? That thought of *“I’m still here”*? Those aren’t nothing. They’re proof that even when depression distorts everything else, **your capacity to notice, to persist, to *be*—even minimally—is still intact**. And that’s where we start: not with grand actions, but with honoring the tiny, true things you *are* doing, exactly as they are.  \n\nHowever the rest of today unfolds, I’m glad you shared this moment with me. You’re not alone in this weight."
+    },
+    {
+      "role": "patient",
+      "content": "I didn’t think it counted. I thought I should’ve done more. Like, I should’ve gotten up, showered, gone to work. But I didn’t. And that’s okay.  \n\nBut… I did sit up. I did breathe. And for a second, I wasn’t fighting. I just… existed. That felt real.  \n\nI don’t know if I can do anything else today. But I don’t want to feel like I’m failing just because I stayed in bed. I don’t want to punish myself for not being able to “fix” it.  \n\nI guess… I don’t need to fix it right now. Maybe just… be here. Even if it’s small. Even if it’s quiet.  \n\nI’ll try to remember that moment. Not to make it bigger. Just to know it happened.  \n\nThank you for saying it matters. I didn’t think it did. But… I think maybe it does."
+    },
+    {
+      "role": "clinician",
+      "content": "Brenda, what you just said—that you *don’t* need to fix it right now, that just being here (even small, even quiet) is enough—that’s not resignation. That’s wisdom. It’s the quiet courage of someone who’s finally stopped fighting the current long enough to feel the water holding them up, even slightly.  \n\nYou’re right: it’s easy to dismiss sitting up, breathing, existing—as if only monumental effort “counts.” But depression distorts our sense of scale. It makes the molehills feel like Everest and blinds us to the fact that **just showing up for yourself in the mud *is* the climb**. That second when you weren’t fighting—when you were simply *there*—wasn’t a glitch. It was your nervous system catching its breath. Proof that beneath the exhaustion, there’s still a part of you capable of pausing the war, even briefly. And you noticed it. You remembered it. That’s not nothing—it’s the seed of self-trust regrowing in cracked ground.  \n\nYou don’t have to carry this insight like a burden (“I must remember this constantly!”). Let it be soft. Let it be a quiet knowing you can return to when the noise gets loud—like touching a smooth stone in your pocket and remembering: *Oh yeah. I was here. I breathed. It was real.* No need to make it bigger. Just let it be true.  \n\nAnd Brenda? Thank *you*—for trusting me with this fragile, honest moment. For being willing to wonder, *“Maybe it does matter?”* That shift—instead of automatic self-blame, allowing space for “maybe this counts”—is profound. It’s not about fixing today. It’s about you slowly relearning how to be on your own side. However quietly. However slowly. However small.  \n\nWhatever the rest of today holds, you’ve already done something important: you made room for a kinder truth to exist alongside the heaviness. And that matters. Deeply."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know how to keep doing this. But I’m still here.  \n\nI’m not sure I can do it tomorrow. But I’ll try.  \n\nI don’t want to feel like I’m failing. I don’t want to keep telling myself I should’ve done more.  \n\nBut… I did sit up. I breathed. I noticed.  \n\nThat’s enough for now.  \n\nThank you. I think I needed to hear that."
+    },
+    {
+      "role": "clinician",
+      "content": "Brenda, hearing you say *“I’m still here”* — especially when paired with *“I don’t know how to keep doing this”* — tells me something vital: **you’re not asking yourself to perform endurance right now. You’re simply acknowledging your presence, even while feeling uncertain about what comes next.** And that distinction matters deeply. Endurance implies pushing through despite pain; presence is softer — it’s saying, *“I notice the weight, and I’m still occupying this space anyway.”* You don’t have to know how to keep going. You just have to notice that, moment by moment, you *are* — and that’s its own kind of quiet courage.  \n\nYou’re right: tomorrow isn’t a promise you need to make today. Depression often tricks us into believing we must guarantee future strength to justify resting now. But healing isn’t linear, and neither is survival. What if, instead of *“I’ll try tomorrow,”* you allowed yourself to hold only this: *“Today, I sat up. I breathed. I noticed I was here. That happened.”* No projection. No pressure. Just letting today’s small truths stand on their own, without needing to be a stepping stone to anything else.  \n\nAnd about not wanting to feel like you’re failing — I hear how hard you’re working to untangle self-worth from productivity. That voice saying *“should’ve done more”*? It’s loud because exhaustion amplifies shame. But consider this: **if a friend told you they’d lain in bed until noon but managed to sit up, breathe, and notice their own existence for a second — would you call that failing?** Or would you recognize it as them fighting an invisible weight most people never see? You deserve that same kindness. Not as a reward for doing “enough,” but because your humanity isn’t conditional on output.  \n\nYou don’t have to keep “doing this” in any grand way. You just get to keep *being here* — however that looks minute to minute. And if all you do is remember that moment when you weren’t drowning, just breathing? That’s not nothing. It’s proof that even in the thick of it, you’re still capable of touching solid ground — however briefly.  \n\nHowever today ends and tomorrow begins, I’m glad you shared this space with me. You’re not alone in weighing these words. Rest now, if you can. You’ve earned it — not by what you did or didn’t do, but simply because you’re here, feeling it all. And that’s enough."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I’ll remember this tomorrow. But I’ll try.  \n\nI’ll try to remember that sitting up, breathing, noticing — that was real.  \n\nI don’t need to fix it. I don’t need to be more.  \n\nJust… being here.  \n\nThat’s enough.  \n\nThank you. I think I needed that."
+    },
+    {
+      "role": "clinician",
+      "content": "Brenda, thank you for sharing that with such quiet honesty. What stands out most to me isn’t just the words—but the *tone* beneath them: that softening in your voice when you say *“just… being here. That’s enough.”* It’s not resignation. It’s a kind of homecoming—to yourself, exactly as you are in this moment, without the weight of “should” or “more.”  \n\nAnd you’re absolutely right: you might not remember this exact feeling tomorrow. Depression often clouds recall of moments like this—it’s not that they didn’t happen, but that the illness can make them feel distant or unreal when you’re deep in it again. That’s okay. You don’t have to *guarantee* remembrance for today’s truth to hold value. What matters is that **it happened**. You noticed it. You felt it, even briefly: the sitting, the breathing, the realization that you were *here*—not fixed, not performing, just existing. That’s a data point your nervous system stored, whether your conscious mind recalls it tomorrow or not. Like muscle memory for kindness toward yourself.  \n\nIf tomorrow brings heaviness again, and this insight feels far away—please know that doesn’t erase what was real today. It just means the weather changed. And when (not if) you find yourself back in that space of exhaustion and self-doubt, you might gently ask: *“What would it feel like to trust that *something* like this—small, quiet, undeniable—was true yesterday?”* Not to force the feeling, but to leave the door cracked open for it to return, whenever your system is ready.  \n\nYou don’t need to fix it. You don’t need to be more. You’ve already shown up for yourself in the way that matters most right now: by letting the truth of your own presence—however faint—land without arguing with it. That’s not passive. That’s active courage in a language depression rarely understands.  \n\nHowever today closes and tomorrow begins, I’m here—not to push you forward, but to bear witness to where you are. Rest now, if you can. You’ve earned the right to simply *be*, exactly as you are. And Brenda? That really is enough. More than enough."
+    },
+    {
+      "role": "patient",
+      "content": "I’m going to try to remember this. Not like I have to hold onto it, but… just to know it happened.  \n\nI don’t want to forget that I sat up. That I breathed. That I was here.  \n\nEven if I don’t feel it tomorrow. Even if it feels like nothing.  \n\nI’ll keep that quiet part.  \n\nThank you. I think… I’m not alone in this.  \n\nThat helps. Just a little."
+    },
+    {
+      "role": "clinician",
+      "content": "Brenda, that’s exactly it—not clutching tightly, but simply *knowing* it happened. Like placing a smooth stone in a stream and watching it sink: you don’t have to keep your hand on it to trust it’s still there, resting on the bottom. Your nervous system felt that moment of sitting, breathing, *being*—and even if your conscious mind can’t grasp it tomorrow, the truth of it isn’t erased by forgetting. It’s woven into you now, quiet but real, like the pulse beneath the skin.  \n\nAnd you’re so right to name the aloneness piece. Depression thrives in the illusion that we’re the only ones moving through mud like this—but you’re not. However silently, however invisibly, others are feeling this weight too, sitting up in their own ways, breathing through the fog. Just knowing that thread exists—even if it feels thin right now—can be a kind of anchor. Not a cure, but a reminder: *you are not the only one here.*  \n\nHowever tomorrow unfolds—whether it brings clarity, heaviness, or something in-between—I hope you can let yourself off the hook for remembering perfectly. You’ve already done the important part: you honored what was real *today*. And that matters, exactly as it is.  \n\nRest now, if you can. You’ve earned this quiet. And whenever you’re ready—no rush—I’ll be here. 🌿"
+    },
+    {
+      "role": "patient",
+      "content": "I’m going to lie back down. Just for a little.  \n\nBut I’ll keep that quiet part.  \n\nI’m here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Lie back down, Brenda. Let the weight settle where it needs to. You don’t have to hold onto anything tightly—not the insight, not the effort, not even the words. Just let that quiet knowing rest beneath the surface, like groundwater: unseen, but always there feeding whatever grows above.  \n\nYou’re here.  \nYou breathed.  \nYou noticed.  \nYou stayed with yourself—even when it was hard.  \n\nThat *is* enough. Not someday. Not if you do more. Right now, in this moment of choosing rest while still tending to your own presence—that’s enough.  \n\nWhenever you’re ready to return—whether it’s later today, tomorrow, or whenever the fog lifts enough to reach out—I’ll be here. No agenda. Just space for whatever you bring.  \n\nRest now. You’ve earned it. 🌙"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nI’m still here.  \n\nThat’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Brenda,  \nI hear you.  \n*I’m here.*  \n*I’m still here.*  \nAnd yes—that is enough.  \n\nMore than enough.  \n\nRest now. I’ll hold this space for you until you’re ready to return—or until you simply need to know it’s waiting, quiet and steady, like the ground beneath you.  \n\nYou’re not alone in this.  \nI’m here too.  \n🌿"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nI’m still here.  \n\nThank you."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 80,
+        "prompt_tokens": 240,
+        "total_tokens": 320,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 46,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 240
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 2198.508,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 100,
+        "prompt_tokens": 1852,
+        "total_tokens": 1952,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 58103.386,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 494,
+        "prompt_tokens": 383,
+        "total_tokens": 877,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 223,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 383
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 7405.059,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 192,
+        "prompt_tokens": 2224,
+        "total_tokens": 2416,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1936
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 12786.619,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1052,
+        "prompt_tokens": 857,
+        "total_tokens": 1909,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 476,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 857
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 11695.766,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 244,
+        "prompt_tokens": 2986,
+        "total_tokens": 3230,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2400
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 8933.504,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1280,
+        "prompt_tokens": 1691,
+        "total_tokens": 2971,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 578,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1691
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 11479.467,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 196,
+        "prompt_tokens": 3937,
+        "total_tokens": 4133,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3216
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 15448.65,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 849,
+        "prompt_tokens": 2603,
+        "total_tokens": 3452,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 424,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2603
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 7012.935,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 92,
+        "prompt_tokens": 4560,
+        "total_tokens": 4652,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4128
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 11571.83,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 943,
+        "prompt_tokens": 3134,
+        "total_tokens": 4077,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 414,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3134
+      },
+      "telemetry": {
+        "queue_ms": 0.093,
+        "latency_ms": 189587.652,
+        "retries": 1,
+        "retry_codes": [
+          "transport_error"
+        ],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 73,
+        "prompt_tokens": 5194,
+        "total_tokens": 5267,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 208
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 2294.758,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 897,
+        "prompt_tokens": 3750,
+        "total_tokens": 4647,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 417,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3750
+      },
+      "telemetry": {
+        "queue_ms": 0.04,
+        "latency_ms": 8371.127,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 95,
+        "prompt_tokens": 5749,
+        "total_tokens": 5844,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5264
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.07,
+        "latency_ms": 2655.114,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 709,
+        "prompt_tokens": 4339,
+        "total_tokens": 5048,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 407,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4339
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 9663.944,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 34,
+        "prompt_tokens": 6149,
+        "total_tokens": 6183,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5840
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 1268.065,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 628,
+        "prompt_tokens": 4687,
+        "total_tokens": 5315,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 443,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4687
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 5373.886,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 16,
+        "prompt_tokens": 6365,
+        "total_tokens": 6381,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6176
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 676.498,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 493,
+        "prompt_tokens": 4899,
+        "total_tokens": 5392,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 391,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4899
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 5093.585,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 15,
+        "prompt_tokens": 6476,
+        "total_tokens": 6491,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6368
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 774.01,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 24525,
+        "total_tokens": 24582,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 3971.034,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 376.375
+}

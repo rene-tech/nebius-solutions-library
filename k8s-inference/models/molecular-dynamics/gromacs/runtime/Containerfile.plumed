@@ -1,0 +1,46 @@
+# Add the pinned PLUMED kernel without replacing NVIDIA's optimized engine.
+ARG NVIDIA_GROMACS_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs-ngc@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59
+FROM ${NVIDIA_GROMACS_IMAGE} AS plumed-build
+ARG PLUMED_REVISION=0f2be2d617d7b8d577f1856c9172759543f5c9f0
+ARG BUILD_JOBS=16
+RUN apt-get update && apt-get install --yes --no-install-recommends \
+      build-essential gcc-12 g++-12 curl ca-certificates libblas-dev liblapack-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /src/plumed \
+    && curl -fsSL --retry 3 https://github.com/plumed/plumed2/releases/download/v2.10.0/plumed-2.10.0.tgz -o /src/plumed.tgz \
+    && echo '5aaf718ac530a1c8df6e0644c22acc84ad4202778106a1d584477057775f2995  /src/plumed.tgz' | sha256sum -c - \
+    && tar -xzf /src/plumed.tgz -C /src/plumed --strip-components=1 \
+    && cd /src/plumed \
+    && ./configure --prefix=/opt/plumed --disable-mpi --enable-shared \
+         CC=gcc-12 CXX=g++-12 \
+    && make -j"${BUILD_JOBS}" \
+    && make install \
+    && mkdir -p /opt/plumed/share/fs2-provenance \
+    && cp COPYING* /opt/plumed/share/fs2-provenance/ \
+    && echo "${PLUMED_REVISION}" > /opt/plumed/share/fs2-provenance/source-revision
+
+FROM ${NVIDIA_GROMACS_IMAGE}
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.title="Scientific AI NVIDIA GROMACS with PLUMED" \
+      org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
+      org.opencontainers.image.revision=${SOURCE_REVISION}
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/fs2/gromacs OMP_NUM_THREADS=8 \
+    PLUMED_KERNEL=/opt/plumed/lib/libplumedKernel.so \
+    PATH=/opt/plumed/bin:${PATH}
+COPY --from=plumed-build /opt/plumed /opt/plumed
+COPY requirements.lock /opt/fs2/requirements.lock
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+         python3 python3-pip python-is-python3 libblas3 liblapack3 \
+    && python3 -m pip install --no-cache-dir --require-hashes -r /opt/fs2/requirements.lock \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/fs2 fs2 \
+    && mkdir -p /mnt/fs2-scientific \
+    && chown 10001:10001 /mnt/fs2-scientific \
+    && test -f /opt/plumed/lib/libplumedKernel.so
+COPY fs2_gromacs /opt/fs2/gromacs/fs2_gromacs
+USER 10001:10001
+WORKDIR /mnt/fs2-scientific
+ENTRYPOINT ["python3", "-m", "fs2_gromacs.worker"]

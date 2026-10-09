@@ -1,0 +1,227 @@
+{
+  "full_split_requests": 1091,
+  "unique_audio_sha256": 1091,
+  "http_failures": 0,
+  "scored_reference_rows": 1090,
+  "reference_words": 30709,
+  "word_errors": 5201,
+  "wer": 0.16936403008889903,
+  "character_normalization": "same word normalization, then remove whitespace; no compound/number correction",
+  "reference_characters": 155571,
+  "character_errors": 13820,
+  "cer": 0.08883403719202165,
+  "all_decoded_audio_seconds": 13660.463,
+  "all_processing_seconds": 745.8169785580149,
+  "all_http_seconds": 774.7256843910063,
+  "processing_real_time_factor": 0.05459675697361172,
+  "processing_times_faster_than_realtime": 18.31610622006964,
+  "blank_outputs": [
+    {
+      "case": 193,
+      "reference": "96, 110, 96. * Musik * Hallihallo. (Frau) Emily, falsches Zimmer.",
+      "audio_seconds": 12.92
+    },
+    {
+      "case": 992,
+      "reference": "[Musik]",
+      "audio_seconds": 0.5
+    },
+    {
+      "case": 998,
+      "reference": "…",
+      "audio_seconds": 6.0
+    }
+  ],
+  "top_substitutions": [
+    {
+      "reference": "muss",
+      "recognized": "muß",
+      "count": 20
+    },
+    {
+      "reference": "mal",
+      "recognized": "erstmal",
+      "count": 17
+    },
+    {
+      "reference": "hab",
+      "recognized": "habe",
+      "count": 13
+    },
+    {
+      "reference": "5",
+      "recognized": "fünf",
+      "count": 13
+    },
+    {
+      "reference": "mal",
+      "recognized": "nochmal",
+      "count": 12
+    },
+    {
+      "reference": "einen",
+      "recognized": "ein",
+      "count": 11
+    },
+    {
+      "reference": "3",
+      "recognized": "drei",
+      "count": 10
+    },
+    {
+      "reference": "dr",
+      "recognized": "doktor",
+      "count": 10
+    },
+    {
+      "reference": "dass",
+      "recognized": "das",
+      "count": 10
+    },
+    {
+      "reference": "10",
+      "recognized": "zehn",
+      "count": 9
+    },
+    {
+      "reference": "das",
+      "recognized": "es",
+      "count": 9
+    },
+    {
+      "reference": "k",
+      "recognized": "okay",
+      "count": 8
+    },
+    {
+      "reference": "4",
+      "recognized": "vier",
+      "count": 8
+    },
+    {
+      "reference": "15",
+      "recognized": "fünfzehn",
+      "count": 7
+    },
+    {
+      "reference": "ok",
+      "recognized": "okay",
+      "count": 6
+    },
+    {
+      "reference": "2",
+      "recognized": "zwei",
+      "count": 6
+    },
+    {
+      "reference": "zur",
+      "recognized": "zu",
+      "count": 6
+    },
+    {
+      "reference": "was",
+      "recognized": "sowas",
+      "count": 6
+    },
+    {
+      "reference": "7",
+      "recognized": "sieben",
+      "count": 6
+    },
+    {
+      "reference": "6",
+      "recognized": "sechs",
+      "count": 6
+    },
+    {
+      "reference": "bumm",
+      "recognized": "bum",
+      "count": 6
+    },
+    {
+      "reference": "das",
+      "recognized": "dass",
+      "count": 5
+    },
+    {
+      "reference": "naja",
+      "recognized": "ja",
+      "count": 5
+    },
+    {
+      "reference": "dann",
+      "recognized": "da",
+      "count": 5
+    },
+    {
+      "reference": "gerne",
+      "recognized": "gern",
+      "count": 5
+    },
+    {
+      "reference": "14",
+      "recognized": "vierzehn",
+      "count": 5
+    },
+    {
+      "reference": "mag",
+      "recognized": "magister",
+      "count": 5
+    },
+    {
+      "reference": "9",
+      "recognized": "neun",
+      "count": 5
+    },
+    {
+      "reference": "30",
+      "recognized": "dreißig",
+      "count": 5
+    },
+    {
+      "reference": "ich",
+      "recognized": "sich",
+      "count": 5
+    },
+    {
+      "reference": "1",
+      "recognized": "eins",
+      "count": 5
+    },
+    {
+      "reference": "einer",
+      "recognized": "eine",
+      "count": 4
+    },
+    {
+      "reference": "glaub",
+      "recognized": "glaube",
+      "count": 4
+    },
+    {
+      "reference": "cafés",
+      "recognized": "cafs",
+      "count": 4
+    },
+    {
+      "reference": "17",
+      "recognized": "siebzehn",
+      "count": 4
+    }
+  ],
+  "additional_warm_requests": 90,
+  "repeated_transcripts_identical_to_full_pass": true,
+  "repeated_30_clip_http_totals_seconds": [
+    20.93404704799741,
+    21.047549837000588,
+    20.976533194001604
+  ],
+  "repeated_total_mean_seconds": 20.986043359666535,
+  "repeated_total_sample_stdev_seconds": 0.057345908451307936,
+  "limitations": [
+    "Private warmed worker, not public request/cold-start SLA",
+    "Human-labeled according to dataset authors; no independent relabeling",
+    "No number equivalence, annotation-word removal, or spelling correction; not directly comparable to differently normalized published WER",
+    "Not clinical validation; one reference contains only an ellipsis and is unscorable"
+  ]
+}

@@ -1,0 +1,946 @@
+{
+  "schema": "fs2-mindeval-public-rehearsal/v1",
+  "label": "fs2-diagnostic-20260916",
+  "started_at": "2026-09-16T16:44:23.900549+00:00",
+  "base_url": "https://89.169.99.188",
+  "image_provenance": {
+    "gateway": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-gateway@sha256:4d7c32408cdc7a8bb5df55b73408146d6fe5aee759927f9211790b0874ef2db7",
+    "workshop": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-workshop@sha256:7cf93a79b10c1be956300ef81e41ebd55fc6ed3ff77e26ca209e68b3b545b65a",
+    "verified_by_public_runner": false
+  },
+  "checks": [
+    {
+      "name": "unauthenticated_denied",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "ten_principals_same_tenant",
+      "passed": true,
+      "identities": [
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-01",
+          "token_id": "937d5215-ad97-41db-a250-1ca111d61170",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-02",
+          "token_id": "80ff5245-3ee2-4db6-bf31-d0ae2302db9d",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-03",
+          "token_id": "a7d2fdc2-1148-499e-b3d6-483b0e42a996",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-04",
+          "token_id": "6d5d9971-10ba-404b-bdee-672a8f8229ae",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-05",
+          "token_id": "0241042b-f7c6-4ebf-9b10-f1b1b163619d",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-06",
+          "token_id": "d49af786-79b3-4f1a-a77a-eab248beb2c9",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-07",
+          "token_id": "ff213e78-5724-4bc3-b3a4-875d972c3c21",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-08",
+          "token_id": "a2d654eb-596e-42f9-baa6-c59624a4e5d0",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-09",
+          "token_id": "f3d6b42c-adb4-42a7-9734-0c79203df3b9",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-10",
+          "token_id": "b244026c-5870-4e17-a79c-25961fa3f6bb",
+          "max_concurrency": 5
+        }
+      ]
+    },
+    {
+      "name": "model_grants_and_fixed_judge",
+      "passed": true,
+      "clinicians": [
+        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "openai/gpt-oss-120b",
+        "zai-org/GLM-5.1"
+      ],
+      "patient": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "judge": "google/gemma-3-27b-it"
+    },
+    {
+      "name": "gateway_20_accepted_21_rejected",
+      "passed": true,
+      "status": 422,
+      "inference_calls": 0
+    },
+    {
+      "name": "workshop_21_profiles_rejected_without_jobs",
+      "passed": true,
+      "status": 422
+    },
+    {
+      "name": "ordinary_pat_missing_model_grant_denied",
+      "passed": true,
+      "status": 403
+    },
+    {
+      "name": "pause_takeover_human_turn_nudge_resume_abort_reconnect",
+      "passed": true,
+      "run_id": "14abef1f-4e7b-4b66-947f-cff616bd3e74"
+    },
+    {
+      "name": "repetition_1_60_jobs_idempotent",
+      "passed": true,
+      "unique_runs": 60
+    },
+    {
+      "name": "repetition_1_cross_team_denied_detail",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_1_cross_team_denied_/events",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_1_cross_team_denied_/report",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_1_60_completed_strict_judgments_fair_progress",
+      "passed": true,
+      "classifier_coverage": {
+        "unavailable": 60
+      }
+    }
+  ],
+  "repetitions": [
+    {
+      "number": 1,
+      "run_ids": {
+        "5": [
+          "0a4a09fa-e07d-470f-b593-5d35675da60f",
+          "489c969c-8f89-4722-a767-ba364c43500e",
+          "48a1620c-1aea-4dfe-8f58-edbbe4c200eb",
+          "4f158e28-a1d2-4a39-b344-9cb45d90d498",
+          "ca4069c8-063c-405f-a768-f5c7c32c124e",
+          "eeddbf73-2c36-4a5f-9498-7c3fbcbd040f"
+        ],
+        "3": [
+          "06ead3c8-41cb-4f47-8efb-09d5380c3005",
+          "3888af81-0505-4770-8a1a-a8982621941f",
+          "3c1e7018-ef83-4e9a-8030-da62f094436a",
+          "77e69cba-458b-4f73-bc03-e9f09c9744d5",
+          "bad2c601-83f6-4da3-a458-631dbd4ec48e",
+          "e1434392-9836-4a32-ae53-3cb54743686c"
+        ],
+        "7": [
+          "04e99862-6c8c-487e-bb11-54d66e75cde0",
+          "081bedc0-f43c-4ac4-977d-779196bfb3d4",
+          "53c65bf7-38f0-431c-b4b8-52955e457c96",
+          "b4e4f39e-97db-47ac-a1c9-21bcd5b14472",
+          "c0af2e18-bc1d-4052-a2e8-cd6734d3efb4",
+          "e002a33c-e919-4482-9c73-18610d0ccb5d"
+        ],
+        "8": [
+          "091f09f9-2b34-4c62-8954-86b256871fa9",
+          "1e0a4659-c9eb-42f5-b303-ec8782af3269",
+          "55248b01-efda-4943-9598-98582dc8ba97",
+          "ceb95fe3-a7ea-4727-8352-a8536b44d6b3",
+          "d3e6646b-4fbe-466d-b466-995c4cbe54da",
+          "d8eb8e82-825d-4bea-91b2-38d2d515f118"
+        ],
+        "9": [
+          "247d59b9-2b37-400e-ba9f-45da1883d9f5",
+          "25c552af-2733-4a29-93f2-5f6707c3784b",
+          "9dbfd2d4-3122-44d0-ace5-528f0027cc41",
+          "a0214759-acd0-42c0-bd6d-cd586f4a6c03",
+          "af04ee43-f4e4-4755-b33b-0b07e22b8209",
+          "af4f3f5b-0b7f-43e5-8f65-845e857613ee"
+        ],
+        "4": [
+          "28a5b0be-ceff-479b-8973-b896a1aa64fb",
+          "455a3ade-32bb-4417-b623-afa37a12692c",
+          "47e6bbf2-71d3-4946-bc69-6360b6c5f27c",
+          "66d1a563-e33c-4b85-b843-869e2cb801c4",
+          "8c37b37d-d33f-4d97-a5f1-710b4fe421f0",
+          "eb2205cf-8cdc-45fd-a25e-ff8019bce716"
+        ],
+        "0": [
+          "13eb0c3d-1325-47a5-861e-3fcd7d6a1c1c",
+          "3a24d395-1afc-4977-8024-b5f2785b7eb3",
+          "6885d097-cbce-438f-bfe9-1140ead5ff60",
+          "a3e8fb3c-a31e-4605-9a71-b0fb3a5d6903",
+          "bec4b765-ce11-4bc3-bf6f-53eae4849ce3",
+          "f80f1626-55ab-4508-93da-ae6a076a18b8"
+        ],
+        "6": [
+          "2bdf251e-783f-4dc3-b95b-b479ccaf25b9",
+          "483b2635-8497-4020-a250-dd0bba2c6147",
+          "697c0216-af62-497e-b600-cb4c924bd8e4",
+          "d021e5f5-2a8a-4360-8c54-6620b0737da1",
+          "dc81d29f-e94e-4653-9a2e-787e92ff890c",
+          "f9fdfecb-3634-4afc-9e60-b68398153c8c"
+        ],
+        "2": [
+          "38d28a48-5769-410f-87f1-50b0622e366a",
+          "4d7c9f71-ae8d-4dee-ad47-cca8eaafe7a1",
+          "613a225d-c382-4210-b3e0-4633e12875f8",
+          "681a94b7-13aa-4760-97a8-dbf3b355ce15",
+          "bbc73d95-8902-4d23-a21f-d690bdfc730b",
+          "d2435f12-abc5-421e-b056-2811d24034f7"
+        ],
+        "1": [
+          "3f7e8a11-241e-423e-a4ef-19bc2f82a8b5",
+          "46a09505-2f99-44c2-a220-d71303db7a5b",
+          "715409e5-3500-4719-b3fe-f31b3cbbb7fe",
+          "728717a8-b8e2-4df3-8c74-535807b09fa8",
+          "9f99119e-797e-4704-b4ff-1c12917d7d1d",
+          "b2e6b8f4-5861-49b2-9647-87d9abdf67c0"
+        ]
+      },
+      "samples": [
+        {
+          "seconds": 19.088,
+          "statuses": {
+            "running": 50,
+            "queued": 10
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 28.758,
+          "statuses": {
+            "running": 50,
+            "queued": 10
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 36.847,
+          "statuses": {
+            "running": 50,
+            "queued": 10
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 44.812,
+          "statuses": {
+            "running": 50,
+            "queued": 10
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 53.418,
+          "statuses": {
+            "running": 50,
+            "queued": 10
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 62.209,
+          "statuses": {
+            "queued": 11,
+            "running": 49
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 70.128,
+          "statuses": {
+            "completed": 6,
+            "running": 48,
+            "queued": 6
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 4,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 78.441,
+          "statuses": {
+            "completed": 12,
+            "running": 45,
+            "queued": 3
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 4,
+            "3": 5,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 5,
+            "8": 4,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 86.405,
+          "statuses": {
+            "completed": 14,
+            "running": 43,
+            "queued": 3
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 5,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 5,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 94.683,
+          "statuses": {
+            "completed": 16,
+            "running": 42,
+            "queued": 2
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 5,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 4,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 102.971,
+          "statuses": {
+            "completed": 16,
+            "running": 42,
+            "queued": 2
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 5,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 4,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 110.86,
+          "statuses": {
+            "completed": 16,
+            "running": 42,
+            "queued": 2
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 5,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 4,
+            "8": 3,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 119.121,
+          "statuses": {
+            "completed": 18,
+            "running": 40,
+            "queued": 2
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 5,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 3,
+            "8": 2,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 127.258,
+          "statuses": {
+            "completed": 19,
+            "running": 39,
+            "queued": 2
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 5,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 3,
+            "8": 1,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 135.493,
+          "statuses": {
+            "completed": 21,
+            "running": 37,
+            "queued": 2
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 5,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 143.318,
+          "statuses": {
+            "completed": 24,
+            "running": 35,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 3,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 151.3,
+          "statuses": {
+            "completed": 26,
+            "running": 33,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 1,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 159.593,
+          "statuses": {
+            "completed": 29,
+            "running": 30,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 168.208,
+          "statuses": {
+            "completed": 31,
+            "running": 28,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 1
+          }
+        },
+        {
+          "seconds": 176.402,
+          "statuses": {
+            "completed": 32,
+            "running": 27,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 184.635,
+          "statuses": {
+            "completed": 34,
+            "running": 25,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 3,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 193.401,
+          "statuses": {
+            "completed": 36,
+            "running": 23,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 1,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 201.984,
+          "statuses": {
+            "completed": 38,
+            "running": 22
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 0,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 4,
+            "6": 5,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 210.335,
+          "statuses": {
+            "completed": 41,
+            "running": 19
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 0,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 4,
+            "6": 2,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 219.41,
+          "statuses": {
+            "completed": 43,
+            "running": 17
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 0,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 4,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 227.578,
+          "statuses": {
+            "completed": 45,
+            "running": 15
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 0,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 2,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 236.287,
+          "statuses": {
+            "completed": 47,
+            "running": 13
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 0,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 0,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 244.249,
+          "statuses": {
+            "completed": 49,
+            "running": 11
+          },
+          "running_by_team": {
+            "0": 2,
+            "1": 0,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 0,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 252.504,
+          "statuses": {
+            "completed": 51,
+            "running": 9
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 0,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 261.482,
+          "statuses": {
+            "completed": 51,
+            "running": 9
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 3,
+            "3": 0,
+            "4": 4,
+            "5": 0,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 269.796,
+          "statuses": {
+            "completed": 53,
+            "running": 7
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 1,
+            "3": 0,
+            "4": 4,
+            "5": 0,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 278.349,
+          "statuses": {
+            "completed": 55,
+            "running": 5
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 3,
+            "5": 0,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 286.431,
+          "statuses": {
+            "completed": 57,
+            "running": 3
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 1,
+            "5": 0,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 294.652,
+          "statuses": {
+            "completed": 58,
+            "running": 2
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6": 0,
+            "7": 2,
+            "8": 0,
+            "9": 0
+          }
+        },
+        {
+          "seconds": 303.32,
+          "statuses": {
+            "completed": 60
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6": 0,
+            "7": 0,
+            "8": 0,
+            "9": 0
+          }
+        }
+      ],
+      "first_progress_seconds": {
+        "0": 12.141,
+        "1": 14.037,
+        "2": 14.255,
+        "3": 15.47,
+        "4": 15.694,
+        "5": 15.916,
+        "6": 16.121,
+        "7": 18.045,
+        "8": 18.606,
+        "9": 19.088
+      },
+      "passed": true,
+      "failures": [],
+      "classifier_coverage": {
+        "unavailable": 60
+      },
+      "usage": {
+        "prompt_tokens": 1531790,
+        "completion_tokens": 72106,
+        "total_tokens": 1603896
+      },
+      "inference": {
+        "calls": 300,
+        "mean_queue_ms": 18123.051683333335,
+        "mean_latency_ms": 28534.8581,
+        "retries": 0
+      },
+      "elapsed_seconds": 345.157
+    }
+  ],
+  "passed": true,
+  "finished_at": "2026-09-16T16:50:22.002701+00:00"
+}

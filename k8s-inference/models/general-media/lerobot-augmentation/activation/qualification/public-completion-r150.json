@@ -1,0 +1,450 @@
+{
+  "schema": "fs2-serve.nebius.ai/lerobot-public-completion-receipt/v1",
+  "scope": "One real public typed-MCP uploaded LeRobot dataset with two distinct-seed blur-conditioned transfer variants; dataset/media mechanics only. Supplementary observed rejection/concurrency/CPU-stage cancellation behavior and two failed harness assertions are retained separately below. Not final customer-cohort, hosted-client, maximum-size, semantic-intent or physical-action-fidelity qualification.",
+  "model_id": "cosmos3-lerobot-augmentation",
+  "variant_id": "cosmos3-nano-lerobot-v3",
+  "helm_revision": 150,
+  "control_plane_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:e240fb81a208df7517df8ee7ae3f0fa47d4544b7399f68f02db933d16fed9b6c",
+  "runtime_image_digest": "sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
+  "execution_identity_sha256": "a632c23d713398965fb2e0e299dfe3be2037c676f5a98697940fd39390182500",
+  "execution_map_sha256": "687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+  "operation_id": "f1f19593-c3ac-4b20-bfb4-360be62d76b2",
+  "request_sha256": "9bb1570c8a2ced914a04100fd871abb2a7595af9165c1ec8ef198836ad3baf40",
+  "protocol": "mcp",
+  "status": "succeeded",
+  "accepted_at": "2026-09-18T01:27:20.076708Z",
+  "completed_at": "2026-09-18T01:29:19.982016Z",
+  "client_completed_at": "2026-09-18T01:30:10.540678+00:00",
+  "semantic_validation": {
+    "receipt_digest": "e00fc0e4180c1bd835c695d57ced95fa2276ce079159070850fc3a877bacfc5a",
+    "status": "passed",
+    "validator_id": "cosmos3-lerobot-v3-0-6-1"
+  },
+  "inflight_replay_verified": true,
+  "terminal_replay_verified": true,
+  "max_concurrency": 1,
+  "source": {
+    "artifact_id": "251bef46-fdd0-486b-95a9-bdfed07742cf",
+    "compression": "zstd",
+    "kind": "uploaded-bundle",
+    "media_type": "application/x-tar",
+    "sha256": "6355652f0b89514fda749c8f461d6f770659590e1b96de94b7c6a288cbe33561",
+    "size_bytes": 2657959
+  },
+  "selection": {
+    "cameras": [
+      "observation.images.wrist"
+    ],
+    "episodes": [
+      1
+    ]
+  },
+  "augmentation": {
+    "conditioning": {
+      "controls": [
+        "blur"
+      ],
+      "frame_indexes": [
+        0,
+        1
+      ],
+      "keep": "first"
+    },
+    "dimensions": [
+      {
+        "instruction": "cool diffuse laboratory lighting with a visibly blue-tinted background, preserving robot and object identity",
+        "name": "lighting",
+        "strength": 0.6
+      }
+    ],
+    "guidance_scale": 6.0,
+    "mode": "transfer",
+    "negative_prompt": "changed robot motion, missing objects, temporal jitter, blur",
+    "num_inference_steps": 35,
+    "prompt_template": "Preserve the robot, objects, camera, and motion for task '{task}'. Apply only this visual variation: {variation}."
+  },
+  "variants": {
+    "count": 2,
+    "seeds": [
+      2026091703,
+      2026091704
+    ]
+  },
+  "input_manifest": {
+    "artifact_id": "ce7491f2-24dd-41dc-a5c2-72c094f6f9d8",
+    "compression": "none",
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "sha256": "0f3a6876c642361e6aed07c33e4cb16fd6dd238214848232fa12076dfe16082e",
+    "size_bytes": 528
+  },
+  "output_manifest": {
+    "artifact_id": "e2b2bc2f-0c62-4ca8-a211-44e47baed520",
+    "compression": "none",
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "sha256": "a1c8ddbd545cdc63a0adac3af13387277a9a7ff4e489b731fff096798334053a",
+    "size_bytes": 994
+  },
+  "output_artifacts": [
+    {
+      "artifact": {
+        "artifact_id": "2c23cb2f-7f4f-4cca-9b97-9ccc5cbb3292",
+        "compression": "none",
+        "media_type": "application/json",
+        "sha256": "33677b500d5a6c1688401669fef3c884d735a9337f28688d51f73e8e969d2e9a",
+        "size_bytes": 1151
+      },
+      "name": "result",
+      "semantic_type": "lerobot-augmentation-result/v1"
+    },
+    {
+      "artifact": {
+        "artifact_id": "8c09db61-e4db-4db9-9daa-d4e76ac5b426",
+        "compression": "zstd",
+        "media_type": "application/x-tar",
+        "sha256": "032c43308407aa32da6aeeff4d3d63fb2a148e52521940c670a41b08fab3b7ff",
+        "size_bytes": 2182067
+      },
+      "name": "variant-00",
+      "semantic_type": "lerobot-v3-augmented-bundle/v1"
+    },
+    {
+      "artifact": {
+        "artifact_id": "5bb8f818-3968-4933-b48e-8b1c18daa172",
+        "compression": "zstd",
+        "media_type": "application/x-tar",
+        "sha256": "61e613ff0c9ec8a3702a1eb54e71c29d8541c5ea5689bf8571269984fc4e467f",
+        "size_bytes": 2175721
+      },
+      "name": "variant-01",
+      "semantic_type": "lerobot-v3-augmented-bundle/v1"
+    }
+  ],
+  "reader_validations": [
+    {
+      "output_tree_sha256": "af836a7e8d3184a747f4392cf7639675fdc517085357d1457cb004c000dc56ba",
+      "physical_alignment_verified": false,
+      "provenance_sha256": "dd203fc8b4a970d9e031ee37168f6ec2438c72717ceda076572ae0475a429a56",
+      "reader": "lerobot==0.6.1",
+      "source_tree_sha256": "13f438dc779cd63511cebd0bf471860a1f39211be38c47ddf854921aa10368da",
+      "validation": {
+        "cameras": 2,
+        "decoded_frames_each": 128,
+        "episodes": 2,
+        "frames": 64,
+        "nonvideo_values_compared": 2304,
+        "nonvideo_values_exact": true,
+        "physical_alignment_verified": false,
+        "reader": "lerobot==0.6.1",
+        "status": "passed",
+        "unselected_max_frame_mae_limit": 6.0,
+        "unselected_pixels_bit_exact": false,
+        "visual_comparison": [
+          {
+            "camera": "observation.images.front",
+            "changed_frames": 32,
+            "episode_index": 0,
+            "frames": 32,
+            "max_frame_mean_absolute_pixel_difference": 1.9109050035476685,
+            "mean_absolute_pixel_difference": 1.746873326599598,
+            "selected": false
+          },
+          {
+            "camera": "observation.images.wrist",
+            "changed_frames": 32,
+            "episode_index": 0,
+            "frames": 32,
+            "max_frame_mean_absolute_pixel_difference": 2.107658624649048,
+            "mean_absolute_pixel_difference": 1.8641835935413837,
+            "selected": false
+          },
+          {
+            "camera": "observation.images.front",
+            "changed_frames": 32,
+            "episode_index": 1,
+            "frames": 32,
+            "max_frame_mean_absolute_pixel_difference": 1.8180515766143799,
+            "mean_absolute_pixel_difference": 1.7441858053207397,
+            "selected": false
+          },
+          {
+            "camera": "observation.images.wrist",
+            "changed_frames": 32,
+            "episode_index": 1,
+            "frames": 32,
+            "max_frame_mean_absolute_pixel_difference": 44.92927932739258,
+            "mean_absolute_pixel_difference": 44.071396470069885,
+            "selected": true
+          }
+        ]
+      }
+    },
+    {
+      "output_tree_sha256": "9ddbdb89fc0709edcf3224a505cc021a6724158ad351babe7b6bbd88b7938460",
+      "physical_alignment_verified": false,
+      "provenance_sha256": "cff2f8577397cee77fdda89ad123a510a36bebd86369371525a64da0d0c1bdb9",
+      "reader": "lerobot==0.6.1",
+      "source_tree_sha256": "13f438dc779cd63511cebd0bf471860a1f39211be38c47ddf854921aa10368da",
+      "validation": {
+        "cameras": 2,
+        "decoded_frames_each": 128,
+        "episodes": 2,
+        "frames": 64,
+        "nonvideo_values_compared": 2304,
+        "nonvideo_values_exact": true,
+        "physical_alignment_verified": false,
+        "reader": "lerobot==0.6.1",
+        "status": "passed",
+        "unselected_max_frame_mae_limit": 6.0,
+        "unselected_pixels_bit_exact": false,
+        "visual_comparison": [
+          {
+            "camera": "observation.images.front",
+            "changed_frames": 32,
+            "episode_index": 0,
+            "frames": 32,
+            "max_frame_mean_absolute_pixel_difference": 1.9109050035476685,
+            "mean_absolute_pixel_difference": 1.746873326599598,
+            "selected": false
+          },
+          {
+            "camera": "observation.images.wrist",
+            "changed_frames": 32,
+            "episode_index": 0,
+            "frames": 32,
+            "max_frame_mean_absolute_pixel_difference": 2.107658624649048,
+            "mean_absolute_pixel_difference": 1.8641835935413837,
+            "selected": false
+          },
+          {
+            "camera": "observation.images.front",
+            "changed_frames": 32,
+            "episode_index": 1,
+            "frames": 32,
+            "max_frame_mean_absolute_pixel_difference": 1.8180515766143799,
+            "mean_absolute_pixel_difference": 1.7441858053207397,
+            "selected": false
+          },
+          {
+            "camera": "observation.images.wrist",
+            "changed_frames": 32,
+            "episode_index": 1,
+            "frames": 32,
+            "max_frame_mean_absolute_pixel_difference": 44.293243408203125,
+            "mean_absolute_pixel_difference": 43.689274311065674,
+            "selected": true
+          }
+        ]
+      }
+    }
+  ],
+  "delegation": {
+    "same_token_principal_tenant": true,
+    "parent_attempt_id": "f9675b48-db6c-54bf-aea7-16ec4395ce66",
+    "children": [
+      {
+        "id": "0ea4aee0-7b9d-47cf-af0c-69eca0f86c93",
+        "operation": "upload",
+        "status": "succeeded",
+        "http_status": 201,
+        "parent_attempt_id": "f9675b48-db6c-54bf-aea7-16ec4395ce66"
+      },
+      {
+        "id": "296859c0-caec-4a4e-976a-c4b1f964bd0d",
+        "operation": "generate-media",
+        "status": "succeeded",
+        "http_status": 200,
+        "parent_attempt_id": "f9675b48-db6c-54bf-aea7-16ec4395ce66"
+      },
+      {
+        "id": "28e9e1c3-5e3b-498e-bf05-dbf709e55dbd",
+        "operation": "generate-media",
+        "status": "succeeded",
+        "http_status": 200,
+        "parent_attempt_id": "f9675b48-db6c-54bf-aea7-16ec4395ce66"
+      }
+    ],
+    "cpu_attempt_resources_released": true
+  },
+  "generations": [
+    {
+      "id": "296859c0-caec-4a4e-976a-c4b1f964bd0d",
+      "accepted_at": "2026-09-18 01:28:01.711393+00:00",
+      "activation_started_at": "2026-09-18 01:28:01.749676+00:00",
+      "ready_at": "2026-09-18 01:28:39.568147+00:00",
+      "started_at": "2026-09-18 01:28:39.574248+00:00",
+      "completed_at": "2026-09-18 01:28:46.508016+00:00",
+      "attempt": 1,
+      "cold_start_seconds": 37.856754,
+      "pod_uid": "bb29bc78-e898-4562-948c-68dd12332a28",
+      "node_uid": "d0829db9-bc8e-445b-865d-326d01686189",
+      "gpu_uuids": [
+        "GPU-b8ef12ad-0a76-f321-ba9a-03cb8caea351"
+      ],
+      "gpu_count": 1,
+      "preemptible": true,
+      "semantic_outcome": "protocol_valid"
+    },
+    {
+      "id": "28e9e1c3-5e3b-498e-bf05-dbf709e55dbd",
+      "accepted_at": "2026-09-18 01:28:56.251480+00:00",
+      "activation_started_at": "2026-09-18 01:28:56.315462+00:00",
+      "ready_at": "2026-09-18 01:28:56.624491+00:00",
+      "started_at": "2026-09-18 01:28:56.629208+00:00",
+      "completed_at": "2026-09-18 01:29:02.604066+00:00",
+      "attempt": 1,
+      "cold_start_seconds": 0.373011,
+      "pod_uid": "bb29bc78-e898-4562-948c-68dd12332a28",
+      "node_uid": "d0829db9-bc8e-445b-865d-326d01686189",
+      "gpu_uuids": [
+        "GPU-b8ef12ad-0a76-f321-ba9a-03cb8caea351"
+      ],
+      "gpu_count": 1,
+      "preemptible": true,
+      "semantic_outcome": "protocol_valid"
+    }
+  ],
+  "visual_review": {
+    "scope": "Independent review of the exact two returned150 variants, representative frames plus all-frame cross-variant RGB comparison.",
+    "physical_action_alignment_verified": false,
+    "semantic_intent_verified": false,
+    "important_request_distinction": "blur is the transfer conditioning control, not the requested output transformation. Requested dimension is lighting; negative prompt also says blur. A visibly blurred output is therefore not automatically a semantic success.",
+    "semantic_outcome": "Two distinct generated variants returned and mechanics validated, but requested lighting/object-preservation semantics are not clearly achieved; heavy blur and fine-content drift are visible.",
+    "visual_observations": [
+      "Both selected outputs retain recognizable coarse produce-bin/cart and composite camera-view layout, but show pervasive heavy blur/softening and stylized high-contrast color patches.",
+      "Fine gripper silhouettes, fruit-like object appearance and cart/wire contours differ from the source. These outputs do not preserve exact object identity or geometry.",
+      "Cool/blue tones appear in parts of the image, but the source already includes blue-gray regions. A faithful isolated cool diffuse relighting with the requested blue-tinted background is not clearly established; heavy blur/stylization dominates the observed change.",
+      "Variant00 and variant01 visibly differ in gripper contours, cart details and object color/shape patterns, especially middle/end. Decoded comparison confirms every selected frame differs, not just file/container metadata.",
+      "All three unselected streams in each variant look scene/pose-consistent with source at the sampled frames. Their small source-relative codec changes remain below the existing6.0/255 mean-per-frame bound; they are not claimed source-pixel-exact.",
+      "No sampled blank/corrupt image or gross scene cut was observed. Temporal fidelity between sampled frames was not fully assessed."
+    ],
+    "cross_variant_comparison": {
+      "method": "PyAV RGB24 comparison at equal decoded timestamps; original returned shards, no resampling",
+      "comparison": "variant-00 versus variant-01",
+      "pixel_scale": "0..255",
+      "streams": [
+        {
+          "episode_index": 0,
+          "camera": "observation.images.front",
+          "selected": false,
+          "decoded_frames": 32,
+          "differing_frames": 0,
+          "mean_absolute_pixel_difference": 0,
+          "max_frame_mean_absolute_pixel_difference": 0
+        },
+        {
+          "episode_index": 1,
+          "camera": "observation.images.front",
+          "selected": false,
+          "decoded_frames": 32,
+          "differing_frames": 0,
+          "mean_absolute_pixel_difference": 0,
+          "max_frame_mean_absolute_pixel_difference": 0
+        },
+        {
+          "episode_index": 0,
+          "camera": "observation.images.wrist",
+          "selected": false,
+          "decoded_frames": 32,
+          "differing_frames": 0,
+          "mean_absolute_pixel_difference": 0,
+          "max_frame_mean_absolute_pixel_difference": 0
+        },
+        {
+          "episode_index": 1,
+          "camera": "observation.images.wrist",
+          "selected": true,
+          "decoded_frames": 32,
+          "differing_frames": 32,
+          "mean_absolute_pixel_difference": 20.754235793604995,
+          "max_frame_mean_absolute_pixel_difference": 22.26424893465909
+        }
+      ]
+    },
+    "limitations": [
+      "Numeric action/timestamp/nonvideo equality is data integrity, not physical action alignment or training validity.",
+      "The pinned input is public model-generated robot imagery, not recorded/calibrated robot telemetry.",
+      "Three representative frames cannot establish absence of flicker or contact errors between samples.",
+      "Dimension strength0.6 is prompt text, not a calibrated denoising/edit weight.",
+      "The corrected upload replay behavior is separate from native model output quality.",
+      "This is targeted debug evidence on release150, not completion of a new frozen final cohort."
+    ],
+    "private_receipt_sha256": "235ea55fd5d11a58fa027597502bf4c5c29e15b38b5822e7ec260565dc69557c"
+  },
+  "observed_failure_behavior": {
+    "invalid_schema_http_status": 422,
+    "invalid_selection": {
+      "operation_id": "14856e69-1ea7-4812-8ed5-3683f4688a48",
+      "selection_episodes": [
+        999
+      ],
+      "status": "failed",
+      "http_status": 422,
+      "error_code": "INVALID_REQUEST",
+      "child_count": 0,
+      "generation_child_count": 0,
+      "cpu_resources_released": true,
+      "observation_sha256": "a632883739c64ec1eac9e530db070c4485c0a02e33ecc3282b8714e45670094d"
+    },
+    "concurrency": {
+      "http_status": 429,
+      "response_error_field": "type",
+      "error_type": "concurrency_exceeded",
+      "max_concurrency": 1
+    },
+    "cancellation": {
+      "operation_id": "91500592-e8a4-4c89-8c2b-b201531a3b23",
+      "status": "cancelled",
+      "observed_phase_before_cancel": "active_compute",
+      "scope": "CPU coordinator stage before any upload or generation child was admitted; not active-GPU-child cancellation",
+      "child_count": 0,
+      "cpu_resources_released": true,
+      "observation_sha256": "9086ac7b805bbed0464e3ae2447eb8d3f898b443936092b0a4de53c90ee9db58"
+    }
+  },
+  "harness_execution": {
+    "original_aggregate_outcome": "failed_stop_new_admissions",
+    "continuation_aggregate_outcome": "failed_stop_new_admissions",
+    "original_aggregate_sha256": "7418f1ecb6194fa6a32cf275688b81bdf2332eda531fd6cd97b82db28562019e",
+    "continuation_aggregate_sha256": "fd8719c9f7af64fd2f2295fdb22aaf78fb7c554a98f7fff7b80ddd21f03756c0",
+    "mismatches": [
+      "Initial helper expected DATASET_INVALID; the frozen Selection ContractError correctly maps to INVALID_REQUEST.",
+      "Continuation expected error.code; the actual429 response correctly uses error.type=concurrency_exceeded."
+    ],
+    "original_aggregates_are_not_passes": true,
+    "no_blur_or_invalid_selection_readmission": true,
+    "linked_offline_evaluation": {
+      "path": "/home/tux/secure-handoff/lerobot-release-20260917/targeted-evaluation-r150.json",
+      "sha256": "5f81569bdc8a695a17e8158b23bdcd532b213621ee5402b4cb54b22906375e90",
+      "outcome": "targeted_blur_probes_passed_with_documented_harness_corrections",
+      "scope": "Re-evaluates the exact retained responses and collector proofs; no new public requests and no relabeling of the two original failed aggregates."
+    }
+  },
+  "customer_release_ready": false,
+  "not_qualified": [
+    "semantic intent or isolated lighting preservation",
+    "multi-view synchronization",
+    "active GPU-child cancellation",
+    "physical action alignment",
+    "robot-training fitness",
+    "maximum supported dataset size/throughput",
+    "Hugging Face and object-store dataset source paths",
+    "hosted LibreChat conversation",
+    "final unchanged release cohorts"
+  ],
+  "private_evidence": {
+    "directory": "/home/tux/secure-handoff/lerobot-release-20260917/debug-blur-probes-r150/cohort-1-blur",
+    "files": {
+      "run.json": "e7b1539d97114b09c1366a17f4255e9abd131ab61fe07b1aa72d4d071649c883",
+      "prepared.json": "6ab1cbb7f504a2e64c38ea9b4757fd245d26e06e236dcc3230200ce274c38bde",
+      "result.json": "33677b500d5a6c1688401669fef3c884d735a9337f28688d51f73e8e969d2e9a",
+      "output-manifest.json": "a1c8ddbd545cdc63a0adac3af13387277a9a7ff4e489b731fff096798334053a",
+      "variant-00-validation.json": "1d29107bcf1237c24558be2763cbf968bb240ad40d18299846446f3af77f2200",
+      "variant-01-validation.json": "66093211494c9e4a6f4f4066a6765d1d7e7eaeda6e5961edd20a68ca428a40cb",
+      "qualification-observation-running.json": "882baf131f9fae7c0a69d8563c5726f634b5d4b3fd1edcaf1284f18d5b46421d",
+      "qualification-observation-final.json": "7c6524a73fc28eb52660fc7896ecbf6f7d0e3d3987ca98622b1ee793db40486b"
+    },
+    "deployment_receipt_sha256": "31d09320bed667523d6c4f559dd143597f41ef786616f0d51cd74c9a0aab870b",
+    "original_probes_sha256": "05fe0e0eb5e4ecec3f8a7c422caa0a6e1be1ee3159ebdb389cf74b3fd675dbfe",
+    "continuation_probes_sha256": "9b47823e4bfa109dd5fcab9401d02245130ff8aef49ec74a117a1261285f632b"
+  }
+}

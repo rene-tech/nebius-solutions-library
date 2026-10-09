@@ -1,0 +1,349 @@
+{
+  "captured_maps_sha256": "8fa531552fa3c25ae1311d378bd57954ee6f60c6c3e99a5be68a5ddf2a7d98eb",
+  "captured_owner_list_sha256": "093a02112d472019efa024d99afe8a7d23f68236be4fb3291a6062a03d34560d",
+  "owner_spec": {
+    "adoption": {
+      "mode": "None"
+    },
+    "artifact": {
+      "manifestDigest": "sha256:75368bdd1d6126faa99bb716aac4409215f2217fb827750aed117b273bee889b",
+      "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284"
+    },
+    "availability": {
+      "cooldownSeconds": 300,
+      "idleSeconds": 300,
+      "maxReplicas": 4,
+      "minReplicas": 2,
+      "pollingIntervalSeconds": 5,
+      "targetQueueDepth": 1,
+      "warmWindows": []
+    },
+    "cache": {
+      "snapshotPreference": "Never",
+      "tier": "NodeLocal"
+    },
+    "exposure": {
+      "mcp": true,
+      "mcpToolName": "infer_diffdock",
+      "openAI": false,
+      "openAIAliases": []
+    },
+    "fastStart": {
+      "fallbackPolicy": "AllowLowerLevel",
+      "level": "Off",
+      "mode": "Fixed"
+    },
+    "lifecycle": {
+      "desiredState": "Enabled"
+    },
+    "modelRef": "diffdock",
+    "placement": {
+      "acceleratorsPerReplica": 1,
+      "poolRefs": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "topologyPolicy": "SingleNode"
+    },
+    "policy": {
+      "allowedPrincipalIds": [],
+      "policyRef": "tenant-default.v1",
+      "visibility": "Tenant"
+    },
+    "queue": {
+      "localQueue": "inference-models",
+      "maxQueueSeconds": 7200,
+      "priorityClass": "standard"
+    },
+    "rollout": {
+      "maxSurge": 0,
+      "maxUnavailable": 1,
+      "progressDeadlineSeconds": 7200,
+      "strategy": "Recreate"
+    },
+    "runtime": {
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9",
+      "profile": "custom",
+      "templateRef": {
+        "digest": "sha256:2cc3ce2e1b07ae0cdeb2fbe751c84a4c70674c5e549e96234cdf62311c3101c9",
+        "name": "diffdock.http-response-identity-20260919"
+      }
+    },
+    "tenantId": "tenant-e00f3wdfzwfjgbcyfv"
+  },
+  "pools": {
+    "h100-1x": {
+      "acceleratorClass": "nvidia-h100-sxm5-80gb",
+      "acceleratorsPerNode": 1,
+      "allocatableMemoryBytes": 199304937472,
+      "capacityType": "preemptible",
+      "fastStartEnvironmentBindings": [],
+      "maxNodes": 16,
+      "minNodes": 4,
+      "nodeSelector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "accelerator.fs2.nebius/pool-id": "h100-1x",
+        "capacity.fs2.nebius/gpu-count": "1",
+        "capacity.fs2.nebius/type": "preemptible",
+        "local-nvme.fs2.nebius/eligible": "false",
+        "snapshot.fs2.nebius/eligible": "false",
+        "topology.fs2.nebius/scope": "standalone",
+        "workload.fs2.nebius/gpu": "true"
+      },
+      "poolId": "h100-1x",
+      "resourceName": "nvidia.com/gpu",
+      "startupScenario": "prepared-node-zero-pod",
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        }
+      ]
+    },
+    "h100-reserved-8x": {
+      "acceleratorClass": "nvidia-h100-sxm5-80gb",
+      "acceleratorsPerNode": 8,
+      "allocatableMemoryBytes": 1649145806848,
+      "capacityType": "regular",
+      "fastStartEnvironmentBindings": [],
+      "maxNodes": 2,
+      "minNodes": 2,
+      "nodeSelector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+        "capacity.fs2.nebius/gpu-count": "8",
+        "capacity.fs2.nebius/source": "capacity-block",
+        "capacity.fs2.nebius/type": "regular",
+        "local-nvme.fs2.nebius/eligible": "false",
+        "snapshot.fs2.nebius/eligible": "false",
+        "topology.fs2.nebius/scope": "standalone",
+        "workload.fs2.nebius/gpu": "true"
+      },
+      "poolId": "h100-reserved-8x",
+      "resourceName": "nvidia.com/gpu",
+      "startupScenario": "prepared-node-zero-pod",
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        }
+      ]
+    }
+  },
+  "schema": "fs2.diffdock-retained-template-regression/v1",
+  "scope": "Exact retained source contracts; no simulated inference results or live qualification",
+  "template": {
+    "modelRef": "diffdock",
+    "primaryServiceName": "diffdock-b300",
+    "primaryServicePort": 8000,
+    "primaryWorkloadName": "diffdock-b300",
+    "resources": [
+      {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+          "labels": {
+            "app.kubernetes.io/instance": "diffdock-b300",
+            "app.kubernetes.io/name": "diffdock",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2.nebius.ai/model-id": "diffdock"
+          },
+          "name": "diffdock-b300",
+          "namespace": "fs2-models"
+        },
+        "spec": {
+          "ports": [
+            {
+              "name": "http",
+              "port": 8000,
+              "targetPort": "http"
+            }
+          ],
+          "selector": {
+            "app.kubernetes.io/instance": "diffdock-b300"
+          },
+          "type": "ClusterIP"
+        }
+      },
+      {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "annotations": {
+            "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+            "fs2.nebius/model-content-digest": "sha256:fe05bca0521f77e120fe135021f555269b0128e929e60f201542d4c17483329c",
+            "fs2.nebius/runtime-image-digest": "sha256:0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9"
+          },
+          "labels": {
+            "app.kubernetes.io/instance": "diffdock-b300",
+            "app.kubernetes.io/name": "diffdock",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "fs2.nebius.ai/model-id": "diffdock"
+          },
+          "name": "diffdock-b300",
+          "namespace": "fs2-models"
+        },
+        "spec": {
+          "replicas": 0,
+          "selector": {
+            "matchLabels": {
+              "app.kubernetes.io/instance": "diffdock-b300"
+            }
+          },
+          "strategy": {
+            "type": "Recreate"
+          },
+          "template": {
+            "metadata": {
+              "annotations": {
+                "fs2.nebius.ai/confidence-checkpoint-sha256": "18d0fcc97fc55436786db02305ac61c734ad682aa5f8dee601555369c8461a57",
+                "fs2.nebius.ai/esm-checkpoint-sha256": "ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c",
+                "fs2.nebius.ai/score-checkpoint-sha256": "64afbdc97f6c700df0309162eb533ee6f2754c71412aca7a3a534a7239667260",
+                "fs2.nebius.ai/source-revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+                "fs2.nebius/compile-cache-abi": "driver-580.159.04-sm90",
+                "fs2.nebius/model-content-digest": "sha256:fe05bca0521f77e120fe135021f555269b0128e929e60f201542d4c17483329c",
+                "fs2.nebius/runtime-image-digest": "sha256:0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9",
+                "telemetry.fs2.nebius.ai/response-identity": "http-open-runtime-v1"
+              },
+              "labels": {
+                "app.kubernetes.io/component": "model-runtime",
+                "app.kubernetes.io/instance": "diffdock-b300",
+                "app.kubernetes.io/name": "diffdock",
+                "app.kubernetes.io/part-of": "fs2-serve",
+                "fs2.nebius.ai/model-id": "diffdock"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "containers": [
+                {
+                  "command": [
+                    "python3",
+                    "/opt/fs2/runtime/common/server.py"
+                  ],
+                  "env": [
+                    {
+                      "name": "FS2_PORT",
+                      "value": "8000"
+                    },
+                    {
+                      "name": "FS2_RUNTIME_POD_UID",
+                      "valueFrom": {
+                        "fieldRef": {
+                          "fieldPath": "metadata.uid"
+                        }
+                      }
+                    }
+                  ],
+                  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9",
+                  "imagePullPolicy": "IfNotPresent",
+                  "livenessProbe": {
+                    "failureThreshold": 4,
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 15,
+                    "timeoutSeconds": 3
+                  },
+                  "name": "runtime",
+                  "ports": [
+                    {
+                      "containerPort": 8000,
+                      "name": "http",
+                      "protocol": "TCP"
+                    }
+                  ],
+                  "readinessProbe": {
+                    "failureThreshold": 6,
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 3
+                  },
+                  "resources": {
+                    "limits": {
+                      "cpu": "24",
+                      "memory": "200Gi",
+                      "nvidia.com/gpu": "1"
+                    },
+                    "requests": {
+                      "cpu": "8",
+                      "memory": "64Gi",
+                      "nvidia.com/gpu": "1"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    },
+                    "readOnlyRootFilesystem": true
+                  },
+                  "startupProbe": {
+                    "failureThreshold": 360,
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 3
+                  },
+                  "volumeMounts": [
+                    {
+                      "mountPath": "/tmp",
+                      "name": "tmp"
+                    }
+                  ]
+                }
+              ],
+              "enableServiceLinks": false,
+              "nodeSelector": {
+                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+                "kubernetes.io/arch": "amd64"
+              },
+              "securityContext": {
+                "fsGroup": 10001,
+                "runAsGroup": 10001,
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "terminationGracePeriodSeconds": 30,
+              "tolerations": [
+                {
+                  "effect": "NoSchedule",
+                  "key": "dedicated",
+                  "operator": "Equal",
+                  "value": "fs2-inference"
+                }
+              ],
+              "volumes": [
+                {
+                  "emptyDir": {
+                    "sizeLimit": "16Gi"
+                  },
+                  "name": "tmp"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "runtimeContainerName": "runtime",
+    "runtimeProfile": "custom",
+    "templateDigest": "sha256:2cc3ce2e1b07ae0cdeb2fbe751c84a4c70674c5e549e96234cdf62311c3101c9"
+  }
+}

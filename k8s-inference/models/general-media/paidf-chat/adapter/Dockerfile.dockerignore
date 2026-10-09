@@ -1,0 +1,8 @@
+**
+!models/
+!models/general-media/
+!models/general-media/paidf-chat/
+!models/general-media/paidf-chat/adapter/
+!models/general-media/paidf-chat/adapter/app.py
+!models/general-media/paidf-chat/adapter/contracts.py
+!models/general-media/paidf-chat/adapter/requirements.lock

@@ -1,0 +1,84 @@
+{
+  "job": {
+    "created_at": "2026-09-20T03:03:59.147190Z",
+    "finished_at": "2026-09-20T03:08:52.690896722Z",
+    "id": "aijob-e00swsnx2s0vq7bt8q",
+    "platform": "gpu-h100-sxm",
+    "preemptible": true,
+    "preset": "1gpu-16vcpu-200gb",
+    "project_id": "project-e00rene",
+    "started_at": "2026-09-20T03:08:37.371536983Z",
+    "terminal_instance_state": "COMPLETED"
+  },
+  "raw_custody": {
+    "job_log_sha256": "da65ccf333f6aa491018b2eb1a294a9b96ae2d6e2b2f03a032308bb16e9b2525",
+    "job_receipt_sha256": "12129674023a3f24462256a570a304e012bfd9d076915c57008231d20afc1579"
+  },
+  "result": {
+    "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "model": "facebook/sam2.1-hiera-large",
+    "replay": "exact-byte-match",
+    "responses": [
+      {
+        "archive_files": 3,
+        "elapsed_seconds": 0.652,
+        "mode": "prompted-image",
+        "objects": 1,
+        "request_bytes": 7740,
+        "response_bytes": 3239,
+        "response_sha256": "181c23747d6b0d8095e4804b19ffe9e12572c131582a8c201c005d86784b37a6"
+      },
+      {
+        "archive_files": 3,
+        "elapsed_seconds": 0.685,
+        "mode": "automatic-image",
+        "objects": 5,
+        "request_bytes": 7783,
+        "response_bytes": 6428,
+        "response_sha256": "89c64a200bf0da992cc08ccea91b043a73db31d9019da3adee0967462833e849"
+      },
+      {
+        "archive_files": 14,
+        "elapsed_seconds": 1.923,
+        "mode": "prompted-video",
+        "objects": 1,
+        "request_bytes": 28253,
+        "response_bytes": 17772,
+        "response_sha256": "4159d1d592ab999eac1ee2a4b16be265284c250455ecda6dfa640ce209ace4b2"
+      }
+    ],
+    "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+    "schema": "fs2.nebius.ai/sam2-http-qualification/v1",
+    "startup_seconds": 8.017,
+    "status": "passed",
+    "torch": "2.6.0+cu124",
+    "total_seconds": 11.693
+  },
+  "runtime": {
+    "image_index": "sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c",
+    "linux_amd64_manifest": "sha256:e0e0ae01aced1ca8efd033e4a43ba820889ba14e56538209b053681913d0647a",
+    "qualification_image_index": "sha256:c972fc803a1c1ff108c7ec675fc94730972ea211c00872cf570662e701e1634c",
+    "qualification_script_sha256": "bf66feb8f19eb03529af0c1da774db53807a1cbb3690b1616ae742859af7c229",
+    "source_commit": "18a283fe89c6a5f2fac85bb44d6a5a8dcfef5b43"
+  },
+  "schema": "fs2.nebius.ai/sam2-http-qualification-receipt/v1",
+  "scope": {
+    "not_qualified": [
+      "kubernetes-startup",
+      "public-route",
+      "gateway-http-mcp",
+      "librechat",
+      "cold-start",
+      "elasticity"
+    ],
+    "qualified": [
+      "container-http-startup",
+      "readiness",
+      "prompted-image-http",
+      "automatic-image-http",
+      "prompted-video-http",
+      "exact-byte-replay"
+    ]
+  }
+}

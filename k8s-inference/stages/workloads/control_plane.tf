@@ -23,6 +23,15 @@ locals {
   )))
   control_plane_overrides = {
     replicaCount = 2
+    benchmarkWorkers = {
+      enabled          = var.benchmark_workers.enabled
+      image            = var.benchmark_workers.image
+      sourceCommit     = var.benchmark_workers.source_commit
+      replicas         = var.benchmark_workers.replicas
+      credentialSecret = var.benchmark_workers.credential_secret
+      credentialKey    = var.benchmark_workers.credential_key
+      nodeSelector     = var.benchmark_workers.node_selector
+    }
     autoscaling = {
       enabled                        = var.control_plane_autoscaling.enabled
       minReplicas                    = var.control_plane_autoscaling.min_replicas
@@ -171,6 +180,7 @@ locals {
     # ledger. This is GPU-model agnostic and schedules only on Nebius GPU nodes.
     runtimeAttribution = {
       enabled    = true
+      image      = var.gpu_observer_image
       namespaces = local.runtime_attribution_namespaces
     }
     modelController = {
@@ -213,7 +223,13 @@ locals {
     serviceMonitor = merge({ enabled = true }, var.model_scaling_mode == "keda" ? {
       interval = "5s"
     } : {})
-    prometheusRule = { enabled = true }
+    prometheusRule = {
+      enabled = true
+      labels = {
+        # The foundation monitoring release's default Prometheus ruleSelector.
+        release = "fs2-${var.run_id}-monitoring"
+      }
+    }
     nodeSelector = {
       "workload.fs2.nebius/system" = "true"
       "capacity.fs2.nebius/type"   = "regular"
@@ -240,6 +256,7 @@ resource "helm_release" "control_plane" {
     yamlencode(local.bootstrap_access_overrides),
     yamlencode(local.scientific_access_overrides),
     yamlencode(local.scientific_chart_overrides),
+    yamlencode(local.customer_storage_chart_values),
   ]
 
   lifecycle {

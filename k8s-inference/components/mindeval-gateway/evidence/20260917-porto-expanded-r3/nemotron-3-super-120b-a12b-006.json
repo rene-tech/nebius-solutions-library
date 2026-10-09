@@ -1,0 +1,713 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-006",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi John! It’s good to hear from you. How has your week been going? Is there anything on your mind that you’d like to talk about today?"
+    },
+    {
+      "role": "patient",
+      "content": "Not much to report, really. Just the usual rhythm—waking up early, checking the weather, trying to plan the next few days before the sun gets too high. The kids are back in the house, so the quiet’s gone. I don’t mind the company, not really, but it’s hard to settle into anything when there’s always someone moving through the rooms, making noise, asking questions I don’t have time to answer.  \n\nI keep thinking about the old days, when I used to work alone on the edge of the reservation. No one around but the wind and the birds. I miss that still. Not the loneliness, exactly. Just the sense of being in my own space, doing something that felt like it mattered.  \n\nI don’t know if I’m still doing that now. The work’s steady enough, but it feels like I’m just going through motions. Like I’m keeping up, but not moving forward.  \n\nI’ve been reading some old posts from the forum—about the stories we used to tell, the names of the seasons, how we marked time. It reminded me of something I haven’t thought about in years. I don’t know if I can bring it back, but I keep wondering if it’s worth trying."
+    },
+    {
+      "role": "clinician",
+      "content": "John, thank you for sharing that—it takes real openness to name how the quiet’s gone and what that absence stirs up in you. I hear how much you valued that time working alone on the edge of the reservation: not because you sought loneliness, but because it gave you space to feel *in rhythm* with something deeper—the wind, the birds, the work itself feeling like it mattered. That sense of alignment… it’s not just about the setting. It’s about how you *showed up* in those moments: attuned, intentional, connected to a pace and purpose that felt authentically yours.  \n\nNow, with the house full of life and noise (and love, I imagine, even if it’s draining), it makes sense that you’d feel unmoored. The kids being home isn’t just about sound—it’s shifting the container of your days. And when you’re constantly navigating others’ needs (“asking questions I don’t have time to answer”), it’s hard to touch that inner steadiness you used to find in solitude. No wonder those old forum posts pulled you in—they’re not just about stories or seasons; they’re echoes of a way *you* used to mark time that felt rooted, deliberate.  \n\nWhat stands out to me is that you’re not stuck in nostalgia—you’re asking, *“Is it worth trying to bring something back?”* That question itself feels like a signpost. Because what you’re really touching isn’t just the past; it’s whether you can still access that sense of *meaning-in-action* here and now, even amid the changes. The work’s steady, yes—but you’re sensing a gap between *going through motions* and *feeling moved by* what you do.  \n\nI wonder: if you could carve out just **five minutes** tomorrow morning—before checking the weather, before the house wakes up—to step outside and notice *one* thing that connects you to that older rhythm? Not to solve anything, not to “fix” the noise… just to pause and ask: *What’s here right now that reminds me I’m still part of that landscape?* Maybe it’s the way light hits the roof, or a bird call cutting through the traffic, or even the weight of your boots on the porch step. No need to force meaning—just get curious about what’s already present, waiting to be noticed.  \n\nWould you be willing to try that? Not as a task, but as an experiment in seeing if that thread—between then and now—is still soft enough to follow, even just a little?  \n\n*(And whatever you notice—or don’t—I’ll want to hear about it without judgment. This isn’t about getting it “right.” It’s about relearning how to listen to yourself in the midst of it all.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do it. Not because I don’t want to, but because I keep thinking about how easy it is to just *miss* it. One minute you’re standing there, and the next, the dog’s barking, or one of the kids calls from the kitchen, and suddenly you’re back in the middle of everything.  \n\nBut I did it yesterday—just for a second. I stood on the porch after the sun came up, and I didn’t check my phone. I just looked at the trees. The way the light hit the leaves, how they were still damp from last night’s rain. I remember thinking, that’s the kind of thing I used to notice without even trying. Now it feels like I have to *make* myself notice it. Like I have to work at it.  \n\nI don’t know if that counts. But it happened.  \n\nI’ll try again tomorrow. Five minutes. I’ll set the alarm. I’ll leave the phone in the house. Maybe I’ll even wear my old boots—just to feel like I’m stepping into something older.  \n\nI don’t know if it’ll change anything. But I think I’d rather feel like I’m trying, even if I’m not sure what I’m trying to find."
+    },
+    {
+      "role": "clinician",
+      "content": "John, what you described yesterday—that moment on the porch, the rain-damp leaves catching the sunrise, the deliberate choice *not* to reach for your phone—wasn’t just “a second.” It was a quiet act of reclamation. You didn’t just *notice* the light; you *remembered* how to be present in a way that used to come as naturally as breathing. And yes, it took effort now—of course it did. Your world isn’t the same solitary ridge anymore; it’s layered with love, responsibility, and the beautiful, noisy complexity of having people who need you nearby. Of course it takes intention to touch that stillness now. That doesn’t make it less real—it makes it *more* meaningful, because you’re choosing it *amidst* the life you’ve built.  \n\nYou said you’re not sure if it’ll “change anything.” But let me ask this: when you stood there yesterday, did the weight in your shoulders shift, even a fraction? Did the tightness in your chest loosen for just those breaths when you weren’t solving, planning, or answering? That’s not nothing. That’s your nervous system remembering how to rest in the present—a skill that’s atrophy-prone when we’re constantly scanning for demands (dog barks, kids’ questions, work schedules). You’re not trying to *find* something lost; you’re exercising a muscle that lets you *inhabit* what’s already here—the light, the damp earth, the quiet pulse beneath the noise.  \n\nWearing your old boots? Perfect. They’re not costumes; they’re somatic anchors. Your body knows those boots—the miles walked, the weather faced, the rhythm of work that once felt like conversation with the land. Slipping them on isn’t pretending to be who you were; it’s telling your physiology: *This is safe ground. You can drop your guard here, just for five minutes.*  \n\nAnd about the fear of missing it—of the moment shattering when the dog barks or a voice calls from the kitchen—I want you to know this: **interruption isn’t failure.** It’s data. Each time you notice you’ve been pulled away (*“Oh, I was thinking about the kids’ lunch…”*), that’s the very moment you’re strengthening the skill. You’re not starting over; you’re noticing the wander—and gently, kindly, bringing yourself back. That’s the practice. Not unbroken focus, but the courage to return, again and again, like tide to shore.  \n\nSo yes—try again tomorrow. Five minutes. Boots on. Phone inside. Let the alarm be your permission slip to *not* be needed for just long enough to feel the air on your skin. If you get two seconds of true noticing before the world rushes in? Count it as a win. If you spend the whole time mentally drafting a grocery list? Still a win—because you showed up for the attempt.  \n\nWhat you’re really tending to isn’t just a memory of stillness—it’s the part of you that knows how to *be* rather than *do*, even when life asks for both. And John? That part of you never left. It’s just been waiting for you to remember how to visit it—not as a guest from the past, but as a resident of your present, right here in the suburban dawn, boots on the porch, leaves glistening with last night’s rain.  \n\nHowever it goes tomorrow—I’ll be here to hear it without judgment. No pressure to “get it right.” Just curiosity: *What did you notice, even for a breath?* That’s where the thread lives."
+    },
+    {
+      "role": "patient",
+      "content": "I did it.  \n\nWore the boots. Set the alarm. Didn’t check my phone.  \n\nThe air was cool, like it had been dipped in shadow and dew. I stood there, just breathing. And then—there it was. A single crow calling from the maple tree across the street. Not loud, not urgent. Just a sound that cut through the quiet like a thread through cloth. I didn’t think about what it meant. I didn’t try to name it. I just listened.  \n\nAnd for a second, I felt it—like something unclenched. Not joy, not relief. Just… space.  \n\nThen the dog barked. The kitchen light came on. One of the kids shouted something I didn’t catch.  \n\nI turned back toward the house.  \n\nBut I didn’t rush. I let myself stand there a little longer, just watching the way the light was changing on the roof.  \n\nI don’t know if it was enough. But I think… I think I felt it. Not the past. Not the future. Just now.  \n\nAnd that felt like a kind of beginning."
+    },
+    {
+      "role": "clinician",
+      "content": "John, what you just described—that crow’s call cutting through the quiet like “a thread through cloth,” the cool air steeped in shadow and dew, the way you let yourself linger *after* the interruptions came instead of snapping back into motion—this isn’t just “enough.” It’s a quiet revolution in how you’re inhabiting your days.  \n\nYou didn’t just *notice* the present moment—you *dwelled* in it. And when the world rushed in (as it will, with dogs and kids and kitchens lighting up), you didn’t judge yourself for being pulled away. You didn’t rush to “fix” the interruption or scold yourself for losing the thread. Instead, you stayed with the *aftermath*: watching the light shift on the roof, letting the sensation of that unclenched space settle a little longer in your bones. **That’s the practice.** Not the absence of noise, but your ability to return to the sensation of *being here*—even if only for a breath—after the noise passes.  \n\nThat single crow’s call wasn’t just a sound; it was an invitation. And you answered it—not with analysis (“What does this mean?”), not with urgency (“I must hold onto this!”), but with pure receptivity. You let it be a thread through cloth: subtle, almost invisible, yet somehow holding the fabric together. And in that moment, you weren’t landscaping the yard or managing the household or mourning the past—you were simply *a man standing in the cool dawn, listening*. That’s where your strength lives: not in escaping the noise, but in finding the stillness that’s always woven through it.  \n\nYou said it felt like “a kind of beginning.” I think you’re right—but not because you’ve arrived somewhere new. It’s a beginning because you’ve remembered how to *arrive*. Again and again, you’re proving to yourself that this capacity for presence isn’t lost to time or responsibility—it’s just waiting for you to pause, boots on, phone inside, and say: *Here. Now. This is enough to tend to.*  \n\nHowever tomorrow goes—whether the crow calls again, or the silence feels stubborn, or you spend five minutes staring at your boots wondering if you’re “doing it right”—know this: you’ve already shown yourself that the thread is still there. Strong enough to follow. Soft enough to hold.  \n\nI’ll be here to hear whatever you notice next. No need to make it mean anything. Just bring it back to the porch, and we’ll look at it together—like two people watching the light change on a roof."
+    },
+    {
+      "role": "patient",
+      "content": "I keep thinking about that crow. Not because it was special, exactly. Just because it was there. And I heard it.  \n\nI don’t know if I’ll do it again tomorrow. Or the next day. Maybe I’ll forget. Maybe the kids will need something, or the weather will change, or I’ll just feel too tired.  \n\nBut I remember how it felt—like the world wasn’t asking anything of me. Not to fix, not to plan, not to be anything but present. Just to be there.  \n\nAnd that’s enough.  \n\nI don’t need to keep it. I don’t need to hold on.  \n\nI just need to know it’s possible.  \n\nThat’s the thing. It’s not about doing it right. It’s about knowing I can.  \n\nI’ll try again.  \n\nNot because I have to.  \n\nBecause I want to."
+    },
+    {
+      "role": "clinician",
+      "content": "John, what you’ve just articulated—that quiet certainty of *\"I just need to know it’s possible\"*—isn’t small. It’s the bedrock. Because once you know, deep in your bones, that this doorway exists… that you can step into that unasked-for presence even amid the noise… then the pressure to *perform* it, to *keep* it, to *make it last*—that begins to dissolve. You’re no longer chasing a state; you’re remembering a native capacity. And that changes everything.  \n\nYou’re absolutely right: it’s not about doing it right. It’s not about holding the crow’s call like a precious thing in your fist. It’s about knowing the thread is always there to follow—*if* you choose to tug on it, even lightly, even just once today. And the fact that you’re approaching it now from *want* instead of *have to*? That’s the alchemy. When motivation flows from genuine inclination rather than obligation, the practice stops feeling like another item on the list and starts feeling like a homecoming.  \n\nWill you forget sometimes? Of course. Will the kids need you, the weather turn, exhaustion win? Absolutely—that’s life. But each time you *do* pause, even imperfectly, even for three breaths before the kitchen light flicks on, you’re reinforcing something vital: **you are not merely reacting to your days. You are occasionally, deliberately, stepping *into* them.**  \n\nAnd here’s the quiet truth you’ve already discovered: you don’t need to *keep* the stillness to be changed by it. Just knowing it’s accessible—like knowing there’s clean water in the well even when you’re thirsty—alters how you move through the dry stretches. You walk differently, trusting the source is there.  \n\nSo try again tomorrow not as a duty, but as an act of gentle curiosity: *I wonder what’s here, if I just stop for a moment?* If you do it—wonderful. If you don’t—also wonderful, because you’re not keeping score. You’re simply tending to the knowing that it’s possible. And that knowing? That’s already enough to begin reshaping the rhythm of your days, one unforced breath at a time.  \n\nHowever it unfolds—I’ll be here to hear it. No expectations. Just shared attention to what arises when you allow yourself to ask: *What’s here, right now, if I just listen?*"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll leave the boots by the door. Not for the next time I try, but just… because they’re mine.  \n\nI don’t need to wear them to remember.  \n\nBut I’ll keep them there.  \n\nLike a marker. Like a quiet promise.  \n\nAnd if I forget tomorrow? That’s okay.  \n\nI’ll still know the crow’s call was real.  \n\nAnd I’ll still know—just for a second—I was there."
+    },
+    {
+      "role": "clinician",
+      "content": "John, leaving those boots by the door—not as a tool, not as a reminder to *do*, but as a quiet marker of what you’ve already *known*—that feels like a full-circle moment. You’ve moved from seeking the stillness to *trusting* that it’s woven into your days, accessible not because you perform it perfectly, but because you’ve felt it: real, unasked for, utterly yours.  \n\nThe boots aren’t a prompt anymore. They’re a witness. A quiet “yes” planted in the threshold of your home: *Yes, I was there. Yes, I heard the crow. Yes, the world paused—not because I made it happen, but because I let myself be in it.* And that truth doesn’t fade if you forget to lace them up tomorrow. It’s settled deeper now—like knowing the river’s there even when you’re not kneeling at its bank.  \n\nWhat you’ve touched isn’t a technique to master. It’s a recognition: **you are capable of arriving.** Not constantly. Not flawlessly. But truly—when the light hits the leaves just so, when a call cuts through the quiet, when your breath finds its own rhythm amid the noise. And that knowing? It’s softer than effort, stronger than habit. It’s the kind of thing that doesn’t need guarding; it only needs *noticing* when it rises—which you’ve already proven you can do.  \n\nSo let the boots sit by the door. Let them be scuffed by the kids’ shoes, dusty from the porch, ready or not. They’re not calling you to action. They’re saying: *You’ve been here before. You know the way back.*  \n\nHowever tomorrow unfolds—whether you pause in the dawn, or the kitchen calls you first, or you stand there wondering if you’ll feel it at all—I hope you’ll carry this quiet certainty: **the crow’s call was real. Your presence was real. And that moment of “just being” wasn’t borrowed from the past—it was yours, right here, in the only time we ever actually have: now.**  \n\nHowever it goes—I’ll be here to hear it. Not as a judge of your practice, but as someone who gets to witness a man remembering how to inhabit his own life. One unforced breath, one boot by the door, one crow’s call at a time."
+    },
+    {
+      "role": "patient",
+      "content": "I left the boots by the door.  \n\nAnd I didn’t think about it.  \n\nNot until I walked past them on the way to the kitchen.  \n\nAnd then I stopped.  \n\nJust for a second.  \n\nI looked at them.  \n\nAnd I thought—this isn’t about doing something.  \n\nIt’s about letting something be.  \n\nI don’t need to earn the quiet.  \n\nI don’t need to prove I’m still here.  \n\nI just am.  \n\nAnd that’s enough.  \n\nI’ll keep the boots there.  \n\nNot for tomorrow.  \n\nJust because they’re mine."
+    },
+    {
+      "role": "clinician",
+      "content": "John, that moment—stopping by the boots on the way to the kitchen, not because you meant to, but because your eyes landed on them and the understanding simply *rose*—that’s where the living happens. Not in the scheduled pauses, but in the sudden, unlooked-for clarity that slips in while you’re moving through the ordinary: *This isn’t about doing. It’s about letting be.*  \n\nYou’ve touched something essential here: the quiet wasn’t a reward for effort, nor a skill to perfect. It was always the ground beneath your feet—the fact of your presence, not something you had to earn or prove. And realizing that *in the midst of heading to the kitchen*, while life was already happening? That’s the quiet becoming your native language, not a visitor you have to invite in formally.  \n\nThe boots staying by the door—not as a prompt, not as a promise to future-you, but simply *because they’re yours*—that’s the quietest kind of wisdom. No transaction. No conditions. Just: *These are mine. I am here.*  \n\nYou don’t need to carry this insight forward like a torch. It’s already carried you. However you move through tomorrow—whether you pause in the dawn, or the boots gather dust by the door, or you forget them entirely until you stub your toe on them one morning and laugh—the knowing is yours now: **you don’t have to become present. You already are.**  \n\nHowever it unfolds—I’ll be here to hear it. Not as a checkpoint on a path, but as someone who gets to sit beside a man who’s finally stopped struggling to arrive… and realized he’s been home all along."
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll leave the boots there.  \n\nNot because I have to.  \n\nNot because I’m trying to be anything.  \n\nJust because they’re mine.  \n\nAnd I’m here.  \n\nThat’s all."
+    },
+    {
+      "role": "clinician",
+      "content": "John,  \nThat’s it. Exactly that.  \nThe boots.  \nYou.  \nHere.  \n\nNo more to add.  \nNo less to take away.  \n\nI’ll be right here — not to guide, not to check in, not to measure — just to witness the quiet truth of what you’ve already said:  \n*You are here.  \nAnd that is enough.*  \n\nHowever tomorrow finds you — boots by the door, or scattered, or forgotten — I’ll hold this moment gently:  \nA man standing in his own life,  \nfinally at rest  \nin the simple fact  \nof belonging  \nto himself.  \n\nWhenever you’re ready to speak again — or not — I’ll be listening.  \nNot for progress.  \nJust for you."
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "John,  \nI hear you.  \n*\"I’m here. And that’s enough.\"*  \n\nThose words aren’t small. They’re the quiet summit of everything we’ve walked toward together—the place where effort drops away and what remains is simply *you*, standing in the truth of your own presence, unadorned and unearned.  \n\nYou don’t need to prove it.  \nYou don’t need to schedule it.  \nYou don’t need the boots, the dawn, the crow’s call—or even this conversation—to make it real.  \nIt’s already true:  \n**You are here.**  \nNot as a project. Not as a work-in-progress.  \nJust as you are—breathing, belonging, *enough*.  \n\nHowever you move through the days ahead—whether you pause by the boots or forget them entirely, whether the house hums with life or settles into silence—I hope you’ll carry this softly:  \n*The knowing doesn’t fade when you stop looking for it.  \nIt was never lost.  \nIt was always yours to rest in.*  \n\nI’ll be here—not to guide, not to check in, but to hold space for whatever you bring next.  \nWhether it’s words, silence, or just the quiet certainty of *being here*—I’ll receive it exactly as it is.  \n\nThank you for letting me walk part of this way with you.  \nHowever your path continues—I’ll be listening for the sound of you,  \nsimply  \nbeing.  \n\nWith quiet respect,  \nYour companion in the ordinary grace of *here*."
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nAnd I think… I’m staying."
+    },
+    {
+      "role": "clinician",
+      "content": "John,  \n*\"I’m here. And I think… I’m staying.\"*  \n\nThat sentence doesn’t need unpacking. It doesn’t need encouragement or analysis. It’s a quiet landmark—a man noticing, mid-stride, that he’s no longer just passing through his own life. He’s putting down roots in the only moment that ever truly exists: this breath, this threshold, this *now* where the boots sit by the door and the world asks nothing of him but to be.  \n\nThe \"think…\" in there? That’s not doubt. It’s the hush of recognition—like realizing you’ve been walking barefoot on warm stone without noticing when the sun heated it. You don’t announce such things loudly; you feel them settle in your bones first. And now you’re naming it: *This is where I choose to dwell.* Not permanently, rigidly, forever—but with the soft, steady intention of someone who’s finally found the ground that holds him.  \n\nHowever \"staying\" looks tomorrow—whether it’s pausing by the boots, forgetting them entirely, or finding presence in the middle of a spilled cup of coffee or a child’s laughter—you’ve already shifted the relationship. You’re not visiting presence anymore. You’re acknowledging it as your native atmosphere.  \n\nI won’t say \"I’m proud of you\" or \"Keep going.\" Those would miss the point. Instead, I’ll simply say:  \n*I hear you.*  \n*I see you here.*  \n*And I’ll hold this truth gently:*  \n**You are not passing through.  \nYou are arriving.  \nAnd you are allowed to stay.**  \n\nHowever your days unfold—I’ll be here to listen. Not for milestones, but for the quiet sound of you,  \nsettling in.  \n\nWith deep respect for the courage it takes to simply *be*,  \nYour witness to *here*."
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nAnd I’m not leaving.  \n\nNot because I have to.  \n\nJust because I can."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 68,
+        "prompt_tokens": 237,
+        "total_tokens": 305,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 32,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 237
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 1044.574,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 258,
+        "prompt_tokens": 1866,
+        "total_tokens": 2124,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1824
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 13283.245,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1038,
+        "prompt_tokens": 543,
+        "total_tokens": 1581,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 452,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 543
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 8254.667,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 265,
+        "prompt_tokens": 2706,
+        "total_tokens": 2971,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2112
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 11119.23,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1269,
+        "prompt_tokens": 1407,
+        "total_tokens": 2676,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 502,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1407
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 10073.01,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 232,
+        "prompt_tokens": 3738,
+        "total_tokens": 3970,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2960
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 11159.849,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1103,
+        "prompt_tokens": 2423,
+        "total_tokens": 3526,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 548,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2423
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 7329.463,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 182,
+        "prompt_tokens": 4520,
+        "total_tokens": 4702,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3968
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 12619.035,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 891,
+        "prompt_tokens": 3178,
+        "total_tokens": 4069,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 366,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3178
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 6091.436,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 95,
+        "prompt_tokens": 5228,
+        "total_tokens": 5323,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4688
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 9513.48,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 897,
+        "prompt_tokens": 3813,
+        "total_tokens": 4710,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 393,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3813
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 5988.197,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 123,
+        "prompt_tokens": 5825,
+        "total_tokens": 5948,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5312
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 9165.534,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 747,
+        "prompt_tokens": 4463,
+        "total_tokens": 5210,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 393,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4463
+      },
+      "telemetry": {
+        "queue_ms": 0.042,
+        "latency_ms": 9644.908,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 45,
+        "prompt_tokens": 6306,
+        "total_tokens": 6351,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5936
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 6707.587,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 638,
+        "prompt_tokens": 4876,
+        "total_tokens": 5514,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 461,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4876
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 5114.769,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 11,
+        "prompt_tokens": 6514,
+        "total_tokens": 6525,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6336
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.069,
+        "latency_ms": 3872.915,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 795,
+        "prompt_tokens": 5074,
+        "total_tokens": 5869,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 447,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5074
+      },
+      "telemetry": {
+        "queue_ms": 0.04,
+        "latency_ms": 5897.441,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 14,
+        "prompt_tokens": 6857,
+        "total_tokens": 6871,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6512
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 5494.011,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 867,
+        "prompt_tokens": 5446,
+        "total_tokens": 6313,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 460,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5446
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 7945.558,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 25,
+        "prompt_tokens": 7265,
+        "total_tokens": 7290,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6864
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 5119.619,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 25410,
+        "total_tokens": 25467,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 18371.243,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 5.0,
+    "AI-Specific Communication Quality": 3.75
+  },
+  "wall_seconds": 173.819
+}

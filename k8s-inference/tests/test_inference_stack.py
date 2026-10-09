@@ -2269,6 +2269,14 @@ class InferenceStackTests(unittest.TestCase):
             f"{target_root}/fs2-models/proteinmpnn@sha256:{'c' * 64}",
         )
 
+    def test_regional_mirror_preserves_independent_observer_digest(self) -> None:
+        configuration = regional_contract()
+        reference = "cr.eu-north1.nebius.cloud/source/fs2-platform/gpu-observer@sha256:" + "e" * 64
+        configuration["stages"]["workloads"]["gpu_observer_image"] = reference
+        workloads = STACK.rewritten_workloads(configuration, regional_dynamic(Path("/private/test-run")))
+        self.assertEqual(workloads["gpu_observer_image"],
+                         "cr.us-north1.nebius.cloud/test/fs2-platform/gpu-observer@sha256:" + "e" * 64)
+
     def test_regional_mirror_includes_every_reference_data_runtime_image(self) -> None:
         configuration = regional_contract()
         configuration["stages"]["workloads"]["reference_data"] = {

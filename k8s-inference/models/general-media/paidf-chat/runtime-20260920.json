@@ -1,0 +1,841 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "qwen3-6-27b-fp8",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "replicas": 0,
+        "revisionHistoryLimit": 2,
+        "strategy": {
+          "type": "Recreate"
+        },
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "qwen3-6-27b-fp8"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+              "workload.fs2.nebius/owner": "video-canary-20260920"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "qwen3-6-27b-fp8",
+            "automountServiceAccountToken": false,
+            "enableServiceLinks": false,
+            "terminationGracePeriodSeconds": 60,
+            "securityContext": {
+              "fsGroup": 1000,
+              "runAsGroup": 1000,
+              "runAsNonRoot": true,
+              "runAsUser": 65534,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "nodeSelector": {
+              "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+              "kubernetes.io/hostname": "computeinstance-e00jqs4xxntre6eycf"
+            },
+            "tolerations": [
+              {
+                "effect": "NoSchedule",
+                "key": "dedicated",
+                "operator": "Equal",
+                "value": "fs2-inference"
+              },
+              {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/not-ready",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+              },
+              {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/unreachable",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+              },
+              {
+                "effect": "NoSchedule",
+                "key": "nvidia.com/gpu",
+                "operator": "Exists"
+              }
+            ],
+            "imagePullSecrets": [
+              {
+                "name": "wan2-ngc-pull"
+              }
+            ],
+            "initContainers": [
+              {
+                "name": "verify-weights",
+                "image": "docker.io/vllm/vllm-openai@sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90",
+                "command": [
+                  "python3",
+                  "/contract/prepare_weights.py",
+                  "--verify-only"
+                ],
+                "env": [
+                  {
+                    "name": "HF_HOME",
+                    "value": "/cache/huggingface"
+                  },
+                  {
+                    "name": "HF_HUB_OFFLINE",
+                    "value": "1"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "limits": {
+                    "cpu": "4",
+                    "memory": "4Gi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true
+                },
+                "volumeMounts": [
+                  {
+                    "name": "cache",
+                    "mountPath": "/cache",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "contract",
+                    "mountPath": "/contract",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "temporary",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "containers": [
+              {
+                "args": [
+                  "Qwen/Qwen3.6-27B-FP8",
+                  "--revision",
+                  "e89b16ebf1988b3d6befa7de50abc2d76f26eb09",
+                  "--host",
+                  "127.0.0.1",
+                  "--port",
+                  "8001",
+                  "--max-num-seqs",
+                  "1",
+                  "--gpu-memory-utilization",
+                  "0.85",
+                  "--reasoning-parser",
+                  "qwen3"
+                ],
+                "env": [
+                  {
+                    "name": "HF_HOME",
+                    "value": "/cache/huggingface"
+                  },
+                  {
+                    "name": "XDG_CACHE_HOME",
+                    "value": "/cache/xdg"
+                  },
+                  {
+                    "name": "VLLM_CACHE_ROOT",
+                    "value": "/cache/vllm"
+                  },
+                  {
+                    "name": "TRITON_CACHE_DIR",
+                    "value": "/cache/triton"
+                  },
+                  {
+                    "name": "NUMBA_CACHE_DIR",
+                    "value": "/cache/numba"
+                  },
+                  {
+                    "name": "TORCH_HOME",
+                    "value": "/cache/torch"
+                  },
+                  {
+                    "name": "HF_HUB_DISABLE_TELEMETRY",
+                    "value": "1"
+                  },
+                  {
+                    "name": "DO_NOT_TRACK",
+                    "value": "1"
+                  },
+                  {
+                    "name": "TORCHINDUCTOR_CACHE_DIR",
+                    "value": "/cache/inductor"
+                  },
+                  {
+                    "name": "FLASHINFER_WORKSPACE_BASE",
+                    "value": "/cache/flashinfer"
+                  },
+                  {
+                    "name": "CUDA_CACHE_PATH",
+                    "value": "/cache/cuda"
+                  },
+                  {
+                    "name": "HF_HUB_OFFLINE",
+                    "value": "1"
+                  }
+                ],
+                "image": "docker.io/vllm/vllm-openai@sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90",
+                "imagePullPolicy": "IfNotPresent",
+                "name": "vllm",
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "python3",
+                      "-c",
+                      "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"
+                    ]
+                  },
+                  "failureThreshold": 3,
+                  "periodSeconds": 10,
+                  "successThreshold": 1,
+                  "timeoutSeconds": 5
+                },
+                "resources": {
+                  "limits": {
+                    "cpu": "14",
+                    "ephemeral-storage": "4Gi",
+                    "memory": "160Gi",
+                    "nvidia.com/gpu": "1"
+                  },
+                  "requests": {
+                    "cpu": "8",
+                    "ephemeral-storage": "1Gi",
+                    "memory": "96Gi",
+                    "nvidia.com/gpu": "1"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true
+                },
+                "startupProbe": {
+                  "exec": {
+                    "command": [
+                      "python3",
+                      "-c",
+                      "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"
+                    ]
+                  },
+                  "failureThreshold": 270,
+                  "periodSeconds": 10,
+                  "successThreshold": 1,
+                  "timeoutSeconds": 5
+                },
+                "volumeMounts": [
+                  {
+                    "mountPath": "/cache",
+                    "name": "cache"
+                  },
+                  {
+                    "mountPath": "/tmp",
+                    "name": "temporary"
+                  },
+                  {
+                    "mountPath": "/dev/shm",
+                    "name": "shm"
+                  },
+                  {
+                    "mountPath": "/nonexistent/.tensorrt_llm",
+                    "name": "tensorrt-cache"
+                  }
+                ],
+                "command": [
+                  "vllm",
+                  "serve"
+                ],
+                "livenessProbe": {
+                  "exec": {
+                    "command": [
+                      "python3",
+                      "-c",
+                      "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"
+                    ]
+                  },
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 6
+                }
+              },
+              {
+                "name": "adapter",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/paidf-chat-adapter@sha256:b88368b1473fc0960cd45856d3f8dc781066f42a154263a6369d0a85765ee471",
+                "env": [
+                  {
+                    "name": "REFERENCE_APP_ID",
+                    "value": "qwen3-6-27b-fp8"
+                  },
+                  {
+                    "name": "REFERENCE_VLLM_URL",
+                    "value": "http://127.0.0.1:8001"
+                  }
+                ],
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 8000
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "500m",
+                    "memory": "512Mi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true,
+                  "runAsUser": 10001,
+                  "runAsGroup": 10001
+                },
+                "startupProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/live",
+                    "port": "http"
+                  },
+                  "periodSeconds": 5,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 30
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/ready",
+                    "port": "http"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 10,
+                  "failureThreshold": 3
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/live",
+                    "port": "http"
+                  },
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                }
+              }
+            ],
+            "volumes": [
+              {
+                "name": "cache",
+                "persistentVolumeClaim": {
+                  "claimName": "qwen3-6-27b-fp8-cache"
+                }
+              },
+              {
+                "emptyDir": {
+                  "sizeLimit": "4Gi"
+                },
+                "name": "temporary"
+              },
+              {
+                "emptyDir": {
+                  "medium": "Memory",
+                  "sizeLimit": "8Gi"
+                },
+                "name": "shm"
+              },
+              {
+                "emptyDir": {
+                  "sizeLimit": "4Gi"
+                },
+                "name": "tensorrt-cache"
+              },
+              {
+                "name": "contract",
+                "configMap": {
+                  "name": "qwen3-6-27b-fp8-weights-20260920"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "qwen3-6-27b-fp8",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "qwen3-6-27b-fp8"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8000,
+            "targetPort": "http",
+            "protocol": "TCP"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "qwen2-5-14b-instruct",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "replicas": 0,
+        "revisionHistoryLimit": 2,
+        "strategy": {
+          "type": "Recreate"
+        },
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "qwen2-5-14b-instruct"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+              "workload.fs2.nebius/owner": "video-canary-20260920"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "qwen2-5-14b-instruct",
+            "automountServiceAccountToken": false,
+            "enableServiceLinks": false,
+            "terminationGracePeriodSeconds": 60,
+            "securityContext": {
+              "fsGroup": 1000,
+              "runAsGroup": 1000,
+              "runAsNonRoot": true,
+              "runAsUser": 65534,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "nodeSelector": {
+              "kubernetes.io/hostname": "computeinstance-e00dczh75qcnbj0bx8"
+            },
+            "tolerations": [
+              {
+                "effect": "NoSchedule",
+                "key": "dedicated",
+                "operator": "Equal",
+                "value": "fs2-inference"
+              },
+              {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/not-ready",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+              },
+              {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/unreachable",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+              },
+              {
+                "effect": "NoSchedule",
+                "key": "nvidia.com/gpu",
+                "operator": "Exists"
+              }
+            ],
+            "imagePullSecrets": [
+              {
+                "name": "wan2-ngc-pull"
+              }
+            ],
+            "initContainers": [
+              {
+                "name": "verify-weights",
+                "image": "docker.io/vllm/vllm-openai@sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90",
+                "command": [
+                  "python3",
+                  "/contract/prepare_weights.py",
+                  "--verify-only"
+                ],
+                "env": [
+                  {
+                    "name": "HF_HOME",
+                    "value": "/cache/huggingface"
+                  },
+                  {
+                    "name": "HF_HUB_OFFLINE",
+                    "value": "1"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "limits": {
+                    "cpu": "4",
+                    "memory": "4Gi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true
+                },
+                "volumeMounts": [
+                  {
+                    "name": "cache",
+                    "mountPath": "/cache",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "contract",
+                    "mountPath": "/contract",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "temporary",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "containers": [
+              {
+                "args": [
+                  "Qwen/Qwen2.5-14B-Instruct",
+                  "--revision",
+                  "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8",
+                  "--host",
+                  "127.0.0.1",
+                  "--port",
+                  "8001",
+                  "--max-num-seqs",
+                  "1",
+                  "--gpu-memory-utilization",
+                  "0.85"
+                ],
+                "env": [
+                  {
+                    "name": "HF_HOME",
+                    "value": "/cache/huggingface"
+                  },
+                  {
+                    "name": "XDG_CACHE_HOME",
+                    "value": "/cache/xdg"
+                  },
+                  {
+                    "name": "VLLM_CACHE_ROOT",
+                    "value": "/cache/vllm"
+                  },
+                  {
+                    "name": "TRITON_CACHE_DIR",
+                    "value": "/cache/triton"
+                  },
+                  {
+                    "name": "NUMBA_CACHE_DIR",
+                    "value": "/cache/numba"
+                  },
+                  {
+                    "name": "TORCH_HOME",
+                    "value": "/cache/torch"
+                  },
+                  {
+                    "name": "HF_HUB_DISABLE_TELEMETRY",
+                    "value": "1"
+                  },
+                  {
+                    "name": "DO_NOT_TRACK",
+                    "value": "1"
+                  },
+                  {
+                    "name": "TORCHINDUCTOR_CACHE_DIR",
+                    "value": "/cache/inductor"
+                  },
+                  {
+                    "name": "FLASHINFER_WORKSPACE_BASE",
+                    "value": "/cache/flashinfer"
+                  },
+                  {
+                    "name": "CUDA_CACHE_PATH",
+                    "value": "/cache/cuda"
+                  },
+                  {
+                    "name": "HF_HUB_OFFLINE",
+                    "value": "1"
+                  }
+                ],
+                "image": "docker.io/vllm/vllm-openai@sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90",
+                "imagePullPolicy": "IfNotPresent",
+                "name": "vllm",
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "python3",
+                      "-c",
+                      "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"
+                    ]
+                  },
+                  "failureThreshold": 3,
+                  "periodSeconds": 10,
+                  "successThreshold": 1,
+                  "timeoutSeconds": 5
+                },
+                "resources": {
+                  "limits": {
+                    "cpu": "14",
+                    "ephemeral-storage": "4Gi",
+                    "memory": "50Gi",
+                    "nvidia.com/gpu": "1"
+                  },
+                  "requests": {
+                    "cpu": "8",
+                    "ephemeral-storage": "1Gi",
+                    "memory": "44Gi",
+                    "nvidia.com/gpu": "1"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true
+                },
+                "startupProbe": {
+                  "exec": {
+                    "command": [
+                      "python3",
+                      "-c",
+                      "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"
+                    ]
+                  },
+                  "failureThreshold": 270,
+                  "periodSeconds": 10,
+                  "successThreshold": 1,
+                  "timeoutSeconds": 5
+                },
+                "volumeMounts": [
+                  {
+                    "mountPath": "/cache",
+                    "name": "cache"
+                  },
+                  {
+                    "mountPath": "/tmp",
+                    "name": "temporary"
+                  },
+                  {
+                    "mountPath": "/dev/shm",
+                    "name": "shm"
+                  }
+                ],
+                "command": [
+                  "vllm",
+                  "serve"
+                ],
+                "livenessProbe": {
+                  "exec": {
+                    "command": [
+                      "python3",
+                      "-c",
+                      "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"
+                    ]
+                  },
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 6
+                }
+              },
+              {
+                "name": "adapter",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/paidf-chat-adapter@sha256:b88368b1473fc0960cd45856d3f8dc781066f42a154263a6369d0a85765ee471",
+                "env": [
+                  {
+                    "name": "REFERENCE_APP_ID",
+                    "value": "qwen2-5-14b-instruct"
+                  },
+                  {
+                    "name": "REFERENCE_VLLM_URL",
+                    "value": "http://127.0.0.1:8001"
+                  }
+                ],
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 8000
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "500m",
+                    "memory": "512Mi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true,
+                  "runAsUser": 10001,
+                  "runAsGroup": 10001
+                },
+                "startupProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/live",
+                    "port": "http"
+                  },
+                  "periodSeconds": 5,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 30
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/ready",
+                    "port": "http"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 10,
+                  "failureThreshold": 3
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/live",
+                    "port": "http"
+                  },
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                }
+              }
+            ],
+            "volumes": [
+              {
+                "name": "cache",
+                "persistentVolumeClaim": {
+                  "claimName": "qwen2-5-14b-instruct-cache"
+                }
+              },
+              {
+                "emptyDir": {
+                  "sizeLimit": "4Gi"
+                },
+                "name": "temporary"
+              },
+              {
+                "emptyDir": {
+                  "medium": "Memory",
+                  "sizeLimit": "4Gi"
+                },
+                "name": "shm"
+              },
+              {
+                "name": "contract",
+                "configMap": {
+                  "name": "qwen2-5-14b-instruct-weights-20260920"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "qwen2-5-14b-instruct",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "qwen2-5-14b-instruct"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8000,
+            "targetPort": "http",
+            "protocol": "TCP"
+          }
+        ]
+      }
+    }
+  ]
+}

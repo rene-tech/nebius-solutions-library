@@ -1,0 +1,58 @@
+{
+  "model": "diar-streaming-sortformer-4spk-v2-1",
+  "key_revoked": true,
+  "workers_distinct": true,
+  "measurements": [
+    {
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "backend_id": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "ready_seconds": 1.9351010685786605,
+      "first_output_from_ready_seconds": 0.5302536897361279,
+      "output_before_end_of_input": true,
+      "end_of_input_seconds": 17.23641535639763,
+      "completed": {
+        "type": "session.done",
+        "operation_id": "ca7e9741-454c-46b8-b73d-461e81e5f614",
+        "code": null,
+        "result_path": "/v1/operations/ca7e9741-454c-46b8-b73d-461e81e5f614/result",
+        "retryable": false
+      },
+      "finalization_seconds": 0.23726811073720455,
+      "durable_result": {
+        "model": "diar-streaming-sortformer-4spk-v2-1",
+        "audio_seconds": 17.2354375,
+        "text": ""
+      },
+      "elapsed_seconds": 20.991086434572935,
+      "event_count": 39,
+      "durable_event_count": 36
+    },
+    {
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "backend_id": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "ready_seconds": 1.8721658485010266,
+      "first_output_from_ready_seconds": 0.5205151420086622,
+      "output_before_end_of_input": true,
+      "end_of_input_seconds": 17.236286309547722,
+      "completed": {
+        "type": "session.done",
+        "operation_id": "8b5663d6-6a85-40af-a9bc-26467aee73b9",
+        "code": null,
+        "result_path": "/v1/operations/8b5663d6-6a85-40af-a9bc-26467aee73b9/result",
+        "retryable": false
+      },
+      "finalization_seconds": 0.20212290529161692,
+      "durable_result": {
+        "model": "diar-streaming-sortformer-4spk-v2-1",
+        "audio_seconds": 17.2354375,
+        "text": ""
+      },
+      "elapsed_seconds": 20.868981834501028,
+      "event_count": 39,
+      "durable_event_count": 36
+    }
+  ],
+  "status": "passed",
+  "raw_receipt_sha256": "5b22f964ab1ff1f62518375972f0fdab11526ef7bdec06895f689bf32e429a72",
+  "receipt_note": "Frame-level events omitted from this condensed evidence; raw receipt hash retained. Complete durable results were fetched and validated by the probe."
+}

@@ -1,0 +1,518 @@
+{
+  "schema": "fs2-mindeval-public-rehearsal/v1",
+  "label": "fs2-final-r8-20260916",
+  "started_at": "2026-09-16T17:50:51.724105+00:00",
+  "base_url": "https://89.169.99.188",
+  "image_provenance": {
+    "gateway": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-gateway@sha256:4d7c32408cdc7a8bb5df55b73408146d6fe5aee759927f9211790b0874ef2db7",
+    "workshop": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-mindeval-workshop@sha256:a7c5c981ea203c93a0439f305f654ae660d3a79c86aa8baa30b364b19ea07c93",
+    "verified_by_public_runner": false
+  },
+  "checks": [
+    {
+      "name": "unauthenticated_denied",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "ten_principals_same_tenant",
+      "passed": true,
+      "identities": [
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-01",
+          "token_id": "937d5215-ad97-41db-a250-1ca111d61170",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-02",
+          "token_id": "80ff5245-3ee2-4db6-bf31-d0ae2302db9d",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-03",
+          "token_id": "a7d2fdc2-1148-499e-b3d6-483b0e42a996",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-04",
+          "token_id": "6d5d9971-10ba-404b-bdee-672a8f8229ae",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-05",
+          "token_id": "0241042b-f7c6-4ebf-9b10-f1b1b163619d",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-06",
+          "token_id": "d49af786-79b3-4f1a-a77a-eab248beb2c9",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-07",
+          "token_id": "ff213e78-5724-4bc3-b3a4-875d972c3c21",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-08",
+          "token_id": "a2d654eb-596e-42f9-baa6-c59624a4e5d0",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-09",
+          "token_id": "f3d6b42c-adb4-42a7-9734-0c79203df3b9",
+          "max_concurrency": 5
+        },
+        {
+          "tenant_id": "mindeval-rehearsal",
+          "principal_id": "rehearsal-10",
+          "token_id": "b244026c-5870-4e17-a79c-25961fa3f6bb",
+          "max_concurrency": 5
+        }
+      ]
+    },
+    {
+      "name": "model_grants_and_fixed_judge",
+      "passed": true,
+      "clinicians": [
+        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "openai/gpt-oss-120b",
+        "zai-org/GLM-5.1"
+      ],
+      "patient": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "judge": "google/gemma-3-27b-it"
+    },
+    {
+      "name": "gateway_20_accepted_21_rejected",
+      "passed": true,
+      "status": 422,
+      "inference_calls": 0
+    },
+    {
+      "name": "workshop_21_profiles_rejected_without_jobs",
+      "passed": true,
+      "status": 422
+    },
+    {
+      "name": "ordinary_pat_missing_model_grant_denied",
+      "passed": true,
+      "status": 403
+    },
+    {
+      "name": "pause_takeover_human_turn_nudge_resume_abort_reconnect",
+      "passed": true,
+      "run_id": "a14aa27f-12ae-4976-abe1-4a4230a6155a"
+    },
+    {
+      "name": "repetition_1_60_jobs_idempotent",
+      "passed": true,
+      "unique_runs": 60
+    },
+    {
+      "name": "repetition_1_cross_team_denied_detail",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_1_cross_team_denied_/events",
+      "passed": true,
+      "status": 404
+    },
+    {
+      "name": "repetition_1_cross_team_denied_/report",
+      "passed": true,
+      "status": 404
+    }
+  ],
+  "repetitions": [
+    {
+      "number": 1,
+      "run_ids": {
+        "0": [
+          "14d30dbc-987c-4d3c-930c-b994dc0c51be",
+          "2291bb15-ca27-4fd0-8ce5-31e542279c2c",
+          "5ab85d8f-1b63-44cf-bffd-07062fd770f2",
+          "d35c2c97-7050-4786-ab00-30ffc9e8cbb1",
+          "f760fa15-70ae-4e34-90e5-d390cd98d5e5",
+          "fed3706c-b050-40c2-937f-b24faa3ea6d4"
+        ],
+        "3": [
+          "10cf28b1-1e60-4b26-ab8c-0fcf38d7aa52",
+          "473af2a6-0c57-48ea-b25b-994ef71a1abf",
+          "829ab236-ceb7-4bea-b7fe-9ed9a4575df4",
+          "aa71d566-18b3-42cd-bb79-65fc547cb52b",
+          "b1cc9885-b149-4b92-ad88-7b74a20b7413",
+          "f3bfc6dc-6b4a-41a5-ba22-ddd278a0b87e"
+        ],
+        "5": [
+          "1b669135-09ba-4307-be6e-684669e23b3e",
+          "1bf5c516-b1b3-4039-9d18-9d33ae61dc17",
+          "1d24df11-8d9b-4fd6-b3f8-391c0802a5c1",
+          "3d71bf5c-7ffe-4fe7-9c87-1ab400fdd912",
+          "42e9a263-b1e0-4ea5-ab3c-8145b69bb883",
+          "ee5053e6-6abe-491c-a12f-91da354e678e"
+        ],
+        "9": [
+          "34bd7976-1b24-4620-a511-9f00e238970c",
+          "3fa15399-349e-4b7a-a287-7250d4d8da8e",
+          "6d9d0654-960e-4598-b6bb-ed518cb2493e",
+          "d2785669-a34e-400c-9a23-72b99849bc00",
+          "e9729bdd-6596-479f-8e42-e1eef643dd2f",
+          "eef94e08-31bf-4002-b90e-7afe54f8d68f"
+        ],
+        "7": [
+          "4ac38297-3ca4-4314-a972-010f1c7076f6",
+          "5531bf1e-9832-4d67-8886-d7da6f0b33c4",
+          "ccc1ecfb-8714-4a88-a5a5-664819b23d43",
+          "d1ac5744-7cd6-482c-9498-ff30ac04c62b",
+          "e14c8402-2bc1-417b-989d-27bf2aa704f4",
+          "ee974818-e02e-4b5f-b169-7c83621ca0c0"
+        ],
+        "1": [
+          "0c582f9f-264c-457c-a69f-6097d4d07b54",
+          "168722f5-d5bd-484a-b2f1-7865963a6340",
+          "80c9fdc7-e4e0-4385-8d3a-2edb3d24a934",
+          "83835ef6-205d-4cce-90be-5c688e5b83c8",
+          "ae8cffcb-437e-409c-b3d1-0e71145f4c7c",
+          "e7b2fe20-c163-4fcb-b379-9fa0f0c17ae6"
+        ],
+        "4": [
+          "0c586103-1077-42da-bd5c-9066a67a1edb",
+          "25fdddce-33e0-4fe5-a2c4-0c2a29cf75d6",
+          "6c07740e-ee81-4678-9304-66171a3e5317",
+          "f0c708ca-63cf-437e-bc74-25bcfd476ccd",
+          "f2f13528-dd43-4213-8ed2-3dcb43773eb4",
+          "fc1e83b3-23e7-4ab8-9ef9-b9613bcfcf8e"
+        ],
+        "6": [
+          "1fc1b0f4-20d5-47f1-b145-c8a803e6a42d",
+          "2c077e7f-f93c-4e2e-b33e-3c94c1cefb60",
+          "3a79b039-edd1-4ee5-905e-2f8dc0eed172",
+          "c2b0f4ef-5bea-49f0-874e-da5d2ea6320d",
+          "c607cf3a-f009-4e34-8c5d-2c3cbb899b44",
+          "eecd9349-2d66-4d7e-8c15-5ef0facd53e7"
+        ],
+        "2": [
+          "0a26a67f-caec-42b1-8509-e07b95cf66be",
+          "16b9900c-cb47-4b56-b6c3-211f32ef82f4",
+          "3f1ed0d4-da5f-4662-ad81-3079d80fe92d",
+          "5d65f677-7f83-4d05-b2f7-491428a1bfa5",
+          "5f824a5b-b83f-430e-81ef-a7a212397834",
+          "c3d2497a-821e-42c4-8f86-496ad37e9919"
+        ],
+        "8": [
+          "5403f58e-1ef0-4515-b4ca-20834ca151fa",
+          "63842771-d9a3-4fc9-827c-1da8cbb8bdeb",
+          "708ab8ab-3c17-4f30-b058-33e06ff8353e",
+          "88f105ca-4d4b-4437-81fb-72ca77c184eb",
+          "db778a2d-96f0-4dc9-92e5-793c76941658",
+          "fb6eb013-56d1-4ccc-9790-593ce703ee63"
+        ]
+      },
+      "samples": [
+        {
+          "seconds": 16.663,
+          "statuses": {
+            "running": 50,
+            "queued": 10
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 30.685,
+          "statuses": {
+            "running": 50,
+            "queued": 10
+          },
+          "running_by_team": {
+            "0": 5,
+            "1": 5,
+            "2": 5,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 5
+          }
+        },
+        {
+          "seconds": 44.194,
+          "statuses": {
+            "completed": 10,
+            "running": 46,
+            "queued": 4
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 4,
+            "3": 5,
+            "4": 5,
+            "5": 5,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 57.58,
+          "statuses": {
+            "completed": 16,
+            "running": 41,
+            "queued": 3
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 4,
+            "3": 5,
+            "4": 3,
+            "5": 2,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 71.298,
+          "statuses": {
+            "completed": 16,
+            "running": 41,
+            "queued": 3
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 4,
+            "3": 5,
+            "4": 3,
+            "5": 2,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 84.915,
+          "statuses": {
+            "completed": 16,
+            "running": 41,
+            "queued": 3
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 5,
+            "2": 4,
+            "3": 5,
+            "4": 3,
+            "5": 2,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 98.38,
+          "statuses": {
+            "completed": 20,
+            "running": 38,
+            "queued": 2
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 4,
+            "2": 4,
+            "3": 5,
+            "4": 3,
+            "5": 0,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 111.638,
+          "statuses": {
+            "completed": 27,
+            "running": 32,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 1,
+            "2": 4,
+            "3": 2,
+            "4": 3,
+            "5": 0,
+            "6": 5,
+            "7": 5,
+            "8": 5,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 125.261,
+          "statuses": {
+            "completed": 32,
+            "running": 27,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 1,
+            "2": 4,
+            "3": 1,
+            "4": 3,
+            "5": 0,
+            "6": 5,
+            "7": 5,
+            "8": 1,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 138.927,
+          "statuses": {
+            "completed": 32,
+            "running": 27,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 1,
+            "2": 4,
+            "3": 1,
+            "4": 3,
+            "5": 0,
+            "6": 5,
+            "7": 5,
+            "8": 1,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 152.33,
+          "statuses": {
+            "completed": 33,
+            "running": 26,
+            "queued": 1
+          },
+          "running_by_team": {
+            "0": 4,
+            "1": 1,
+            "2": 4,
+            "3": 1,
+            "4": 3,
+            "5": 0,
+            "6": 5,
+            "7": 5,
+            "8": 0,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 165.651,
+          "statuses": {
+            "completed": 38,
+            "running": 22
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 1,
+            "2": 4,
+            "3": 1,
+            "4": 3,
+            "5": 0,
+            "6": 5,
+            "7": 5,
+            "8": 0,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 179.053,
+          "statuses": {
+            "completed": 43,
+            "running": 17
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 1,
+            "2": 3,
+            "3": 1,
+            "4": 3,
+            "5": 0,
+            "6": 1,
+            "7": 5,
+            "8": 0,
+            "9": 3
+          }
+        },
+        {
+          "seconds": 192.931,
+          "statuses": {
+            "completed": 48,
+            "running": 12
+          },
+          "running_by_team": {
+            "0": 0,
+            "1": 1,
+            "2": 0,
+            "3": 1,
+            "4": 3,
+            "5": 0,
+            "6": 1,
+            "7": 5,
+            "8": 0,
+            "9": 1
+          }
+        }
+      ],
+      "first_progress_seconds": {
+        "0": 13.722,
+        "1": 14.329,
+        "2": 14.886,
+        "3": 15.166,
+        "4": 15.415,
+        "5": 15.654,
+        "6": 15.903,
+        "7": 16.168,
+        "8": 16.405,
+        "9": 16.663
+      },
+      "passed": false
+    }
+  ],
+  "passed": false,
+  "finished_at": "2026-09-16T17:55:09.790313+00:00"
+}

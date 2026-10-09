@@ -1,0 +1,2242 @@
+{
+  "actual_librechat_verified": false,
+  "additional_cancellation_history": [
+    {
+      "accepted_at": "2026-09-18 02:00:10.682496+00:00",
+      "children": [
+        {
+          "accepted_at": "2026-09-18 02:00:31.115346+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 02:00:31.348301+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "f87f9290-ff56-413d-a522-aba2215bf43c",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "85f697df-e7a3-55a4-86ea-2e21faea8f8d",
+          "parent_operation_id": "ccc802c2-76fa-45d5-9cfd-1b1cbc5a708c",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.232955,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:00:31.786659+00:00",
+          "activation_classification": "reported_cold_start_interval_not_new_node_proof",
+          "activation_started_at": "2026-09-18 02:00:31.883696+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 02:01:16.290664+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": true,
+          "gpu_uuids": [
+            "GPU-b8ef12ad-0a76-f321-ba9a-03cb8caea351"
+          ],
+          "http_status": 200,
+          "id": "3633d8e6-a107-45ce-b961-a98623ce5808",
+          "node_uid": "d0829db9-bc8e-445b-865d-326d01686189",
+          "operation": "generate-media",
+          "parent_attempt_id": "85f697df-e7a3-55a4-86ea-2e21faea8f8d",
+          "parent_operation_id": "ccc802c2-76fa-45d5-9cfd-1b1cbc5a708c",
+          "pod_uid": "4006ff10-478e-4675-b0bb-171bb4372bd3",
+          "preemptible": true,
+          "processing_wall_seconds": 6.310153,
+          "ready_at": "2026-09-18 02:01:09.873345+00:00",
+          "reported_activation_seconds": 38.086686,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 44.504005,
+          "started_at": "2026-09-18 02:01:09.980511+00:00",
+          "status": "succeeded"
+        }
+      ],
+      "classification": "observer_started_too_late_no_cancel_sent_parent_succeeded",
+      "completed_at": "2026-09-18 02:01:29.393016+00:00",
+      "cpu_attempts": [
+        {
+          "attempt_id": "85f697df-e7a3-55a4-86ea-2e21faea8f8d",
+          "attempt_number": 1,
+          "completed_at": "2026-09-18T02:01:28.314372+00:00",
+          "outcome": "succeeded",
+          "pod_uids": [
+            "d0edb054-8a93-4222-8e20-6816e94f2808"
+          ],
+          "resource_released": true,
+          "scheduling_admission": {
+            "accelerator_count": 0,
+            "accelerator_resource_name": null,
+            "admitted_at": "2026-09-18T02:00:11+00:00",
+            "admitted_resource_flavor": "general-cpu",
+            "cpu_millis": 2100,
+            "memory_bytes": 17448304640,
+            "quota_reserved_at": "2026-09-18T02:00:11+00:00",
+            "resolved_pool_id": "batch-cpu"
+          },
+          "started_at": "2026-09-18T02:00:10.778069+00:00",
+          "workload": {
+            "kind": "Job",
+            "name": "fs2-augment-dataset-main-a1-383dc19d12e4",
+            "namespace": "fs2-models",
+            "route_namespace": "fs2-models",
+            "uid": "548bc841-626e-4465-b52a-fb9d87a4dba7"
+          }
+        }
+      ],
+      "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "gpu_kernel_interruption_verified": false,
+      "max_concurrency": 1,
+      "not_part_of_five_positive_cases": true,
+      "observation": {
+        "private_path": "active-child-cancellation-r151/qualification-observation-final.json",
+        "sha256": "85f49314a7df6d6abf0660a79b5650d4414d75ce68c78ba02e10530c2405c20c",
+        "size_bytes": 7825
+      },
+      "parent_id": "ccc802c2-76fa-45d5-9cfd-1b1cbc5a708c",
+      "private_evidence": [
+        {
+          "private_path": "active-child-cancellation-r151/qualification-observation-final.json",
+          "sha256": "85f49314a7df6d6abf0660a79b5650d4414d75ce68c78ba02e10530c2405c20c",
+          "size_bytes": 7825
+        },
+        {
+          "private_path": "active-child-cancellation-r151/run.json",
+          "sha256": "7919e5650dba40bc2f1ab3c850ba18f20cc4c0f41887d4df6bfa1bb98c0b2331",
+          "size_bytes": 10463
+        }
+      ],
+      "request_sha256": "1785fdc44346e74d4baedd41d057624e47ab5366768f25188929dcc455f1ff5d",
+      "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+      "scheduling_digest": "sha256:4d51f2bcdb3b12e626a2877aeb7ba99bfebec0ba7939686157b7e5c2c742bff5",
+      "server_parent_seconds": 78.71052,
+      "status": "succeeded"
+    },
+    {
+      "accepted_at": "2026-09-18 02:05:12.545743+00:00",
+      "children": [
+        {
+          "accepted_at": "2026-09-18 02:05:32.340922+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 02:05:32.608078+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "16583c81-d6cd-474f-a0f5-eb0f92693cd5",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "parent_operation_id": "e4548694-0738-4569-8705-04dd979345b1",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.267156,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:05:33.507052+00:00",
+          "activation_classification": "reported_cold_start_interval_not_new_node_proof",
+          "activation_started_at": "2026-09-18 02:05:33.570946+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 02:06:18.228914+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": true,
+          "gpu_uuids": [
+            "GPU-6cd7e8ce-092e-e92c-0f18-7f07eebddcb5"
+          ],
+          "http_status": 200,
+          "id": "fc577fcb-0060-4b93-98d6-d4286a058dce",
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "operation": "generate-media",
+          "parent_attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "parent_operation_id": "e4548694-0738-4569-8705-04dd979345b1",
+          "pod_uid": "ef607a7e-9c69-49d1-b682-3d4d606b5d8b",
+          "preemptible": true,
+          "processing_wall_seconds": 6.816229,
+          "ready_at": "2026-09-18 02:06:11.396051+00:00",
+          "reported_activation_seconds": 37.888999,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 44.721862,
+          "started_at": "2026-09-18 02:06:11.412685+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:06:19.435207+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 02:06:19.721393+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "884710cf-b009-44b9-87f8-11cdb0e80ead",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "parent_operation_id": "e4548694-0738-4569-8705-04dd979345b1",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.286186,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:06:20.293057+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 02:06:20.313335+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 02:06:26.931305+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "7244b3de-d729-4363-9238-59a1f7f8749e",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "parent_operation_id": "e4548694-0738-4569-8705-04dd979345b1",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.210322,
+          "ready_at": "2026-09-18 02:06:20.711469+00:00",
+          "reported_activation_seconds": 0.418412,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 6.638248,
+          "started_at": "2026-09-18 02:06:20.720983+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:06:29.599508+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 02:06:29.876040+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "41b94725-b44c-4393-a112-04c78d524037",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "parent_operation_id": "e4548694-0738-4569-8705-04dd979345b1",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.276532,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:06:30.333165+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 02:06:30.360791+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 02:06:36.917895+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "fa16a90d-1394-4521-a4f8-730386ac0fab",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "parent_operation_id": "e4548694-0738-4569-8705-04dd979345b1",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.154027,
+          "ready_at": "2026-09-18 02:06:30.759047+00:00",
+          "reported_activation_seconds": 0.425882,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 6.58473,
+          "started_at": "2026-09-18 02:06:30.763868+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:06:39.774745+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 02:06:39.900946+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "a7d7ade9-6fcb-4501-8225-bb53bb5ba131",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "parent_operation_id": "e4548694-0738-4569-8705-04dd979345b1",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.126201,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:06:40.624773+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 02:06:40.721165+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 02:06:47.112631+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "876b98d4-16d6-46a8-a31b-5446eba0a410",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "parent_operation_id": "e4548694-0738-4569-8705-04dd979345b1",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.188516,
+          "ready_at": "2026-09-18 02:06:40.912418+00:00",
+          "reported_activation_seconds": 0.287645,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 6.487858,
+          "started_at": "2026-09-18 02:06:40.924115+00:00",
+          "status": "succeeded"
+        }
+      ],
+      "classification": "native_operation_DTO_harness_error_then_same_parent_cancel_after_all_generations_succeeded",
+      "completed_at": "2026-09-18 02:07:01.076389+00:00",
+      "cpu_attempts": [
+        {
+          "attempt_id": "ae327e7c-0b80-5956-ae93-981e1ba3d492",
+          "attempt_number": 1,
+          "completed_at": "2026-09-18T02:06:59.917939+00:00",
+          "outcome": "cancelled",
+          "pod_uids": [
+            "3cce36d0-eb2a-405a-a579-dbec304a65a2"
+          ],
+          "resource_released": true,
+          "scheduling_admission": {
+            "accelerator_count": 0,
+            "accelerator_resource_name": null,
+            "admitted_at": "2026-09-18T02:05:12+00:00",
+            "admitted_resource_flavor": "general-cpu",
+            "cpu_millis": 2100,
+            "memory_bytes": 17448304640,
+            "quota_reserved_at": "2026-09-18T02:05:12+00:00",
+            "resolved_pool_id": "batch-cpu"
+          },
+          "started_at": "2026-09-18T02:05:12.586905+00:00",
+          "workload": {
+            "kind": "Job",
+            "name": "fs2-augment-dataset-main-a1-4dd7b3edcb2b",
+            "namespace": "fs2-models",
+            "route_namespace": "fs2-models",
+            "uid": "ad4a9f4d-647f-445e-aa45-6d2e48d40698"
+          }
+        }
+      ],
+      "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "gpu_kernel_interruption_verified": false,
+      "max_concurrency": 1,
+      "not_part_of_five_positive_cases": true,
+      "observation": {
+        "private_path": "active-child-cancellation-r151-confirmed/qualification-observation-final.json",
+        "sha256": "a0bc628281d4753dd5f96222daadf47cd03e32c585099e5d800ef4c5b1e8fd63",
+        "size_bytes": 14139
+      },
+      "parent_id": "e4548694-0738-4569-8705-04dd979345b1",
+      "private_evidence": [
+        {
+          "private_path": "active-child-cancellation-r151-confirmed/cancel-continuation/run.json",
+          "sha256": "bf49b24764f5768d2b5100b8411dfa851a9263b24308acca00853a28c94b39cb",
+          "size_bytes": 17295
+        },
+        {
+          "private_path": "active-child-cancellation-r151-confirmed/child-running-observation.json",
+          "sha256": "ff79ab64cddf0183e1a6276c0fcc39dc6ca5678f33f65ba1194a3899c9dfcd76",
+          "size_bytes": 8110
+        },
+        {
+          "private_path": "active-child-cancellation-r151-confirmed/parent-admitted.json",
+          "sha256": "4d5f2cb588645597918987e6e9d82d274ceada1f10839d1943f54b7bd6696926",
+          "size_bytes": 114
+        },
+        {
+          "private_path": "active-child-cancellation-r151-confirmed/qualification-observation-after-client-error.json",
+          "sha256": "300d984d2e0250d160b57e2fb64af6b483c6419d7056eda0bb97bc21444eef35",
+          "size_bytes": 14138
+        },
+        {
+          "private_path": "active-child-cancellation-r151-confirmed/qualification-observation-final.json",
+          "sha256": "a0bc628281d4753dd5f96222daadf47cd03e32c585099e5d800ef4c5b1e8fd63",
+          "size_bytes": 14139
+        },
+        {
+          "private_path": "active-child-cancellation-r151-confirmed/run.json",
+          "sha256": "ff50022a9718b13199898cdb58205ce898533f4ce6cd5c11c8c27bb70e4e5a50",
+          "size_bytes": 5498
+        },
+        {
+          "private_path": "active-child-cancellation-r151-confirmed/watcher-ready.json",
+          "sha256": "a9a67a42973806cdaaa502a2ed6f650c048dfbedc15fd176a62b986f8051ddb6",
+          "size_bytes": 405
+        }
+      ],
+      "request_sha256": "2900af8d340482e94275643f38f9b9d24236db20f6a28d64e74afea799fcd957",
+      "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+      "scheduling_digest": "sha256:076ef02ef876fbe4d33f7bd6ee4b2c928a1366d71697a8443709edcaf5f39c00",
+      "server_parent_seconds": 108.530646,
+      "status": "cancelled"
+    },
+    {
+      "accepted_at": "2026-09-18 02:09:27.502658+00:00",
+      "cancel_requested_at": "2026-09-18T02:10:30.162142+00:00",
+      "children": [
+        {
+          "accepted_at": "2026-09-18 02:09:47.857899+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 02:09:48.310383+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "f6f64cae-f5ec-4bc2-a6b5-ad20bfeb57cc",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "232f19ef-5784-519b-9a44-80570a39cc0c",
+          "parent_operation_id": "13bcffd2-d8c5-45c9-9608-921e85c10881",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.452484,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 02:09:48.553513+00:00",
+          "activation_classification": "unavailable",
+          "activation_started_at": "2026-09-18 02:09:48.569271+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 02:10:30.537031+00:00",
+          "error_code": "cancelled_by_caller",
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": null,
+          "id": "9e82e652-f7f4-44e4-b405-42957d3f67f8",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "232f19ef-5784-519b-9a44-80570a39cc0c",
+          "parent_operation_id": "13bcffd2-d8c5-45c9-9608-921e85c10881",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 3.647625,
+          "ready_at": "2026-09-18 02:10:26.884844+00:00",
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 41.983518,
+          "started_at": "2026-09-18 02:10:26.889406+00:00",
+          "status": "cancelled"
+        }
+      ],
+      "classification": "operator_assisted_running_child_cancellation",
+      "completed_at": "2026-09-18 02:10:32.987380+00:00",
+      "cpu_attempts": [
+        {
+          "attempt_id": "232f19ef-5784-519b-9a44-80570a39cc0c",
+          "attempt_number": 1,
+          "completed_at": "2026-09-18T02:10:30.590508+00:00",
+          "outcome": "cancelled",
+          "pod_uids": [
+            "103d7f0b-327b-4faa-9850-3c5a672db02f"
+          ],
+          "resource_released": true,
+          "scheduling_admission": {
+            "accelerator_count": 0,
+            "accelerator_resource_name": null,
+            "admitted_at": "2026-09-18T02:09:27+00:00",
+            "admitted_resource_flavor": "general-cpu",
+            "cpu_millis": 2100,
+            "memory_bytes": 17448304640,
+            "quota_reserved_at": "2026-09-18T02:09:27+00:00",
+            "resolved_pool_id": "batch-cpu"
+          },
+          "started_at": "2026-09-18T02:09:27.531478+00:00",
+          "workload": {
+            "kind": "Job",
+            "name": "fs2-augment-dataset-main-a1-15f3647a124e",
+            "namespace": "fs2-models",
+            "route_namespace": "fs2-models",
+            "uid": "9409a95e-ff48-4acc-95c9-08e1e37dfc6e"
+          }
+        }
+      ],
+      "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "generation_child_ids_active_at_cancel_by_ledger_timestamps": [
+        "9e82e652-f7f4-44e4-b405-42957d3f67f8"
+      ],
+      "gpu_kernel_interruption_verified": false,
+      "helper_outcome": "operator_assisted_active_child_parent_cancellation_passed",
+      "max_concurrency": 1,
+      "not_part_of_five_positive_cases": true,
+      "observation": {
+        "private_path": "active-child-cancellation-r151-dto-fixed/qualification-observation-final.json",
+        "sha256": "a15bd649b9ea5076d456f904a13bda46c001c5f021bf29b80b751243f587ffc3",
+        "size_bytes": 7713
+      },
+      "operator_assisted_child_discovery": true,
+      "parent_id": "13bcffd2-d8c5-45c9-9608-921e85c10881",
+      "private_evidence": [
+        {
+          "private_path": "active-child-cancellation-r151-dto-fixed/child-running-observation.json",
+          "sha256": "5e0dde2fde50f9d4f2c0b4d79b35e900626c25a1a9d7b0d205b06620ce6a8f8a",
+          "size_bytes": 8110
+        },
+        {
+          "private_path": "active-child-cancellation-r151-dto-fixed/parent-admitted.json",
+          "sha256": "14286b49f13f5a7c41e2686e4b8a6457777120ed2f2f8a50a101ca65d437a77c",
+          "size_bytes": 114
+        },
+        {
+          "private_path": "active-child-cancellation-r151-dto-fixed/qualification-observation-final.json",
+          "sha256": "a15bd649b9ea5076d456f904a13bda46c001c5f021bf29b80b751243f587ffc3",
+          "size_bytes": 7713
+        },
+        {
+          "private_path": "active-child-cancellation-r151-dto-fixed/run.json",
+          "sha256": "e83bf5ad6c953dd41cfe27d5fbb0fda32fb95e349fad14b8003110b830e19a71",
+          "size_bytes": 20205
+        },
+        {
+          "private_path": "active-child-cancellation-r151-dto-fixed/watcher-ready.json",
+          "sha256": "13e1389bb6c59e65fdc1cbe89dbc58b8bce361a55fb9826edd7c5b98e456cfe2",
+          "size_bytes": 405
+        }
+      ],
+      "public_child_before_cancel_status": "running",
+      "public_child_discovery_verified": false,
+      "request_sha256": "2900af8d340482e94275643f38f9b9d24236db20f6a28d64e74afea799fcd957",
+      "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+      "scheduling_digest": "sha256:a607460b6177a8e66d30fe96a00b76ee8af64a8efcb71021ec086144c813d74b",
+      "server_parent_seconds": 65.484722,
+      "status": "cancelled"
+    }
+  ],
+  "base_probes": {
+    "cancellation": {
+      "generation_children": 0,
+      "observed_scope": "CPU active_compute before any child admission",
+      "operation": {
+        "accepted_at": "2026-09-18 01:59:28.876917+00:00",
+        "children": [],
+        "completed_at": "2026-09-18 01:59:46.847012+00:00",
+        "cpu_attempts": [
+          {
+            "attempt_id": "e89b382d-4e46-5f01-931f-f90e6e28fb8a",
+            "attempt_number": 1,
+            "completed_at": "2026-09-18T01:59:40.160530+00:00",
+            "outcome": "cancelled",
+            "pod_uids": [
+              "a7af6d8a-d7c8-4003-98da-db8adbc2d58a"
+            ],
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 0,
+              "accelerator_resource_name": null,
+              "admitted_at": "2026-09-18T01:59:29+00:00",
+              "admitted_resource_flavor": "general-cpu",
+              "cpu_millis": 2100,
+              "memory_bytes": 17448304640,
+              "quota_reserved_at": "2026-09-18T01:59:29+00:00",
+              "resolved_pool_id": "batch-cpu"
+            },
+            "started_at": "2026-09-18T01:59:28.983484+00:00",
+            "workload": {
+              "kind": "Job",
+              "name": "fs2-augment-dataset-main-a1-1b1a2e07bc5c",
+              "namespace": "fs2-models",
+              "route_namespace": "fs2-models",
+              "uid": "37f8d93c-f47a-4b05-aedb-e8f07d4098eb"
+            }
+          }
+        ],
+        "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+        "max_concurrency": 1,
+        "observation": {
+          "private_path": "final-cohorts-r151/probes/cancellation-observation-final.json",
+          "sha256": "cc59b698033fcf2ac3b42a926653a1b2603ce0bc461bcb56c06e5fd48217544d",
+          "size_bytes": 5609
+        },
+        "parent_id": "e85c1dbf-d6e3-4a8a-b0a8-fb3fe64cf93f",
+        "request_sha256": "5fcc592db7aac4325db2a1c86947de22e75f934c4ed17c7d1a91c6f6ce76495b",
+        "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+        "scheduling_digest": "sha256:65981c1cc920d3be052f791db3693041711b80ef95c31f2226ee7bbed8c14ecb",
+        "server_parent_seconds": 17.970095,
+        "status": "cancelled"
+      }
+    },
+    "concurrency": {
+      "body": {
+        "error": {
+          "message": "token concurrency limit reached",
+          "type": "concurrency_exceeded"
+        }
+      },
+      "expected_current_contract": "429 concurrency_exceeded",
+      "status": 429
+    },
+    "evidence": {
+      "private_path": "final-cohorts-r151/probes/run.json",
+      "sha256": "1e59cb851c2c35edd4d960a9a5455446a3a1be044a1d9b4327b404121399852a",
+      "size_bytes": 27898
+    },
+    "invalid_selection": {
+      "failure_code": "INVALID_REQUEST",
+      "generation_children": 0,
+      "operation": {
+        "accepted_at": "2026-09-18 01:59:05.535039+00:00",
+        "children": [],
+        "completed_at": "2026-09-18 01:59:26.716948+00:00",
+        "cpu_attempts": [
+          {
+            "attempt_id": "e0f5841d-f236-58dd-ad15-f8b647b729db",
+            "attempt_number": 1,
+            "completed_at": "2026-09-18T01:59:24.672705+00:00",
+            "outcome": "failed",
+            "pod_uids": [
+              "c9c7b57e-5692-49f7-b140-15ba78bab01a"
+            ],
+            "resource_released": true,
+            "scheduling_admission": {
+              "accelerator_count": 0,
+              "accelerator_resource_name": null,
+              "admitted_at": "2026-09-18T01:59:06+00:00",
+              "admitted_resource_flavor": "general-cpu",
+              "cpu_millis": 2100,
+              "memory_bytes": 17448304640,
+              "quota_reserved_at": "2026-09-18T01:59:06+00:00",
+              "resolved_pool_id": "batch-cpu"
+            },
+            "started_at": "2026-09-18T01:59:05.451046+00:00",
+            "workload": {
+              "kind": "Job",
+              "name": "fs2-augment-dataset-main-a1-0d59aa7f6a3c",
+              "namespace": "fs2-models",
+              "route_namespace": "fs2-models",
+              "uid": "39892ab2-ecb8-41d0-b1ff-b790425e6f9e"
+            }
+          }
+        ],
+        "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+        "max_concurrency": 1,
+        "observation": {
+          "private_path": "final-cohorts-r151/probes/invalid-selection-observation-final.json",
+          "sha256": "cebb0fdcffec74868ceed518f361409b4ff7bf547ab12e4427ca455174bc6553",
+          "size_bytes": 5632
+        },
+        "parent_id": "34b9cdf1-ac90-47c6-93b1-b16d0078ae7e",
+        "request_sha256": "90d121e0a7d28814fd8fb6a92f685a1f70f70f027076e8ad8e8523569621e753",
+        "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+        "scheduling_digest": "sha256:4341363774f7f8e034c18f7d370dad9f86b17008b351e200b6068060b12de334",
+        "server_parent_seconds": 21.181909,
+        "status": "failed"
+      },
+      "public_http_status": 422
+    },
+    "malformed_request": {
+      "body": {
+        "error": {
+          "message": "request violates the canonical scientific contract",
+          "type": "scientific_request_invalid"
+        }
+      },
+      "status": 422
+    },
+    "outcome": "expected_negative_cases_passed"
+  },
+  "cases": [
+    {
+      "accepted_at": "2026-09-18 01:48:17.715099+00:00",
+      "case": "cohort-1-lighting",
+      "children": [
+        {
+          "accepted_at": "2026-09-18 01:48:37.089534+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:48:37.235897+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "eba52e69-ce25-4810-a892-055601405584",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "8cbe1fd1-fb03-5cfd-917d-ab965f284f55",
+          "parent_operation_id": "18c1bb2a-dcd5-4489-a35b-63c1f8da2d6a",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.146363,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:48:37.639384+00:00",
+          "activation_classification": "reported_cold_start_interval_not_new_node_proof",
+          "activation_started_at": "2026-09-18 01:48:37.663424+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:49:22.763342+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": true,
+          "gpu_uuids": [
+            "GPU-b8ef12ad-0a76-f321-ba9a-03cb8caea351"
+          ],
+          "http_status": 200,
+          "id": "f7d1c015-4cad-411d-9c89-1b166f289d46",
+          "node_uid": "d0829db9-bc8e-445b-865d-326d01686189",
+          "operation": "generate-media",
+          "parent_attempt_id": "8cbe1fd1-fb03-5cfd-917d-ab965f284f55",
+          "parent_operation_id": "18c1bb2a-dcd5-4489-a35b-63c1f8da2d6a",
+          "pod_uid": "1db59678-b9ac-4077-9f19-0f22e90e91da",
+          "preemptible": true,
+          "processing_wall_seconds": 6.744732,
+          "ready_at": "2026-09-18 01:49:15.959040+00:00",
+          "reported_activation_seconds": 38.319656,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 45.123958,
+          "started_at": "2026-09-18 01:49:16.018610+00:00",
+          "status": "succeeded"
+        }
+      ],
+      "client_completed_at": "2026-09-18T01:50:03.579986+00:00",
+      "client_end_to_end_seconds": 119.13574,
+      "client_started_at": "2026-09-18T01:48:04.444246+00:00",
+      "client_timing_scope": "bundle preparation/upload, public submission, polling, download and independent full-reader validation",
+      "cohort": 1,
+      "completed_at": "2026-09-18 01:49:38.059950+00:00",
+      "cpu_attempts": [
+        {
+          "attempt_id": "8cbe1fd1-fb03-5cfd-917d-ab965f284f55",
+          "attempt_number": 1,
+          "completed_at": "2026-09-18T01:49:37.194379+00:00",
+          "outcome": "succeeded",
+          "pod_uids": [
+            "53bbaad1-6791-4e2b-ab88-5a282643f74e"
+          ],
+          "resource_released": true,
+          "scheduling_admission": {
+            "accelerator_count": 0,
+            "accelerator_resource_name": null,
+            "admitted_at": "2026-09-18T01:48:18+00:00",
+            "admitted_resource_flavor": "general-cpu",
+            "cpu_millis": 2100,
+            "memory_bytes": 17448304640,
+            "quota_reserved_at": "2026-09-18T01:48:18+00:00",
+            "resolved_pool_id": "batch-cpu"
+          },
+          "started_at": "2026-09-18T01:48:17.796628+00:00",
+          "workload": {
+            "kind": "Job",
+            "name": "fs2-augment-dataset-main-a1-a8d796ef64d2",
+            "namespace": "fs2-models",
+            "route_namespace": "fs2-models",
+            "uid": "24e69983-fbfa-4364-b078-7902c14ce32b"
+          }
+        }
+      ],
+      "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "first_generation_activation_seconds": 38.319656,
+      "inflight_replay_verified": true,
+      "max_concurrency": 1,
+      "observation": {
+        "private_path": "final-cohorts-r151/cohort-1-lighting/qualification-observation-final.json",
+        "sha256": "afbb8468e819fb5d02d8d213d9768907450acbc779d676aa9210b3eb2b60ce9a",
+        "size_bytes": 7825
+      },
+      "outputs": [
+        {
+          "artifact": {
+            "artifact_id": "29846880-cf22-4ba0-96aa-707528444efe",
+            "compression": "none",
+            "media_type": "application/json",
+            "sha256": "05e40bf9c9e7fd95ea5adac7ee58dbf1d174cb6e82f57304fc36df32700cc13d",
+            "size_bytes": 687
+          },
+          "name": "result",
+          "semantic_type": "lerobot-augmentation-result/v1"
+        },
+        {
+          "artifact": {
+            "artifact_id": "56dd401d-2752-4ec7-99c6-ebeda7efb322",
+            "compression": "zstd",
+            "media_type": "application/x-tar",
+            "sha256": "d42e867af1e21b43d1e016e1ca4b3b214086b4f03725f88dda6228f3fedb366f",
+            "size_bytes": 2492804
+          },
+          "name": "variant-00",
+          "semantic_type": "lerobot-v3-augmented-bundle/v1"
+        }
+      ],
+      "parent_id": "18c1bb2a-dcd5-4489-a35b-63c1f8da2d6a",
+      "private_evidence": [
+        {
+          "private_path": "final-cohorts-r151/cohort-1-lighting/run.json",
+          "sha256": "6f3a858c797b5bd48bcd7e087eb882aa5cf21c084fc53b696cc42f48569c204f",
+          "size_bytes": 24336
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-1-lighting/prepared.json",
+          "sha256": "7f8e3dd34848be131e1edfda780af9c6df4a3e175e1578c8a275d4dc6c0e27a4",
+          "size_bytes": 1980
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-1-lighting/result.json",
+          "sha256": "05e40bf9c9e7fd95ea5adac7ee58dbf1d174cb6e82f57304fc36df32700cc13d",
+          "size_bytes": 687
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-1-lighting/output-manifest.json",
+          "sha256": "05cbbf8e217f3a7da8a38d045e4d649943ced74cb82cb790cfb7600a48b8b573",
+          "size_bytes": 705
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-1-lighting/semantic-review.json",
+          "sha256": "7f61bdcbd02768b58f4f8bd4ac805c117168b5014b815ad31ad7e0b9f75efa9e",
+          "size_bytes": 8259
+        }
+      ],
+      "protocol": "mcp",
+      "request_sha256": "1785fdc44346e74d4baedd41d057624e47ab5366768f25188929dcc455f1ff5d",
+      "requested_policy_label": "lighting",
+      "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+      "scheduling_digest": "sha256:86f1ae41b6ac3d379d5ea615cbd730140c50c3bbc8918e400f1b1b3118ee3ced",
+      "sequential_generation_admission_verified": true,
+      "server_parent_seconds": 80.344851,
+      "status": "succeeded",
+      "terminal_replay_verified": true,
+      "validations": [
+        {
+          "cameras": 2,
+          "decoded_camera_frames": 128,
+          "episodes": 2,
+          "evidence": {
+            "private_path": "final-cohorts-r151/cohort-1-lighting/variant-00-validation.json",
+            "sha256": "ccd977f991ebbdf7cc4293f685d9882a971e2be533808f18afae8bd7023bf722",
+            "size_bytes": 1954
+          },
+          "frames": 64,
+          "nonvideo_values_compared": 2304,
+          "nonvideo_values_exact": true,
+          "output_tree_sha256": "32c721957962798cf7e4dbd494ce1528885c023ed78b781cc6a64c5275bff35d",
+          "physical_alignment_verified": false,
+          "provenance_sha256": "2133052a0555a44fb3832f274972ab2963a10e18a51592d527c6fc9b5f47ff42",
+          "reader": "lerobot==0.6.1",
+          "unselected_max_frame_mae_limit": 6,
+          "unselected_pixels_bit_exact": false,
+          "variant_index": 0
+        }
+      ]
+    },
+    {
+      "accepted_at": "2026-09-18 01:50:16.479099+00:00",
+      "case": "cohort-1-environment",
+      "children": [
+        {
+          "accepted_at": "2026-09-18 01:50:35.127566+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:50:35.265256+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "86a68464-234d-446f-8436-a2053fbdb1ec",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "parent_operation_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.13769,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:50:35.829317+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 01:50:35.916822+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:50:42.911789+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "c2879f08-f510-415a-8787-167a0e7e9627",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "parent_operation_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.349091,
+          "ready_at": "2026-09-18 01:50:36.556685+00:00",
+          "reported_activation_seconds": 0.727368,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 7.082472,
+          "started_at": "2026-09-18 01:50:36.562698+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:50:45.384370+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:50:45.954110+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "00a53458-0b88-40c8-895c-b4b9709d24aa",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "parent_operation_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.56974,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:50:46.468899+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 01:50:46.545020+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:50:53.580345+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "305e0399-49cb-42da-9d62-6160d2998227",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "parent_operation_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.673099,
+          "ready_at": "2026-09-18 01:50:46.904102+00:00",
+          "reported_activation_seconds": 0.435203,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 7.111446,
+          "started_at": "2026-09-18 01:50:46.907246+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:50:55.774950+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:50:56.518460+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "a4a3f84c-c1c1-4a3b-ad6c-0faa5d6338a7",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "parent_operation_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.74351,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:50:57.006694+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 01:50:57.053055+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:51:03.837890+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "d627dc8b-f65d-4ede-98b5-f2dd63821302",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "parent_operation_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.266732,
+          "ready_at": "2026-09-18 01:50:57.563240+00:00",
+          "reported_activation_seconds": 0.556546,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 6.831196,
+          "started_at": "2026-09-18 01:50:57.571158+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:51:06.439717+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:51:06.583443+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "d07cc607-f867-4cc2-9701-4697e323eda8",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "parent_operation_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.143726,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:51:06.986269+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 01:51:07.014685+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:51:13.372430+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "d0bb2896-f0c1-449a-becd-f9e59a862895",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "parent_operation_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 5.98946,
+          "ready_at": "2026-09-18 01:51:07.378962+00:00",
+          "reported_activation_seconds": 0.392693,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 6.386161,
+          "started_at": "2026-09-18 01:51:07.382970+00:00",
+          "status": "succeeded"
+        }
+      ],
+      "client_completed_at": "2026-09-18T01:51:57.900306+00:00",
+      "client_end_to_end_seconds": 113.577898,
+      "client_started_at": "2026-09-18T01:50:04.322408+00:00",
+      "client_timing_scope": "bundle preparation/upload, public submission, polling, download and independent full-reader validation",
+      "cohort": 1,
+      "completed_at": "2026-09-18 01:51:29.634463+00:00",
+      "cpu_attempts": [
+        {
+          "attempt_id": "ed5dc6ee-af24-5b4c-a5d7-7c5201bf1ed7",
+          "attempt_number": 1,
+          "completed_at": "2026-09-18T01:51:28.408256+00:00",
+          "outcome": "succeeded",
+          "pod_uids": [
+            "32356495-9a2b-44b3-80c2-04518dc11cf8"
+          ],
+          "resource_released": true,
+          "scheduling_admission": {
+            "accelerator_count": 0,
+            "accelerator_resource_name": null,
+            "admitted_at": "2026-09-18T01:50:16+00:00",
+            "admitted_resource_flavor": "general-cpu",
+            "cpu_millis": 2100,
+            "memory_bytes": 17448304640,
+            "quota_reserved_at": "2026-09-18T01:50:16+00:00",
+            "resolved_pool_id": "batch-cpu"
+          },
+          "started_at": "2026-09-18T01:50:16.503709+00:00",
+          "workload": {
+            "kind": "Job",
+            "name": "fs2-augment-dataset-main-a1-4a9dca4dfa24",
+            "namespace": "fs2-models",
+            "route_namespace": "fs2-models",
+            "uid": "b8832b62-f81c-498b-97c2-5f71956cfaf0"
+          }
+        }
+      ],
+      "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "first_generation_activation_seconds": 0.727368,
+      "inflight_replay_verified": true,
+      "max_concurrency": 1,
+      "observation": {
+        "private_path": "final-cohorts-r151/cohort-1-environment/qualification-observation-final.json",
+        "sha256": "c8339c7bfbca84ead9952ccedf101f5387426c89ded2e1787196bb8b6aa1e702",
+        "size_bytes": 13998
+      },
+      "outputs": [
+        {
+          "artifact": {
+            "artifact_id": "df88022b-c1c4-46bf-ba7c-0888ec381ccd",
+            "compression": "none",
+            "media_type": "application/json",
+            "sha256": "c261d116614a34ecb22702c429aac8a2e519079f5e34fdc0f66e8163040f90ad",
+            "size_bytes": 687
+          },
+          "name": "result",
+          "semantic_type": "lerobot-augmentation-result/v1"
+        },
+        {
+          "artifact": {
+            "artifact_id": "9a276f0c-dd61-494b-8bf8-ef9478be6e55",
+            "compression": "zstd",
+            "media_type": "application/x-tar",
+            "sha256": "fc4033179037c3b7482e3f538198cfa040cd75c89b40cd3f4cbb7ed23d85351c",
+            "size_bytes": 2501340
+          },
+          "name": "variant-00",
+          "semantic_type": "lerobot-v3-augmented-bundle/v1"
+        }
+      ],
+      "parent_id": "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+      "private_evidence": [
+        {
+          "private_path": "final-cohorts-r151/cohort-1-environment/run.json",
+          "sha256": "27439ae76d7f11cf3cf125a6b136602ee38f096fd106e86d7ba8113a9fa9ef7e",
+          "size_bytes": 24628
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-1-environment/prepared.json",
+          "sha256": "ec1ba1880243754bd3f8e8579a3c9ea238cc5170491eefd8560dd2035abaf2e0",
+          "size_bytes": 1969
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-1-environment/result.json",
+          "sha256": "c261d116614a34ecb22702c429aac8a2e519079f5e34fdc0f66e8163040f90ad",
+          "size_bytes": 687
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-1-environment/output-manifest.json",
+          "sha256": "7da45413e6d1f056879f385b7ee467657a5debf7269517f48c1d0aab84a52bab",
+          "size_bytes": 705
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-1-environment/semantic-review.json",
+          "sha256": "bdf1ef1c487d1a7bfe71689704cbb88e98e296399d05bee8bf651aebe8c0a2a2",
+          "size_bytes": 9908
+        }
+      ],
+      "protocol": "http",
+      "request_sha256": "2900af8d340482e94275643f38f9b9d24236db20f6a28d64e74afea799fcd957",
+      "requested_policy_label": "environment",
+      "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+      "scheduling_digest": "sha256:20b27d5e42eb5b80b19db793a81fafe609eb0d635068fc6c57867d58fcf4049b",
+      "sequential_generation_admission_verified": true,
+      "server_parent_seconds": 73.155364,
+      "status": "succeeded",
+      "terminal_replay_verified": true,
+      "validations": [
+        {
+          "cameras": 2,
+          "decoded_camera_frames": 128,
+          "episodes": 2,
+          "evidence": {
+            "private_path": "final-cohorts-r151/cohort-1-environment/variant-00-validation.json",
+            "sha256": "58f6df7756f9541202e6cfd0263c48565b932a968c12aef323254ea9a017f5a3",
+            "size_bytes": 1953
+          },
+          "frames": 64,
+          "nonvideo_values_compared": 2304,
+          "nonvideo_values_exact": true,
+          "output_tree_sha256": "6c83f04c2d2ac13e5aead88fb96aad5e08201d027b07d9109a887a1af90c34e3",
+          "physical_alignment_verified": false,
+          "provenance_sha256": "0e54ad64fda8516aae88082f6c40d44befce2ffe4fc2fe65df4dbf8548f89a48",
+          "reader": "lerobot==0.6.1",
+          "unselected_max_frame_mae_limit": 6,
+          "unselected_pixels_bit_exact": false,
+          "variant_index": 0
+        }
+      ]
+    },
+    {
+      "accepted_at": "2026-09-18 01:52:11.166089+00:00",
+      "case": "cohort-2-lighting",
+      "children": [
+        {
+          "accepted_at": "2026-09-18 01:52:30.527150+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:52:30.757480+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "fb45e1eb-9ad7-4a7e-9d84-f19a9c0c715a",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "bf3d1cc0-cd3f-579c-a25e-a2fa5dea0b71",
+          "parent_operation_id": "d32f3b5f-6c85-42df-8fdd-3825d6c60ab9",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.23033,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:52:31.256610+00:00",
+          "activation_classification": "reported_cold_start_interval_not_new_node_proof",
+          "activation_started_at": "2026-09-18 01:52:31.273165+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:53:16.014787+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": true,
+          "gpu_uuids": [
+            "GPU-6cd7e8ce-092e-e92c-0f18-7f07eebddcb5"
+          ],
+          "http_status": 200,
+          "id": "94d41e76-9aeb-4782-bd9e-2d86277d2503",
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "operation": "generate-media",
+          "parent_attempt_id": "bf3d1cc0-cd3f-579c-a25e-a2fa5dea0b71",
+          "parent_operation_id": "d32f3b5f-6c85-42df-8fdd-3825d6c60ab9",
+          "pod_uid": "ab1401b3-0cc1-46c9-972d-80eeaf60c78d",
+          "preemptible": true,
+          "processing_wall_seconds": 6.752284,
+          "ready_at": "2026-09-18 01:53:09.254922+00:00",
+          "reported_activation_seconds": 37.998312,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 44.758177,
+          "started_at": "2026-09-18 01:53:09.262503+00:00",
+          "status": "succeeded"
+        }
+      ],
+      "client_completed_at": "2026-09-18T01:53:56.317549+00:00",
+      "client_end_to_end_seconds": 117.755372,
+      "client_started_at": "2026-09-18T01:51:58.562177+00:00",
+      "client_timing_scope": "bundle preparation/upload, public submission, polling, download and independent full-reader validation",
+      "cohort": 2,
+      "completed_at": "2026-09-18 01:53:30.530551+00:00",
+      "cpu_attempts": [
+        {
+          "attempt_id": "bf3d1cc0-cd3f-579c-a25e-a2fa5dea0b71",
+          "attempt_number": 1,
+          "completed_at": "2026-09-18T01:53:29.831820+00:00",
+          "outcome": "succeeded",
+          "pod_uids": [
+            "54fee802-741f-42d3-b56c-ff1e4f99d32d"
+          ],
+          "resource_released": true,
+          "scheduling_admission": {
+            "accelerator_count": 0,
+            "accelerator_resource_name": null,
+            "admitted_at": "2026-09-18T01:52:11+00:00",
+            "admitted_resource_flavor": "general-cpu",
+            "cpu_millis": 2100,
+            "memory_bytes": 17448304640,
+            "quota_reserved_at": "2026-09-18T01:52:11+00:00",
+            "resolved_pool_id": "batch-cpu"
+          },
+          "started_at": "2026-09-18T01:52:11.227751+00:00",
+          "workload": {
+            "kind": "Job",
+            "name": "fs2-augment-dataset-main-a1-0b24e41b189d",
+            "namespace": "fs2-models",
+            "route_namespace": "fs2-models",
+            "uid": "f2ee172e-8f1c-4be8-acac-61fc8dba4510"
+          }
+        }
+      ],
+      "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "first_generation_activation_seconds": 37.998312,
+      "inflight_replay_verified": true,
+      "max_concurrency": 1,
+      "observation": {
+        "private_path": "final-cohorts-r151/cohort-2-lighting/qualification-observation-final.json",
+        "sha256": "d1c977f037404ec9741213dd0498f0f24631ab2590e82d2ec501725767571e07",
+        "size_bytes": 7825
+      },
+      "outputs": [
+        {
+          "artifact": {
+            "artifact_id": "d1fb6a83-e55e-4f0a-8543-2ed16ee5f022",
+            "compression": "none",
+            "media_type": "application/json",
+            "sha256": "072e799a8410b4082b477c13da91e7239c9581df747c4276c04548d0325797ce",
+            "size_bytes": 687
+          },
+          "name": "result",
+          "semantic_type": "lerobot-augmentation-result/v1"
+        },
+        {
+          "artifact": {
+            "artifact_id": "b4d81229-3ed8-439c-b8cc-cb7c69e3dcac",
+            "compression": "zstd",
+            "media_type": "application/x-tar",
+            "sha256": "e4227713d6fdf63bbdf2c78b44febda232f146897fe32390c3a977dae34fd87a",
+            "size_bytes": 2492807
+          },
+          "name": "variant-00",
+          "semantic_type": "lerobot-v3-augmented-bundle/v1"
+        }
+      ],
+      "parent_id": "d32f3b5f-6c85-42df-8fdd-3825d6c60ab9",
+      "private_evidence": [
+        {
+          "private_path": "final-cohorts-r151/cohort-2-lighting/run.json",
+          "sha256": "66611781e0f8d5ca7f95cdf0f14bfef5dfbccd6901dd8b3007ba8246d3130181",
+          "size_bytes": 24649
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-lighting/prepared.json",
+          "sha256": "7f8e3dd34848be131e1edfda780af9c6df4a3e175e1578c8a275d4dc6c0e27a4",
+          "size_bytes": 1980
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-lighting/result.json",
+          "sha256": "072e799a8410b4082b477c13da91e7239c9581df747c4276c04548d0325797ce",
+          "size_bytes": 687
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-lighting/output-manifest.json",
+          "sha256": "7e97d3660005debd45e76161e568b1b2b881672d577193bd18ea577f9503b1ec",
+          "size_bytes": 705
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-lighting/semantic-review.json",
+          "sha256": "12e8647668da333406997fe4e84e963affb8d1127b82e9cdc88f7b3bc5083608",
+          "size_bytes": 6696
+        }
+      ],
+      "protocol": "http",
+      "request_sha256": "d0fb5b8ff668db94201ff6c062f1bc03149eea8be95cbe1bd4ed019dd20588ea",
+      "requested_policy_label": "lighting",
+      "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+      "scheduling_digest": "sha256:f7c34a1dd25dac6a18cc070c08e1ff9e4696d32a589035a7d9f70f1081d2fc1f",
+      "sequential_generation_admission_verified": true,
+      "server_parent_seconds": 79.364462,
+      "status": "succeeded",
+      "terminal_replay_verified": true,
+      "validations": [
+        {
+          "cameras": 2,
+          "decoded_camera_frames": 128,
+          "episodes": 2,
+          "evidence": {
+            "private_path": "final-cohorts-r151/cohort-2-lighting/variant-00-validation.json",
+            "sha256": "939001658670170f2e2c18d63adf194f0bb06861216190a547f64bcc4d0489df",
+            "size_bytes": 1954
+          },
+          "frames": 64,
+          "nonvideo_values_compared": 2304,
+          "nonvideo_values_exact": true,
+          "output_tree_sha256": "863a9e6106ad6da3873fa401e7eef87665e3ee7350ed56d9f393edeaaee2174b",
+          "physical_alignment_verified": false,
+          "provenance_sha256": "5820a2eb2467fb66a366c99ab10669221bebcbabe1c69d99c6931e2efa0596d7",
+          "reader": "lerobot==0.6.1",
+          "unselected_max_frame_mae_limit": 6,
+          "unselected_pixels_bit_exact": false,
+          "variant_index": 0
+        }
+      ]
+    },
+    {
+      "accepted_at": "2026-09-18 01:54:10.084678+00:00",
+      "case": "cohort-2-environment",
+      "children": [
+        {
+          "accepted_at": "2026-09-18 01:54:29.020494+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:54:29.378432+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "635b7887-357a-4aac-8761-703fb01e4341",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "parent_operation_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.357938,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:54:29.807583+00:00",
+          "activation_classification": "reported_cold_start_interval_not_new_node_proof",
+          "activation_started_at": "2026-09-18 01:54:29.829896+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:55:14.455220+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "5f34a238-8866-4ed8-bcb2-69d3464eb1d0",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "parent_operation_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.706067,
+          "ready_at": "2026-09-18 01:55:07.741607+00:00",
+          "reported_activation_seconds": 37.934024,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 44.647637,
+          "started_at": "2026-09-18 01:55:07.749153+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:55:15.956775+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:55:16.174017+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "22fc4386-35dc-4d36-82fb-ced3575f772f",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "parent_operation_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.217242,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:55:16.553301+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 01:55:16.578081+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:55:22.910258+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "ce75d6e1-3646-4df5-9ec0-9c642cd1d18e",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "parent_operation_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.127128,
+          "ready_at": "2026-09-18 01:55:16.778269+00:00",
+          "reported_activation_seconds": 0.224968,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 6.356957,
+          "started_at": "2026-09-18 01:55:16.783130+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:55:26.066779+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:55:26.410734+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "2cbde75d-e656-4ca4-822f-817d388f31f3",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "parent_operation_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.343955,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:55:26.623303+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 01:55:26.663215+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:55:33.443202+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "f4113145-60cf-4a0e-838f-4c3a9e0126f5",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "parent_operation_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.584496,
+          "ready_at": "2026-09-18 01:55:26.851864+00:00",
+          "reported_activation_seconds": 0.228561,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 6.819899,
+          "started_at": "2026-09-18 01:55:26.858706+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:55:35.831200+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:55:36.209974+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "2827eb03-af41-4db1-9be4-05777ad64dfe",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "parent_operation_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.378774,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:55:37.073750+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 01:55:37.120957+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:55:43.537082+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "15e77767-e24d-4625-93c4-58222e825e3b",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "parent_operation_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.175186,
+          "ready_at": "2026-09-18 01:55:37.355140+00:00",
+          "reported_activation_seconds": 0.28139,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 6.463332,
+          "started_at": "2026-09-18 01:55:37.361896+00:00",
+          "status": "succeeded"
+        }
+      ],
+      "client_completed_at": "2026-09-18T01:56:28.536506+00:00",
+      "client_end_to_end_seconds": 151.546624,
+      "client_started_at": "2026-09-18T01:53:56.989882+00:00",
+      "client_timing_scope": "bundle preparation/upload, public submission, polling, download and independent full-reader validation",
+      "cohort": 2,
+      "completed_at": "2026-09-18 01:56:00.080902+00:00",
+      "cpu_attempts": [
+        {
+          "attempt_id": "4b800b5f-eb42-5860-89fe-3617aa21fdbd",
+          "attempt_number": 1,
+          "completed_at": "2026-09-18T01:55:58.282627+00:00",
+          "outcome": "succeeded",
+          "pod_uids": [
+            "b8f3bfc5-e9f0-4625-9ef0-781f86c4e30e"
+          ],
+          "resource_released": true,
+          "scheduling_admission": {
+            "accelerator_count": 0,
+            "accelerator_resource_name": null,
+            "admitted_at": "2026-09-18T01:54:10+00:00",
+            "admitted_resource_flavor": "general-cpu",
+            "cpu_millis": 2100,
+            "memory_bytes": 17448304640,
+            "quota_reserved_at": "2026-09-18T01:54:10+00:00",
+            "resolved_pool_id": "batch-cpu"
+          },
+          "started_at": "2026-09-18T01:54:10.104403+00:00",
+          "workload": {
+            "kind": "Job",
+            "name": "fs2-augment-dataset-main-a1-fb84c4309734",
+            "namespace": "fs2-models",
+            "route_namespace": "fs2-models",
+            "uid": "9c9e195c-b77e-43c3-981a-126df6d6ddd5"
+          }
+        }
+      ],
+      "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "first_generation_activation_seconds": 37.934024,
+      "inflight_replay_verified": true,
+      "max_concurrency": 1,
+      "observation": {
+        "private_path": "final-cohorts-r151/cohort-2-environment/qualification-observation-final.json",
+        "sha256": "0ee83f8956f5aaf301bec2b973110cab986d5efd1f6c32550c65befd7e53a20c",
+        "size_bytes": 13998
+      },
+      "outputs": [
+        {
+          "artifact": {
+            "artifact_id": "69680db5-830c-45d4-9dde-f8777feb143a",
+            "compression": "none",
+            "media_type": "application/json",
+            "sha256": "cd8074054ca3e66c06d0e45626591c595705f3bdb1d56bac7e6aea7ba9bc5592",
+            "size_bytes": 687
+          },
+          "name": "result",
+          "semantic_type": "lerobot-augmentation-result/v1"
+        },
+        {
+          "artifact": {
+            "artifact_id": "7bddd620-e74e-4ff6-a1b9-e78bb8c1bcb6",
+            "compression": "zstd",
+            "media_type": "application/x-tar",
+            "sha256": "c4955e1faf9a81a008701c0c35dd6bd7dc971b672211ed9f192a81d6e89abeb3",
+            "size_bytes": 2501339
+          },
+          "name": "variant-00",
+          "semantic_type": "lerobot-v3-augmented-bundle/v1"
+        }
+      ],
+      "parent_id": "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+      "private_evidence": [
+        {
+          "private_path": "final-cohorts-r151/cohort-2-environment/run.json",
+          "sha256": "6cc435c31d5b167b28db4eea13f8769d9eb3a5945853d99da6a59e9c33d4d99c",
+          "size_bytes": 24940
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-environment/prepared.json",
+          "sha256": "ec1ba1880243754bd3f8e8579a3c9ea238cc5170491eefd8560dd2035abaf2e0",
+          "size_bytes": 1969
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-environment/result.json",
+          "sha256": "cd8074054ca3e66c06d0e45626591c595705f3bdb1d56bac7e6aea7ba9bc5592",
+          "size_bytes": 687
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-environment/output-manifest.json",
+          "sha256": "b9c2bcd8e3a3ce13aa30950799b6855c4ef3917600d0ea95b2a124e64b7a8257",
+          "size_bytes": 705
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-environment/semantic-review.json",
+          "sha256": "19035e229283b82b957b968c983a20dc7163b00ef80719c167c028772cba6a5b",
+          "size_bytes": 8337
+        }
+      ],
+      "protocol": "mcp",
+      "request_sha256": "cb2a7a6088547ffded8077a25c634ed76dcaacabd557be275bc439c3ec6160f1",
+      "requested_policy_label": "environment",
+      "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+      "scheduling_digest": "sha256:339ab0e92dc8658e47fb747145d2e1d66435d43f167665209f99d5516f0de9d9",
+      "sequential_generation_admission_verified": true,
+      "server_parent_seconds": 109.996224,
+      "status": "succeeded",
+      "terminal_replay_verified": true,
+      "validations": [
+        {
+          "cameras": 2,
+          "decoded_camera_frames": 128,
+          "episodes": 2,
+          "evidence": {
+            "private_path": "final-cohorts-r151/cohort-2-environment/variant-00-validation.json",
+            "sha256": "8ec5c208135f7258afa0da9573ccdf93039a3d4a599b87a75168e87c7f4bc82b",
+            "size_bytes": 1953
+          },
+          "frames": 64,
+          "nonvideo_values_compared": 2304,
+          "nonvideo_values_exact": true,
+          "output_tree_sha256": "b8f2eb07e4e9e41f783041bf73a044f7bf132eca6e539876e8a1f0328e5d5596",
+          "physical_alignment_verified": false,
+          "provenance_sha256": "b8e3d189bd758272437cb5a647411d109c82d5e1e84d1950e38d6ef1f44e6110",
+          "reader": "lerobot==0.6.1",
+          "unselected_max_frame_mae_limit": 6,
+          "unselected_pixels_bit_exact": false,
+          "variant_index": 0
+        }
+      ]
+    },
+    {
+      "accepted_at": "2026-09-18 01:56:42.168701+00:00",
+      "case": "cohort-2-blur",
+      "children": [
+        {
+          "accepted_at": "2026-09-18 01:57:01.705284+00:00",
+          "activation_started_at": null,
+          "attempt": 0,
+          "completed_at": "2026-09-18 01:57:01.825015+00:00",
+          "error_code": null,
+          "gpu_uuids": [],
+          "http_status": 201,
+          "id": "5984af7a-67bb-47d4-9eaa-d2bc18061093",
+          "node_uid": null,
+          "operation": "upload",
+          "parent_attempt_id": "0244daab-07e4-53a0-9f01-d8926683c574",
+          "parent_operation_id": "0cede143-079a-43c5-8c90-acc393248bfa",
+          "pod_uid": null,
+          "preemptible": null,
+          "ready_at": null,
+          "reported_activation_seconds": null,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 0.119731,
+          "started_at": null,
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:57:02.284916+00:00",
+          "activation_classification": "reported_cold_start_interval_not_new_node_proof",
+          "activation_started_at": "2026-09-18 01:57:02.303229+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:57:46.518757+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": true,
+          "gpu_uuids": [
+            "GPU-6cd7e8ce-092e-e92c-0f18-7f07eebddcb5"
+          ],
+          "http_status": 200,
+          "id": "9120fd45-4886-4db4-af69-f98019a037bc",
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "operation": "generate-media",
+          "parent_attempt_id": "0244daab-07e4-53a0-9f01-d8926683c574",
+          "parent_operation_id": "0cede143-079a-43c5-8c90-acc393248bfa",
+          "pod_uid": "6cfe9500-5ee6-4914-877f-7e0a317393e6",
+          "preemptible": true,
+          "processing_wall_seconds": 6.313384,
+          "ready_at": "2026-09-18 01:57:40.201722+00:00",
+          "reported_activation_seconds": 37.916806,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 44.233841,
+          "started_at": "2026-09-18 01:57:40.205373+00:00",
+          "status": "succeeded"
+        },
+        {
+          "accepted_at": "2026-09-18 01:57:55.255098+00:00",
+          "activation_classification": "warm_activation_bookkeeping_not_cold_load",
+          "activation_started_at": "2026-09-18 01:57:55.280203+00:00",
+          "attempt": 1,
+          "completed_at": "2026-09-18 01:58:02.486334+00:00",
+          "error_code": null,
+          "exact_gpu_identity_available": false,
+          "gpu_uuids": [],
+          "http_status": 200,
+          "id": "d792ddee-c5e2-4b8f-b09e-904ec040db87",
+          "node_uid": null,
+          "operation": "generate-media",
+          "parent_attempt_id": "0244daab-07e4-53a0-9f01-d8926683c574",
+          "parent_operation_id": "0cede143-079a-43c5-8c90-acc393248bfa",
+          "pod_uid": null,
+          "preemptible": null,
+          "processing_wall_seconds": 6.019477,
+          "ready_at": "2026-09-18 01:57:56.436558+00:00",
+          "reported_activation_seconds": 1.18146,
+          "same_principal": true,
+          "same_tenant": true,
+          "same_token": true,
+          "server_operation_seconds": 7.231236,
+          "started_at": "2026-09-18 01:57:56.466857+00:00",
+          "status": "succeeded"
+        }
+      ],
+      "client_completed_at": "2026-09-18T01:59:04.731227+00:00",
+      "client_end_to_end_seconds": 155.521548,
+      "client_started_at": "2026-09-18T01:56:29.209679+00:00",
+      "client_timing_scope": "bundle preparation/upload, public submission, polling, download and independent full-reader validation",
+      "cohort": 2,
+      "completed_at": "2026-09-18 01:58:17.537492+00:00",
+      "cpu_attempts": [
+        {
+          "attempt_id": "0244daab-07e4-53a0-9f01-d8926683c574",
+          "attempt_number": 1,
+          "completed_at": "2026-09-18T01:58:16.737725+00:00",
+          "outcome": "succeeded",
+          "pod_uids": [
+            "9a820812-3d13-4b2f-948d-81b0775afb70"
+          ],
+          "resource_released": true,
+          "scheduling_admission": {
+            "accelerator_count": 0,
+            "accelerator_resource_name": null,
+            "admitted_at": "2026-09-18T01:56:42+00:00",
+            "admitted_resource_flavor": "general-cpu",
+            "cpu_millis": 2100,
+            "memory_bytes": 17448304640,
+            "quota_reserved_at": "2026-09-18T01:56:42+00:00",
+            "resolved_pool_id": "batch-cpu"
+          },
+          "started_at": "2026-09-18T01:56:42.197461+00:00",
+          "workload": {
+            "kind": "Job",
+            "name": "fs2-augment-dataset-main-a1-d08191105285",
+            "namespace": "fs2-models",
+            "route_namespace": "fs2-models",
+            "uid": "17502a4b-a576-4deb-8b55-cb65da1587fa"
+          }
+        }
+      ],
+      "execution_map_recipe_sha256": "sha256:687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "first_generation_activation_seconds": 37.916806,
+      "inflight_replay_verified": true,
+      "max_concurrency": 1,
+      "observation": {
+        "private_path": "final-cohorts-r151/cohort-2-blur/qualification-observation-final.json",
+        "sha256": "e56d9459b2df96ff18fe1a0d57e24d0170ae965ee20a0f307f01857c78ddf45c",
+        "size_bytes": 8942
+      },
+      "outputs": [
+        {
+          "artifact": {
+            "artifact_id": "406718de-3992-489e-8ff3-da0298e62672",
+            "compression": "none",
+            "media_type": "application/json",
+            "sha256": "acd4011e94cde62637ed5e6a14ee0f819679b001fd81ee020dd5edfd7869e939",
+            "size_bytes": 1151
+          },
+          "name": "result",
+          "semantic_type": "lerobot-augmentation-result/v1"
+        },
+        {
+          "artifact": {
+            "artifact_id": "e987ee6a-5218-46f8-86bb-1b29c5647560",
+            "compression": "zstd",
+            "media_type": "application/x-tar",
+            "sha256": "6c08ac05b4380e5169721151f771f99eb3ac4052a3768e2a01d5ec24963eb9b0",
+            "size_bytes": 2182112
+          },
+          "name": "variant-00",
+          "semantic_type": "lerobot-v3-augmented-bundle/v1"
+        },
+        {
+          "artifact": {
+            "artifact_id": "e4ed41c4-2bed-4f48-9a43-d2e329b4c9e7",
+            "compression": "zstd",
+            "media_type": "application/x-tar",
+            "sha256": "4ef210411f6d232c1f3d0da7e276862df3142e7e6d03437d3fcf8d6b00a8e12e",
+            "size_bytes": 2175750
+          },
+          "name": "variant-01",
+          "semantic_type": "lerobot-v3-augmented-bundle/v1"
+        }
+      ],
+      "parent_id": "0cede143-079a-43c5-8c90-acc393248bfa",
+      "private_evidence": [
+        {
+          "private_path": "final-cohorts-r151/cohort-2-blur/run.json",
+          "sha256": "b0d472b187ea789a6342809f298492bbdd2d829a362865ed5e252d1e7926714d",
+          "size_bytes": 27265
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-blur/prepared.json",
+          "sha256": "6ab1cbb7f504a2e64c38ea9b4757fd245d26e06e236dcc3230200ce274c38bde",
+          "size_bytes": 2002
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-blur/result.json",
+          "sha256": "acd4011e94cde62637ed5e6a14ee0f819679b001fd81ee020dd5edfd7869e939",
+          "size_bytes": 1151
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-blur/output-manifest.json",
+          "sha256": "ab357c1b486041653d93fcc83516831fa9a02dd62d7b777ced047cf74179227f",
+          "size_bytes": 994
+        },
+        {
+          "private_path": "final-cohorts-r151/cohort-2-blur/semantic-review.json",
+          "sha256": "230e81a2814ef0b60e7cd5027929a1cf0941f23debc4e0c48129409e43291925",
+          "size_bytes": 14489
+        }
+      ],
+      "protocol": "mcp",
+      "request_sha256": "5fcc592db7aac4325db2a1c86947de22e75f934c4ed17c7d1a91c6f6ce76495b",
+      "requested_policy_label": "blur",
+      "scheduler_contract_sha256": "sha256:d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+      "scheduling_digest": "sha256:e6f8db83f6043b7c05f92f6f9fa7c646a85d674c70bd9456ef54b6e6a28b5115",
+      "sequential_generation_admission_verified": true,
+      "server_parent_seconds": 95.368791,
+      "status": "succeeded",
+      "terminal_replay_verified": true,
+      "validations": [
+        {
+          "cameras": 2,
+          "decoded_camera_frames": 128,
+          "episodes": 2,
+          "evidence": {
+            "private_path": "final-cohorts-r151/cohort-2-blur/variant-00-validation.json",
+            "sha256": "65bbeed68cb46eebf79d1cec40893bfaa2baeb11410a5f4e9e2cf2c1ffed370a",
+            "size_bytes": 1954
+          },
+          "frames": 64,
+          "nonvideo_values_compared": 2304,
+          "nonvideo_values_exact": true,
+          "output_tree_sha256": "ac9a89158a7aa42b419ee1526e972b0788c5b7f55d4e1f9a340fb97802fe2e68",
+          "physical_alignment_verified": false,
+          "provenance_sha256": "708fb0ad6bcdc972d019216795d235b2dd496eb991aa45cd9e6d7875d5507822",
+          "reader": "lerobot==0.6.1",
+          "unselected_max_frame_mae_limit": 6,
+          "unselected_pixels_bit_exact": false,
+          "variant_index": 0
+        },
+        {
+          "cameras": 2,
+          "decoded_camera_frames": 128,
+          "episodes": 2,
+          "evidence": {
+            "private_path": "final-cohorts-r151/cohort-2-blur/variant-01-validation.json",
+            "sha256": "03f8154e3d9c6ee0859c7b8a3363f4b3838ed06834e7e9afceddaff5ae7f5531",
+            "size_bytes": 1955
+          },
+          "frames": 64,
+          "nonvideo_values_compared": 2304,
+          "nonvideo_values_exact": true,
+          "output_tree_sha256": "e9468bcf8892cd2388a46c7ae4f9eaecb02de2142cc1c0440d852f26ed55cc6c",
+          "physical_alignment_verified": false,
+          "provenance_sha256": "50892e2c9dd60d6f226ee7ccb2e5ac8f588809034908a7cd7acc7a9b549959aa",
+          "reader": "lerobot==0.6.1",
+          "unselected_max_frame_mae_limit": 6,
+          "unselected_pixels_bit_exact": false,
+          "variant_index": 1
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "all_cpu_attempts_resource_released": true,
+    "all_parents_terminal": true,
+    "all_scoped_cpu_jobs_and_pods_absent": true,
+    "captured_at": "2026-09-18T02:12:02.103202+00:00",
+    "cpu_workloads": [
+      {
+        "job_name": "fs2-augment-dataset-main-a1-0b24e41b189d",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-0d59aa7f6a3c",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-15f3647a124e",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-1b1a2e07bc5c",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-383dc19d12e4",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-4a9dca4dfa24",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-4dd7b3edcb2b",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-a8d796ef64d2",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-d08191105285",
+        "job_present": false,
+        "pods": []
+      },
+      {
+        "job_name": "fs2-augment-dataset-main-a1-fb84c4309734",
+        "job_present": false,
+        "pods": []
+      }
+    ],
+    "evidence": [
+      {
+        "path": "final-cohorts-r151/cohort-1-lighting/qualification-observation-final.json",
+        "sha256": "afbb8468e819fb5d02d8d213d9768907450acbc779d676aa9210b3eb2b60ce9a"
+      },
+      {
+        "path": "final-cohorts-r151/cohort-1-environment/qualification-observation-final.json",
+        "sha256": "c8339c7bfbca84ead9952ccedf101f5387426c89ded2e1787196bb8b6aa1e702"
+      },
+      {
+        "path": "final-cohorts-r151/cohort-2-lighting/qualification-observation-final.json",
+        "sha256": "d1c977f037404ec9741213dd0498f0f24631ab2590e82d2ec501725767571e07"
+      },
+      {
+        "path": "final-cohorts-r151/cohort-2-environment/qualification-observation-final.json",
+        "sha256": "0ee83f8956f5aaf301bec2b973110cab986d5efd1f6c32550c65befd7e53a20c"
+      },
+      {
+        "path": "final-cohorts-r151/cohort-2-blur/qualification-observation-final.json",
+        "sha256": "e56d9459b2df96ff18fe1a0d57e24d0170ae965ee20a0f307f01857c78ddf45c"
+      },
+      {
+        "path": "final-cohorts-r151/probes/invalid-selection-observation-final.json",
+        "sha256": "cebb0fdcffec74868ceed518f361409b4ff7bf547ab12e4427ca455174bc6553"
+      },
+      {
+        "path": "final-cohorts-r151/probes/cancellation-observation-final.json",
+        "sha256": "cc59b698033fcf2ac3b42a926653a1b2603ce0bc461bcb56c06e5fd48217544d"
+      },
+      {
+        "path": "active-child-cancellation-r151/qualification-observation-final.json",
+        "sha256": "85f49314a7df6d6abf0660a79b5650d4414d75ce68c78ba02e10530c2405c20c"
+      },
+      {
+        "path": "active-child-cancellation-r151-confirmed/qualification-observation-final.json",
+        "sha256": "a0bc628281d4753dd5f96222daadf47cd03e32c585099e5d800ef4c5b1e8fd63"
+      },
+      {
+        "path": "active-child-cancellation-r151-dto-fixed/qualification-observation-final.json",
+        "sha256": "a15bd649b9ea5076d456f904a13bda46c001c5f021bf29b80b751243f587ffc3"
+      }
+    ],
+    "exact_canary_active_operations": {
+      "active_status_counts": [],
+      "captured_at": "2026-09-18T02:11:53.759015+00:00",
+      "total_active": 0
+    },
+    "manual_scaling_or_deletion": false,
+    "native_cosmos": {
+      "deployment": "cosmos3-nano-burst-h100-1x",
+      "desired_replicas": 0,
+      "observed_replicas": 0,
+      "pods": []
+    },
+    "parent_ids": [
+      "18c1bb2a-dcd5-4489-a35b-63c1f8da2d6a",
+      "44704c2e-9f82-44a0-b6f5-a12b07ce7acb",
+      "d32f3b5f-6c85-42df-8fdd-3825d6c60ab9",
+      "0b39a108-15b9-4a01-9dd4-ba5575a6c97a",
+      "0cede143-079a-43c5-8c90-acc393248bfa",
+      "34b9cdf1-ac90-47c6-93b1-b16d0078ae7e",
+      "e85c1dbf-d6e3-4a8a-b0a8-fb3fe64cf93f",
+      "ccc802c2-76fa-45d5-9cfd-1b1cbc5a708c",
+      "e4548694-0738-4569-8705-04dd979345b1",
+      "13bcffd2-d8c5-45c9-9608-921e85c10881"
+    ],
+    "read_only": true,
+    "schema": "private-lerobot-final151-cleanup/v1",
+    "scope_note": "Read-only shared Cosmos observation; no inference about other users, no forced scaling. Exact ten task parent Jobs checked by recorded names; active operation count scoped only to disposable principal."
+  },
+  "customer_ready": false,
+  "evidence": {
+    "base_acceptance": {
+      "private_path": "final-cohorts-r151/acceptance.json",
+      "sha256": "dc70d3199bcb00ff1cfb62573a53df466b7f0fc42b55a347811c7a4628ea8f58",
+      "size_bytes": 32292
+    },
+    "natural_cleanup": {
+      "private_path": "final-cohorts-r151/natural-cleanup-final.json",
+      "sha256": "0692eb56438ab1e6f6f2f9ca29c4193dfe84113150cdd23ab2bc5c9430bc4b42",
+      "size_bytes": 4371
+    },
+    "visual_review": {
+      "private_path": "final-cohorts-r151/visual-review-index.json",
+      "sha256": "7037c043285ea16cc7dd762bae21799d02e1751cf57385086c1ad44eea409afb",
+      "size_bytes": 5842
+    }
+  },
+  "identity_policy": {
+    "grant_and_revocation_evidence": "release owner journal; not changed by this collector",
+    "max_concurrency": 1,
+    "models": [
+      "cosmos3-lerobot-augmentation",
+      "cosmos3-nano"
+    ],
+    "principal_id": "robotics-lerobot-canary-1e901ecd-b6fa-4939-a0bc-b78e170d793f",
+    "scope": "ordinary disposable key; parent and one sequential child share original principal/tenant/token policy; no static customer bearer in worker",
+    "tenant": "robotics"
+  },
+  "limitations": [
+    "Lighting gives warm appearance but changes fruit/gripper appearance; environment V2V did not visibly achieve pale-blue laboratory background and changes pose/contact geometry. Blur conditioning yields distinct softened/stylized outputs, not isolated relighting.",
+    "Exact action/state/timestamp values and independent full-reader reopen do not prove physical action alignment, synchronized multi-view semantics or training fitness. strength is prompt-only, not calibrated edit control.",
+    "Nine of twelve positive generation children lacked exact Pod/node/GPU identity in terminal observations. Null/empty identity means unavailable, never measured-zero usage or an inferred GPU join. This is not a complete customer billing/observability qualification.",
+    "The first extra missed its observation window. The second hit an acceptance-only native DTO bug and was cancelled after all four generations completed. Both failures are retained separately from five successful primary cases.",
+    "The final extra uses operator-assisted child discovery followed by ordinary-key GET/cancel. Ledger cancellation/release does not prove immediate CUDA kernel abortion.",
+    "Uploaded tiny directory and direct public HTTP/typed-MCP paths tested. Actual LibreChat/agent-client integration, Hugging Face/object-store source paths, maximum supported shapes, load/throughput and downstream robot training remain unqualified.",
+    "Scientific recipe is qualified with actual150 receipt. Generic Admin customer-readiness evidence mount remains unconfigured and its No recorded qualification badge is distinct from recipe and cohort evidence.",
+    "Coordinator is CPU-only. GPU snapshot/hot-replica/autoscaling belong to existing native Cosmos3-Nano App. No runtime/map/scheduler/profile change was made for final151 acceptance.",
+    "Historical147/149 service failures and150 corrected harness mismatches remain immutable evidence, not silently rewritten as passes."
+  ],
+  "outcome": "bounded_dataset_workflow_passed_with_explicit_quality_attribution_and_extra_harness_limits",
+  "packaged_qualification_profile_modified_by_this_report": false,
+  "physical_alignment_verified": false,
+  "recorded_at": "2026-09-18T02:12:37.043297+00:00",
+  "release": {
+    "control_plane_source": "440d7c6079a820f6f73b8d6dca2b351ee2ab6832",
+    "deployments": [
+      {
+        "configmaps": [
+          "fs2-admin-configuration-fe0354706ca1c699-baseline",
+          "fs2-cosmos-bundles-d556dcfd58d35b29",
+          "fs2-cosmos-envelope-608b68ad9c0f32b2",
+          "fs2-r927c465c6d-scientific-execution-76d7e9285aaf",
+          "fs2-r927c465c6d-scientific-scheduling-d2dbc266a0ab",
+          "fs2-serve-control-plane-admin-observability",
+          "fs2-serve-serving-bindings-terraform-3629747fd9af",
+          "fs2-voice-routes-84ce96e9deba0f79"
+        ],
+        "generation": 262,
+        "images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:ab2f802727b29b60a301870771610ec5b9851e2d92f837ee422c52b7fd78f214"
+        ],
+        "name": "fs2-serve-control-plane",
+        "replicas": 3
+      },
+      {
+        "configmaps": [
+          "fs2-cosmos-bundles-d556dcfd58d35b29",
+          "fs2-cosmos-envelope-608b68ad9c0f32b2"
+        ],
+        "generation": 119,
+        "images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:ab2f802727b29b60a301870771610ec5b9851e2d92f837ee422c52b7fd78f214"
+        ],
+        "name": "fs2-serve-control-plane-model-controller",
+        "replicas": 2
+      },
+      {
+        "configmaps": [],
+        "generation": 34,
+        "images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:6428b3500d2dd6784c0ff2308335b3d2962f725434cc5e7ea8fd5098dbf21659"
+        ],
+        "name": "fs2-serve-control-plane-admin-console",
+        "replicas": 2
+      }
+    ],
+    "execution_identity_sha256": "a632c23d713398965fb2e0e299dfe3be2037c676f5a98697940fd39390182500",
+    "execution_map_recipe_sha256": "687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+    "helm_revision": 151,
+    "scheduler_contract_sha256": "d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+    "verification": {
+      "private_path": "/home/tux/secure-handoff/cosmos-stockholm-rollout-20260917/final-deployment-verification-r151.json",
+      "sha256": "c5d6a1dcc85b7202b60d89a888ef8be49e86a4a4d6f8f7210630147aff4cf8d3",
+      "size_bytes": 12939
+    },
+    "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
+    "worker_source": "4dc1ef4850c1d794a5f4cd2a941f12d11b3f7718",
+    "native_cosmos": {
+      "model_id": "cosmos3-nano",
+      "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+      "snapshot_bundle_id": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+      "deployment_generation": 16,
+      "note": "Existing native App owns GPU snapshot and scaling. No new-node provisioning qualification is claimed."
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/lerobot-final-cohort-evidence/v1",
+  "scope": "Exact release151 ordinary-key uploaded-directory workflow mechanics only; two lighting/environment HTTP+typed-MCP cohorts and supplemental two-variant transfer case",
+  "semantic_intent_verified": false,
+  "summary": {
+    "all_core_parent_cpu_resources_released": true,
+    "decoded_camera_frames": 768,
+    "fully_attributed_generation_children": 3,
+    "generation_attempts_each": 1,
+    "nonvideo_values_compared_exactly": 13824,
+    "positive_parents": 5,
+    "successful_delegated_upload_children": 11,
+    "successful_generation_children": 12,
+    "unavailable_exact_gpu_identity_children": 9,
+    "validated_datasets": 6
+  },
+  "runtime_restore_observation": {
+    "marker": "cuda-criu-restored",
+    "timestamp": "2026-09-18T01:57:34.488309Z",
+    "operation_id": "9120fd45-4886-4db4-af69-f98019a037bc",
+    "pod": "cosmos3-nano-burst-h100-1x-db6b8d998-x97gm",
+    "private_path": "observe151-postacceptance/cosmos3-nano-logs.json",
+    "sha256": "3ecdff8481f1c0942fc608b8c00a370cf4e3586dda5976721c5db97e1a3f7be5",
+    "scope": "Release owner correlated retained log; not an inferred identity for other children."
+  }
+}

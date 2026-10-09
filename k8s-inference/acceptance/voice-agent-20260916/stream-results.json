@@ -1,0 +1,3852 @@
+{
+  "magpie_readiness": {
+    "ready": true,
+    "busy": false,
+    "model": "magpie-tts-multilingual-357m",
+    "timings": {
+      "checkpoint_verify_seconds": 2.5673052170022856,
+      "model_load_seconds": 34.289004901002045,
+      "warmup_seconds": 1.9483381400059443
+    }
+  },
+  "parakeet_readiness": {
+    "ready": true,
+    "busy": false,
+    "model": "parakeet-realtime-eou-120m-v1",
+    "timings": {
+      "checkpoint_verify_seconds": 2.4199310379917733,
+      "model_load_seconds": 10.795279441997991,
+      "warmup_seconds": 24.888704702010727
+    }
+  },
+  "sortformer_readiness": {
+    "ready": true,
+    "busy": false,
+    "model": "diar-streaming-sortformer-4spk-v2-1",
+    "timings": {
+      "checkpoint_verify_seconds": 1.7218709800072247,
+      "model_load_seconds": 7.8259231749980245,
+      "warmup_seconds": 22.8729700469994
+    }
+  },
+  "synthesis": [
+    {
+      "voice": "Aria",
+      "language": "en",
+      "text": "The workshop starts at nine. Please bring your notebook and meet us at the observatory.",
+      "first_audio_seconds": 1.2329607484862208,
+      "elapsed_seconds": 3.3139404579997063,
+      "audio_seconds": 4.31891156462585,
+      "rtf": 0.7673091723254108,
+      "chunks": 44,
+      "pcm_sha256": "2b621879a2a4310b449f861054d974443051edc8320f0e7e40eb76d8906409ff",
+      "wav": "Aria-0.wav"
+    },
+    {
+      "voice": "Jason",
+      "language": "en",
+      "text": "The workshop starts at nine. Please bring your notebook and meet us at the observatory.",
+      "first_audio_seconds": 1.1255669305101037,
+      "elapsed_seconds": 3.2791987396776676,
+      "audio_seconds": 4.31891156462585,
+      "rtf": 0.7592650811690669,
+      "chunks": 44,
+      "pcm_sha256": "19a1d97d4c198c13cdcb6299ad483fdc57fe70024c2e5632ec40567df0f8e6d6",
+      "wav": "Jason-1.wav"
+    },
+    {
+      "voice": "John",
+      "language": "en",
+      "text": "The workshop starts at nine. Please bring your notebook and meet us at the observatory.",
+      "first_audio_seconds": 1.5885554160922766,
+      "elapsed_seconds": 4.170623159967363,
+      "audio_seconds": 5.572789115646258,
+      "rtf": 0.7483906305117216,
+      "chunks": 56,
+      "pcm_sha256": "ef708977353272b78611c08206f3cc30ad5010f24e56fddc8fca5d46f341de59",
+      "wav": "John-2.wav"
+    },
+    {
+      "voice": "Leo",
+      "language": "en",
+      "text": "The workshop starts at nine. Please bring your notebook and meet us at the observatory.",
+      "first_audio_seconds": 1.311284308321774,
+      "elapsed_seconds": 3.8061423832550645,
+      "audio_seconds": 5.061950113378685,
+      "rtf": 0.7519122666174578,
+      "chunks": 51,
+      "pcm_sha256": "60570b1e08b98b6af26b2df116338f7ebe4d363ca9b394a1101de6452aec9b17",
+      "wav": "Leo-3.wav"
+    },
+    {
+      "voice": "Sofia",
+      "language": "en",
+      "text": "The workshop starts at nine. Please bring your notebook and meet us at the observatory.",
+      "first_audio_seconds": 1.1873039724305272,
+      "elapsed_seconds": 3.287110226228833,
+      "audio_seconds": 4.458231292517007,
+      "rtf": 0.7373126270380226,
+      "chunks": 46,
+      "pcm_sha256": "50961c27c574e192d15bbc98213c621a91b49dec768c9ba7675ff9a5785a8e10",
+      "wav": "Sofia-4.wav"
+    },
+    {
+      "voice": "Sofia",
+      "language": "en",
+      "text": "The workshop starts at nine. Please bring your notebook and meet us at the observatory.",
+      "first_audio_seconds": 1.2253241399303079,
+      "elapsed_seconds": 3.328054121695459,
+      "audio_seconds": 4.458231292517007,
+      "rtf": 0.7464965147235603,
+      "chunks": 45,
+      "pcm_sha256": "c6e3a89a2419a446cda9ed5e5df5da19f81b641ad3968d720da387d2aca98cae",
+      "wav": "Sofia-5.wav"
+    },
+    {
+      "voice": "Sofia",
+      "language": "en",
+      "text": "The workshop starts at nine. Please bring your notebook and meet us at the observatory.",
+      "first_audio_seconds": 1.2436958234757185,
+      "elapsed_seconds": 3.340151178650558,
+      "audio_seconds": 4.551111111111111,
+      "rtf": 0.7339199367152105,
+      "chunks": 47,
+      "pcm_sha256": "e8af411b0ec3c17070a886931b276baee4a3fa3ccd1b4d0a0b410bffb998168a",
+      "wav": "Sofia-6.wav"
+    }
+  ],
+  "german": {
+    "voice": "Sofia",
+    "language": "de",
+    "text": "Guten Morgen. Der Workshop beginnt um neun Uhr.",
+    "first_audio_seconds": 0.8392415745183825,
+    "elapsed_seconds": 2.5254877163097262,
+    "audio_seconds": 3.0650340136054424,
+    "rtf": 0.823967272499844,
+    "chunks": 31,
+    "pcm_sha256": "edfbe743e59310c14aa7df77e9e1937b35e7bba7d72e90bec291ef76c3349763",
+    "wav": "de-Sofia.wav"
+  },
+  "parakeet": [
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "realtime_input": false,
+      "first_output_seconds": 0.5673151994124055,
+      "elapsed_seconds": 3.5875507248565555,
+      "audio_seconds": 5.45825,
+      "rtf": 0.6572712361757992,
+      "events": [
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the works"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at n"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your note"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebo"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the obser"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observat"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "transcript.final",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "turn.eou",
+          "segment": 0,
+          "source": "model_token",
+          "probability": 1.0,
+          "audio_offset_seconds": 4.56
+        },
+        {
+          "type": "session.done",
+          "audio_seconds": 5.45825,
+          "processing_seconds": 2.217005895989132
+        }
+      ],
+      "noisy_headset_15db": false
+    },
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "realtime_input": false,
+      "first_output_seconds": 0.6622332278639078,
+      "elapsed_seconds": 3.6961983544752,
+      "audio_seconds": 5.45825,
+      "rtf": 0.6771764493152934,
+      "events": [
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the works"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at n"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your note"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebo"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the obser"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observat"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "transcript.final",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "turn.eou",
+          "segment": 0,
+          "source": "model_token",
+          "probability": 1.0,
+          "audio_offset_seconds": 4.56
+        },
+        {
+          "type": "session.done",
+          "audio_seconds": 5.45825,
+          "processing_seconds": 2.2390085859951796
+        }
+      ],
+      "noisy_headset_15db": false
+    },
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "realtime_input": false,
+      "first_output_seconds": 0.6573731834068894,
+      "elapsed_seconds": 3.703021383844316,
+      "audio_seconds": 5.45825,
+      "rtf": 0.6784264890476465,
+      "events": [
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the works"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at n"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your note"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebo"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the obser"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observat"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "transcript.final",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "turn.eou",
+          "segment": 0,
+          "source": "model_token",
+          "probability": 1.0,
+          "audio_offset_seconds": 4.56
+        },
+        {
+          "type": "session.done",
+          "audio_seconds": 5.45825,
+          "processing_seconds": 2.2444967000046745
+        }
+      ],
+      "noisy_headset_15db": false
+    },
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "realtime_input": false,
+      "first_output_seconds": 0.6496065659448504,
+      "elapsed_seconds": 3.6584004536271095,
+      "audio_seconds": 5.45825,
+      "rtf": 0.6702515373292007,
+      "events": [
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the works"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the worksh"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at n"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your not"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your note"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the obser"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observat"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "transcript.final",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "turn.eou",
+          "segment": 0,
+          "source": "model_token",
+          "probability": 1.0,
+          "audio_offset_seconds": 4.56
+        },
+        {
+          "type": "session.done",
+          "audio_seconds": 5.45825,
+          "processing_seconds": 2.197930640002596
+        }
+      ],
+      "noisy_headset_15db": true
+    }
+  ],
+  "parakeet_realtime": {
+    "model": "parakeet-realtime-eou-120m-v1",
+    "realtime_input": true,
+    "first_output_seconds": 0.8211102588102221,
+    "elapsed_seconds": 7.489780815318227,
+    "audio_seconds": 5.45825,
+    "rtf": 1.3721945340206527,
+    "events": [
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the works"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at n"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your note"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebo"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and meet"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and meet us"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and meet us at"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and meet us at the"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and meet us at the obser"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and meet us at the observat"
+      },
+      {
+        "type": "transcript.partial",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+      },
+      {
+        "type": "transcript.final",
+        "segment": 0,
+        "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+      },
+      {
+        "type": "turn.eou",
+        "segment": 0,
+        "source": "model_token",
+        "probability": 1.0,
+        "audio_offset_seconds": 4.56
+      },
+      {
+        "type": "session.done",
+        "audio_seconds": 5.45825,
+        "processing_seconds": 6.028840787010267
+      }
+    ]
+  },
+  "parakeet_lifecycle": {
+    "overload": {
+      "type": "error",
+      "code": "worker_busy",
+      "retryable": true
+    },
+    "reset": {
+      "type": "session.reset",
+      "resume_supported": false
+    },
+    "cancel": {
+      "type": "session.cancelled"
+    },
+    "reconnect_completed": true
+  },
+  "sortformer": [
+    {
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "realtime_input": false,
+      "first_output_seconds": 0.49660209007561207,
+      "elapsed_seconds": 1.9829169176518917,
+      "audio_seconds": 5.45825,
+      "rtf": 0.36328803511233304,
+      "events": [
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.0,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.04321276769042015,
+              2.7545382181415334e-05,
+              7.943801847432042e-07,
+              9.328941530384327e-08
+            ],
+            [
+              0.135165736079216,
+              4.184508725302294e-05,
+              8.537210760550806e-07,
+              9.505247788865745e-08
+            ],
+            [
+              0.993085503578186,
+              0.00028369342908263206,
+              1.1681945579766762e-05,
+              2.527826154619106e-06
+            ],
+            [
+              0.9990849494934082,
+              0.0002369332651142031,
+              1.0984787877532654e-05,
+              2.99295629702101e-06
+            ],
+            [
+              0.9994544386863708,
+              0.00022944367083255202,
+              9.216040780302137e-06,
+              2.590297526694485e-06
+            ],
+            [
+              0.9991543292999268,
+              0.00030204816721379757,
+              1.2719812730210833e-05,
+              3.368187662999844e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.48,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.999632716178894,
+              0.0001370623504044488,
+              8.025445822568145e-06,
+              2.259065922771697e-06
+            ],
+            [
+              0.9997368454933167,
+              0.00012801465345546603,
+              6.559114353876794e-06,
+              1.834266299738374e-06
+            ],
+            [
+              0.999701201915741,
+              0.00012258010974619538,
+              6.293268597801216e-06,
+              1.705800968920812e-06
+            ],
+            [
+              0.9997289776802063,
+              0.00012131251423852518,
+              6.994039267738117e-06,
+              1.903339125419734e-06
+            ],
+            [
+              0.9997575879096985,
+              0.00013691787899006158,
+              7.5457933235156815e-06,
+              2.214539335909649e-06
+            ],
+            [
+              0.9996764659881592,
+              0.00014617112174164504,
+              7.682997420488391e-06,
+              2.1812147679156624e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.96,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9997720122337341,
+              0.0001049774291459471,
+              6.930267318239203e-06,
+              1.8370848238191684e-06
+            ],
+            [
+              0.999784529209137,
+              0.00010270480561302975,
+              6.168409981910372e-06,
+              1.6281213675028994e-06
+            ],
+            [
+              0.9998212456703186,
+              0.00010527083941269666,
+              6.272452992561739e-06,
+              1.6915806781980791e-06
+            ],
+            [
+              0.9997908473014832,
+              0.00012740016973111778,
+              7.881697456468828e-06,
+              2.184947561545414e-06
+            ],
+            [
+              0.9997910857200623,
+              0.00018636058666743338,
+              1.5032804185466375e-05,
+              4.852436177316122e-06
+            ],
+            [
+              0.999792754650116,
+              0.0003472828830126673,
+              3.825511521426961e-05,
+              1.4395073776540812e-05
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 1.44,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9992392063140869,
+              0.00014941908011678606,
+              7.107993951649405e-06,
+              1.6358707171093556e-06
+            ],
+            [
+              0.9981271624565125,
+              0.00014079244283493608,
+              6.324422429315746e-06,
+              1.2615982996067032e-06
+            ],
+            [
+              0.9920576214790344,
+              0.00016005685029085726,
+              6.281414243858308e-06,
+              8.782911322668951e-07
+            ],
+            [
+              0.9684651494026184,
+              0.0001910044957185164,
+              5.60940861760173e-06,
+              5.317696718520892e-07
+            ],
+            [
+              0.9914423823356628,
+              0.0003303926205262542,
+              1.654629704717081e-05,
+              3.4480253816582263e-06
+            ],
+            [
+              0.9959003329277039,
+              0.0005270215915516019,
+              3.2362862839363515e-05,
+              8.230112143792212e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 1.92,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998242259025574,
+              8.064192661549896e-05,
+              2.4954233595053665e-06,
+              4.4040922375643277e-07
+            ],
+            [
+              0.9997891783714294,
+              6.907419447088614e-05,
+              2.151955641238601e-06,
+              3.5728376701626985e-07
+            ],
+            [
+              0.999846339225769,
+              7.398552406812087e-05,
+              2.3309473817789694e-06,
+              4.123892551888275e-07
+            ],
+            [
+              0.9998539686203003,
+              8.041990804485977e-05,
+              2.497847390259267e-06,
+              4.483530915422307e-07
+            ],
+            [
+              0.9998469352722168,
+              7.977031782502308e-05,
+              2.358380925215897e-06,
+              4.2684018808358815e-07
+            ],
+            [
+              0.9998668432235718,
+              9.404575394000858e-05,
+              2.744185394476517e-06,
+              5.293722438182158e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 2.4,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.999847412109375,
+              8.813122258288786e-05,
+              3.1512104214925785e-06,
+              6.403376460184518e-07
+            ],
+            [
+              0.9996777772903442,
+              8.265101496363059e-05,
+              3.5792493235931033e-06,
+              6.807010777265532e-07
+            ],
+            [
+              0.999743640422821,
+              8.501257980242372e-05,
+              3.440618229433312e-06,
+              7.104451356099162e-07
+            ],
+            [
+              0.9995204210281372,
+              8.835555490804836e-05,
+              3.050354735023575e-06,
+              5.475312718772329e-07
+            ],
+            [
+              0.9958416819572449,
+              0.00011609378270804882,
+              3.4613360639923485e-06,
+              4.718448280982557e-07
+            ],
+            [
+              0.9330230951309204,
+              0.00014222325989976525,
+              3.4271949971298454e-06,
+              2.7828184556710767e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 2.88,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9438920021057129,
+              0.00013915292220190167,
+              2.8331935482128756e-06,
+              1.8170040050335956e-07
+            ],
+            [
+              0.9876924157142639,
+              0.00016246740415226668,
+              4.203727257845458e-06,
+              4.3447582243061333e-07
+            ],
+            [
+              0.9989537000656128,
+              0.00012446036271285266,
+              3.850953362416476e-06,
+              5.760113026553881e-07
+            ],
+            [
+              0.9996355772018433,
+              0.00017020688392221928,
+              5.801493898616172e-06,
+              1.0994050398949184e-06
+            ],
+            [
+              0.9997815489768982,
+              0.00019206719298381358,
+              7.658673894184176e-06,
+              1.633593001315603e-06
+            ],
+            [
+              0.9997894167900085,
+              0.00020072836196050048,
+              7.29763860363164e-06,
+              1.441638232790865e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 3.36,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.999876856803894,
+              9.675804176367819e-05,
+              3.859836397168692e-06,
+              8.216280207307136e-07
+            ],
+            [
+              0.9998636245727539,
+              0.00010269922495353967,
+              3.835533789242618e-06,
+              7.650240831935662e-07
+            ],
+            [
+              0.9998511075973511,
+              0.00011148031626362354,
+              4.174249170318944e-06,
+              8.057240279413236e-07
+            ],
+            [
+              0.9998691082000732,
+              0.00012628984404727817,
+              4.557151896733558e-06,
+              9.389749493493582e-07
+            ],
+            [
+              0.9998756647109985,
+              0.00018925705808214843,
+              8.094314580375794e-06,
+              1.93643268175947e-06
+            ],
+            [
+              0.9998929500579834,
+              0.0001960345689440146,
+              6.838803528808057e-06,
+              1.5405736348839127e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 3.84,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9999088048934937,
+              0.0007477054605260491,
+              6.137882155599073e-05,
+              1.817751399357803e-05
+            ],
+            [
+              0.9999003410339355,
+              0.0005086495657451451,
+              3.390826896065846e-05,
+              9.37182721827412e-06
+            ],
+            [
+              0.9998751878738403,
+              0.0004157974908594042,
+              2.5252908017137088e-05,
+              6.499970368167851e-06
+            ],
+            [
+              0.9998316764831543,
+              0.0003506493230815977,
+              1.8275946786161512e-05,
+              4.551995971269207e-06
+            ],
+            [
+              0.9997813105583191,
+              0.00021740986267104745,
+              9.679198228695896e-06,
+              2.208623072874616e-06
+            ],
+            [
+              0.9995527863502502,
+              0.00019080808851867914,
+              7.122202532627853e-06,
+              1.3932639149061288e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 4.32,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9914602041244507,
+              9.670481813373044e-05,
+              8.60721399931208e-07,
+              6.485206682782518e-08
+            ],
+            [
+              0.8097043037414551,
+              8.051329496083781e-05,
+              8.844033914101601e-07,
+              4.4908691876344164e-08
+            ],
+            [
+              0.298073947429657,
+              2.594050056359265e-05,
+              7.407778639390017e-07,
+              3.016050698079198e-08
+            ],
+            [
+              0.07049734145402908,
+              1.828258973546326e-05,
+              3.693944279348216e-07,
+              3.217914112951803e-08
+            ],
+            [
+              0.008320899680256844,
+              1.2159314792370424e-05,
+              6.383079949046078e-07,
+              5.5414655975027927e-08
+            ],
+            [
+              0.0037255079951137304,
+              1.3306464097695425e-05,
+              7.04646197391412e-07,
+              5.8660411639266385e-08
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 4.8,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.00023083464475348592,
+              3.3954690934479004e-06,
+              4.6390937313844915e-07,
+              3.893022082479547e-08
+            ],
+            [
+              0.00012901339505333453,
+              3.2777898013591766e-06,
+              4.6555805965908803e-07,
+              3.760880673553402e-08
+            ],
+            [
+              0.00010634415230015293,
+              3.3268747756665107e-06,
+              4.690824368935864e-07,
+              3.6888287979763845e-08
+            ],
+            [
+              0.0001026452737278305,
+              3.4548456824268214e-06,
+              4.805206117453054e-07,
+              3.718660934737272e-08
+            ],
+            [
+              0.00010640339314704761,
+              3.7389529552456224e-06,
+              5.05604361933365e-07,
+              3.90685066520291e-08
+            ],
+            [
+              0.00015998620074242353,
+              4.584067937685177e-06,
+              5.594715730694588e-07,
+              4.446641455047029e-08
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 5.28,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              3.007024497492239e-05,
+              2.7678240712702973e-06,
+              4.888377134193433e-07,
+              3.319687991165665e-08
+            ],
+            [
+              2.8154809115221724e-05,
+              2.7625999337033136e-06,
+              4.817760554942652e-07,
+              3.3036691604593216e-08
+            ],
+            [
+              2.7707250410458073e-05,
+              2.769577804428991e-06,
+              4.801161708201107e-07,
+              3.299966166991908e-08
+            ],
+            [
+              2.826543277478777e-05,
+              2.8082652079319814e-06,
+              4.83138478557521e-07,
+              3.3162010026899225e-08
+            ],
+            [
+              2.876356666092761e-05,
+              2.9000516406085808e-06,
+              4.996542770641099e-07,
+              3.384575464338013e-08
+            ],
+            [
+              3.076664870604873e-05,
+              3.0932121717341943e-06,
+              5.293919116411416e-07,
+              3.50781448332782e-08
+            ]
+          ]
+        },
+        {
+          "type": "session.done",
+          "audio_seconds": 5.45825,
+          "processing_seconds": 0.6127854709920939
+        }
+      ],
+      "noisy_headset_15db": false
+    },
+    {
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "realtime_input": false,
+      "first_output_seconds": 0.5805800519883633,
+      "elapsed_seconds": 2.070895755663514,
+      "audio_seconds": 5.45825,
+      "rtf": 0.3794065415954774,
+      "events": [
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.0,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.044225726276636124,
+              2.7662472348310985e-05,
+              7.896518354755244e-07,
+              9.313793469800657e-08
+            ],
+            [
+              0.1365763396024704,
+              4.2152114474447444e-05,
+              8.616329409960599e-07,
+              9.581187043750106e-08
+            ],
+            [
+              0.9932364821434021,
+              0.00028354255482554436,
+              1.1833576536446344e-05,
+              2.5879642180370865e-06
+            ],
+            [
+              0.9990921020507812,
+              0.00023731194960419089,
+              1.1135278327856213e-05,
+              3.0578719361074036e-06
+            ],
+            [
+              0.9994580149650574,
+              0.00022972059377934784,
+              9.337489245808683e-06,
+              2.6445018193044234e-06
+            ],
+            [
+              0.9991625547409058,
+              0.00030164443887770176,
+              1.2902868547826074e-05,
+              3.443667992542032e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.48,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9996322393417358,
+              0.0001345565979136154,
+              7.746933988528326e-06,
+              2.159504902010667e-06
+            ],
+            [
+              0.9997362494468689,
+              0.00012582069030031562,
+              6.34921752862283e-06,
+              1.759500719344942e-06
+            ],
+            [
+              0.9997013211250305,
+              0.00012050028453813866,
+              6.09757535130484e-06,
+              1.6385608887503622e-06
+            ],
+            [
+              0.9997292160987854,
+              0.00011935282964259386,
+              6.78181186231086e-06,
+              1.8291408423465327e-06
+            ],
+            [
+              0.9997571110725403,
+              0.00013448770914692432,
+              7.301335244846996e-06,
+              2.1224857391644036e-06
+            ],
+            [
+              0.9996755123138428,
+              0.00014349556295201182,
+              7.428701337630628e-06,
+              2.088685050694039e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.96,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9997721314430237,
+              0.00010422585910419002,
+              6.857638254587073e-06,
+              1.8109419670508942e-06
+            ],
+            [
+              0.9997848868370056,
+              0.00010212742927251384,
+              6.105529791966546e-06,
+              1.6068468084995402e-06
+            ],
+            [
+              0.9998225569725037,
+              0.00010465149534866214,
+              6.208589184097946e-06,
+              1.670505753281759e-06
+            ],
+            [
+              0.9997919201850891,
+              0.00012672941375058144,
+              7.805959285178687e-06,
+              2.157592462026514e-06
+            ],
+            [
+              0.99979168176651,
+              0.0001857473107520491,
+              1.4922618902346585e-05,
+              4.8035112740763e-06
+            ],
+            [
+              0.9997938275337219,
+              0.0003470141673460603,
+              3.817279139184393e-05,
+              1.4340279449243098e-05
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 1.44,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9992780089378357,
+              0.00015083843027241528,
+              7.149628345359815e-06,
+              1.6636677173664793e-06
+            ],
+            [
+              0.9982286095619202,
+              0.00014164751337375492,
+              6.494467925222125e-06,
+              1.3095458371026325e-06
+            ],
+            [
+              0.9923012256622314,
+              0.000159850183990784,
+              6.381208095262991e-06,
+              9.001393550533976e-07
+            ],
+            [
+              0.9690951704978943,
+              0.00018904099124483764,
+              5.592481102212332e-06,
+              5.327665917320701e-07
+            ],
+            [
+              0.9914687871932983,
+              0.00033132758107967675,
+              1.6658172171446495e-05,
+              3.484921990093426e-06
+            ],
+            [
+              0.9959128499031067,
+              0.0005295481532812119,
+              3.241688682464883e-05,
+              8.270799298770726e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 1.92,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998251795768738,
+              7.994173211045563e-05,
+              2.4618061615910847e-06,
+              4.3330686594345025e-07
+            ],
+            [
+              0.9997900128364563,
+              6.838340050308034e-05,
+              2.120369344993378e-06,
+              3.5109275131617323e-07
+            ],
+            [
+              0.9998477697372437,
+              7.334144174819812e-05,
+              2.305061116203433e-06,
+              4.0720246374803537e-07
+            ],
+            [
+              0.9998555183410645,
+              7.973000901984051e-05,
+              2.468327465976472e-06,
+              4.42357730889853e-07
+            ],
+            [
+              0.9998477697372437,
+              7.912868750281632e-05,
+              2.3303091438720003e-06,
+              4.20789660893206e-07
+            ],
+            [
+              0.9998680353164673,
+              9.340271208202466e-05,
+              2.714683205340407e-06,
+              5.225710992817767e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 2.4,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998480081558228,
+              8.745928789721802e-05,
+              3.1242016120813787e-06,
+              6.348148531287734e-07
+            ],
+            [
+              0.9996823072433472,
+              8.294742292491719e-05,
+              3.610395424402668e-06,
+              6.889312089697341e-07
+            ],
+            [
+              0.9997439980506897,
+              8.487365994369611e-05,
+              3.4526881336205406e-06,
+              7.142556341932504e-07
+            ],
+            [
+              0.9995177984237671,
+              8.832220919430256e-05,
+              3.066118551942054e-06,
+              5.509889433596982e-07
+            ],
+            [
+              0.9958863854408264,
+              0.00011499618995003402,
+              3.444525191298453e-06,
+              4.6982833623587794e-07
+            ],
+            [
+              0.933695912361145,
+              0.00014196366828400642,
+              3.424267561058514e-06,
+              2.7830677140627813e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 2.88,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9415549635887146,
+              0.00013820992899127305,
+              2.815132347677718e-06,
+              1.7891598247388174e-07
+            ],
+            [
+              0.9870201349258423,
+              0.00016210916510317475,
+              4.072373030794552e-06,
+              4.1253241533922846e-07
+            ],
+            [
+              0.99893718957901,
+              0.00012309302110224962,
+              3.7667546166630927e-06,
+              5.592762590822531e-07
+            ],
+            [
+              0.9996351003646851,
+              0.00016823771875351667,
+              5.682836217602016e-06,
+              1.0734058832895244e-06
+            ],
+            [
+              0.9997811913490295,
+              0.0001900744973681867,
+              7.496217676816741e-06,
+              1.5935793271637522e-06
+            ],
+            [
+              0.9997891783714294,
+              0.00019835642888210714,
+              7.125586307665799e-06,
+              1.4008436437507044e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 3.36,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998772144317627,
+              9.696291090222076e-05,
+              3.8605321606155485e-06,
+              8.208472195292416e-07
+            ],
+            [
+              0.9998639822006226,
+              0.00010296054824721068,
+              3.838065822492354e-06,
+              7.67307426485786e-07
+            ],
+            [
+              0.9998520612716675,
+              0.00011041821562685072,
+              4.101045760762645e-06,
+              7.88340287272149e-07
+            ],
+            [
+              0.9998687505722046,
+              0.00012659835920203477,
+              4.5560354919871315e-06,
+              9.368406495013915e-07
+            ],
+            [
+              0.9998742341995239,
+              0.00019028663518838584,
+              8.141058970068116e-06,
+              1.946325028256979e-06
+            ],
+            [
+              0.9998929500579834,
+              0.00019758685084525496,
+              6.919271072547417e-06,
+              1.5615989923389861e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 3.84,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9999096393585205,
+              0.0007746590999886394,
+              6.486138590844348e-05,
+              1.9334087483002804e-05
+            ],
+            [
+              0.9999009370803833,
+              0.0005225519416853786,
+              3.568213651305996e-05,
+              9.943273653334472e-06
+            ],
+            [
+              0.9998759031295776,
+              0.0004254864761605859,
+              2.6400935894344002e-05,
+              6.853800186945591e-06
+            ],
+            [
+              0.9998325109481812,
+              0.0003557123418431729,
+              1.8857534087146632e-05,
+              4.7275111683120485e-06
+            ],
+            [
+              0.99978107213974,
+              0.00021864319569431245,
+              9.832616342464462e-06,
+              2.252332478747121e-06
+            ],
+            [
+              0.999553382396698,
+              0.00019116407202091068,
+              7.190216365415836e-06,
+              1.4107362176218885e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 4.32,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9914303421974182,
+              9.718720684759319e-05,
+              8.667914812576782e-07,
+              6.582046552239262e-08
+            ],
+            [
+              0.8107532262802124,
+              8.084873843472451e-05,
+              8.757703540140938e-07,
+              4.4466247572927386e-08
+            ],
+            [
+              0.31285619735717773,
+              2.6876843548961915e-05,
+              7.913283752714051e-07,
+              3.199944131893062e-08
+            ],
+            [
+              0.0836799293756485,
+              1.9031767806154676e-05,
+              3.484266528630542e-07,
+              3.026775630132761e-08
+            ],
+            [
+              0.010596358217298985,
+              1.262093701370759e-05,
+              6.196370350153302e-07,
+              5.3916238584861276e-08
+            ],
+            [
+              0.0044162580743432045,
+              1.3218424101069104e-05,
+              6.85880252149218e-07,
+              5.650059620165848e-08
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 4.8,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.00024223304353654385,
+              3.4486010918044485e-06,
+              4.670816622365237e-07,
+              3.945777393710159e-08
+            ],
+            [
+              0.00013384076009970158,
+              3.323548298794776e-06,
+              4.6852269974806404e-07,
+              3.8116709788482694e-08
+            ],
+            [
+              0.00010953687160508707,
+              3.371536422491772e-06,
+              4.718840216355602e-07,
+              3.734939468813536e-08
+            ],
+            [
+              0.00010540493531152606,
+              3.5021203075302765e-06,
+              4.831896376344957e-07,
+              3.7627678750595805e-08
+            ],
+            [
+              0.0001100722438422963,
+              3.811126362052164e-06,
+              5.090874992674799e-07,
+              3.961946148933748e-08
+            ],
+            [
+              0.00016807561041787267,
+              4.697898020822322e-06,
+              5.654981691805006e-07,
+              4.528500596734375e-08
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 5.28,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              3.031949199794326e-05,
+              2.7786149985331576e-06,
+              4.892672791356745e-07,
+              3.325904884832198e-08
+            ],
+            [
+              2.835014856827911e-05,
+              2.773365167740849e-06,
+              4.819327728000644e-07,
+              3.3083605188721776e-08
+            ],
+            [
+              2.7858512112288736e-05,
+              2.779044052658719e-06,
+              4.800314741260081e-07,
+              3.3048664249690773e-08
+            ],
+            [
+              2.8424648917280138e-05,
+              2.818610937538324e-06,
+              4.832826903111709e-07,
+              3.3212394612291973e-08
+            ],
+            [
+              2.8970336643396877e-05,
+              2.913662910941639e-06,
+              5.00464068409201e-07,
+              3.39159953455237e-08
+            ],
+            [
+              3.092508268309757e-05,
+              3.1089011827134527e-06,
+              5.301639589561091e-07,
+              3.5158791433786973e-08
+            ]
+          ]
+        },
+        {
+          "type": "session.done",
+          "audio_seconds": 5.45825,
+          "processing_seconds": 0.6135337910091039
+        }
+      ],
+      "noisy_headset_15db": false
+    },
+    {
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "realtime_input": false,
+      "first_output_seconds": 0.6760041499510407,
+      "elapsed_seconds": 2.098385932855308,
+      "audio_seconds": 5.45825,
+      "rtf": 0.38444298682825234,
+      "events": [
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.0,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.042804814875125885,
+              2.7261785362497903e-05,
+              7.984671697158774e-07,
+              9.376893217449833e-08
+            ],
+            [
+              0.13518767058849335,
+              4.1782048356253654e-05,
+              8.560788842260081e-07,
+              9.507931508778711e-08
+            ],
+            [
+              0.9930959343910217,
+              0.00028074177680537105,
+              1.1570858987397514e-05,
+              2.495749413355952e-06
+            ],
+            [
+              0.9990763664245605,
+              0.00023579249682370573,
+              1.0939646017504856e-05,
+              2.9738339435425587e-06
+            ],
+            [
+              0.9994513392448425,
+              0.00022852497932035476,
+              9.19489139050711e-06,
+              2.5818062567850575e-06
+            ],
+            [
+              0.9991486072540283,
+              0.00029996075318194926,
+              1.265128048544284e-05,
+              3.3459657515777508e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.48,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9996331930160522,
+              0.00013698212569579482,
+              8.007052201719489e-06,
+              2.258083668493782e-06
+            ],
+            [
+              0.9997380375862122,
+              0.00012787521700374782,
+              6.540512458741432e-06,
+              1.8329144495510263e-06
+            ],
+            [
+              0.9997023940086365,
+              0.00012238761701155454,
+              6.267860953812487e-06,
+              1.7017907794070197e-06
+            ],
+            [
+              0.9997299313545227,
+              0.0001212663555634208,
+              6.981777460168814e-06,
+              1.9041960968024796e-06
+            ],
+            [
+              0.9997584223747253,
+              0.00013704353477805853,
+              7.54673646952142e-06,
+              2.2199121758603724e-06
+            ],
+            [
+              0.9996787309646606,
+              0.00014611035294365138,
+              7.678038855374325e-06,
+              2.184574668717687e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.96,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9997679591178894,
+              0.00010526410915190354,
+              6.9036768763908185e-06,
+              1.8300324882147834e-06
+            ],
+            [
+              0.9997844099998474,
+              0.00010319713328499347,
+              6.220134309842251e-06,
+              1.6453693660878344e-06
+            ],
+            [
+              0.9998193383216858,
+              0.00010583730909274891,
+              6.325791673589265e-06,
+              1.7083373222703813e-06
+            ],
+            [
+              0.9997901320457458,
+              0.0001287424092879519,
+              8.010060810192954e-06,
+              2.228772927992395e-06
+            ],
+            [
+              0.9997900128364563,
+              0.00018932815873995423,
+              1.5444513337570243e-05,
+              5.0149933485954534e-06
+            ],
+            [
+              0.9997933506965637,
+              0.00035336261498741806,
+              3.911547173629515e-05,
+              1.4775079762330279e-05
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 1.44,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.999269425868988,
+              0.00014906573051121086,
+              7.061637916194741e-06,
+              1.6335166037606541e-06
+            ],
+            [
+              0.9981915354728699,
+              0.0001404150389134884,
+              6.372894858941436e-06,
+              1.2763588301822892e-06
+            ],
+            [
+              0.9921835064888,
+              0.00015862305008340627,
+              6.246628799999598e-06,
+              8.727096201255335e-07
+            ],
+            [
+              0.9689360857009888,
+              0.00018954003462567925,
+              5.56780514671118e-06,
+              5.276439765111718e-07
+            ],
+            [
+              0.9915281534194946,
+              0.0003284968843217939,
+              1.640121263335459e-05,
+              3.4172896903328365e-06
+            ],
+            [
+              0.9959642887115479,
+              0.0005241602775640786,
+              3.190166535205208e-05,
+              8.109226655506063e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 1.92,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998262524604797,
+              8.083802822511643e-05,
+              2.504559461158351e-06,
+              4.4342337446323654e-07
+            ],
+            [
+              0.9997913241386414,
+              6.917755672475323e-05,
+              2.157232302124612e-06,
+              3.5934638731305313e-07
+            ],
+            [
+              0.9998482465744019,
+              7.408436067635193e-05,
+              2.3412087557517225e-06,
+              4.157572277563304e-07
+            ],
+            [
+              0.9998555183410645,
+              8.058342791628093e-05,
+              2.507460976630682e-06,
+              4.514125464538665e-07
+            ],
+            [
+              0.9998489618301392,
+              8.000480011105537e-05,
+              2.372975359321572e-06,
+              4.311008581225906e-07
+            ],
+            [
+              0.9998689889907837,
+              9.435044194106013e-05,
+              2.762832082225941e-06,
+              5.354029326554155e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 2.4,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998496770858765,
+              8.746937965042889e-05,
+              3.1193783343042014e-06,
+              6.35547223737376e-07
+            ],
+            [
+              0.9996882677078247,
+              8.311448618769646e-05,
+              3.5933371691498905e-06,
+              6.866728199383942e-07
+            ],
+            [
+              0.9997466206550598,
+              8.497496310155839e-05,
+              3.4320160011702683e-06,
+              7.110395472409436e-07
+            ],
+            [
+              0.9995217323303223,
+              8.859221270540729e-05,
+              3.0490398330584867e-06,
+              5.49025116924895e-07
+            ],
+            [
+              0.9958664178848267,
+              0.00011608903150772676,
+              3.463459051999962e-06,
+              4.744873365325475e-07
+            ],
+            [
+              0.9338622093200684,
+              0.00014317315071821213,
+              3.4643971957848407e-06,
+              2.8353727543617424e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 2.88,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9445669054985046,
+              0.00013822640175931156,
+              2.804870973704965e-06,
+              1.8034315019122005e-07
+            ],
+            [
+              0.9878398776054382,
+              0.00016071123536676168,
+              4.1538255572959315e-06,
+              4.305153993300337e-07
+            ],
+            [
+              0.9989676475524902,
+              0.00012381405394989997,
+              3.826546162599698e-06,
+              5.740453730140871e-07
+            ],
+            [
+              0.999639630317688,
+              0.00016957784828264266,
+              5.78372282689088e-06,
+              1.100639792639413e-06
+            ],
+            [
+              0.9997839331626892,
+              0.00019173527834936976,
+              7.663948963454459e-06,
+              1.6411397609772393e-06
+            ],
+            [
+              0.9997908473014832,
+              0.00019993394380435348,
+              7.260825896082679e-06,
+              1.4372536725204554e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 3.36,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998778104782104,
+              9.67668165685609e-05,
+              3.876225946441991e-06,
+              8.283462307190348e-07
+            ],
+            [
+              0.9998645782470703,
+              0.00010267787729389966,
+              3.844857928925194e-06,
+              7.683501053179498e-07
+            ],
+            [
+              0.9998540878295898,
+              0.00011085329606430605,
+              4.1483785935270134e-06,
+              8.019829920158372e-07
+            ],
+            [
+              0.999871015548706,
+              0.000127510167658329,
+              4.63057222077623e-06,
+              9.597434882380185e-07
+            ],
+            [
+              0.9998763799667358,
+              0.00019129757129121572,
+              8.226408681366593e-06,
+              1.9771011920965975e-06
+            ],
+            [
+              0.9998948574066162,
+              0.0001975817431230098,
+              6.940750608919188e-06,
+              1.5733290865682648e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 3.84,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9999111890792847,
+              0.0007733735255897045,
+              6.452098023146391e-05,
+              1.9266079107183032e-05
+            ],
+            [
+              0.9999027252197266,
+              0.0005236361757852137,
+              3.569881300791167e-05,
+              9.970164683181792e-06
+            ],
+            [
+              0.9998776912689209,
+              0.00042398093501105905,
+              2.621895691845566e-05,
+              6.81615119901835e-06
+            ],
+            [
+              0.9998370409011841,
+              0.0003566891246009618,
+              1.8943655959446914e-05,
+              4.769540737470379e-06
+            ],
+            [
+              0.9997865557670593,
+              0.00021928601199761033,
+              9.878822311293334e-06,
+              2.2738022380508482e-06
+            ],
+            [
+              0.9995653033256531,
+              0.00019116025941912085,
+              7.208844635897549e-06,
+              1.4223134030544315e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 4.32,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9915006160736084,
+              9.880011930363253e-05,
+              9.002397973745246e-07,
+              6.930340390454148e-08
+            ],
+            [
+              0.8104681372642517,
+              8.145568426698446e-05,
+              8.954858117249387e-07,
+              4.6046775281638475e-08
+            ],
+            [
+              0.3150494694709778,
+              2.7595389838097617e-05,
+              8.059323022280296e-07,
+              3.2824207352177837e-08
+            ],
+            [
+              0.08319668471813202,
+              1.9791725208051503e-05,
+              3.514247453040298e-07,
+              3.068166520847626e-08
+            ],
+            [
+              0.011012090370059013,
+              1.3678197319677565e-05,
+              6.346392638079124e-07,
+              5.502821309733008e-08
+            ],
+            [
+              0.004554760176688433,
+              1.4652637219114695e-05,
+              7.087708695507899e-07,
+              5.809666348000064e-08
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 4.8,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.000245829374762252,
+              3.4340066576987738e-06,
+              4.6336148784575926e-07,
+              3.9092956427566605e-08
+            ],
+            [
+              0.0001345607015537098,
+              3.3109160995081766e-06,
+              4.6583784296672093e-07,
+              3.7857397217067046e-08
+            ],
+            [
+              0.00011010457819793373,
+              3.3606313536438392e-06,
+              4.696638882251136e-07,
+              3.713579133091116e-08
+            ],
+            [
+              0.0001062863739207387,
+              3.4967602005053777e-06,
+              4.815624947696051e-07,
+              3.746319165998102e-08
+            ],
+            [
+              0.0001110510274884291,
+              3.805710775850457e-06,
+              5.075662556919269e-07,
+              3.9465678725036923e-08
+            ],
+            [
+              0.000173756736330688,
+              4.711160272563575e-06,
+              5.643716463055171e-07,
+              4.519440821582066e-08
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 5.28,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              3.0165858333930373e-05,
+              2.7692369712895015e-06,
+              4.872709951087018e-07,
+              3.3111952291164926e-08
+            ],
+            [
+              2.8230224415892735e-05,
+              2.764711098279804e-06,
+              4.805041839972546e-07,
+              3.2966443797022293e-08
+            ],
+            [
+              2.77847775578266e-05,
+              2.772132575046271e-06,
+              4.788856244886119e-07,
+              3.293967054673885e-08
+            ],
+            [
+              2.83665085589746e-05,
+              2.8114673114032485e-06,
+              4.821433208235248e-07,
+              3.310228890995859e-08
+            ],
+            [
+              2.8953874789294787e-05,
+              2.9069713036733447e-06,
+              4.995261519979977e-07,
+              3.381252611234231e-08
+            ],
+            [
+              3.102294067502953e-05,
+              3.104382813035045e-06,
+              5.289937803354405e-07,
+              3.502071521666039e-08
+            ]
+          ]
+        },
+        {
+          "type": "session.done",
+          "audio_seconds": 5.45825,
+          "processing_seconds": 0.6369717750058044
+        }
+      ],
+      "noisy_headset_15db": false
+    },
+    {
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "realtime_input": false,
+      "first_output_seconds": 0.5870318692177534,
+      "elapsed_seconds": 2.074754827655852,
+      "audio_seconds": 5.45825,
+      "rtf": 0.38011355794546825,
+      "events": [
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.0,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.02795257233083248,
+              8.249149686889723e-05,
+              2.2691947378916666e-06,
+              3.7054326185170794e-07
+            ],
+            [
+              0.12154657393693924,
+              0.0003711043973453343,
+              1.0323364222131204e-05,
+              2.004112957365578e-06
+            ],
+            [
+              0.9857469797134399,
+              0.012381929904222488,
+              0.0010392694966867566,
+              0.0003881826705764979
+            ],
+            [
+              0.9932335019111633,
+              0.01285489834845066,
+              0.001163414097391069,
+              0.00041609842446632683
+            ],
+            [
+              0.992960512638092,
+              0.014989135786890984,
+              0.0012369108153507113,
+              0.00045549889910034835
+            ],
+            [
+              0.989066481590271,
+              0.018166834488511086,
+              0.0013825161149725318,
+              0.0004870878183282912
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.48,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9994012117385864,
+              0.0007358981529250741,
+              6.554678111569956e-05,
+              2.3133099603001028e-05
+            ],
+            [
+              0.9997327923774719,
+              0.0007510758587159216,
+              6.355520599754527e-05,
+              2.45823848672444e-05
+            ],
+            [
+              0.9995601773262024,
+              0.0008775987662374973,
+              7.432806887663901e-05,
+              2.6679213988245465e-05
+            ],
+            [
+              0.9990407824516296,
+              0.0010537694906815886,
+              0.00010407380614196882,
+              3.417104744585231e-05
+            ],
+            [
+              0.9995651841163635,
+              0.0011820500949397683,
+              0.00010225469304714352,
+              3.792717325268313e-05
+            ],
+            [
+              0.9996670484542847,
+              0.0010852654231712222,
+              9.226429392583668e-05,
+              3.451348311500624e-05
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 0.96,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9997099041938782,
+              0.00043113474384881556,
+              7.207514136098325e-05,
+              3.1933777790982276e-05
+            ],
+            [
+              0.9997414946556091,
+              0.0004829896497540176,
+              8.214382251026109e-05,
+              3.6773679312318563e-05
+            ],
+            [
+              0.9997816681861877,
+              0.00047511624870821834,
+              8.889720629667863e-05,
+              4.0629431168781593e-05
+            ],
+            [
+              0.9998372793197632,
+              0.0006816487293690443,
+              0.00011237973376410082,
+              5.339780545909889e-05
+            ],
+            [
+              0.9998401403427124,
+              0.0007959043723531067,
+              0.0001291735388804227,
+              6.196049798745662e-05
+            ],
+            [
+              0.9998252987861633,
+              0.0011934653157368302,
+              0.00017688288062345237,
+              8.224965131375939e-05
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 1.44,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9994495511054993,
+              0.0003063861804548651,
+              2.7188645617570728e-05,
+              8.594002792960964e-06
+            ],
+            [
+              0.9988412261009216,
+              0.0002903836139012128,
+              2.735843554546591e-05,
+              7.978018402354792e-06
+            ],
+            [
+              0.9856337904930115,
+              0.0003898035502061248,
+              2.3015221813693643e-05,
+              3.871386070386507e-06
+            ],
+            [
+              0.9589390754699707,
+              0.0002809166326187551,
+              1.0709726666391362e-05,
+              1.1992146937700454e-06
+            ],
+            [
+              0.9855272769927979,
+              0.0005258825258351862,
+              2.6258489015162922e-05,
+              4.486701527639525e-06
+            ],
+            [
+              0.9967299699783325,
+              0.0008126755710691214,
+              5.923819844610989e-05,
+              1.5113761037355289e-05
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 1.92,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9996970891952515,
+              0.00014414312317967415,
+              3.1162508093984798e-06,
+              5.376958824854228e-07
+            ],
+            [
+              0.9996334314346313,
+              0.00014909046876709908,
+              3.2532191198697546e-06,
+              5.058633405496948e-07
+            ],
+            [
+              0.9997592568397522,
+              0.00012793703353963792,
+              2.9088764676998835e-06,
+              4.859452360506111e-07
+            ],
+            [
+              0.9997701048851013,
+              0.000125498729175888,
+              2.9379100396909053e-06,
+              4.832301101487246e-07
+            ],
+            [
+              0.9998495578765869,
+              0.0001298210845561698,
+              3.1906035928841447e-06,
+              5.88757359309966e-07
+            ],
+            [
+              0.9998786449432373,
+              0.0001475802855566144,
+              3.869178726745304e-06,
+              7.947105018502043e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 2.4,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998786449432373,
+              8.765659003984183e-05,
+              3.5529576507542515e-06,
+              7.7605534443137e-07
+            ],
+            [
+              0.9997943043708801,
+              9.779528772924095e-05,
+              3.7145537135074846e-06,
+              7.451118335666251e-07
+            ],
+            [
+              0.9998327493667603,
+              0.00010691956413211301,
+              4.111948783247499e-06,
+              8.423871804552618e-07
+            ],
+            [
+              0.9997339844703674,
+              0.00010120914521394297,
+              3.0492290079564555e-06,
+              5.6053534081002e-07
+            ],
+            [
+              0.9834897518157959,
+              0.0002170732623199001,
+              6.01098236074904e-06,
+              6.51415291486046e-07
+            ],
+            [
+              0.8983045816421509,
+              0.00017880242376122624,
+              5.269935172691476e-06,
+              4.6752199978072895e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 2.88,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9682011604309082,
+              0.00014309617108665407,
+              1.5643909136997536e-06,
+              9.714098325730447e-08
+            ],
+            [
+              0.9867348670959473,
+              0.00011533509677974507,
+              1.4212246242095716e-06,
+              1.036882650851112e-07
+            ],
+            [
+              0.9979099631309509,
+              9.307640721090138e-05,
+              1.5791766827533138e-06,
+              1.5919037821277016e-07
+            ],
+            [
+              0.9995579123497009,
+              0.00010261112038278952,
+              1.8266533743371838e-06,
+              2.501012374978018e-07
+            ],
+            [
+              0.9998366832733154,
+              0.00011479689419502392,
+              2.3535524178441847e-06,
+              3.925787268599379e-07
+            ],
+            [
+              0.9998352527618408,
+              0.00013412514817900956,
+              2.7513233362697065e-06,
+              4.456082649539894e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 3.36,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998959302902222,
+              9.360136755276471e-05,
+              3.4104557471437147e-06,
+              7.474847052435507e-07
+            ],
+            [
+              0.9999141693115234,
+              0.00010504993406357244,
+              4.008487394457916e-06,
+              8.507382744937786e-07
+            ],
+            [
+              0.9998592138290405,
+              0.00010154100164072588,
+              3.854363058053423e-06,
+              7.830875574654783e-07
+            ],
+            [
+              0.999879002571106,
+              0.00011550601630005985,
+              3.922586984117515e-06,
+              8.253292662629974e-07
+            ],
+            [
+              0.9998974800109863,
+              0.0001834589202189818,
+              7.124044259398943e-06,
+              1.7086061916415929e-06
+            ],
+            [
+              0.9999074935913086,
+              0.00014391842705663294,
+              4.0373111005465034e-06,
+              8.803212949715089e-07
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 3.84,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.9998737573623657,
+              0.00010234298679279163,
+              4.083915882802103e-06,
+              8.978142318483151e-07
+            ],
+            [
+              0.999870777130127,
+              0.00010583408584352583,
+              4.26316364610102e-06,
+              9.530223223919165e-07
+            ],
+            [
+              0.9998830556869507,
+              0.0001091740996344015,
+              4.877680567005882e-06,
+              1.0510905212868238e-06
+            ],
+            [
+              0.9998999834060669,
+              0.00011164340685354546,
+              4.402325885166647e-06,
+              1.0211534799964284e-06
+            ],
+            [
+              0.9998577833175659,
+              0.00012630030687432736,
+              5.356529527489329e-06,
+              1.2603428558577434e-06
+            ],
+            [
+              0.9996128678321838,
+              0.00021354663476813585,
+              7.770277989038732e-06,
+              1.6016787185435533e-06
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 4.32,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              0.997858464717865,
+              0.00023379585763905197,
+              2.714735046538408e-06,
+              3.0257169214564783e-07
+            ],
+            [
+              0.8494916558265686,
+              0.00014293634740170091,
+              1.2327343483775621e-06,
+              7.390504919158047e-08
+            ],
+            [
+              0.4689927101135254,
+              7.475777965737507e-05,
+              1.74730723756511e-06,
+              9.301597003741335e-08
+            ],
+            [
+              0.16840295493602753,
+              5.059629984316416e-05,
+              6.22920083515055e-07,
+              4.732739355972626e-08
+            ],
+            [
+              0.015772564336657524,
+              2.5899644242599607e-05,
+              8.031317975110142e-07,
+              6.986228129335359e-08
+            ],
+            [
+              0.003669826313853264,
+              2.189171027566772e-05,
+              8.36485583022295e-07,
+              7.032257087757898e-08
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 4.8,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              6.600775668630376e-05,
+              3.0025710202608025e-06,
+              4.881356971964124e-07,
+              3.397990866460532e-08
+            ],
+            [
+              4.592601544572972e-05,
+              2.9767932119284524e-06,
+              4.87279862682044e-07,
+              3.3118585207603246e-08
+            ],
+            [
+              4.0078521124087274e-05,
+              2.9537657155742636e-06,
+              4.798259851668263e-07,
+              3.244556623371864e-08
+            ],
+            [
+              3.9899703551782295e-05,
+              3.04454783872643e-06,
+              4.887440354650607e-07,
+              3.2670616434415933e-08
+            ],
+            [
+              4.229760088492185e-05,
+              3.250759618822485e-06,
+              5.11907330746908e-07,
+              3.374764290242638e-08
+            ],
+            [
+              4.952563904225826e-05,
+              3.5336020118847955e-06,
+              5.437534014163248e-07,
+              3.6591096375104826e-08
+            ]
+          ]
+        },
+        {
+          "type": "speaker.activity",
+          "start_seconds": 5.28,
+          "frame_duration_seconds": 0.08,
+          "speakers": [
+            "speaker_0",
+            "speaker_1",
+            "speaker_2",
+            "speaker_3"
+          ],
+          "probabilities": [
+            [
+              1.9549957869458012e-05,
+              2.578442945377901e-06,
+              4.0536704659643874e-07,
+              2.6215653647909676e-08
+            ],
+            [
+              1.9113744201604277e-05,
+              2.5869869659800315e-06,
+              4.028001399092318e-07,
+              2.634643436749684e-08
+            ],
+            [
+              1.9035198420169763e-05,
+              2.5902086235873867e-06,
+              3.992339543401613e-07,
+              2.6283593967946217e-08
+            ],
+            [
+              1.9394676201045513e-05,
+              2.6021848498203326e-06,
+              4.0086683839035686e-07,
+              2.6366947736278235e-08
+            ],
+            [
+              1.9842826077365316e-05,
+              2.647085466378485e-06,
+              4.1177381149282155e-07,
+              2.672057775043868e-08
+            ],
+            [
+              2.0792744180653244e-05,
+              2.745114443314378e-06,
+              4.205485595321079e-07,
+              2.654309660954368e-08
+            ]
+          ]
+        },
+        {
+          "type": "session.done",
+          "audio_seconds": 5.45825,
+          "processing_seconds": 0.6183134549937677
+        }
+      ],
+      "noisy_headset_15db": true
+    }
+  ],
+  "sortformer_realtime": {
+    "model": "diar-streaming-sortformer-4spk-v2-1",
+    "realtime_input": true,
+    "first_output_seconds": 0.988160234875977,
+    "elapsed_seconds": 7.247385150752962,
+    "audio_seconds": 5.45825,
+    "rtf": 1.3277854899927564,
+    "events": [
+      {
+        "type": "speaker.activity",
+        "start_seconds": 0.0,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.043874241411685944,
+            2.7755460905609652e-05,
+            7.948052598294453e-07,
+            9.384944377188731e-08
+          ],
+          [
+            0.13555538654327393,
+            4.207974416203797e-05,
+            8.645698130749224e-07,
+            9.665915712275819e-08
+          ],
+          [
+            0.9932578802108765,
+            0.0002836376952473074,
+            1.1926797014893964e-05,
+            2.6121203973161755e-06
+          ],
+          [
+            0.9990898370742798,
+            0.000237880100030452,
+            1.1222440662095323e-05,
+            3.085089929300011e-06
+          ],
+          [
+            0.9994564652442932,
+            0.0002305964007973671,
+            9.426046744920313e-06,
+            2.672754135346622e-06
+          ],
+          [
+            0.9991583824157715,
+            0.00030336793861351907,
+            1.3018124263908248e-05,
+            3.477601694612531e-06
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 0.48,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.9996335506439209,
+            0.00013773552200291306,
+            8.112971954687964e-06,
+            2.2953258849156555e-06
+          ],
+          [
+            0.9997391104698181,
+            0.00012858440459240228,
+            6.621213287871797e-06,
+            1.8612780650073546e-06
+          ],
+          [
+            0.9997033476829529,
+            0.00012312846956774592,
+            6.349411250994308e-06,
+            1.7294293002123595e-06
+          ],
+          [
+            0.9997311234474182,
+            0.00012204975064378232,
+            7.074337190715596e-06,
+            1.9370088466530433e-06
+          ],
+          [
+            0.9997596144676208,
+            0.00013789017975796014,
+            7.650410225323867e-06,
+            2.2588676529267104e-06
+          ],
+          [
+            0.9996799230575562,
+            0.00014711396943312138,
+            7.805028872098774e-06,
+            2.231093048976618e-06
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 0.96,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.9997722506523132,
+            0.0001051950894179754,
+            6.89730632075225e-06,
+            1.8293204675501329e-06
+          ],
+          [
+            0.9997871518135071,
+            0.00010315207327948883,
+            6.197467882884666e-06,
+            1.6394393469454371e-06
+          ],
+          [
+            0.9998227953910828,
+            0.00010577759530860931,
+            6.312425284704659e-06,
+            1.706406237644842e-06
+          ],
+          [
+            0.9997934699058533,
+            0.00012834173685405403,
+            7.958602509461343e-06,
+            2.2134054233902134e-06
+          ],
+          [
+            0.999792754650116,
+            0.0001881614443846047,
+            1.527007043478079e-05,
+            4.9482687245472334e-06
+          ],
+          [
+            0.9997953772544861,
+            0.00035000036587007344,
+            3.8597041566390544e-05,
+            1.4560687304765452e-05
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 1.44,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.9992721676826477,
+            0.00015162129420787096,
+            7.245773758768337e-06,
+            1.6886874618649017e-06
+          ],
+          [
+            0.998200535774231,
+            0.00014242084580473602,
+            6.526710876642028e-06,
+            1.3175291542211198e-06
+          ],
+          [
+            0.9921520352363586,
+            0.00016046960081439465,
+            6.375392786139855e-06,
+            8.965668030214147e-07
+          ],
+          [
+            0.9685910940170288,
+            0.0001924721582327038,
+            5.714656708732946e-06,
+            5.454663210002764e-07
+          ],
+          [
+            0.9916641712188721,
+            0.00033382634865120053,
+            1.6902222341741435e-05,
+            3.553668875611038e-06
+          ],
+          [
+            0.9959235191345215,
+            0.0005328655824996531,
+            3.2856692996574566e-05,
+            8.400194019486662e-06
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 1.92,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.999825656414032,
+            8.128551417030394e-05,
+            2.522954218875384e-06,
+            4.471399392969033e-07
+          ],
+          [
+            0.9997900128364563,
+            6.969402602408081e-05,
+            2.1759624360129237e-06,
+            3.628059914717596e-07
+          ],
+          [
+            0.9998475313186646,
+            7.451948476955295e-05,
+            2.357912990191835e-06,
+            4.1890496049745707e-07
+          ],
+          [
+            0.9998552799224854,
+            8.098933176370338e-05,
+            2.5266956527048023e-06,
+            4.5549438709713286e-07
+          ],
+          [
+            0.9998488426208496,
+            8.046824223129079e-05,
+            2.3940422124724137e-06,
+            4.357347904715425e-07
+          ],
+          [
+            0.9998683929443359,
+            9.493019024375826e-05,
+            2.7851622235175455e-06,
+            5.403875320553198e-07
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 2.4,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.9998480081558228,
+            8.717185846762732e-05,
+            3.079284397244919e-06,
+            6.228167421795661e-07
+          ],
+          [
+            0.9996869564056396,
+            8.315135346492752e-05,
+            3.568156216715579e-06,
+            6.786463018215727e-07
+          ],
+          [
+            0.9997442364692688,
+            8.467422594549134e-05,
+            3.3956148399738595e-06,
+            6.989259304646112e-07
+          ],
+          [
+            0.9995157718658447,
+            8.832304592942819e-05,
+            3.0260450785135617e-06,
+            5.416118256107438e-07
+          ],
+          [
+            0.9957848191261292,
+            0.00011675913265207782,
+            3.4535771646915236e-06,
+            4.713191117389215e-07
+          ],
+          [
+            0.9342616200447083,
+            0.00014514166105072945,
+            3.5193559142499e-06,
+            2.90173971961849e-07
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 2.88,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.9434176087379456,
+            0.00014094113430473953,
+            2.890125870180782e-06,
+            1.8662106526790012e-07
+          ],
+          [
+            0.9871360063552856,
+            0.00016722374130040407,
+            4.305800757720135e-06,
+            4.443106433882349e-07
+          ],
+          [
+            0.9989193677902222,
+            0.00012603358482010663,
+            3.898313025274547e-06,
+            5.846013664267957e-07
+          ],
+          [
+            0.9996302127838135,
+            0.00017222124733962119,
+            5.877038802282186e-06,
+            1.11703343463887e-06
+          ],
+          [
+            0.999778687953949,
+            0.0001931951119331643,
+            7.71132454246981e-06,
+            1.647633553147898e-06
+          ],
+          [
+            0.9997852444648743,
+            0.00020143623987678438,
+            7.282955721166218e-06,
+            1.4375606269823038e-06
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 3.36,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.9998769760131836,
+            9.701969247544184e-05,
+            3.880020358337788e-06,
+            8.271172191598453e-07
+          ],
+          [
+            0.9998639822006226,
+            0.00010316850239178166,
+            3.860086962959031e-06,
+            7.718547863078129e-07
+          ],
+          [
+            0.9998530149459839,
+            0.00011123417061753571,
+            4.1700473047967535e-06,
+            8.068074635048106e-07
+          ],
+          [
+            0.9998711347579956,
+            0.00012815474474336952,
+            4.6671793825225905e-06,
+            9.688274076324888e-07
+          ],
+          [
+            0.9998756647109985,
+            0.00019203331612516195,
+            8.280388101411518e-06,
+            1.9910710307158297e-06
+          ],
+          [
+            0.9998941421508789,
+            0.00019881295156665146,
+            7.018688393145567e-06,
+            1.592456328580738e-06
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 3.84,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.9999103546142578,
+            0.0007888918044045568,
+            6.626558024436235e-05,
+            1.9801220332738012e-05
+          ],
+          [
+            0.9999018907546997,
+            0.0005328765255399048,
+            3.664418909465894e-05,
+            1.024455195874907e-05
+          ],
+          [
+            0.9998764991760254,
+            0.0004314974066801369,
+            2.6894536858890206e-05,
+            7.007525709923357e-06
+          ],
+          [
+            0.9998356103897095,
+            0.00036376601201482117,
+            1.9538401829777285e-05,
+            4.935713604936609e-06
+          ],
+          [
+            0.9997846484184265,
+            0.00022298816475085914,
+            1.0171975191042293e-05,
+            2.3498428163293283e-06
+          ],
+          [
+            0.9995595812797546,
+            0.00019525385869201273,
+            7.469349384336965e-06,
+            1.4807825436946587e-06
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 4.32,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.9915567636489868,
+            9.764442074811086e-05,
+            8.809058158476546e-07,
+            6.737865021477774e-08
+          ],
+          [
+            0.8090357780456543,
+            8.103854634100571e-05,
+            8.906720267987112e-07,
+            4.5545480276132366e-08
+          ],
+          [
+            0.30782464146614075,
+            2.663503255462274e-05,
+            7.703545747972385e-07,
+            3.1342349160468075e-08
+          ],
+          [
+            0.07892467081546783,
+            1.8947559510706924e-05,
+            3.5496648820299015e-07,
+            3.102669410282033e-08
+          ],
+          [
+            0.010028306394815445,
+            1.2706695088127162e-05,
+            6.250427304621553e-07,
+            5.4376538827227705e-08
+          ],
+          [
+            0.0042885602451860905,
+            1.3509192285710014e-05,
+            6.92260414325574e-07,
+            5.7124434960087456e-08
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 4.8,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            0.0002489696198608726,
+            3.4419213079672772e-06,
+            4.629864918115345e-07,
+            3.9024421027988865e-08
+          ],
+          [
+            0.00013667265011463314,
+            3.309340854684706e-06,
+            4.6500915118485864e-07,
+            3.783834046089396e-08
+          ],
+          [
+            0.00011154761887155473,
+            3.3577614431123948e-06,
+            4.685986709773715e-07,
+            3.7084895154748665e-08
+          ],
+          [
+            0.0001078304267139174,
+            3.4936201700475067e-06,
+            4.806636297871592e-07,
+            3.741784482258481e-08
+          ],
+          [
+            0.00011297424498479813,
+            3.8031676012906246e-06,
+            5.066768835604307e-07,
+            3.940910886512938e-08
+          ],
+          [
+            0.00017377677431795746,
+            4.696218184108147e-06,
+            5.619992862193612e-07,
+            4.494459560078212e-08
+          ]
+        ]
+      },
+      {
+        "type": "speaker.activity",
+        "start_seconds": 5.28,
+        "frame_duration_seconds": 0.08,
+        "speakers": [
+          "speaker_0",
+          "speaker_1",
+          "speaker_2",
+          "speaker_3"
+        ],
+        "probabilities": [
+          [
+            3.0409433747990988e-05,
+            2.7679984668793622e-06,
+            4.869834810961038e-07,
+            3.310948670787184e-08
+          ],
+          [
+            2.8488391762948595e-05,
+            2.7632877390715294e-06,
+            4.797106498699577e-07,
+            3.293571282370067e-08
+          ],
+          [
+            2.8031681722495705e-05,
+            2.7706737455446273e-06,
+            4.779972186952364e-07,
+            3.290017502877163e-08
+          ],
+          [
+            2.8648122679442167e-05,
+            2.811392278090352e-06,
+            4.815285024051263e-07,
+            3.3072563354608064e-08
+          ],
+          [
+            2.9216456823633052e-05,
+            2.905319206547574e-06,
+            4.986398494111199e-07,
+            3.377964929995869e-08
+          ],
+          [
+            3.129095057374798e-05,
+            3.1009562917461153e-06,
+            5.280688242237375e-07,
+            3.499968315168189e-08
+          ]
+        ]
+      },
+      {
+        "type": "session.done",
+        "audio_seconds": 5.45825,
+        "processing_seconds": 5.785078662011074
+      }
+    ]
+  },
+  "sortformer_lifecycle": {
+    "overload": {
+      "type": "error",
+      "code": "worker_busy",
+      "retryable": true
+    },
+    "reset": {
+      "type": "session.reset",
+      "resume_supported": false
+    },
+    "cancel": {
+      "type": "session.cancelled"
+    },
+    "reconnect_completed": true
+  }
+}

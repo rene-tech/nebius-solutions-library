@@ -1,0 +1,190 @@
+{
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "data": [
+    {
+      "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "messages_sha256": "8f7c249700a8be1e6b023cd972002d6d1526f8c241798f22ee122e3adaee6b0c",
+      "status": "passed",
+      "content": "Hey Dennis, how\u2019s it going tonight? I know you mentioned before that 3 a.m. wake-ups are kind of your thing\u2014still wrestling with that? Or is tonight different?",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 39,
+        "prompt_tokens": 235,
+        "total_tokens": 274,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 920.97,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "reasoning_characters": 0
+    },
+    {
+      "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "messages_sha256": "92289c4132b364bde60d9221570c4efc6bc27f473a6ea044679ef5b18f25e083",
+      "status": "passed",
+      "content": "Not great. Woke up at 3 a.m. again. Heart was racing. Lying there thinking about the dental tray I forgot to sterilize yesterday. Like, what if I messed up? What if someone got sick? It\u2019s stupid, I know. But it keeps looping. I\u2019ve been staring at the ceiling for an hour. My cat\u2019s on my chest, which helps a little. I keep telling myself to just get up, make coffee, but I can\u2019t move. Feels like my body\u2019s stuck in the middle of a storm.",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 115,
+        "prompt_tokens": 1849,
+        "total_tokens": 1964,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 749.066,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "reasoning_characters": 0
+    },
+    {
+      "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+      "messages_sha256": "8f7c249700a8be1e6b023cd972002d6d1526f8c241798f22ee122e3adaee6b0c",
+      "status": "passed",
+      "content": "Hello Dennis! It\u2019s good to hear from you. How are you feeling today?",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 48,
+        "prompt_tokens": 239,
+        "total_tokens": 287,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 1508.203,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "reasoning_characters": 139
+    },
+    {
+      "model": "openai/gpt-oss-120b",
+      "messages_sha256": "8f7c249700a8be1e6b023cd972002d6d1526f8c241798f22ee122e3adaee6b0c",
+      "status": "passed",
+      "content": "Hi Dennis, it\u2019s good to hear from you. How are you feeling today?\u202f\n\nI\u2019m here to listen and support you with whatever\u2019s on your mind\u2014whether that\u2019s how things have been going with work, sleep, relationships, or anything else that\u2019s weighing on you. If you\u2019re comfortable sharing, could you tell me a bit about how you\u2019ve been coping lately and whether there\u2019s anything in particular that\u2019s been especially difficult?\u202f\n\n*(If at any point you\u2019re feeling unsafe with yourself or have thoughts of harming yourself, please let me know right away so we can make sure you get the help you need.*)",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 242,
+        "prompt_tokens": 292,
+        "total_tokens": 534,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 64
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.039,
+        "latency_ms": 1895.643,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "reasoning_characters": 547
+    },
+    {
+      "model": "zai-org/GLM-5.1",
+      "messages_sha256": "8f7c249700a8be1e6b023cd972002d6d1526f8c241798f22ee122e3adaee6b0c",
+      "status": "passed",
+      "content": "Hi Dennis, good to hear from you. How's your week been going?",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 125,
+        "prompt_tokens": 227,
+        "total_tokens": 352,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 11040.192,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "reasoning_characters": 536
+    },
+    {
+      "model": "deepseek-ai/DeepSeek-V4-Pro",
+      "messages_sha256": "8f7c249700a8be1e6b023cd972002d6d1526f8c241798f22ee122e3adaee6b0c",
+      "status": "passed",
+      "content": "Hello, Dennis. It\u2019s good to see you again. Last time we spoke, you mentioned feeling pretty worn down by the cycle of waking up at 3 a.m. and struggling with low mood and anxiety. How have things been since we last met?",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 54,
+        "prompt_tokens": 223,
+        "total_tokens": 277,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null,
+        "reasoning_tokens": 0
+      },
+      "telemetry": {
+        "queue_ms": 0.042,
+        "latency_ms": 1675.229,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "reasoning_characters": 0
+    },
+    {
+      "model": "NousResearch/Hermes-4-405B",
+      "messages_sha256": "8f7c249700a8be1e6b023cd972002d6d1526f8c241798f22ee122e3adaee6b0c",
+      "status": "passed",
+      "content": "Hello Dennis, it's good to see you again. How have you been feeling since our last session?",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 22,
+        "prompt_tokens": 236,
+        "total_tokens": 258,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 656.293,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "reasoning_characters": 0
+    },
+    {
+      "model": "google/gemma-3-27b-it",
+      "messages_sha256": "92289c4132b364bde60d9221570c4efc6bc27f473a6ea044679ef5b18f25e083",
+      "status": "failed",
+      "error": "provider_http_400",
+      "telemetry": {
+        "retries": 0
+      }
+    }
+  ]
+}

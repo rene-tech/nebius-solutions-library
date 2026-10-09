@@ -1,0 +1,58 @@
+{
+  "source_sha256": "a743d05cbdcf861c1789addbfe75a58d60d6771a7782dadbe69bf57ec783cf88",
+  "source_filename": "00015-pods.json",
+  "status": {
+    "phase": "Running",
+    "conditions": [
+      {
+        "type": "DisruptionTarget",
+        "status": "True",
+        "reason": "EvictionByEvictionAPI",
+        "lastTransitionTime": "2026-09-19T13:05:40Z"
+      },
+      {
+        "type": "PodReadyToStartContainers",
+        "status": "True",
+        "lastTransitionTime": "2026-09-19T13:05:01Z"
+      },
+      {
+        "type": "Initialized",
+        "status": "True",
+        "lastTransitionTime": "2026-09-19T13:05:35Z"
+      },
+      {
+        "type": "Ready",
+        "status": "True",
+        "lastTransitionTime": "2026-09-19T13:05:36Z"
+      },
+      {
+        "type": "ContainersReady",
+        "status": "True",
+        "lastTransitionTime": "2026-09-19T13:05:36Z"
+      },
+      {
+        "type": "PodScheduled",
+        "status": "True",
+        "lastTransitionTime": "2026-09-19T13:04:58Z"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "name": "artifact-collector",
+        "state": {
+          "running": {
+            "startedAt": "2026-09-19T13:05:36Z"
+          }
+        }
+      },
+      {
+        "name": "scientific-stage",
+        "state": {
+          "running": {
+            "startedAt": "2026-09-19T13:05:35Z"
+          }
+        }
+      }
+    ]
+  }
+}

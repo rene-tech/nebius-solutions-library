@@ -1,0 +1,14 @@
+{
+  "schema": "fs2-serve.nebius.ai/canonical-runtime-services/v1",
+  "models": {
+    "cosmos3-nano": {
+      "model_digest": "6a255335d7635d9c6ffdbfdb7fdaaa4f9de5f060da674da6621037dd5e0dbd5e",
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/Cosmos3-Nano",
+        "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
+      },
+      "service": {"namespace": "fs2-models", "name": "cosmos3-nano", "port": 8080}
+    }
+  }
+}

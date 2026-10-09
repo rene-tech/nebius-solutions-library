@@ -1,0 +1,90 @@
+{
+  "schema": "fs2-container-vulnerability-summary/v1",
+  "scanner": "trivy 0.70.0",
+  "scanned_at": "2026-09-19",
+  "images": {
+    "cellpose-cpsam-v2": {
+      "digest": "sha256:d3048aca99d4c278002fa88e42417dd42d1a40fb2689af1688d239799fc59a5e",
+      "report_sha256": "0045953b26eed9f29665536e9fcd82aeffc771e57cfef82cdbb065a6539f9fc0",
+      "vulnerabilities": {
+        "total": 37,
+        "by_severity": {
+          "CRITICAL": 0,
+          "HIGH": 2,
+          "MEDIUM": 15,
+          "LOW": 20,
+          "UNKNOWN": 0
+        },
+        "fixed_available": 16,
+        "unfixed": 21
+      },
+      "reviewed_high_findings": [
+        {
+          "id": "GHSA-6v7p-g79w-8964",
+          "package": "msgpack",
+          "reported_version": "1.1.2",
+          "fixed_version": "1.2.1",
+          "pkg_path": null,
+          "disposition": "not-affected",
+          "reason": "Scanner carried package inventory without a filesystem path; in-pod importlib metadata proves msgpack 1.2.2 and setuptools 84.0.0."
+        },
+        {
+          "id": "CVE-2025-47273",
+          "package": "setuptools",
+          "reported_version": "70.3.0",
+          "fixed_version": "78.1.1",
+          "pkg_path": null,
+          "disposition": "not-affected",
+          "reason": "Scanner carried package inventory without a filesystem path; in-pod importlib metadata proves msgpack 1.2.2 and setuptools 84.0.0."
+        }
+      ],
+      "gate": "passed-with-reviewed-not-affected-exceptions"
+    },
+    "scvi-scanvi": {
+      "digest": "sha256:cd22562eb59d067f734b65af1669c483f971dacb5e58462ca7f4d43afc940396",
+      "report_sha256": "0deb90ce6cdce34e0e5dea4bafaeb082866bead3900369ce501bbbd8d9004311",
+      "vulnerabilities": {
+        "total": 46,
+        "by_severity": {
+          "CRITICAL": 0,
+          "HIGH": 3,
+          "MEDIUM": 36,
+          "LOW": 7,
+          "UNKNOWN": 0
+        },
+        "fixed_available": 8,
+        "unfixed": 38
+      },
+      "reviewed_high_findings": [
+        {
+          "id": "CVE-2026-58659",
+          "package": "lightning",
+          "reported_version": "2.6.5",
+          "fixed_version": "2022.6.15",
+          "pkg_path": "opt/venv/lib/python3.12/site-packages/lightning-2.6.5.dist-info/METADATA",
+          "disposition": "not-affected",
+          "reason": "Runtime never accepts or loads checkpoints; it constructs SCVI/SCANVI models from raw-count AnnData and only saves its own result model."
+        },
+        {
+          "id": "GHSA-6v7p-g79w-8964",
+          "package": "msgpack",
+          "reported_version": "1.1.2",
+          "fixed_version": "1.2.1",
+          "pkg_path": null,
+          "disposition": "not-affected",
+          "reason": "Scanner carried package inventory without a filesystem path; in-pod importlib metadata proves msgpack 1.2.2 and setuptools 84.0.0."
+        },
+        {
+          "id": "CVE-2025-47273",
+          "package": "setuptools",
+          "reported_version": "70.3.0",
+          "fixed_version": "78.1.1",
+          "pkg_path": null,
+          "disposition": "not-affected",
+          "reason": "Scanner carried package inventory without a filesystem path; in-pod importlib metadata proves msgpack 1.2.2 and setuptools 84.0.0."
+        }
+      ],
+      "gate": "passed-with-reviewed-not-affected-exceptions"
+    }
+  }
+}

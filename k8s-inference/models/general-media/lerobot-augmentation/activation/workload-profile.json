@@ -1,0 +1,138 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+  "profile": {
+    "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+    "model_id": "cosmos3-lerobot-augmentation",
+    "display_name": "NVIDIA Cosmos3-Nano LeRobot robotics augmentation",
+    "execution_mode": "hybrid",
+    "state": "active",
+    "route_exposed": true,
+    "source": {
+      "kind": "huggingface",
+      "repository": "nvidia/Cosmos3-Nano",
+      "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "review_url": "https://huggingface.co/nvidia/Cosmos3-Nano/tree/7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "classification": "qualified-input"
+    },
+    "execution_identity": {
+      "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "runtime_image_digest": "sha256:69fe161d370fac4cc9517d24ecfee7b025bb569a935ffadab8eb31e49c783a11",
+      "runtime_recipe_sha256": "68871cd26b62f00a1c436fd24bf73a961acb2f691d2ae9a5c3eb13d1e5bb5dda",
+      "workload_recipe_sha256": "c7b9141a9cf8fc4c4363596ed5c1a14f2466a45a7a0a8f1f4fc313df652ebae4",
+      "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_identity_sha256": "8a92680d991ff52e57de2188575cfc9748acf95f2684eb10f5fc2a561575acb2"
+    },
+    "interface": {
+      "protocol": "scientific-batch-v1",
+      "submit_endpoint": "/v1/models/cosmos3-lerobot-augmentation:submit",
+      "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-request/v1",
+      "operations": [
+        "augment-lerobot-dataset"
+      ],
+      "service_classes": [
+        "customer-batch",
+        "bulk-backfill"
+      ],
+      "mcp": {
+        "discoverable": true,
+        "invocable": true,
+        "tool_name": "submit_cosmos3_lerobot_augmentation",
+        "description": "NVIDIA Cosmos3-Nano robotics augmentation for LeRobot v3: transfer/V2V, numeric actions preserved; physical fidelity unproven. Clips16\u2013400 frames; bundles\u22645GiB. Download output_manifest public artifact UUIDs, not logical worker labels."
+      }
+    },
+    "access": {
+      "profile": "standard",
+      "state": "not-required",
+      "receipt_digest": null,
+      "credentials_embedded": false
+    },
+    "resources": {
+      "gpu_count": 1,
+      "gpu_topology": "single-gpu",
+      "host_architectures": [
+        "amd64"
+      ],
+      "compatible_pool_ids": [
+        "h100-reserved-8x",
+        "h100-1x"
+      ],
+      "required_node_labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      }
+    },
+    "workload": {
+      "stages": [
+        {
+          "id": "augment-dataset",
+          "needs": [],
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 1,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable",
+          "placement": {
+            "class": "general-cpu"
+          },
+          "resources": {
+            "cpu_millis": 2000,
+            "memory_bytes": 17179869184,
+            "ephemeral_storage_bytes": 34359738368,
+            "limits": {
+              "cpu_millis": 4000,
+              "memory_bytes": 25769803776,
+              "ephemeral_storage_bytes": 34359738368
+            }
+          }
+        }
+      ],
+      "retry": {
+        "max_attempts": 2,
+        "retryable_exit_codes": [
+          75,
+          137,
+          143
+        ]
+      },
+      "cancellation": {
+        "mode": "terminate-attempt",
+        "grace_seconds": 60
+      }
+    },
+    "semantic_validation": {
+      "validator_id": "cosmos3-lerobot-v3-0-6-1",
+      "state": "active"
+    },
+    "policy": {
+      "commercial_use": "allowed",
+      "non_clinical": false,
+      "limitations": [
+        "Qualification covers the retained release150 public MCP uploaded-bundle two-variant blur-transfer dataset, exact nonvideo records and full LeRobot0.6.1 reopen. Valid data and distinct variants do not prove semantic intent, physical action alignment or multi-view synchronization. Final customer cohorts, other source paths and maximum bounds are separate gates.",
+        "Appearance augmentation preserves numeric actions, state, timestamps and canonical indices, not proven physical/action alignment. Transfer retains coarse layout; video-to-video may alter trajectories. Inspect output before training.",
+        "Selected clips:16\u2013400 frames, integer FPS1\u201330, RGB256..1280 by256..720 dimensions divisible by16; at most256 selected episodes,8 selected cameras and8 variants. Untouched clips are checked for dataset integrity, not generation caps.",
+        "Compressed input/each output\u22645GiB; expanded source\u22648GiB;32GiB workspace with conservative pre-GPU estimate and2GiB reserve. Fixed-rate canonical timestamps/task ordering are required; no maximum-bound throughput qualification.",
+        "Forward/inverse dynamics and policy-model rollout are unsupported. Source action trajectories are preserved; episodes longer than400 frames need a separately qualified chunk/stitch contract.",
+        "Recorded-data writer successor normalizes scalar storage to declared singleton shape without changing numeric values. Exact published CPU coordinator reopened two episodes/128 frames and preserved all 6144 nonvideo values using retained successful H100 child videos.",
+        "The legacy h100_semantic_receipt field here identifies explicitly scoped CPU-coordinator plus retained-H100-child evidence, not fresh whole-public-path qualification. New image is active/unqualified until public completion and scheduler receipts are captured.",
+        "Old release150 acceptance describes its historical image only and is not inherited by this successor. No new snapshot, physical motion fidelity or maximum-bound throughput qualification is claimed.",
+        "Exact-size successor forwards recorded dimensions and rejects mismatched geometry, frame count or time base rather than silently resizing or retiming native output.",
+        "The legacy h100_semantic_receipt field identifies exact-image CPU-coordinator checks using retained H100 child videos: 2 positive/2 negative alignment checks, 2 episodes, 128 frames, and all 6144 nonvideo values. Timestamp is receipt completion, not fresh GPU measurement.",
+        "New coordinator remains active/unqualified pending exact public execution. Retained action values do not prove physical label validity; V2V generates future motion after a short prefix; full-sequence transfer is not guaranteed to preserve contact, camera calibration, or policy-training suitability.",
+        "No old public completion, scheduler eligibility, whole-workflow snapshot or scientific-quality qualification is inherited by this successor.",
+        "Q64 exact published CPU coordinator preserves untouched source MP4 bytes, original offsets and every decoded pixel after packaging/reload on a 128-row recorded dataset with retained public GPU generation; no new inference.",
+        "The legacy h100_semantic_receipt field binds CPU-coordinator/retained-GPU-media evidence only. Fresh public completion and scheduler evidence are pending; customer_ready remains false.",
+        "Temporary redundant encoding precedes source-shard preservation. No physical action alignment, training quality, maximum-size throughput or new snapshot qualification is claimed."
+      ]
+    },
+    "qualification": {
+      "h100_semantic_receipt_sha256": "c3ba08f056c6f9cbe42125308741aa011b7a44a7ba21a56e00359bc66181cba9",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "09874ec38b45b64b8341ea0cc4c90f07aa2b8562bd85c20e1e14ab380c0df68c",
+      "qualified_at": "2026-09-19T03:20:25.816657+00:00"
+    }
+  }
+}

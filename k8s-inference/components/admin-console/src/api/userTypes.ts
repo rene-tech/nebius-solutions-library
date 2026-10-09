@@ -29,6 +29,19 @@ export interface UserUsage {
   scheduler_occupied_gpu_seconds: AdminMeasurement;
   active_gpu_seconds: AdminMeasurement;
   occupied_idle_gpu_seconds: AdminMeasurement;
+  lifecycle_accounting?: {
+    subjects: number;
+    covered_operations: number;
+    expected_operations: number;
+    occupied_complete: boolean;
+    phases_complete: boolean;
+    quality: "measured" | "application_observed" | "estimated" | "unavailable";
+    data_gaps: string[];
+    startup: AdminMeasurement;
+    other: AdminMeasurement;
+    unknown: AdminMeasurement;
+    queue: AdminMeasurement;
+  } | null;
   input_tokens: AdminMeasurement;
   output_tokens: AdminMeasurement;
   attribution: string;
@@ -57,6 +70,16 @@ export interface UserDetail {
   keys: AdminApiKey[];
   apps: UserAppChoice[];
   policy_note: string;
+  storage?: UserStorage | null;
+}
+export interface UserStorage {
+  state: "pending" | "ready" | "disabled" | "not_configured";
+  mode: "tenant" | "user" | "disabled";
+  quota_bytes: number;
+  bucket_name: string | null;
+  endpoint: string | null;
+  region: string | null;
+  access_key_id: string | null;
 }
 export interface UserCreate extends UserSettings {
   tenant_id: string;

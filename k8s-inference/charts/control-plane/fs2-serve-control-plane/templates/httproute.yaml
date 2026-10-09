@@ -61,4 +61,50 @@ spec:
       backendRefs:
         - name: {{ include "fs2-serve.fullname" . }}
           port: {{ .Values.service.port }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/scientific-artifacts/uploads
+        - path:
+            type: PathPrefix
+            value: /v1/artifacts
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - x-fs2-tenant
+              - x-fs2-principal
+              - x-fs2-token-id
+              - x-fs2-model-scope
+              - x-fs2-accounting-id
+      timeouts:
+        # Finalization reads every uploaded byte to verify its SHA-256.
+        # This is file I/O, not a synchronous model execution allowance.
+        request: {{ .Values.httpRoute.artifactTransferTimeout | default "900s" | quote }}
+        backendRequest: {{ .Values.httpRoute.artifactTransferTimeout | default "900s" | quote }}
+      backendRefs:
+        - name: {{ include "fs2-serve.fullname" . }}
+          port: {{ .Values.service.port }}
+    - matches:
+        - path:
+            type: Exact
+            value: /v1/audio/stream
+        - path:
+            type: PathPrefix
+            value: /v1/voice
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - x-fs2-tenant
+              - x-fs2-principal
+              - x-fs2-token-id
+              - x-fs2-model-scope
+              - x-fs2-accounting-id
+      timeouts:
+        request: {{ .Values.httpRoute.speechStreamTimeout | default "7500s" | quote }}
+        backendRequest: {{ .Values.httpRoute.speechStreamTimeout | default "7500s" | quote }}
+      backendRefs:
+        - name: {{ include "fs2-serve.fullname" . }}
+          port: {{ .Values.service.port }}
 {{- end }}

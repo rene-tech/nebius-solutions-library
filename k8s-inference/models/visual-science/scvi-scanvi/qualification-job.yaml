@@ -1,0 +1,82 @@
+# Temporary internal qualification only. No customer route, key or hot floor.
+# Owner: fs2-scvi-scanvi-whitelab-readiness-r20261006. Review/cleanup by 2026-10-08.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: scvi-whitelab-qualification-20261006
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 64Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scvi-whitelab-qualification-20261006-r5
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 21600
+  template:
+    metadata:
+      labels:
+        fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        capacity.fs2.nebius/type: preemptible
+        # Qualification host with the base image already cached; not a new-node cold-start test.
+        kubernetes.io/hostname: computeinstance-e00k0hdq51xykanvqs
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: qualify
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:eb2835095574d290a90d289fc2790e49d984b5bb4fa4911f74156d7f172d77e5
+          command: [python, -u, /opt/fs2/qualify_runtime.py]
+          args: [--root, /work/r5]
+          env:
+            - name: OMP_NUM_THREADS
+              value: "8"
+            - name: MPLCONFIGDIR
+              value: /work/cache/matplotlib
+            - name: NUMBA_CACHE_DIR
+              value: /work/cache/numba
+            - name: PYTORCH_KERNEL_CACHE_PATH
+              value: /work/cache/torch-kernels
+          resources:
+            requests:
+              cpu: "8"
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: work
+              mountPath: /work
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: work
+          persistentVolumeClaim:
+            claimName: scvi-whitelab-qualification-20261006
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi

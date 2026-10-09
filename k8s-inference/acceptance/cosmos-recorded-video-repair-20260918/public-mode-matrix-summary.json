@@ -1,0 +1,86 @@
+{
+  "schema": "fs2-cosmos-cross-release-mode-evidence/v1",
+  "observed_at": "2026-09-19T01:52:00Z",
+  "customer_ready": false,
+  "scope": "Sequential ordinary scientist10 public MCP media contracts; mixed control-plane release cohorts, not final release qualification",
+  "target": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "native_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+    "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+    "vllm_omni_revision": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+    "owner_spec_digest": "sha256:b9f13043c39e87ea05b29cd756873eb0ddccdc8efaca462d900250b544b2b2f3",
+    "snapshot_policy": "Require",
+    "fresh_fallback": false,
+    "snapshot_inventory_sha256": "573bf6acacb90461ca0cc06f850f550dc48e34579d79f866da2b1691097ff120"
+  },
+  "cohorts": [
+    {"name": "earlier-core-media", "cases": 9, "control_plane_release": null, "release_scope": "Before settled173; per-request control-plane image was not captured during the earlier release transition"},
+    {"name": "frozen-recorded-transfer-comparison", "cases": 8, "control_plane_release": 173},
+    {"name": "official-control-clips", "cases": 3, "control_plane_release": 173},
+    {"name": "dedicated-transfer-shape-fps", "cases": 2, "control_plane_release": 173}
+  ],
+  "artifact_contract_counts": {"requested": 22, "passed": 22, "failed": 0},
+  "actual_runtime_join_counts": {"verified": 17, "missing": 5},
+  "tool_counts": {
+    "cosmos3_nano_image_to_video": 2,
+    "cosmos3_nano_text_to_image": 2,
+    "cosmos3_nano_text_to_video": 3,
+    "cosmos3_nano_transfer_video": 13,
+    "cosmos3_nano_video_to_video": 2
+  },
+  "exercised_transfer_controls": ["edge", "blur", "depth", "seg", "wsm"],
+  "dedicated_transfer_cases": [
+    {
+      "case_id": "transfer-video-recorded0-640x480",
+      "operation_id": "cd6ad58a-8bb2-46b3-89a4-4d34ed100e39",
+      "accepted_at": "2026-09-19T01:46:35.816914Z",
+      "completed_at": "2026-09-19T01:48:17.814075Z",
+      "shape": {"width": 640, "height": 480, "frames": 41, "fps": 25},
+      "accepted_to_complete_seconds": 101.997161,
+      "activation_wait_seconds": 53.414921,
+      "active_inference_seconds": 48.555027,
+      "request_sha256": "56f23b357a7a25968751162d9cd9a102cba3eb2873beb2af301264b95c81e162",
+      "output_sha256": "10c30936389c0746bd264468284de55634b76f47cd05238f96717b40073b9025",
+      "actual_gpu_identity": null
+    },
+    {
+      "case_id": "transfer-video-recorded1-512x288",
+      "operation_id": "59131be2-dad9-428e-8441-df36b3043b96",
+      "accepted_at": "2026-09-19T01:49:06.512383Z",
+      "completed_at": "2026-09-19T01:50:07.818943Z",
+      "shape": {"width": 512, "height": 288, "frames": 64, "fps": 24},
+      "source_fps": 25,
+      "explicit_output_fps_conversion": true,
+      "accepted_to_complete_seconds": 61.30656,
+      "activation_wait_seconds": 39.200704,
+      "active_inference_seconds": 22.098005,
+      "request_sha256": "822c73cbe4b146bc563028e3d1757bbc576b5e5aaf17196cb8925e4358c13944",
+      "output_sha256": "4608286ad7278a1c27337388f315a3dfb0c6a00e190995c2fe7b13b650da2974",
+      "actual_gpu_identity": null
+    }
+  ],
+  "missing_attribution_operations": [
+    "ec9b6d8f-22a2-42e1-bb41-b674fa7da93c",
+    "4d9271a9-7c32-4b8d-a55b-5ce6c3cf0ebf",
+    "092aec4c-45ef-4ec4-b0a5-eb6bac062986",
+    "cd6ad58a-8bb2-46b3-89a4-4d34ed100e39",
+    "59131be2-dad9-428e-8441-df36b3043b96"
+  ],
+  "retained_full_report": {
+    "root": "scientific-qualification-20260918",
+    "path": "lerobot-admission-diagnosis/public-mode-matrix-report173-complete-r1.json",
+    "sha256": "e99b63ed24aa42ff1c7a064d46d64554d2c4fff9fcd26afb818e8c4e82179339"
+  },
+  "limits": [
+    "These bounded media-contract passes do not erase earlier production, isolated or harness failures.",
+    "Missing public attribution is a release defect; zero must not be interpreted as measured zero GPU use.",
+    "Sequential calls do not establish public burst, fairness or scale-out qualification.",
+    "Mixed control-plane releases do not satisfy the unchanged-release clean-cohort gate.",
+    "Native video-to-video is prefix or suffix conditioned continuation, not full recorded-trajectory preservation.",
+    "Image-space motion similarity and exact action-array preservation do not prove physical label validity.",
+    "Actual LibreChat path requires its own exact-build end-to-end acceptance.",
+    "Activation wait may include warm capacity, scheduling or restore; it is not homogeneous empty-node cold start."
+  ]
+}

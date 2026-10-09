@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs2-namd-r20260923-h100-runtime
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: namd-qualification
+    scientific-ai.nebius.com/task: namd-r20260923
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 14400
+  automountServiceAccountToken: false
+  imagePullSecrets:
+    - name: wan2-ngc-pull
+  nodeSelector:
+    accelerator.fs2.nebius/pool-id: h100-ondemand-1x
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  containers:
+    - name: runtime
+      image: nvcr.io/nvidia/namd@sha256:e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f
+      command: [bash, -c]
+      args:
+        - |
+          nvidia-smi --query-gpu=name,uuid,driver_version,memory.total,compute_cap --format=csv
+          ls -la /usr/local/namd/bin
+          command -v namd3 python3 curl wget tar
+          namd3 +p1 +devices 0 --version || true
+          sleep 14000
+      resources:
+        requests:
+          cpu: "8"
+          memory: 32Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: 32Gi
+          nvidia.com/gpu: "1"
+      volumeMounts:
+        - name: work
+          mountPath: /work
+  volumes:
+    - name: work
+      emptyDir:
+        sizeLimit: 64Gi

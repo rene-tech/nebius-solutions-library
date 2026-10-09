@@ -21,6 +21,7 @@ dependencies = [
   "httpx2==2.12.0",
   "jsonschema==4.26.0",
   "mcp==2.1.1",
+  "nebius==0.6.10",
   "opentelemetry-api==1.37.0",
   "opentelemetry-exporter-otlp-proto-http==1.37.0",
   "opentelemetry-instrumentation-fastapi==0.58b0",
@@ -28,9 +29,11 @@ dependencies = [
   "opentelemetry-sdk==1.37.0",
   "prometheus-client==0.22.1",
   "pydantic-settings==2.10.1",
+  "python-multipart==0.0.32",
   "pyyaml==6.0.2",
   "starlette==1.6.0",
   "uvicorn==0.35.0",
+  "websockets==15.0.1",
   "zstandard==0.24.0",
 ]
 
@@ -58,6 +61,11 @@ packages = ["src/fs2_serve"]
 [tool.hatch.build.targets.wheel.force-include]
 "../../catalog/runtime/fs2_serve_catalog" = "fs2_serve_catalog"
 "migrations" = "fs2_serve/migrations"
+"../../models/molecular-dynamics/gromacs/runtime/fs2_gromacs" = "fs2_gromacs"
+"../../models/molecular-dynamics/lammps/runtime/fs2_lammps" = "fs2_lammps"
+"../../models/molecular-dynamics/namd/runtime/fs2_namd" = "fs2_namd"
+"../../models/molecular-dynamics/amber/runtime/fs2_amber" = "fs2_amber"
+"../../models/visual-science/scvi-scanvi/runtime/fs2_scvi" = "fs2_scvi"
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"

@@ -2,7 +2,23 @@
 
 This task-owned directory contains the retained runtime adapters and Kubernetes
 manifests for `cosmos3-nano`, `evo2-40b`, `glm-5-2-fp8`,
-`nv-reason-cxr-3b`, `nv-segment-ct`, and `sdxl`.
+`nv-reason-cxr-3b`, `nv-segment-ct`, `sdxl`, and the two Wan2.2 NIM
+variants.
+
+Wan2.2 is split into `wan2-2-t2v-nim` and `wan2-2-i2v-nim` because the NVIDIA
+NIM loads one model variant at startup. Both use BF16 on one H200 141 GB as the
+qualified single-GPU lane, keep NVIDIA's safety checker enabled, serialize
+generation per replica, and accept only 832x480 or 480x832 output bounded to 12
+seconds. The image-to-video variant accepts one PNG/JPEG data URL. A small
+nonroot adapter forwards the exact NIM OpenAI video request, decodes its base64
+envelope, validates the returned MP4 structure, dimensions, and duration, then
+returns raw `video/mp4` for the platform artifact publisher. The exact NIM
+image is `nvcr.io/nim/wan-ai/wan2.2:1.0.0` at index digest
+`sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b`.
+Deployment requires an NGC entitlement secret and a separate persistent NIM
+cache for each variant. The pinned NIM reports a 121 GB per-GPU minimum for its
+one-GPU BF16 layout: an H100 80 GB cannot run that profile, while an H200 141 GB
+can. Wan output is marketing B-roll and is not scientific evidence.
 
 The common media image is based on the exact CUDA 13 B300-qualified vLLM image
 digest already mirrored by FS2. SDXL loads the public exact Diffusers revision;
@@ -21,12 +37,25 @@ JSON envelope containing the output NIfTI plus non-clinical identity metadata.
 Cosmos3-Nano runs the exact vLLM-Omni image and Hugging Face revision recorded
 in the runtime catalog. The upstream server remains available cluster-internal
 on port 8000. A companion adapter on port 8080 exposes `POST /generate`, health,
-readiness, and metrics. Initial public/MCP acceptance uses one bounded 448x256,
-25-frame text-to-video request and returns a digest-bound base64 MP4 JSON
-envelope below the control-plane response ceiling. This synchronous envelope is
-for small acceptance artifacts; production media delivery should use an
-object-backed asynchronous result instead of carrying large 720p videos through
-MCP. Its exact 68-file artifact and Qwen3-8B's exact 15-file artifact are now
+readiness, and metrics. The adapter has strict mode-specific requests for text
+to image/video, image to video, video to video, and controlled transfer video.
+A reference is either a finalized
+tenant artifact (materialized by the control plane) or an immutable HTTPS URL;
+customer-local paths are never interpreted on the server. The legacy text media
+calls retain their bounded inline base64 response, while all new MP4 workflows
+return raw video to the control plane for asynchronous object-backed artifact
+publication. Transfer controls are limited to the pinned runtime's `edge`,
+`blur`, `depth`, `seg`, and `wsm` inputs. Forward dynamics and inverse dynamics
+remain dormant adapter code and are not in the public schema: on 2026-09-15 the
+exact pinned H100 runtime crashed its diffusion worker with SIGBUS after decode
+(and the CUDA/CRIU-restored forward path returned `cudaErrorNotSupported`).
+Policy/OpenPI and LeRobot dataset-to-dataset conversion are likewise not
+advertised by this App until their own pinned fixtures pass on the deployed GPU
+path.
+The exact 2026-09-15 media and action-mode results are recorded in
+[evidence/cosmos3-nano-media-qualification-20260915.md](evidence/cosmos3-nano-media-qualification-20260915.md).
+
+The exact 68-file Cosmos artifact and Qwen3-8B's exact 15-file artifact are
 localized once into immutable content addresses. Concurrent replicas share an
 atomic receipt and skip both download and full-payload hashing on a warm cache.
 See [SHARED_CACHE_FAST_START.md](SHARED_CACHE_FAST_START.md) for the writer,

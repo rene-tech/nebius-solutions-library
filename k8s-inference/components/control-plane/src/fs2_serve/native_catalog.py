@@ -16,6 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from urllib.parse import urlsplit
 
 from fs2_serve_catalog.artifacts import ArtifactManifest, artifact_manifest_from_value
 from fs2_serve_catalog.loader import (
@@ -40,6 +41,40 @@ from fs2_serve_catalog.loader import (
 from .deployment_runtimes import _record, deployment_runtime_model_schema
 
 NATIVE_SCHEMA = "fs2-serve.nebius.ai/native-catalog-model/v1"
+
+
+def native_model_schema(catalog_dir: Path) -> dict[str, Any]:
+    """Add private, checksum-addressed derivatives without changing the archive."""
+    schema = deployment_runtime_model_schema(catalog_dir)
+    schema["properties"]["model"]["properties"]["source"]["properties"]["kind"]["enum"].append("artifact-store")
+    schema["properties"]["resources"]["properties"]["scaler_owner"] = {
+        "enum": ["nebius-managed-node-group-autoscaler", "nebius-serverless-endpoint"]
+    }
+    return schema
+
+
+def _derivative_source(record: Mapping[str, Any], manifest: ArtifactManifest) -> None:
+    source = record["model"]["source"]
+    if source["kind"] != "artifact-store":
+        return
+    uri = urlsplit(source["repository"] or "")
+    revision = source["revision"]
+    if (
+        uri.scheme != "https" or not uri.hostname or uri.username or uri.password
+        or uri.query or uri.fragment or uri.port not in (None, 443)
+        or not uri.path or any(part in {".", ".."} for part in uri.path.split("/"))
+        or "%" in uri.path or "\\" in uri.path
+        or not isinstance(revision, str) or not revision.startswith("sha256:")
+        or manifest.source_uri != source["repository"]
+        or len(manifest.files) != 1
+        or record["cache"]["owner"] != "runtime-image"
+        or record["cache"]["artifact"]["kind"] != "weights"
+        or not record["interface"]["policy"]["non_clinical"]
+    ):
+        raise CatalogError("native derivative requires a private-safe exact weight source")
+    expected = strong_sha256(revision.removeprefix("sha256:"), "native derivative checksum")
+    if manifest.files[0].sha256 != expected:
+        raise CatalogError("native derivative source revision differs from its weight bytes")
 
 
 def _digest(value: Any) -> str:
@@ -209,7 +244,7 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
     paths = sorted((catalog_dir / "native").glob("*.json"))
     if not paths:
         return catalog
-    schema = deployment_runtime_model_schema(catalog_dir)
+    schema = native_model_schema(catalog_dir)
     records, variants, fallbacks = (
         dict(catalog.records),
         dict(catalog.model_variants),
@@ -245,22 +280,29 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
         candidate_id = f"native-{variant_id}"
         if path.stem != model_id or model_id in records or variant_id in variants or candidate_id in fallbacks:
             raise CatalogError("native declaration cannot alias or replace an existing model/variant")
-        if architecture not in {"cpu", "cuda"}:
-            raise CatalogError("native runtime architecture must be cpu or cuda")
+        if architecture not in {"cpu", "cuda", "vendor-nim"}:
+            raise CatalogError("native runtime architecture must be cpu, cuda or vendor-nim")
+        source = raw["model"].get("source")
+        runtime = raw.get("runtime")
+        is_nim = architecture == "vendor-nim"
+        if not isinstance(source, dict) or not isinstance(runtime, dict):
+            raise CatalogError("native declaration lacks source/runtime identity")
+        if is_nim != (source.get("kind") == "ngc-nim" and runtime.get("kind") == "nim"):
+            raise CatalogError("native vendor-nim architecture must bind an exact NGC NIM runtime")
         # The exact-source variant exists only for graph validation here; the
         # shared selected-runtime validator checks the entire record next.
         variant_value = {
             "variant_id": variant_id,
             "base_model_id": model_id,
             "exposed_model_id": model_id,
-            "variant_kind": "independent-runtime",
+            "variant_kind": "nim" if is_nim else "independent-runtime",
             "runtime_architecture": architecture,
             "source": copy.deepcopy(raw["model"].get("source")),
             "relationship": {
                 "kind": "exact-model",
                 "reference_model_id": model_id,
                 "subject_model_id": model_id,
-                "nim_artifact_parity": "not-applicable",
+                "nim_artifact_parity": "verified" if is_nim else "not-applicable",
                 "distinct_base_record_required": False,
             },
             "promotion": {"state": "candidate-unqualified", "route_exposed": False},
@@ -283,6 +325,7 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
             raise CatalogError("native architecture differs from its declared compute resources")
         _validate_semantic(value["semantic_validator"], repository, catalog_dir)
         artifact = _artifact(path, catalog_dir, declaration["artifact_manifest"], value)
+        _derivative_source(value, artifact)
         record = ModelRecord(model_id, path, _digest(value), value)
         fallback_value = {
             "candidate_id": candidate_id,
@@ -292,10 +335,17 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
             "profile_variants": {architecture: variant_id},
             "secondary_non_alias_alternative": None,
         }
+        acquisition_method = (
+            "provider-block-pvc"
+            if value["cache"]["owner"] in {"platform-pvc", "fs2-serve-localizer"}
+            else "nim-cache"
+            if is_nim
+            else "runtime-image"
+        )
         acquisition = {
             "schema": "fs2-serve.nebius.ai/native-runtime-acquisition/v1",
             "model_id": model_id,
-            "method": "runtime-image",
+            "method": acquisition_method,
             "source": copy.deepcopy(value["model"]["source"]),
             "runtime_image": copy.deepcopy(value["runtime"]["image"]),
             "artifact_manifest_sha256": artifact.digest,
@@ -313,7 +363,9 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
             _digest(fallback_value),
             MappingProxyType(fallback_value),
         )
-        plans[model_id] = AcquisitionPlan(model_id, "runtime-image", (), MappingProxyType(acquisition))
+        plans[model_id] = AcquisitionPlan(
+            model_id, acquisition_method, (), MappingProxyType(acquisition)
+        )
         semantics[model_id] = _semantic(record, declaration["semantic_requests"])
         scales[model_id] = _scale(catalog, record)
     return replace(

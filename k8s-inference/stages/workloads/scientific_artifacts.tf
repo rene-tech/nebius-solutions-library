@@ -234,6 +234,7 @@ locals {
       enabled                         = var.scientific_batch.enabled
       writesEnabled                   = var.scientific_batch.writes_enabled
       namespace                       = var.scientific_batch.namespace
+      toolsImage                      = var.scientific_batch.tools_image
       kubernetesApiUrl                = "https://kubernetes.default.svc"
       schedulingContractConfigMapName = local.scheduling_contract_ref.config_map_name
       schedulingContractNamespace     = local.scheduling_contract_ref.namespace

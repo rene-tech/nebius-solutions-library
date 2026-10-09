@@ -246,7 +246,7 @@ async def test_exact_h100_runtime_receipt_removes_false_placement_warning() -> N
         model_id
         for model_id, contract in adapter.contracts.items()
         if "nvidia-h100-sxm5-80gb" in contract.supported_accelerator_classes
-    } == {"qwen3-8b", "cosmos3-nano"}
+    } == {"qwen3-8b", "cosmos3-nano", "nv-reason-cxr-3b", "sdxl"}
 
 
 def test_changed_packaged_runtime_receipt_does_not_add_qualification(monkeypatch: pytest.MonkeyPatch) -> None:

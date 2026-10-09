@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctoxpred2
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: ctoxpred2
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: ctoxpred2
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ctoxpred2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ctoxpred2
+        fs2-serve.nebius.ai/model-id: ctoxpred2
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        capacity.fs2.nebius/pool-id: batch-cpu
+        workload.fs2.nebius/general-cpu: 'true'
+        kubernetes.io/arch: amd64
+      tolerations:
+      - key: workload.fs2.nebius/general-cpu
+        operator: Equal
+        value: 'true'
+        effect: NoSchedule
+      terminationGracePeriodSeconds: 120
+      containers:
+      - name: runtime
+        image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/toxicology/ctoxpred2@sha256:d7579452d45024fa159a8e25929f112fe4cf5569d6bcd17dec956655cba8aa2c
+        imagePullPolicy: IfNotPresent
+        workingDir: /opt/fs2
+        command:
+        - python
+        - -m
+        - uvicorn
+        - toxicology.server:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8000'
+        env:
+        - name: TOX_MODEL
+          value: ctoxpred2
+        - name: TOX_CPU_THREADS
+          value: '2'
+        - name: TOX_MAX_INFLIGHT
+          value: '8'
+        - name: TOX_CHUNK_SIZE
+          value: '32'
+        ports:
+        - name: http
+          containerPort: 8000
+        resources:
+          requests:
+            cpu: '2'
+            memory: 2Gi
+            ephemeral-storage: 128Mi
+          limits:
+            cpu: '2'
+            memory: 2Gi
+            ephemeral-storage: 1Gi
+        startupProbe:
+          httpGet:
+            path: /v1/health/ready
+            port: http
+          periodSeconds: 2
+          timeoutSeconds: 2
+          failureThreshold: 90
+        readinessProbe:
+          httpGet:
+            path: /v1/health/ready
+            port: http
+          periodSeconds: 5
+          timeoutSeconds: 2
+        livenessProbe:
+          httpGet:
+            path: /v1/health/live
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 2
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ctoxpred2
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: ctoxpred2
+    fs2-serve.nebius.ai/model-id: ctoxpred2
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ctoxpred2
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http

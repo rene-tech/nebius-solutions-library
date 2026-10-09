@@ -1,0 +1,1535 @@
+{
+  "catalog": {
+    "base_url": "https://api.tokenfactory.nebius.com/v1",
+    "discovered_at": "2026-09-16T17:34:14.016061+00:00",
+    "data": [
+      {
+        "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "name": "Qwen3-235B-A22B-Instruct-2507",
+        "created": 1789580045,
+        "description": "Balanced Qwen3 flagship tuned for strong general reasoning, chat quality, and tool use.",
+        "context_length": 262144,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.0000002",
+          "completion": "0.0000006",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 400000.0,
+          "requests_per_minute": 600.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "json_mode",
+          "structured_outputs"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "qwen",
+        "patient_eligible": false,
+        "clinician_eligible": true
+      },
+      {
+        "id": "google/gemma-3-27b-it",
+        "name": "Gemma-3-27b-it",
+        "created": 1789580045,
+        "description": "Google’s mid-size model optimized for high-quality instruction following, coding, and multilingual performance.",
+        "context_length": 110000,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.0000001",
+          "completion": "0.0000003",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 400000.0,
+          "requests_per_minute": 600.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "tools"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "gemma",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "openai/gpt-oss-120b",
+        "name": "gpt-oss-120b",
+        "created": 1789580045,
+        "description": "Open-weight agentic model with configurable reasoning, full CoT visibility, strong tool use, and fine-tuning support.",
+        "context_length": 131072,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.00000015",
+          "completion": "0.0000006",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 500000.0,
+          "requests_per_minute": 600.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "json_mode",
+          "structured_outputs",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "openai",
+        "patient_eligible": false,
+        "clinician_eligible": true
+      },
+      {
+        "id": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "name": "Qwen3-30B-A3B-Instruct-2507",
+        "created": 1789580045,
+        "description": "Versatile 30B instruct model optimized for high-quality chat, reasoning, and coding.",
+        "context_length": 262144,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.0000001",
+          "completion": "0.0000003",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 400000.0,
+          "requests_per_minute": 600.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "json_mode",
+          "structured_outputs"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "qwen",
+        "patient_eligible": true,
+        "clinician_eligible": true
+      },
+      {
+        "id": "NousResearch/Hermes-4-405B",
+        "name": "Hermes-4-405B",
+        "created": 1789580045,
+        "description": "Hybrid-reasoning model trained on verified CoT traces for strong math, coding, and step-by-step reliability.",
+        "context_length": 131072,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.000001",
+          "completion": "0.000003",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 200000.0,
+          "requests_per_minute": 120.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "json_mode",
+          "structured_outputs",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "llama",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "name": "Nemotron-3-Nano-30B-A3B",
+        "created": 1789580045,
+        "description": "Compact MoE model optimized for efficient reasoning, chat, and coding with strong multilingual support and long-context RAG/agent workflows.",
+        "context_length": 262144,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.00000006",
+          "completion": "0.00000024",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 800000.0,
+          "requests_per_minute": 100.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "nvidia",
+        "patient_eligible": false,
+        "clinician_eligible": true
+      },
+      {
+        "id": "zai-org/GLM-5.1",
+        "name": "GLM-5.1",
+        "created": 1789580045,
+        "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+        "context_length": 202752,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.0000014",
+          "completion": "0.0000044",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 500000.0,
+          "requests_per_minute": 1000.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "json_mode",
+          "structured_outputs",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "zai-org",
+        "patient_eligible": false,
+        "clinician_eligible": true
+      },
+      {
+        "id": "nvidia/Nemotron-3_5-Lightning",
+        "name": "Nemotron-3.5-Lightning",
+        "created": 1787845486,
+        "description": "NVIDIA's 30B-parameter hybrid MoE model with 3B active parameters per token, designed for efficient agentic reasoning, tool use, coding, and long-context workflows.",
+        "context_length": 1048576,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "bf16",
+        "pricing": {
+          "prompt": "0.00000006",
+          "completion": "0.00000024",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 400000.0,
+          "requests_per_minute": 600.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "nvidia",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "openbmb/MiniCPM-V-4_5",
+        "name": "openbmb/MiniCPM-V-4_5",
+        "created": 1780272000,
+        "description": "MiniCPM-V-4.5 – Compact multimodal model for image, multi-image, high-FPS/long-video, OCR/PDF understanding, with switchable fast/deep thinking.",
+        "context_length": 32000,
+        "architecture": {
+          "modality": "text+image->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp16",
+        "pricing": {
+          "prompt": "0.000000658",
+          "completion": "0.00000111",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 200000.0,
+          "requests_per_minute": 300.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FI",
+            "name": "eu-north1"
+          }
+        ],
+        "supported_features": [
+          "json_mode",
+          "structured_outputs"
+        ],
+        "supported_sampling_parameters": [],
+        "family": "openbmb",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+        "name": "DeepSeek-V4-Flash-0731",
+        "created": 1786581299,
+        "description": "DeepSeek V4 Flash 0731 is a 1M-context reasoning model designed for coding and agentic workloads.",
+        "context_length": 1024000,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.00000014",
+          "completion": "0.00000028",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 1000000.0,
+          "requests_per_minute": 3000.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-central1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "json_mode",
+          "structured_outputs",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "deepseek-ai",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "MiniMaxAI/MiniMax-M3",
+        "name": "MiniMax-M3",
+        "created": 1785493267,
+        "description": "MiniMax-M3 is a 428B MoE reasoning model with 1M context, served on B200 via vLLM with EAGLE3 speculative decoding.",
+        "context_length": 1048576,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.0000003",
+          "completion": "0.0000012",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 400000.0,
+          "requests_per_minute": 600.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-central1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "minimaxai",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "moonshotai/Kimi-K2.7-Code",
+        "name": "Kimi-K2.7-Code",
+        "created": 1781740800,
+        "description": "Open-source code-focused reasoning model built for long-context software engineering, tool use, and agentic coding workflows.",
+        "context_length": 262144,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.00000095",
+          "completion": "0.000004",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 300000.0,
+          "requests_per_minute": 200.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-central1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "moonshotai",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "nvidia/Nemotron-3-Ultra-550b-a55b",
+        "name": "Nemotron-3-Ultra-550b-a55b",
+        "created": 1780531200,
+        "description": "Nemotron 3 Ultra is a 550B hybrid MoE model from NVIDIA, optimized for the most demanding multi-agent AI and complex reasoning tasks.",
+        "context_length": 1048576,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.000001",
+          "completion": "0.000003",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 200000.0,
+          "requests_per_minute": 300.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-central1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "nvidia",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "moonshotai/Kimi-K2.6",
+        "name": "Kimi-K2.6",
+        "created": 1778544000,
+        "description": "Kimi K2.6 is an open-source, native multimodal agentic model built through continual pretraining on approximately 15 trillion mixed visual and text tokens atop Kimi-K2-Base",
+        "context_length": 262144,
+        "architecture": {
+          "modality": "text+image->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "int4",
+        "pricing": {
+          "prompt": "0.00000095",
+          "completion": "0.000004",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 300000.0,
+          "requests_per_minute": 200.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-central1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [],
+        "family": "moonshotai",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "nvidia/nemotron-3-super-120b-a12b",
+        "name": "Nemotron-3-Super-120b-a12b",
+        "created": 1773187200,
+        "description": "Nemotron 3 Super is a 120B hybrid MoE model optimized for efficient multi-agent AI and complex reasoning tasks.",
+        "context_length": 262144,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.0000003",
+          "completion": "0.0000009",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 200000.0,
+          "requests_per_minute": 300.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-central1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "nvidia",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "Qwen/Qwen3.5-397B-A17B",
+        "name": "Qwen3.5-397B-A17B",
+        "created": 1771286400,
+        "description": "Multimodal model featuring a Hybrid Mixture-of-Experts architecture, designed for state-of-the-art performance across chat, retrieval-augmented generation, vision-language understanding, video understanding, and agentic workflows",
+        "context_length": 262144,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.0000006",
+          "completion": "0.0000036",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 400000.0,
+          "requests_per_minute": 600.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-central1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "qwen",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "deepseek-ai/DeepSeek-V4-Pro",
+        "name": "DeepSeek-V4-Pro",
+        "created": 1789580038,
+        "description": "DeepSeek-V4 is designed for advanced reasoning, coding, and long-horizon agent workflows, with strong performance across knowledge, math, and software engineering benchmarks.",
+        "context_length": 1048576,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.00000175",
+          "completion": "0.0000035",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 1000000.0,
+          "requests_per_minute": 3000.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "UK",
+            "name": "uk-south1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "json_mode",
+          "structured_outputs",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "deepseek-ai",
+        "patient_eligible": false,
+        "clinician_eligible": true
+      },
+      {
+        "id": "zai-org/GLM-5.2",
+        "name": "GLM-5.2",
+        "created": 1781481600,
+        "description": "Zhipu AI's latest flagship multimodal model with strong bilingual (Chinese-English) reasoning, long-context understanding, advanced tool use, and agent-oriented capabilities.",
+        "context_length": 1048576,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.0000014",
+          "completion": "0.0000044",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 2000000.0,
+          "requests_per_minute": 1000.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "UK",
+            "name": "uk-south1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "zai-org",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "moonshotai/Kimi-K3",
+        "name": "Kimi-K3",
+        "created": 1785110400,
+        "description": "Moonshot AI's Kimi K3 frontier open-weights MoE model (NVFP4, 1M context) with DSpark speculative decoding, strong agentic tool use, reasoning, and coding.",
+        "context_length": 1024000,
+        "architecture": {
+          "modality": "text+image->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.000003",
+          "completion": "0.000015",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 2000000.0,
+          "requests_per_minute": 1000.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "FR",
+            "name": "eu-west2"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [],
+        "family": "moonshotai",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "zai-org/GLM-5.3-Flash",
+        "name": "GLM-5.3-Flash",
+        "created": 1789524983,
+        "description": "Z.ai's 320B-parameter, 18B-active mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks.",
+        "context_length": 1024000,
+        "architecture": {
+          "modality": "text+image->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.00000015",
+          "completion": "0.0000005",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 400000.0,
+          "requests_per_minute": 600.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [],
+        "family": "zai-org",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "zai-org/GLM-5.3",
+        "name": "GLM-5.3",
+        "created": 1789085803,
+        "description": "Z.ai's GLM-5.3 in NVFP4 with DFlash2 speculative decoding: a 750B-parameter mixture-of-experts model for coding, agentic workflows, reasoning, tool use, and long-context tasks over a 1M-token window.",
+        "context_length": 1024000,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp4",
+        "pricing": {
+          "prompt": "0.0000014",
+          "completion": "0.0000044",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 2000000.0,
+          "requests_per_minute": 1000.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "zai-org",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      },
+      {
+        "id": "deepseek-ai/DeepSeek-V4-Pro-0813",
+        "name": "DeepSeek-V4-Pro-0813",
+        "created": 1789013558,
+        "description": "DeepSeek V4 Pro 0813 is DeepSeek's official V4 Pro release for advanced reasoning, coding, tool use, and long-horizon agentic workflows.",
+        "context_length": 979000,
+        "architecture": {
+          "modality": "text->text",
+          "tokenizer": "Other"
+        },
+        "quantization": "fp8",
+        "pricing": {
+          "prompt": "0.00000132",
+          "completion": "0.00000396",
+          "image": "0",
+          "price_per_video_second": "0",
+          "request": "0",
+          "price_per_minute": "0"
+        },
+        "per_request_limits": {
+          "tokens_per_minute": 1000000.0,
+          "requests_per_minute": 1000.0,
+          "burst_ratio": 1.0
+        },
+        "object": "model",
+        "owned_by": "system",
+        "regions": [
+          {
+            "country_code": "US",
+            "name": "us-north1"
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "top_k",
+          "repetition_penalty",
+          "frequency_penalty",
+          "presence_penalty"
+        ],
+        "family": "deepseek-ai",
+        "patient_eligible": false,
+        "clinician_eligible": false
+      }
+    ],
+    "sha256": "28cad64712b27a95b3c6258d2275f54470ac6403f9a2a559952e828eb7d2d002",
+    "source_sha256": "c265d0be6d4fe88ff41f75bd1c7b83f22b6e65d424d8eb807e394be397bcda1d",
+    "judge_model": "google/gemma-3-27b-it",
+    "judge_family": "gemma",
+    "judge_calibration": {
+      "status": "pilot_calibrated",
+      "selected_model": "google/gemma-3-27b-it",
+      "selected_family": "gemma",
+      "selection_rule": "minimum selection-set MAE with 100% valid judgments",
+      "selection": {
+        "n": 24,
+        "valid": 24,
+        "mae": 0.4392361111111111,
+        "bias": 0.134375,
+        "rmse": 0.5466252736700113,
+        "by_axis": {
+          "Clinical Accuracy & Competence": {
+            "mae": 0.328125,
+            "bias": 0.09895833333333333
+          },
+          "Ethical & Professional Conduct": {
+            "mae": 0.37499999999999994,
+            "bias": 0.04513888888888895
+          },
+          "Assessment & Response": {
+            "mae": 0.3802083333333333,
+            "bias": 0.328125
+          },
+          "Therapeutic Relationship & Alliance": {
+            "mae": 0.5086805555555555,
+            "bias": -0.23784722222222224
+          },
+          "AI-Specific Communication Quality": {
+            "mae": 0.6041666666666666,
+            "bias": 0.4375
+          }
+        },
+        "within_profile_pairwise_accuracy": 1,
+        "pairs": 1
+      },
+      "validation": {
+        "n": 24,
+        "valid": 24,
+        "mae": 0.45694444444444443,
+        "bias": 0.1125,
+        "rmse": 0.5792515924944941,
+        "by_axis": {
+          "Clinical Accuracy & Competence": {
+            "mae": 0.4791666666666667,
+            "bias": 0.07291666666666667
+          },
+          "Ethical & Professional Conduct": {
+            "mae": 0.3993055555555556,
+            "bias": 0.059027777777777735
+          },
+          "Assessment & Response": {
+            "mae": 0.421875,
+            "bias": 0.359375
+          },
+          "Therapeutic Relationship & Alliance": {
+            "mae": 0.47395833333333326,
+            "bias": -0.3142361111111111
+          },
+          "AI-Specific Communication Quality": {
+            "mae": 0.5104166666666666,
+            "bias": 0.3854166666666667
+          }
+        },
+        "within_profile_pairwise_accuracy": null,
+        "pairs": 0
+      },
+      "excluded_clinician_families": [
+        "gemma"
+      ],
+      "calibration_date": "2026-09-16T16:28:55.414121+00:00",
+      "bias_boundary": "Pilot on published synthetic conversations, not clinical validation. Family exclusion reduces self-preference but does not remove training-data or patient-family bias. No post-hoc score offsets. Human zero ratings excluded as out of scale; undocumented criterion11 excluded. Exact-profile matched comparisons are sparse in the published sample; no model-ranking reliability claim is made.",
+      "upstream_revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+      "methodology": "48 eligible human conversations after excluding 12 records whose patient names appear in judge examples; names grouped into deterministic 24/24 selection/validation split. No score offsets or prompt optimization on validation."
+    },
+    "provenance": {
+      "repository": "https://github.com/SWORDHealth/mind-eval",
+      "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+      "sha256": {
+        "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+        "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+        "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+        "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+      },
+      "template_sha256": {
+        "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+        "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+        "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+      },
+      "paper": "https://arxiv.org/abs/2511.18491",
+      "patient_template_version": "v0_2",
+      "clinician_template_version": "v0_1",
+      "judge_template_version": "v0_1"
+    },
+    "limits": {
+      "max_profiles": 20,
+      "workers_per_team": 5
+    }
+  },
+  "profiles": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1",
+    "upstream_revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "data": [
+      {
+        "id": "profile-000",
+        "name": "Dennis",
+        "age": 47,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-001",
+        "name": "Patricia",
+        "age": 68,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-002",
+        "name": "Jennifer",
+        "age": 52,
+        "depressive_symptoms": "moderate depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-003",
+        "name": "Larry",
+        "age": 59,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-004",
+        "name": "Catherine",
+        "age": 44,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-005",
+        "name": "Angela",
+        "age": 31,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-006",
+        "name": "John",
+        "age": 64,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-007",
+        "name": "Cynthia",
+        "age": 33,
+        "depressive_symptoms": "mild depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-008",
+        "name": "Karen",
+        "age": 55,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-009",
+        "name": "Angela",
+        "age": 65,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-010",
+        "name": "Dorothy",
+        "age": 38,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-011",
+        "name": "William",
+        "age": 45,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-012",
+        "name": "Larry",
+        "age": 44,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-013",
+        "name": "Tyler",
+        "age": 23,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-014",
+        "name": "Ronald",
+        "age": 39,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-015",
+        "name": "Christopher",
+        "age": 53,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-016",
+        "name": "Lisa",
+        "age": 56,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-017",
+        "name": "Elizabeth",
+        "age": 41,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-018",
+        "name": "Ruth",
+        "age": 60,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-019",
+        "name": "Brenda",
+        "age": 23,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-020",
+        "name": "Ashley",
+        "age": 50,
+        "depressive_symptoms": "mild depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-021",
+        "name": "Patrick",
+        "age": 62,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-022",
+        "name": "Kevin",
+        "age": 50,
+        "depressive_symptoms": "moderate depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-023",
+        "name": "Marie",
+        "age": 41,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-024",
+        "name": "Jeffrey",
+        "age": 42,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-025",
+        "name": "Ashley",
+        "age": 49,
+        "depressive_symptoms": "moderate depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-026",
+        "name": "Nicholas",
+        "age": 51,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-027",
+        "name": "Donna",
+        "age": 44,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-028",
+        "name": "Mark",
+        "age": 29,
+        "depressive_symptoms": "mild depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-029",
+        "name": "Joseph",
+        "age": 53,
+        "depressive_symptoms": "mild depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-030",
+        "name": "Laura",
+        "age": 48,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-031",
+        "name": "Jessica",
+        "age": 57,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-032",
+        "name": "Amy",
+        "age": 35,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-033",
+        "name": "Daniel",
+        "age": 42,
+        "depressive_symptoms": "mild depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-034",
+        "name": "Janet",
+        "age": 62,
+        "depressive_symptoms": "mild depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-035",
+        "name": "Ronald",
+        "age": 29,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-036",
+        "name": "Christopher",
+        "age": 33,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-037",
+        "name": "William",
+        "age": 26,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-038",
+        "name": "Angela",
+        "age": 35,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-039",
+        "name": "Ashley",
+        "age": 65,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-040",
+        "name": "Michelle",
+        "age": 56,
+        "depressive_symptoms": "moderate depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-041",
+        "name": "Angela",
+        "age": 56,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "severe anxious symptoms"
+      },
+      {
+        "id": "profile-042",
+        "name": "Barbara",
+        "age": 43,
+        "depressive_symptoms": "mild depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-043",
+        "name": "Carol",
+        "age": 38,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-044",
+        "name": "Cynthia",
+        "age": 23,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-045",
+        "name": "Catherine",
+        "age": 31,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-046",
+        "name": "Ashley",
+        "age": 55,
+        "depressive_symptoms": "moderate depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      },
+      {
+        "id": "profile-047",
+        "name": "Nancy",
+        "age": 52,
+        "depressive_symptoms": "minimal to no depressive symptoms",
+        "anxious_symptoms": "mild anxious symptoms"
+      },
+      {
+        "id": "profile-048",
+        "name": "Jeffrey",
+        "age": 56,
+        "depressive_symptoms": "severe depressive symptoms",
+        "anxious_symptoms": "moderate anxious symptoms"
+      },
+      {
+        "id": "profile-049",
+        "name": "Joseph",
+        "age": 65,
+        "depressive_symptoms": "mild depressive symptoms",
+        "anxious_symptoms": "minimal to no anxious symptoms"
+      }
+    ]
+  },
+  "identity": {
+    "tenant_id": "mindeval-rehearsal",
+    "principal_id": "rehearsal-01",
+    "token_id": "937d5215-ad97-41db-a250-1ca111d61170",
+    "max_concurrency": 5
+  },
+  "limits": {
+    "profiles": 20,
+    "workers_per_team": 5
+  },
+  "modes": [
+    "canonical",
+    "spoken"
+  ]
+}

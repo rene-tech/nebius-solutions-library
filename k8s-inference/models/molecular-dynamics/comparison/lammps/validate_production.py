@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Validate actual native stage lengths, frames, constraints and closed progress."""
+import argparse
+import json
+from pathlib import Path
+import re
+import sys
+
+import numpy as np
+
+from adapter import read_data, sha256
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis"))
+from geometry import ValidationError, minimum_image
+from native import lammps_frames
+from thermo import native_thermo, descriptive
+from shake_boundary import KIND, WORKER_IMAGE, load_policy, verify_projection
+
+
+def validate(workspace, shake_setup_evidence=None, worker_image=None):
+    workspace = Path(workspace)
+    directory = workspace / "data"
+    result = json.loads((workspace / "result.json").read_text())
+    if result.get("status") != "succeeded" or result.get("completed_steps") != ["minimize", "nvt", "npt", "production"]:
+        raise ValidationError("native workflow has not completed every requested stage")
+    proof = json.loads((directory / "adapter-manifest.json").read_text())
+    if sha256(directory / "system-shake.lmp") != proof["adapted_data_sha256"]:
+        raise ValidationError("adapted data identity mismatch")
+    _, data = read_data(directory / "system-shake.lmp")
+    types = set(map(str, proof["shake_bond_types"]))
+    water_hh = {frozenset((h1, h2)) for _, h1, h2 in proof["water_atom_ids_O_H_H"]}
+    selected = [row for row in data["Bonds"] if row[1] in types or frozenset(map(int, row[2:])) in water_hh]
+    indices = np.array([[int(r[2]) - 1, int(r[3]) - 1] for r in selected])
+    coefficients = {r[0]: float(r[3]) for r in data["Bond Coeffs"]}
+    distances = np.array([coefficients[r[1]] for r in selected])
+    masses = {r[0]: float(r[1]) for r in data["Masses"]}
+    total_mass = sum(masses[r[2]] for r in data["Atoms"])
+    boundary_policy = None
+    if shake_setup_evidence:
+        boundary_policy = load_policy({"kind": KIND, "evidence_path": str(shake_setup_evidence), "evidence_sha256": sha256(shake_setup_evidence)}, worker_image, [directory / "production.1.lammpstrj", directory / "production.2.lammpstrj"], directory / "system-shake.lmp")
+    stages = []
+    for stage, origin, final in (("nvt", 0, 50000), ("npt", 50000, 100000), ("production", 100000, 600000)):
+        commands = [command for command in result["commands"] if command["step_id"] == stage]
+        if not commands or commands[-1].get("native_restart_step") != final:
+            raise ValidationError(f"{stage} final native restart step missing")
+        if (directory / f"{stage}-progress.txt").read_text().strip() != str(final):
+            raise ValidationError(f"{stage} closed progress differs")
+        native_steps, frames_seen, boundary_duplicates, previous = [], [], [], None
+        worst_error, native_logs = 0., []
+        for command in commands:
+            if command["exit_code"] != 0:
+                raise ValidationError(f"{stage} contains failed native segment")
+            log = directory / command["log"]
+            native_logs.append(str(log))
+            # command log paths are workspace-data relative; generated scripts
+            # use directory '.', so the contract has no implicit path guessing.
+            loops = re.findall(r"Loop time of \S+ on .*? for (\d+) steps", log.read_text())
+            if len(loops) != 1:
+                raise ValidationError(f"{stage} segment has unexpected native run count")
+            native_steps.append(int(loops[0]))
+            trajectory = directory / f"{stage}.{command['segment']}.lammpstrj"
+            segment_frames = 0
+            for frame in lammps_frames(trajectory, .002):
+                if frame.positions.shape != (6598, 3):
+                    raise ValidationError("native stage atom count differs")
+                # Closed timer segments save a real boundary frame twice. Only
+                # that exact, geometry-verified boundary may be de-duplicated in
+                # the count; originals and duplicate receipt are retained.
+                if previous and frame.step == previous.step and segment_frames == 0:
+                    projection = None
+                    if not np.allclose(frame.cell, previous.cell, atol=1e-7, rtol=0):
+                        raise ValidationError("restart boundary coordinates or cell differ")
+                    if np.abs(minimum_image(frame.positions - previous.positions, frame.cell)).max() > 1e-7:
+                        if boundary_policy is None or stage != "production":
+                            raise ValidationError("restart boundary coordinates or cell differ")
+                        projection = verify_projection(previous, frame, boundary_policy)
+                    boundary = {"step": frame.step, "segment": command["segment"], "maximum_raw_position_difference_A": float(np.abs(frame.positions - previous.positions).max()), "maximum_periodic_position_difference_A": float(np.abs(minimum_image(frame.positions - previous.positions, frame.cell)).max())}
+                    if projection:
+                        boundary["verified_SHAKE_setup_projection"] = projection
+                    boundary_duplicates.append(boundary)
+                else:
+                    frames_seen.append(frame.step)
+                if frame.step > origin:
+                    vector = minimum_image(frame.positions[indices[:, 0]] - frame.positions[indices[:, 1]], frame.cell)
+                    worst_error = max(worst_error, float(np.abs(np.linalg.norm(vector, axis=1) - distances).max()))
+                previous = frame
+                segment_frames += 1
+        if sum(native_steps) != final - origin or frames_seen != list(range(origin, final + 1, 500)):
+            raise ValidationError(f"{stage} native steps/frame schedule incomplete or duplicated")
+        if worst_error > 1e-4:
+            raise ValidationError(f"{stage} constraint error {worst_error} A")
+        # Only a documented initial row at a closed segment boundary may be
+        # omitted; a dictionary must not silently hide arbitrary duplicate rows.
+        thermo_boundaries = []
+        native_rows = native_thermo(native_logs, "lammps_log", .002, total_mass, boundary_receipts=thermo_boundaries)
+        if [int(row["step"]) for row in native_rows] != list(range(origin, final + 1, 500)) or [row["step"] for row in thermo_boundaries] != [row["step"] for row in boundary_duplicates]:
+            raise ValidationError(f"{stage} thermo schedule/boundaries differ from trajectory")
+        thermo_samples = [row for row in native_rows if row["step"] > origin]
+        stages.append({"stage": stage, "origin_step": origin, "final_step": final, "steps": sum(native_steps), "duration_ps": (final - origin) * .002, "unique_native_frames_including_initial": len(frames_seen), "segments": len(commands), "verified_duplicate_segment_boundaries": boundary_duplicates, "native_thermo_boundary_observations": thermo_boundaries, "max_constraint_distance_error_A": worst_error, "temperature_K": descriptive([row["temperature_K"] for row in thermo_samples]), "pressure_bar": descriptive([row["pressure_bar"] for row in thermo_samples]), "density_g_cm3": descriptive([row["density_g_cm3"] for row in thermo_samples])})
+    return {"status": "native-stage-duration-frame-constraint-validation-passed", "scope": "actual complete canonical LAMMPS output semantics; cross-engine equivalence, convergence and combined customer acceptance remain separate gates", "operation_id": result["operation_id"], "job_id": result["job_id"], "native_build": result["native_build"], "native_engine_id": result["engine_id"], "worker_image": worker_image, "explicit_SHAKE_setup_evidence_sha256": sha256(shake_setup_evidence) if shake_setup_evidence else None, "stages": stages, "files": {str(path.relative_to(workspace)): sha256(path) for path in workspace.rglob("*") if path.is_file()}, "scientific_convergence_claimed": False}
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("workspace", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--shake-setup-evidence", type=Path)
+    parser.add_argument("--worker-image", choices=[WORKER_IMAGE])
+    args = parser.parse_args()
+    if args.output.exists():
+        parser.error("output must be new")
+    try:
+        report = validate(args.workspace, args.shake_setup_evidence, args.worker_image)
+    except Exception as exc:
+        report = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+        args.output.write_text(json.dumps(report, indent=2) + "\n")
+        raise
+    args.output.write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report, indent=2))

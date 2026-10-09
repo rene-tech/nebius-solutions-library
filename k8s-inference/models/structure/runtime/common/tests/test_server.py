@@ -3,13 +3,15 @@ from __future__ import annotations
 import http.client
 import importlib.util
 import json
+import os
 import queue
 import threading
 import time
 import unittest
+from email.message import Message
 from pathlib import Path
 from typing import Any
-
+from unittest.mock import patch
 
 SERVER_PATH = Path(__file__).resolve().parents[1] / "server.py"
 SPEC = importlib.util.spec_from_file_location(
@@ -137,6 +139,74 @@ class LiveServer:
             return response.status, response_request_id, json.loads(response.read())
         finally:
             connection.close()
+
+
+class ResponseIdentityTests(unittest.TestCase):
+    pod = "00000000-0000-0000-0000-000000000001"
+    operation = "00000000-0000-0000-0000-000000000002"
+
+    def headers(self) -> Message:
+        headers = Message()
+        headers["X-FS2-Operation-Id"] = self.operation
+        headers["X-Request-Id"] = self.operation + ":2"
+        return headers
+
+    def test_only_downward_uid_and_exact_unique_gateway_attempt_are_used(self):
+        with patch.dict(os.environ, {"FS2_RUNTIME_POD_UID": self.pod}):
+            headers = self.headers()
+            headers["X-FS2-Runtime-Pod-Uid"] = "caller-supplied"
+            self.assertEqual(dict(server.response_identity(headers)), {
+                "X-FS2-Runtime-Pod-Uid": self.pod,
+                "X-FS2-Runtime-Operation-Id": self.operation,
+                "X-FS2-Runtime-Attempt": "2",
+            })
+            for bad in ["0", "1000000000", "-1", "2\n", "two", "٢"]:
+                invalid = self.headers()
+                invalid.replace_header("X-Request-Id", self.operation + ":" + bad)
+                self.assertEqual(server.response_identity(invalid), [])
+            for name in ["X-FS2-Operation-Id", "X-Request-Id"]:
+                duplicate = self.headers()
+                duplicate[name] = duplicate[name]
+                self.assertEqual(server.response_identity(duplicate), [])
+                absent = self.headers()
+                del absent[name]
+                self.assertEqual(server.response_identity(absent), [])
+            mismatch = self.headers()
+            mismatch.replace_header("X-Request-Id", self.pod + ":2")
+            self.assertEqual(server.response_identity(mismatch), [])
+        for invalid_uid in ["", "not-a-pod-uuid"]:
+            with patch.dict(os.environ, {"FS2_RUNTIME_POD_UID": invalid_uid}):
+                self.assertEqual(server.response_identity(self.headers()), [])
+
+    def test_real_http_success_validation_and_loading_responses_keep_identity(self):
+        live = LiveServer()
+        live.adapter.release.set()
+        try:
+            with patch.dict(os.environ, {"FS2_RUNTIME_POD_UID": self.pod}):
+                for state, body, expected in [
+                    ("ready", b'{"value":"unchanged"}', 200),
+                    ("ready", b'[]', 400),
+                    ("loading", b'{"value":"unchanged"}', 503),
+                ]:
+                    server.STATE.load_state = state
+                    connection = http.client.HTTPConnection(*live.address, timeout=2)
+                    try:
+                        connection.request("POST", "/infer", body=body,
+                            headers={**dict(self.headers()), "Content-Type": "application/json",
+                                     "X-FS2-Runtime-Pod-Uid": "forged"})
+                        response = connection.getresponse()
+                        decoded = json.loads(response.read())
+                        self.assertEqual(response.status, expected)
+                        self.assertEqual(response.getheader("X-FS2-Runtime-Pod-Uid"), self.pod)
+                        self.assertEqual(response.getheader("X-FS2-Runtime-Operation-Id"), self.operation)
+                        self.assertEqual(response.getheader("X-FS2-Runtime-Attempt"), "2")
+                        self.assertEqual(decoded["request_id"], self.operation + ":2")
+                        if expected == 200:
+                            self.assertEqual(decoded["output"]["value"], "unchanged")
+                    finally:
+                        connection.close()
+        finally:
+            live.close()
 
 
 class ThreadedRuntimeTests(unittest.TestCase):

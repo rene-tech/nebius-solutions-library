@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/amber-workflow-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "jobs"
+  ],
+  "description": "Ordered native AMBER workflows in a complete gzip-tar bundle. MDIN, topology, coordinates, restraints, reference files and alchemical context remain explicit. Native PMEMD CUDA SPFP/DPFP and CPU are distinct choices. Completed stages checkpoint the full stopped workspace; an interrupted active stage retries from the preceding committed stage, not an arbitrary partial restart.",
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/amber-workflow-request/v1"
+    },
+    "jobs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "input"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,47}$"
+                },
+                "kind": {
+                  "enum": [
+                    "pmemd",
+                    "tleap",
+                    "cpptraj",
+                    "parmed",
+                    "antechamber",
+                    "parmchk2",
+                    "mmpbsa"
+                  ],
+                  "default": "pmemd"
+                },
+                "input": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Native MDIN or native tool script, relative to the step directory. No shell command or arbitrary executable interface is added."
+                },
+                "directory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "default": "."
+                },
+                "topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "PMEMD topology; optional default topology for cpptraj or ParmEd."
+                },
+                "coordinates": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "PMEMD initial coordinates/restart; optional ParmEd coordinates."
+                },
+                "reference": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "PMEMD restraint reference, passed with -ref. All auxiliary native dependencies must also be bundled."
+                },
+                "backend": {
+                  "enum": [
+                    "cuda-spfp",
+                    "cuda-dpfp",
+                    "cpu"
+                  ],
+                  "description": "PMEMD-only per-stage precision/accelerator override."
+                },
+                "task": {
+                  "enum": [
+                    "dynamics",
+                    "minimization"
+                  ],
+                  "description": "PMEMD completion assertion only; never rewrites imin or the native scientific settings."
+                },
+                "expected_nsteps": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647,
+                  "description": "Required for dynamics: exact requested native nstlim, checked against native input echo and final NSTEP. A timlim early exit is incomplete."
+                },
+                "output_prefix": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Native output stem, defaulting to step ID: PMEMD uses .mdout/.rst7/.nc/.mdvel/.mden/.mdinfo; MMPBSA uses .dat/.csv plus a stage-specific intermediate prefix."
+                },
+                "output": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Antechamber MOL2 or parmchk2 FRCMOD output filename."
+                },
+                "input_format": {
+                  "enum": [
+                    "pdb",
+                    "mol2",
+                    "sdf"
+                  ],
+                  "description": "Explicit molecular input format; parmchk2 currently accepts MOL2 only."
+                },
+                "atom_types": {
+                  "enum": [
+                    "gaff",
+                    "gaff2"
+                  ],
+                  "description": "Explicit native small-molecule parameter set; default GAFF2."
+                },
+                "net_charge": {
+                  "type": "integer",
+                  "minimum": -20,
+                  "maximum": 20,
+                  "description": "Antechamber requested total molecular charge in electron units."
+                },
+                "multiplicity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9
+                },
+                "residue_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9]{0,2}$"
+                },
+                "charge_equivalence": {
+                  "enum": [
+                    0,
+                    1,
+                    2
+                  ],
+                  "description": "Native-eq option:0none,1atomic paths,2paths and stereochemistry. Default1; changing it is a scientific input change."
+                },
+                "charge_tolerance_e": {
+                  "type": "number",
+                  "minimum": 1e-06,
+                  "maximum": 0.05,
+                  "description": "Explicit final MOL2 charge-sum assertion; default0.001e. Residual is always reported, never silently corrected."
+                },
+                "complex_topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "receptor_topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "ligand_topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "solvated_topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "trajectories": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 128,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "uniqueItems": true,
+                  "description": "MMPBSA explicit trajectory filenames in order, not shell globs."
+                },
+                "expected_frames": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000000,
+                  "description": "MMPBSA exact analyzed-frame assertion for every component energy table; never rewrites native frame selection."
+                },
+                "use_mdins": {
+                  "type": "boolean",
+                  "description": "MMPBSA-only native-use-mdins: caller supplies complete prefix.intermediate_gb.mdin/pb.mdin context. No native MDIN is rewritten by the worker."
+                },
+                "expected_outputs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "default": [],
+                  "description": "Additional nonempty native outputs required for completion. Required nonempty for preparation/analysis tools; their scientific interpretation remains workflow-specific."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "backend": {
+      "enum": [
+        "cuda-spfp",
+        "cuda-dpfp",
+        "cpu"
+      ],
+      "default": "cuda-spfp"
+    },
+    "threads": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8,
+      "default": 1,
+      "description": "CPU/tool threading limit; one process and at most one GPU. No multi-GPU/MPI qualification is implied."
+    },
+    "max_wall_seconds": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 259200,
+      "default": 21600
+    },
+    "max_output_bytes": {
+      "type": "integer",
+      "minimum": 1048576,
+      "maximum": 51539607552,
+      "default": 4294967296,
+      "description": "Full workspace budget; individual files above 5 GiB are not qualified."
+    },
+    "output_destination": {
+      "enum": [
+        "customer-bucket",
+        "platform-artifacts"
+      ],
+      "default": "customer-bucket"
+    },
+    "output_prefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "default": "runs/amber"
+    }
+  }
+}

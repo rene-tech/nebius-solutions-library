@@ -1,0 +1,93 @@
+{
+  "action": "capture",
+  "records": [
+    {
+      "command": [
+        "/tools/cuda-checkpoint",
+        "--action",
+        "lock",
+        "--pid",
+        "174"
+      ],
+      "seconds": 0.013859277998562902,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/tools/cuda-checkpoint",
+        "--action",
+        "checkpoint",
+        "--pid",
+        "174"
+      ],
+      "seconds": 2.546286811000755,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/tools/lib/ld-linux-x86-64.so.2",
+        "--library-path",
+        "/tools/lib",
+        "/tools/criu",
+        "dump",
+        "--tree",
+        "174",
+        "--images-dir",
+        "/checkpoints/speech-en-0916-r2/images",
+        "--shell-job",
+        "--log-file",
+        "dump.log",
+        "-v4",
+        "--file-locks",
+        "--tcp-established",
+        "--link-remap",
+        "--manage-cgroups=ignore",
+        "--libdir",
+        "/tmp/empty-criu-plugins"
+      ],
+      "seconds": 62.74293060599666,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "status": "passed",
+  "runtime_identity": {
+    "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+    "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+    "kernel_release": "6.11.0-1016-nvidia",
+    "runtime_id": "nemotron-speech-en-0.6b",
+    "model_revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+    "gpu_uuid": "GPU-0c404bb3-6e89-6295-448e-f97df95344a4",
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "driver_version": "580.159.04",
+    "compute_capability": "9.0",
+    "snapshot_source_sha256": {
+      "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+      "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+      "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+      "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+      "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+      "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+      "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+      "working_directory_launcher.py": "3bd73d58a3278a732170c6501cbc9f2bc7f731966abb7ceae987450d73fe5c1b"
+    }
+  },
+  "cuda_process_probes": [
+    {
+      "pid": 174,
+      "returncode": 0,
+      "state": "running",
+      "stderr": ""
+    }
+  ],
+  "cuda_pids": [
+    174
+  ],
+  "checkpoint_flush_seconds": 0.750083380000433
+}
+{"event": "serving_filesystem_captured", "files": []}

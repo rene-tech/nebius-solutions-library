@@ -1,0 +1,852 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "cosmos-transfer2.5",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/health/live": {
+      "get": {
+        "summary": "Health Live",
+        "operationId": "health_live_v1_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Service is live",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NIMHealthSuccessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is not live",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NIMErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/health/ready": {
+      "get": {
+        "summary": "Health Ready",
+        "operationId": "health_ready_v1_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Service is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NIMHealthSuccessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NIMErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/metrics": {
+      "get": {
+        "summary": "Metrics",
+        "description": "Handler for metrics endpoint.",
+        "operationId": "metrics_v1_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "title": "Response Metrics V1 Metrics Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/license": {
+      "get": {
+        "summary": "License",
+        "description": "Handler for license endpoint.",
+        "operationId": "license_v1_license_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseEndpointModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/version": {
+      "get": {
+        "summary": "Version",
+        "description": "Handler for version endpoint.",
+        "operationId": "version_v1_version_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NIMVersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/manifest": {
+      "get": {
+        "summary": "Manifest",
+        "description": "Handler for the manifest endpoint.",
+        "operationId": "manifest_v1_manifest_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestEndpointModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/infer": {
+      "post": {
+        "summary": " Infer",
+        "operationId": "_infer_v1_infer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Transfer2Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transfer2Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/metadata": {
+      "get": {
+        "summary": "Cosmos Metadata",
+        "description": "Override NIMApiInterface handler for metadata endpoint.",
+        "operationId": "cosmos_metadata_v1_metadata_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CosmosMetadataEndpointModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CosmosMetadataEndpointModel": {
+        "properties": {
+          "assetInfo": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Assetinfo",
+            "description": "A list of required container assets excluding model artifacts"
+          },
+          "licenseInfo": {
+            "$ref": "#/components/schemas/LicenseEndpointModel",
+            "description": "The license info."
+          },
+          "modelInfo": {
+            "items": {
+              "$ref": "#/components/schemas/ModelInfo"
+            },
+            "type": "array",
+            "title": "Modelinfo",
+            "description": "A list of models being served by the NIM."
+          },
+          "repository_override": {
+            "type": "string",
+            "title": "Repository Override",
+            "description": "Alternate location used to retrieve artifacts from manifest file."
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "The version of the NIM service."
+          },
+          "selectedModelProfileId": {
+            "type": "string",
+            "title": "Selectedmodelprofileid",
+            "description": "The ID of the currently selected model profile."
+          },
+          "edgeCheckpoint": {
+            "type": "string",
+            "title": "Edgecheckpoint",
+            "description": "The edge checkpoint used for the generation. If not used, the value is 'default'."
+          },
+          "visCheckpoint": {
+            "type": "string",
+            "title": "Vischeckpoint",
+            "description": "The vis checkpoint used for the generation. If not used, the value is 'default'."
+          },
+          "depthCheckpoint": {
+            "type": "string",
+            "title": "Depthcheckpoint",
+            "description": "The depth checkpoint used for the generation. If not used, the value is 'default'."
+          },
+          "segCheckpoint": {
+            "type": "string",
+            "title": "Segcheckpoint",
+            "description": "The seg checkpoint used for the generation. If not used, the value is 'default'."
+          }
+        },
+        "type": "object",
+        "required": [
+          "assetInfo",
+          "licenseInfo",
+          "modelInfo",
+          "repository_override",
+          "version",
+          "selectedModelProfileId",
+          "edgeCheckpoint",
+          "visCheckpoint",
+          "depthCheckpoint",
+          "segCheckpoint"
+        ],
+        "title": "CosmosMetadataEndpointModel",
+        "description": "A model representing the metadata response for the transfer2 NIM."
+      },
+      "DepthControlInput": {
+        "properties": {
+          "control": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control",
+            "description": "b64 encoded or URL to the depth control input video/image"
+          },
+          "mask": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask",
+            "description": "b64 encoded or URL to the mask for depth control"
+          },
+          "control_weight": {
+            "type": "number",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Control Weight",
+            "description": "Weight for the depth control input (0.0-1.0)",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DepthControlInput",
+        "description": "Depth control configuration for video generation."
+      },
+      "EdgeControlInput": {
+        "properties": {
+          "control": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control",
+            "description": "b64 encoded or URL to the edge control input video/image"
+          },
+          "mask": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask",
+            "description": "b64 encoded or URL to the mask for edge control"
+          },
+          "control_weight": {
+            "type": "number",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Control Weight",
+            "description": "Weight for the edge control input (0.0-1.0)",
+            "default": 1
+          },
+          "preset_edge_threshold": {
+            "type": "string",
+            "enum": [
+              "very_low",
+              "low",
+              "medium",
+              "high",
+              "very_high"
+            ],
+            "title": "Preset Edge Threshold",
+            "description": "Threshold preset for edge detection sensitivity",
+            "default": "medium"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EdgeControlInput"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LicenseEndpointModel": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The name of the license for the NIM container."
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "The filepath within the container containing the license content."
+          },
+          "sha": {
+            "type": "string",
+            "title": "Sha",
+            "description": "A SHA1 hash of the license contents."
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size",
+            "description": "The number of characters in the license content."
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "The url where this license is hosted externally."
+          },
+          "type": {
+            "type": "string",
+            "const": "file",
+            "title": "Type",
+            "description": "The format of the license content."
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "The license text."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "sha",
+          "size",
+          "url",
+          "type",
+          "content"
+        ],
+        "title": "LicenseEndpointModel",
+        "description": "A model representing the license response."
+      },
+      "ManifestEndpointModel": {
+        "properties": {
+          "manifest_file": {
+            "type": "string",
+            "title": "Manifest File",
+            "description": "The content of the manifest file describing the required model artifacts."
+          },
+          "repository_override": {
+            "type": "string",
+            "title": "Repository Override",
+            "description": "Alternate location used to retrieve artifacts from manifest file."
+          }
+        },
+        "type": "object",
+        "required": [
+          "manifest_file",
+          "repository_override"
+        ],
+        "title": "ManifestEndpointModel",
+        "description": "A model representing the manifest response."
+      },
+      "ModelInfo": {
+        "properties": {
+          "modelUrl": {
+            "type": "string",
+            "title": "Modelurl"
+          },
+          "shortName": {
+            "type": "string",
+            "title": "Shortname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "modelUrl",
+          "shortName"
+        ],
+        "title": "ModelInfo",
+        "description": "A model representing the model response."
+      },
+      "NIMErrorResponse": {
+        "properties": {
+          "error": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Error",
+            "description": "Error details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "NIMErrorResponse",
+        "description": "Error response model."
+      },
+      "NIMHealthSuccessResponse": {
+        "properties": {
+          "object": {
+            "type": "string",
+            "title": "Object",
+            "description": "The object of the health response.",
+            "default": "health.response"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "The message of the health response."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "The status of the health response for backwards compatibility."
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "NIMHealthSuccessResponse",
+        "description": "A model representing the health success response."
+      },
+      "NIMVersionResponse": {
+        "properties": {
+          "release": {
+            "type": "string",
+            "title": "Release",
+            "description": "The product release version of NIM for LLMs."
+          },
+          "api": {
+            "type": "string",
+            "title": "Api",
+            "description": "The server API version running inside the NIM."
+          }
+        },
+        "type": "object",
+        "required": [
+          "release",
+          "api"
+        ],
+        "title": "NIMVersionResponse",
+        "description": "A model representing versions of the NIM"
+      },
+      "SegControlInput": {
+        "properties": {
+          "control": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control",
+            "description": "b64 encoded or URL to the segmentation control input video/image"
+          },
+          "mask": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask",
+            "description": "b64 encoded or URL to the mask for segmentation control"
+          },
+          "control_weight": {
+            "type": "number",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Control Weight",
+            "description": "Weight for the segmentation control input (0.0-1.0)",
+            "default": 1
+          },
+          "control_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Prompt",
+            "description": "Text prompt for on-the-fly segmentation using SAM2+GroundingDINO. Describes what objects to segment (e.g., 'car building tree'). If not provided, uses first 128 words of main prompt as fallback. Only used when 'control' is not provided."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SegControlInput",
+        "description": "Segmentation control configuration for video generation."
+      },
+      "Transfer2Request": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Text prompt describing the desired output video style and content"
+          },
+          "video": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Video",
+            "description": "b64 encoded or or URL to the input video file. Supported formats: mp4 with h264 or vp9 codec"
+          },
+          "negative_prompt": {
+            "type": "string",
+            "title": "Negative Prompt",
+            "description": "Negative prompt to specify undesired characteristics in the output video",
+            "default": "The video captures a game playing, with bad crappy graphics and cartoonish frames. It represents a recording of old outdated games. The lighting looks very fake. The textures are very raw and basic. The geometries are very primitive. The images are very pixelated and of poor CG quality. There are many subtitles in the footage. Overall, the video is unrealistic at all."
+          },
+          "image_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Context",
+            "description": "b64 encoded or URL to an optional image context to condition the generation"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4294967295,
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed",
+            "description": "Random seed for reproducible generation. Must be in range [0, 2^32-1]."
+          },
+          "guidance": {
+            "type": "integer",
+            "maximum": 7,
+            "minimum": 0,
+            "title": "Guidance",
+            "description": "Classifier-free guidance scale (0-7). Higher values increase prompt adherence",
+            "default": 3
+          },
+          "num_steps": {
+            "type": "integer",
+            "minimum": 1,
+            "title": "Num Steps",
+            "description": "Number of diffusion sampling steps. More steps generally improve quality but increase runtime",
+            "default": 35
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "256",
+              "480",
+              "512",
+              "720"
+            ],
+            "title": "Resolution",
+            "description": "Resolution in which cosmos model will process. Output video resolution will be determined by the input video resolution",
+            "default": "480"
+          },
+          "num_conditional_frames": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Num Conditional Frames",
+            "description": "Number of frames to use as conditioning from the input video. Must be 1 or 2.",
+            "default": 1
+          },
+          "sigma_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sigma Max",
+            "description": "Maximum noise level for diffusion process (advanced parameter)"
+          },
+          "edge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EdgeControlInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Edge detection control parameters"
+          },
+          "depth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DepthControlInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Depth estimation control parameters"
+          },
+          "vis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VisControlInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Visual/blur control parameters"
+          },
+          "seg": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SegControlInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Segmentation control parameters"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt",
+          "video"
+        ],
+        "title": "Transfer2Request",
+        "description": "Request model for Transfer 2.0 video generation.\n\nThis model supports video-to-video generation with multiple control modalities\nincluding edge detection, depth estimation, visual/blur control, and segmentation."
+      },
+      "Transfer2Response": {
+        "properties": {
+          "b64_video": {
+            "type": "string",
+            "title": "B64 Video",
+            "description": "The generated output video encoded as base64 mp4"
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed",
+            "description": "The seed value used for this generation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "b64_video",
+          "seed"
+        ],
+        "title": "Transfer2Response",
+        "description": "Response model for Transfer 2.0 video generation."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VisControlInput": {
+        "properties": {
+          "control": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control",
+            "description": "b64 encoded or URL to the visual control input video/image"
+          },
+          "mask": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask",
+            "description": "b64 encoded or URL to the mask for visual control"
+          },
+          "control_weight": {
+            "type": "number",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Control Weight",
+            "description": "Weight for the visual control input (0.0-1.0)",
+            "default": 1
+          },
+          "preset_blur_strength": {
+            "type": "string",
+            "enum": [
+              "very_low",
+              "low",
+              "medium",
+              "high",
+              "very_high"
+            ],
+            "title": "Preset Blur Strength",
+            "description": "Preset strength for blur effect",
+            "default": "medium"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VisControlInput",
+        "description": "Visual/blur control configuration for video generation."
+      }
+    }
+  }
+}

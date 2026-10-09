@@ -12,6 +12,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, Field
 
 from .admin_models import AdminOperationItem
+from .customer_readiness import CustomerReadinessSummary
 from .model_deployment import ModelDeploymentSpec
 from .model_deployment_records import ModelDeploymentRevision
 from .models import StrictModel
@@ -46,6 +47,7 @@ class AppSummary(AppRecord):
     capabilities: AppCapabilities
     logical_run_count: int | None = None
     last_used_at: AwareDatetime | None = None
+    customer_readiness: CustomerReadinessSummary | None = None
 
 
 class AppList(StrictModel):
@@ -112,6 +114,11 @@ class AppScientificUsage(StrictModel):
     occupied_seconds: float
     active_compute_seconds: float
     occupied_idle_seconds: float
+    startup_seconds: float | None = None
+    other_seconds: float | None = None
+    unknown_seconds: float | None = None
+    phases_complete: bool = False
+    quality: Literal["measured", "application_observed", "estimated", "unavailable"] = "unavailable"
 
 
 class AppUserUsage(StrictModel):

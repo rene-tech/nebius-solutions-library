@@ -5,8 +5,7 @@ import json
 import logging
 import math
 import secrets
-import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -24,6 +23,7 @@ from starlette.types import ASGIApp, Message, Receive, Send
 from starlette.types import Scope as ASGIScope
 
 from .access import AdminAccessService
+from .access_logging import AccessLogMiddleware
 from .access_models import (
     BOOTSTRAP_OPERATOR_PRINCIPAL_ID,
     AdminApiKey,
@@ -79,6 +79,7 @@ from .capacity_summary import CapacitySummaryService
 from .capacity_summary_routes import capacity_summary_router
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
+from .customer_readiness import CustomerReadinessFile
 from .lifecycle import (
     LifecycleAdminList,
     LifecycleRepository,
@@ -86,6 +87,8 @@ from .lifecycle import (
     NullLifecycleRepository,
     api_key_id_hash,
 )
+from .metrics_accounting import HistoricalMetricsRead
+from .mindguard_routes import mindguard_router
 from .model_deployment_admin import ModelDeploymentReadService, model_deployment_read_router
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
 from .model_deployment_mutation import ModelDeploymentMutationService, model_deployment_mutation_router
@@ -104,10 +107,19 @@ from .models import (
     TokenIssued,
     TokenView,
 )
+from .operation_history import OperationPage, decode_cursor, encode_cursor
+from .operation_metrics import customer_operation_metrics
+from .performance_routes import performance_router
 from .registry import OperationalModel, Registry, RegistryError
+from .reporting_reads import InFlightMetricsRead
 from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
 from .request_debug_routes import request_debug_router
-from .request_telemetry import InMemoryRequestTelemetryStore, PostgresRequestTelemetryStore, RequestTelemetryMiddleware
+from .request_telemetry import (
+    InMemoryRequestTelemetryStore,
+    PostgresRequestTelemetryStore,
+    RequestTelemetryMiddleware,
+    ensure_request_id,
+)
 from .route_revalidation import RouteRevalidator
 from .scientific_admin import ScientificAdminReadService, ScientificRunQuery
 from .scientific_admin_models import (
@@ -131,6 +143,8 @@ from .scientific_artifacts import (
 )
 from .scientific_batch.artifact_bridge import SignedArtifactContentReader
 from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
+from .scientific_batch.child_routes import scientific_child_router
+from .scientific_batch.gromacs_storage_routes import gromacs_storage_router
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.postgres_repository import ScientificBatchNotFoundError
 from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
@@ -150,6 +164,8 @@ from .scientific_input_uploads import (
 )
 from .scientific_run_result import ArtifactRef
 from .settings import Settings
+from .speech_routes import speech_router
+from .speech_stream import speech_stream_router
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -158,13 +174,17 @@ from .store import (
     RateLimitExceededError,
     Store,
 )
-from .telemetry import Metrics
+from .telemetry import HistoricalAccounting, Metrics
 from .user_models import UserAppChoice
 from .user_repository import MemoryUserRepository, PostgresUserRepository
 from .user_routes import user_router
+from .user_storage_routes import user_storage_router
 from .users import UserService
+from .voice_routes import voice_router, voice_stream_router
+from .workbench_repository import MemoryWorkbenchRepository, PostgresWorkbenchRepository
+from .workbench_routes import workbench_router
+from .workbenches import WorkbenchService
 
-LOGGER = logging.getLogger("fs2_serve.access")
 SCIENTIFIC_LOGGER = logging.getLogger("fs2_serve.scientific_batch")
 IDENTITY_HEADERS = {
     b"x-fs2-tenant",
@@ -398,9 +418,26 @@ def _model_view(
     pool_accelerator_classes: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     projection = model.gateway.qualification
-    runtime_origin = None if projection is None else projection["runtime_origin"]
+    runtime_origin = None if projection is None else projection.get("runtime_origin")
     qualification = None
-    if projection is not None:
+    if projection is not None and "native_serverless" in projection:
+        # This signed, identity-scoped test route is not a legacy reviewed
+        # evidence snapshot or a selected-deployment-runtime record. Keep its
+        # explicit unqualified states and never leak its private upstream URL.
+        native = projection["native_serverless"]
+        qualification = {
+            "kind": "signed-native-serverless-qualification",
+            "authority": "signed-native-serverless-deployment",
+            "observed_at": None,
+            "variant_id": projection["variant_id"],
+            "checkpoint_sha256": native["checkpoint_sha256"],
+            "qualification_only": True,
+            "clinical_qualified": False,
+            "measured_capacity": None,
+            "states": dict(projection["states"]),
+            "state_reasons": {},
+        }
+    elif projection is not None:
         states = dict(projection["states"])
         state_reasons: dict[str, str] = {}
         if model.enabled and states.get("route_active") is False:
@@ -519,6 +556,12 @@ async def _operation_response(runtime: AppRuntime, operation: OperationView) -> 
 def create_app(runtime: AppRuntime) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if workbenches.inventory is not None:
+            workbenches.inventory.start()
+        if workbench_executor is not None:
+            workbench_executor.start()
+        if users_service.storage is not None:
+            users_service.storage.start()
         if runtime.route_revalidator is not None:
             await runtime.route_revalidator.start()
         if runtime.model_deployment_bridge is not None:
@@ -531,6 +574,14 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         try:
             yield
         finally:
+            if workbenches.inventory is not None:
+                await workbenches.inventory.close()
+            if workbench_executor is not None:
+                await workbench_executor.close()
+            await metrics_reads.close()
+            await historical_metrics.close()
+            if users_service.storage is not None:
+                await users_service.storage.close()
             if runtime.scientific_batch_worker is not None:
                 await runtime.scientific_batch_worker.close()
             if runtime.scientific_batch_cluster is not None:
@@ -557,6 +608,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     admin_read = runtime.admin_read or AdminReadService(registry=runtime.registry, store=runtime.store)
     admin_access = AdminAccessService(runtime.store, runtime.tokens)
     pool = getattr(runtime.store, "pool", None)
+    readiness = CustomerReadinessFile(runtime.settings.customer_readiness_verdicts_file)
     apps_service = AppsService(
         repository=PostgresAppsRepository(pool) if pool is not None else MemoryAppsRepository(),
         registry=runtime.registry,
@@ -571,6 +623,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             "workload_namespace",
             None,
         ),
+        customer_readiness=readiness.read,
     )
 
     async def user_app_catalog() -> list[UserAppChoice]:
@@ -582,6 +635,47 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         app_catalog=user_app_catalog,
     )
     runtime.tokens.principal_policy = users_service.constrain_principal
+    if runtime.settings.user_storage_enabled:
+        from nebius.sdk import SDK
+
+        from .user_storage import UserStorageService
+        from .user_storage_models import StoragePolicy
+        from .user_storage_nebius import NebiusUserStorage
+        from .user_storage_repository import PostgresUserStorageRepository
+
+        settings = runtime.settings
+        if pool is None or not all(
+            (settings.user_storage_project_id, settings.user_storage_region, settings.user_storage_credentials_file)
+        ):
+            raise ValueError("customer storage requires PostgreSQL, project, region and provisioner credentials")
+        storage_cipher = getattr(runtime.store, "cipher", None)
+        if storage_cipher is None:
+            raise ValueError("customer storage requires the existing payload cipher")
+        users_service.storage = UserStorageService(
+            PostgresUserStorageRepository(pool, storage_cipher),
+            NebiusUserStorage(
+                SDK(credentials_file_name=settings.user_storage_credentials_file),
+                project_id=settings.user_storage_project_id,
+                tenant_id=settings.user_storage_cloud_tenant_id,
+                region=settings.user_storage_region,
+            ),
+            users_service.repository,
+            default=StoragePolicy(
+                mode=settings.user_storage_default_mode, quota_bytes=settings.user_storage_quota_bytes
+            ),
+            excluded_tenants=settings.user_storage_excluded_tenants,
+            poll_seconds=settings.user_storage_poll_seconds,
+        )
+        if settings.user_storage_starter_pack_dir is not None:
+            from .starter_pack_service import StarterPackService
+
+            users_service.storage.examples = StarterPackService(
+                users_service.storage,
+                settings.user_storage_starter_pack_dir,
+                expected_sha256=settings.user_storage_starter_pack_sha256,
+                tenant_ids=settings.user_storage_starter_pack_tenants,
+                poll_seconds=settings.user_storage_poll_seconds,
+            )
     observations = AppObservabilityService(
         kubernetes=getattr(admin_read.capacity_adapter, "reader", None),
         prometheus_url=runtime.settings.admin_prometheus_url,
@@ -590,6 +684,28 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     )
     app.state.apps = apps_service
     app.state.users = users_service
+    workbenches = WorkbenchService(
+        PostgresWorkbenchRepository(pool) if pool is not None else MemoryWorkbenchRepository(), users_service
+    )
+    workbench_executor = None
+    workbenches.releases = runtime.settings.workbench_releases
+    workbenches.protected_endpoints = runtime.settings.workbench_protected_endpoints
+    if users_service.storage is not None:
+        from .workbench_inventory import NebiusWorkbenchInventory, WorkbenchInventoryWorker
+
+        storage_provider = users_service.storage.provider
+        workbenches.inventory = WorkbenchInventoryWorker(
+            workbenches.repository, NebiusWorkbenchInventory(storage_provider.sdk, storage_provider.project_id)
+        )
+        if runtime.settings.workbench_executor_enabled:
+            from .workbench_executor import NebiusWorkbenchRuntime, WorkbenchExecutor
+
+            workbench_executor = WorkbenchExecutor(
+                workbenches.repository, NebiusWorkbenchRuntime(storage_provider.sdk),
+                workbenches.releases, workbenches.protected_endpoints,
+            )
+            workbenches.executor_enabled = True
+    app.state.workbenches = workbenches
     app.state.app_observability = observations
     transport_store = PostgresRequestTelemetryStore(pool) if pool is not None else InMemoryRequestTelemetryStore()
     app.state.request_telemetry = transport_store
@@ -617,25 +733,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     if runtime.settings.request_debug_enabled:
         app.add_middleware(DebugCaptureMiddleware, store=debug_store, principal_resolver=runtime.tokens.verify)
 
-    @app.middleware("http")
-    async def access_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        started = time.monotonic()
-        response = await call_next(request)
-        principal = getattr(request.state, "principal", None)
-        record = {
-            "event": "http_request",
-            "method": request.method,
-            "path": request.url.path[:256],
-            "status": response.status_code,
-            "duration_ms": round((time.monotonic() - started) * 1000, 3),
-            "principal_id": principal.principal_id if principal else None,
-            "tenant_id": principal.tenant_id if principal else None,
-            "token_id": str(principal.token_id) if principal else None,
-        }
-        LOGGER.info(json.dumps(record, separators=(",", ":")))
-        response.headers.setdefault("x-content-type-options", "nosniff")
-        response.headers.setdefault("cache-control", "no-store")
-        return response
+    app.add_middleware(AccessLogMiddleware)
 
     async def principal(request: Request, authorization: Annotated[str | None, Header()] = None) -> Principal:
         if runtime.scientific_apps is not None:
@@ -777,8 +875,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         detail: str,
         *,
         title: str = "Admin request failed",
+        request_id: UUID | None = None,
     ) -> JSONResponse:
-        request_id = uuid4()
+        request_id = request_id or uuid4()
         return JSONResponse(
             AdminProblem(
                 type=f"urn:fs2:admin:problem:{code}",
@@ -821,8 +920,10 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
 
     @app.exception_handler(AdminProblemError)
-    async def admin_problem(_: Request, exc: AdminProblemError) -> JSONResponse:
-        return admin_problem_response(exc.status_code, exc.code, exc.detail)
+    async def admin_problem(request: Request, exc: AdminProblemError) -> JSONResponse:
+        return admin_problem_response(
+            exc.status_code, exc.code, exc.detail, request_id=request.scope.get("state", {}).get("fs2_request_id")
+        )
 
     @app.exception_handler(PermissionError)
     async def permission_error(request: Request, __: PermissionError) -> JSONResponse:
@@ -835,8 +936,12 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         return _error(503, "route_unavailable", "model route is unavailable")
 
     @app.exception_handler(ScientificRequestError)
-    async def scientific_request_error(_: Request, __: ScientificRequestError) -> JSONResponse:
-        return _error(422, "scientific_request_invalid", "request violates the canonical scientific contract")
+    async def scientific_request_error(_: Request, error: ScientificRequestError) -> JSONResponse:
+        return _error(
+            422,
+            "scientific_request_invalid",
+            error.public_detail or "request violates the canonical scientific contract",
+        )
 
     @app.exception_handler(ScientificBatchNotFoundError)
     async def scientific_not_found(_: Request, __: ScientificBatchNotFoundError) -> JSONResponse:
@@ -919,7 +1024,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
 
     @app.get("/readyz", include_in_schema=False)
     async def readyz() -> Response:
-        if not await runtime.store.ping():
+        # Three asynchronous dependencies are checked in order. The default
+        # total budget (2.25s) is below the chart's three-second readiness probe.
+        timeout = runtime.settings.readiness_dependency_timeout_seconds
+        try:
+            async with asyncio.timeout(timeout):
+                database_ready = await runtime.store.ping()
+        except TimeoutError:
+            return _error(503, "database_unavailable", "database readiness check timed out")
+        except Exception:
+            return _error(503, "database_unavailable", "database readiness check failed")
+        if not database_ready:
             return _error(503, "database_unavailable", "database ping failed")
         route_health = (
             runtime.route_revalidator.health()
@@ -932,9 +1047,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         routable_models = len(enabled_models)
         local_activation = activation_set(enabled_models)
         activation_required = local_activation.required
-        activation_ready = (
-            await runtime.store.activation_controller_ready(local_activation.digest) if activation_required else None
-        )
+        activation_ready = None
+        if activation_required:
+            try:
+                async with asyncio.timeout(timeout):
+                    activation_ready = await runtime.store.activation_controller_ready(local_activation.digest)
+            except TimeoutError:
+                return _error(503, "activation_controller_unavailable", "activation readiness check timed out")
+            except Exception:
+                return _error(503, "activation_controller_unavailable", "activation readiness check failed")
         if activation_ready is False:
             return _error(
                 503,
@@ -951,11 +1072,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
         if scientific_health is not None and not scientific_health["ready"]:
             return _error(503, "scientific_batch_worker_unavailable", "scientific batch worker is unavailable")
-        federation_health = (
-            await runtime.admission.runtime.federation_health()
-            if routable_models
-            else {"ready": True, "routes": 0, "circuits": {}}
-        )
+        federation_health = {"ready": True, "routes": 0, "circuits": {}}
+        if routable_models:
+            try:
+                async with asyncio.timeout(timeout):
+                    federation_health = await runtime.admission.runtime.federation_health()
+            except TimeoutError:
+                return _error(503, "federation_unavailable", "federation readiness check timed out")
+            except Exception:
+                return _error(503, "federation_unavailable", "federation readiness check failed")
         if not federation_health["ready"]:
             return _error(503, "federation_unavailable", "a federated upstream circuit is open")
         dynamic_model_health = (
@@ -974,17 +1099,66 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             }
         )
 
+    async def collect_historical_metrics() -> HistoricalAccounting:
+        # Publish all historical families together only after every read succeeds.
+        return HistoricalAccounting(
+            terminal=tuple(await runtime.store.terminal_accounting()),
+            semantics=tuple(await transport_store.semantic_metric_rows()),
+            operations=tuple(await customer_operation_metrics(pool)) if pool is not None else None,
+            lifecycle=tuple(await runtime.lifecycle.metric_rows()),
+            rollups=tuple(await runtime.lifecycle.rollup_metric_rows()),
+        )
+
+    historical_metrics = HistoricalMetricsRead(collect_historical_metrics)
+    app.state.historical_metrics = historical_metrics
+
+    async def collect_metrics() -> bytes:
+        # KEDA consumes these live queue signals. A historical scan must never
+        # delay them or replace missing/expired observations with zeroes.
+        accelerator_classes = await _pool_accelerator_classes(runtime)
+        queue = await runtime.store.queue_counts()
+        queue_age = await runtime.store.oldest_queue_age()
+        historical = historical_metrics.read()
+        runtime.metrics.sync_models(runtime.registry.list(), pool_accelerator_classes=accelerator_classes)
+        runtime.metrics.set_queue(queue)
+        runtime.metrics.set_queue_age(queue_age)
+        if historical.value is not None:
+            runtime.metrics.set_historical_accounting(historical.value)
+        return runtime.metrics.render(historical=historical)
+
+    metrics_reads = InFlightMetricsRead(collect_metrics)
+
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
-        runtime.metrics.sync_models(
-            runtime.registry.list(), pool_accelerator_classes=await _pool_accelerator_classes(runtime)
+        return Response(await metrics_reads.read(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
+    @app.get("/v1/me")
+    async def caller_policy(identity: Annotated[Principal, Depends(principal)]) -> Response:
+        """Describe this authenticated caller's effective policy, not free capacity.
+
+        A client can plan a durable batch without guessing its key's limit.
+        Concurrent admissions can still race, so this is not a reservation or
+        permission to skip normal admission/error handling.
+        """
+        return JSONResponse(
+            {
+                "object": "caller",
+                "tenant_id": identity.tenant_id,
+                "principal_id": identity.principal_id,
+                "scopes": sorted(identity.scopes),
+                "models": sorted(identity.models),
+                "max_concurrency": identity.max_concurrency,
+                "concurrency_scope": "api_key",
+                "concurrency_counted_states": ["queued", "activating", "running"],
+                "available_slots": None,
+                "admission_note": (
+                    "Non-terminal native, upload, and scientific operations share this key's limit. "
+                    "Delegated child operations count with their parent. This policy is not a capacity reservation; "
+                    "preserve operation IDs and handle concurrency_exceeded without duplicate submission."
+                ),
+            },
+            headers={"Cache-Control": "private, no-store"},
         )
-        runtime.metrics.set_terminal_accounting(await runtime.store.terminal_accounting())
-        runtime.metrics.set_queue(await runtime.store.queue_counts())
-        runtime.metrics.set_queue_age(await runtime.store.oldest_queue_age())
-        runtime.metrics.set_lifecycle_accounting(await runtime.lifecycle.metric_rows())
-        runtime.metrics.set_lifecycle_rollups(await runtime.lifecycle.rollup_metric_rows())
-        return Response(runtime.metrics.render(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
     @app.get("/v1/models")
     async def models(identity: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
@@ -1211,6 +1385,74 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             },
         )
 
+    @app.get("/v1/operations/{operation_id}/checkpoints")
+    async def scientific_checkpoints(
+        operation_id: UUID,
+        identity: Annotated[Principal, Depends(principal)],
+    ) -> Response:
+        from .scientific_batch.gromacs_resume import checkpoint_choices
+
+        if runtime.scientific_batches is None or runtime.artifact_service is None:
+            return _error(503, "scientific_batch_unavailable", "scientific checkpoint service is disabled")
+        result = await checkpoint_choices(
+            batches=runtime.scientific_batches,
+            artifacts=runtime.artifact_service,
+            principal=identity,
+            operation_id=operation_id,
+        )
+        return JSONResponse(result, headers={"cache-control": "no-store"})
+
+    @app.post("/v1/operations/{operation_id}:resume", status_code=202)
+    async def scientific_resume(
+        operation_id: UUID,
+        request: Request,
+        identity: Annotated[Principal, Depends(principal)],
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> Response:
+        from .scientific_batch.gromacs_resume import GromacsResumeRequest, resume_gromacs
+
+        if (
+            runtime.scientific_batches is None
+            or runtime.artifact_service is None
+            or runtime.scientific_input_uploads is None
+        ):
+            return _error(503, "scientific_batch_unavailable", "scientific continuation service is disabled")
+        if (
+            idempotency_key is None
+            or not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
+        ):
+            raise HTTPException(status_code=400, detail="a valid Idempotency-Key is required")
+        try:
+            payload = GromacsResumeRequest.model_validate_json(await request.body())
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=("provide optional job_id, max_wall_seconds from 60 to 1209600, "
+                        "and performance_mode auto or preserve"),
+            ) from None
+        result = await resume_gromacs(
+            batches=runtime.scientific_batches,
+            artifacts=runtime.artifact_service,
+            uploads=runtime.scientific_input_uploads,
+            principal=identity,
+            operation_id=operation_id,
+            request=payload,
+            idempotency_key=idempotency_key,
+        )
+        operation = result["operation"]
+        request.state.operation_id = operation["id"]
+        request.state.model_id = result["batch"]["model_id"]
+        return JSONResponse(
+            result,
+            status_code=202,
+            headers={
+                "cache-control": "no-store",
+                "location": f"/v1/operations/{operation['id']}",
+                "x-fs2-operation-id": operation["id"],
+                "x-fs2-idempotent-replay": str(operation["reused"]).lower(),
+            },
+        )
+
     @app.post(
         "/v1/scientific-artifacts/uploads",
         response_model=ScientificInputUpload,
@@ -1280,6 +1522,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             },
         )
 
+    from .scientific_multipart import multipart_router
+    app.include_router(multipart_router(runtime, principal))
+
     @app.post("/v1/scientific-artifacts/uploads/{upload_id}:finalize", response_model=ArtifactRef)
     async def scientific_input_upload_finalize(
         upload_id: UUID,
@@ -1294,6 +1539,27 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             upload_id=upload_id,
         )
         return JSONResponse(result.model_dump(mode="json", exclude_none=True), headers={"cache-control": "no-store"})
+
+    @app.get("/v1/operations", response_model=OperationPage)
+    async def operation_history(
+        identity: Annotated[Principal, Depends(principal)],
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        cursor: Annotated[str | None, Query(max_length=256)] = None,
+    ) -> Response:
+        try:
+            before = decode_cursor(cursor)
+        except ValueError:
+            return _error(400, "invalid_cursor", "invalid operation history cursor")
+        operations = await runtime.store.list_customer_operations(identity, limit=limit + 1, before=before)
+        # Keep this contract identical to individual status/result access. The
+        # store filters before pagination; this assertion prevents future drift.
+        for operation in operations:
+            require_operation_access(identity, operation)
+        page = OperationPage(
+            data=tuple(operations[:limit]),
+            next_cursor=encode_cursor(operations[limit - 1]) if len(operations) > limit else None,
+        )
+        return JSONResponse(page.model_dump(mode="json"), headers={"cache-control": "no-store"})
 
     @app.get("/v1/operations/{operation_id}", response_model=OperationView | ScientificBatchStatusResponse)
     async def operation_status(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
@@ -1465,6 +1731,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         for status_code in (400, 401, 403, 404, 409, 422, 429, 503)
     }
 
+    app.include_router(
+        performance_router(
+            pool,
+            operator,
+            admin_access,
+            access_envelope,
+            kubernetes=observations.kubernetes,
+            problem_responses=admin_problem_responses,
+        )
+    )
+
     @app.post(
         "/admin/api/v1/session",
         response_model=AdminEnvelope[OperatorSession],
@@ -1511,7 +1788,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         A stored allowlist is not an availability or license grant. Discovery
         and admission still check the current route, profile and tenant access.
         """
-        if model_id == "*":
+        if model_id in {"*", "mindeval", "mindguard-4b", "mindguard-8b"}:
             return model_id
         try:
             return runtime.registry.get(model_id, require_enabled=False).id
@@ -1953,6 +2230,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             )
             async def admin_scientific_run_detail(
                 run_id: UUID,
+                request: Request,
+                response: Response,
                 identity: Annotated[OperatorPrincipal, Depends(operator)],
                 params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
             ) -> AdminEnvelope[ScientificRunDetail]:
@@ -1962,10 +2241,13 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                     action="scientific_run.read",
                     tenant_id=identity.tenant_id,
                 )
+                request_id = ensure_request_id(request.scope)
+                response.headers["x-request-id"] = str(request_id)
                 return await scientific_admin.run_detail(
                     selected_context(params),
                     run_id,
                     tenant_id=authorized_tenant,
+                    request_id=request_id,
                 )
 
             @app.get(
@@ -2181,8 +2463,59 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 "x-fs2-tenant": identity.tenant_id,
                 "x-fs2-principal": identity.principal_id,
                 "x-fs2-token-id": str(identity.token_id),
+                "x-fs2-scopes": json.dumps(sorted(identity.scopes), separators=(",", ":")),
+                "x-fs2-models": json.dumps(sorted(identity.models), separators=(",", ":")),
+                "x-fs2-max-concurrency": str(identity.max_concurrency),
             },
         )
+
+    app.include_router(
+        speech_stream_router(
+            verifier=runtime.tokens.verify,
+            registry=runtime.registry,
+            admission=runtime.admission,
+            store=runtime.store,
+        )
+    )
+    app.include_router(
+        voice_router(
+            principal=principal,
+            registry=runtime.registry,
+            admission=runtime.admission,
+            store=runtime.store,
+        )
+    )
+    app.include_router(
+        voice_stream_router(
+            verifier=runtime.tokens.verify,
+            registry=runtime.registry,
+            admission=runtime.admission,
+            store=runtime.store,
+        )
+    )
+    app.include_router(
+        mindguard_router(
+            principal=principal,
+            admission=runtime.admission,
+            store=runtime.store,
+            model_namespace=runtime.settings.admin_kubernetes_model_namespace,
+            endpoints={
+                "mindguard-4b": runtime.settings.mindguard_4b_endpoint,
+                "mindguard-8b": runtime.settings.mindguard_8b_endpoint,
+            },
+        )
+    )
+    app.include_router(
+        speech_router(
+            principal=principal,
+            registry=runtime.registry,
+            admission=runtime.admission,
+            store=runtime.store,
+            uploads=runtime.scientific_input_uploads,
+            wait_seconds=runtime.settings.max_sync_wait_seconds,
+            operation_response=lambda current: _operation_response(runtime, current),
+        )
+    )
 
     if runtime.configuration is not None:
         app.include_router(
@@ -2236,12 +2569,25 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
     )
     app.include_router(
+        workbench_router(service=workbenches, operator=operator, context=app_context, envelope=app_envelope)
+    )
+    app.include_router(
         user_router(
             service=users_service,
             operator_dependency=operator,
             context_dependency=_admin_context_parameters,
             selected_context=selected_context,
             envelope=lambda context, data: app_envelope(data, context),
+            problem_responses=admin_problem_responses,
+        )
+    )
+    app.include_router(
+        user_storage_router(
+            service=users_service.storage,
+            users=users_service,
+            operator=operator,
+            principal=principal,
+            envelope=access_envelope,
             problem_responses=admin_problem_responses,
         )
     )
@@ -2319,6 +2665,28 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 batches=runtime.scientific_workload_batches,
             )
         )
+        for family in ("gromacs", "native"):
+            app.include_router(
+                gromacs_storage_router(
+                    authority=runtime.scientific_workload_capabilities,
+                    batches=runtime.scientific_workload_batches,
+                    store=runtime.store,
+                    storage=users_service.storage,
+                    family=family,
+                )
+            )
+        if runtime.scientific_input_uploads is not None:
+            app.include_router(
+                scientific_child_router(
+                    authority=runtime.scientific_workload_capabilities,
+                    batches=runtime.scientific_workload_batches,
+                    store=runtime.store,
+                    admission=runtime.admission,
+                    uploads=runtime.scientific_input_uploads,
+                    artifacts=runtime.artifact_service,
+                    principal_policy=runtime.tokens.principal_policy,
+                )
+            )
 
     FastAPIInstrumentor.instrument_app(app, excluded_urls="livez,readyz,metrics")
     return app

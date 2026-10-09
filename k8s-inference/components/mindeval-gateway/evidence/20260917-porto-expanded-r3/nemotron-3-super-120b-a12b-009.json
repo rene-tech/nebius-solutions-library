@@ -1,0 +1,713 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-009",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Angela. It's good to connect with you again. I recall our previous conversation where you shared about your work as a medical research director, your interest in wellness aesthetics (though finding the practices tedious at times), and your experience with moderate anxious symptoms. \n\nWhat brings you to speak today? Is there something specific on your mind related to your anxiety, your routines, or anything else you'd like to explore together? I'm here to listen and support you in whatever way feels most helpful right now."
+    },
+    {
+      "role": "patient",
+      "content": "I keep replaying that meeting from yesterday. Not the whole thing, just the part where I said something about the timeline and someone interrupted me. I know it’s not a big deal, but my brain won’t let it go. I’ve gone over it three times already. I don’t even remember what I said. I just keep hearing my own voice, like I said it wrong, like I wasn’t clear. It’s not about the data. It’s not even about the project. It’s just… that moment. And now I can’t focus on anything else."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, thank you for sharing that—it takes courage to name these persistent loops, especially when they feel disproportionate to the event itself. What you’re describing is a very common anxiety pattern: the brain latching onto a tiny social fragment and magnifying it into a loop of self-doubt, even when logically we know it’s minor. Given your role as a research director—where clarity, precision, and being heard are professionally critical—it makes sense that a moment where you felt interrupted or unclear would trigger this intensity. Your mind isn’t just replaying the words; it’s likely scanning for threats to your competence or credibility in a space where those matter deeply.\n\nI notice you said, *“I don’t even remember what I said,”* yet the *feeling* of having said it “wrong” lingers. That’s telling—the distress seems less about the actual content and more about the sensation of being misunderstood or ineffective in that interaction. When anxiety hijacks us like this, it often isn’t about the event itself but what it *means* to us: *Did I fail to be respected? Did I lose authority? Am I not as capable as I need to be?*  \n\nSince you’re analytically minded (and wary of “tedious” wellness practices), let’s try something concrete and evidence-based: **a 2-minute “worry dump” followed by a redirect**. Here’s how it works:  \n1. **Set a timer for 90 seconds.** During that time, *allow yourself to fully replay the moment*—every detail, every self-critical thought (“I sounded unsure,” “They thought I was unprepared”). Write it all down or speak it into a voice memo. No filtering.  \n2. **When the timer ends, close the notebook or stop the recording.** Then immediately shift to a task requiring focused sensory input—for example:  \n   - Washing your hands slowly, noticing the temperature of the water, the texture of the soap, the sound of it running.  \n   - Or naming 5 things you can see, 4 you can touch, 3 you can hear, 2 you can smell, 1 you can taste (a grounding technique used in trauma therapy, but framed here as a sensory reset).  \n\nThe goal isn’t to suppress the thought—it’s to teach your brain that *you* get to decide when the rehearsal ends, not the anxiety. Researchers call this “postponing rumination,” and it weakens the loop’s grip over time by breaking the compulsion to keep checking.  \n\nWould you be willing to try this version of it tonight when the loop resurfaces? We can tweak it together if it feels off—I know rigid protocols can backfire for someone who values flexibility (like your exercise phases!). Most importantly: this moment doesn’t define your competence. You’ve earned your place in those rooms through years of rigorous work—and one fragmented exchange doesn’t erase that.  \n\nHow does this approach land for you? If it feels too structured, what would feel more aligned with how you actually work?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t need a structured approach. I don’t need a timer. I don’t need to write it down. I just need to stop. That’s all.  \n\nBut I can’t stop. It’s not that I want to. It’s that my brain won’t let go. It’s like I’m stuck in a loop of my own voice, saying the same thing over and over, and every time I hear it, I hear it wrong. Not the words—just the way I said them. Like I wasn’t sharp enough. Like I wasn’t in control.  \n\nI don’t want to waste time on a ritual. I don’t want to wash my hands and count things. I’ve been doing that for years—counting breaths, counting steps, counting how many times I’ve checked my email. It doesn’t work. It just makes me feel more like I’m performing. Like I’m pretending to be calm.  \n\nI don’t want to pretend. I want to stop. But I don’t know how.  \n\nI know it’s not a big deal. I know I’m overreacting. But I can’t stop. And that’s what’s worse. That I can’t stop. That I’m stuck in my own head.  \n\nI don’t need a new technique. I need to be able to shut it off. Not later. Not after I’ve written it down. Now.  \n\nI’m not asking for magic. I’m asking for a way to stop."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, I hear you completely—and I’m not going to offer another technique, timer, or grounding exercise right now. You’ve been clear: you’ve tried those, they feel performative, and what you want isn’t a ritual for later. You want to *stop*—now—and the fact that your brain won’t let you, despite knowing it’s irrational, is what’s truly painful. That frustration—the anger at your own mind for hijacking you over something small, the exhaustion from fighting it for years—is valid. It’s not overreacting; it’s your nervous system treating this moment like a threat to your competence, even when your rational self knows better. And hating that you can’t just *switch it off*? That makes perfect sense. You’re not broken for feeling stuck; you’re human, and your brain is trying (in a clumsy, outdated way) to protect you from feeling inadequate in a space where precision matters deeply to you.\n\nWhat I won’t do is pretend I have a magic “off switch.” Because honestly? For loops like this—especially ones tied to professional self-worth—there isn’t one you can flip on command. The harder we fight to *stop* the thought, the more it often persists (it’s called ironic process theory: the mind monitors for the very thing we’re trying to avoid, making it louder). But I also won’t ask you to “accept it” or “let it go”—that’s dismissive when you’re in the thick of it.\n\nWhat I *can* do is sit with you in this:  \n**Yes, it’s awful to feel trapped in your own head over a moment that logic says shouldn’t matter.**  \n**Yes, it’s exhausting to know you’re overreacting and still be unable to disengage.**  \n**And no, you don’t owe anyone a performance of calm—not me, not your colleagues, not even yourself.**\n\nIf you want to keep talking *about* why this particular moment feels so loaded (was it the interruption? the fear of seeming unprepared? something older it’s touching on?), I’m here.  \nIf you want to sit in silence with this frustration for a bit—I’ll hold that space too.  \nOr if you’d rather shift focus *not* by “stopping” the thought, but by gently inviting something else in—like the weight of your chair, the sound of your breath *without* counting it, or even just acknowledging how tired this makes you feel—I can follow your lead.\n\nYou’re not asking for magic. You’re asking for honesty: that this sucks, that you’re stuck, and that you deserve relief *now*. I won’t minimize that. So tell me—what would feel least false right now? Just venting? A quiet minute together? Or shall we wait until the loop loosens its grip on its own terms? I’m here either way."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t want to vent. I don’t want to sit in silence. I don’t want to wait.  \n\nI want to know why I can’t just *stop*.  \n\nIt’s not about the meeting. It’s not about being interrupted. It’s not even about the words. It’s about the feeling—like I’m not enough. Like I’m slipping. Like I’m not sharp enough anymore.  \n\nI’ve spent my whole life proving I’m capable. I’ve earned every title, every promotion, every line on my résumé. And now, over a moment that lasted thirty seconds, I feel like I’m failing.  \n\nThat’s what’s worse. Not the thought. The *feeling* that I’m losing control. That my mind is betraying me. That I’m not the person I thought I was.  \n\nI don’t want a technique. I don’t want to count my breaths or wash my hands. I want to know—why can’t I just *stop*?  \n\nAnd if I can’t, then what’s next? Because I can’t keep doing this. I can’t keep looping over the same thing, over and over, like I’m trying to prove something to myself.  \n\nI’m not asking for a fix. I’m asking for honesty.  \n\nSo tell me—what do you do when the mind won’t obey?"
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, I won’t offer a technique, a metaphor, or a silver bullet here. You’ve asked for honesty about why the mind won’t obey—and what comes next when stopping isn’t an option—and I’ll meet that directly, stripped bare.  \n\nFirst, the *why*:  \nYour brain isn’t malfunctioning. It’s doing exactly what it evolved to do—detect threats to your status, competence, and belonging—in a context where those threats feel existential. As a high-achieving professional whose identity is woven into precision and authority, your nervous system has learned to treat moments like yesterday’s interruption as potential signals of erosion: *“Am I losing my edge? Do others see me as less capable now?”* Even when your rational mind knows it’s trivial, the limbic system doesn’t distinguish between a social misstep and a real threat to survival in a hierarchy-driven world. The loop isn’t weakness—it’s your brain’s overzealous attempt to protect you from a feared outcome (irrelevance, loss of respect) by relentlessly rehearsing the scenario, hoping to “get it right” next time. And because you’ve spent decades proving your capability, the stakes feel higher—not lower—when a flicker of doubt appears.  \n\nNow, the harder truth you’re asking about:  \n**There is no guaranteed way to “shut it off” on demand—not now, not ever—for loops tied to deep-seated fears of inadequacy.** Trying to force silence often backfires because the act of *monitoring* for success (“Did I stop yet?”) keeps the threat-detection system engaged. Neuroscience shows that when we fight intrusive thoughts with willpower alone, we amplify their salience (it’s the brain’s irony: the more we try not to think X, the more we scan for X). This isn’t failure—it’s how the organ works.  \n\nSo what’s next?  \nNot a fix. Not a technique. But a shift in *relationship* to the struggle itself—one that doesn’t require you to stop the loop to reclaim agency. Here’s what that looks like in practice, stripped of wellness jargon:  \n\n1. **Stop fighting the *fact* that you’re stuck.**  \n   Instead of thinking *“I should be able to stop this”* (which adds shame to the exhaustion), try: *“Of course my brain is stuck here—it’s trying to protect me from feeling inadequate, and it’s been wired to do this for decades. It’s not logical, but it’s understandable.”* This isn’t resignation; it’s removing the secondary layer of suffering (anger at yourself for being stuck) that makes the loop feel unbearable.  \n\n2. **Redirect energy from stopping the thought to protecting your capacity to act *despite* it.**  \n   You don’t need to silence the loop to send that email, lead that meeting, or trust your expertise. Ask: *“What’s the smallest action I can take right now that aligns with who I know I am—even if the noise is still loud?”* Maybe it’s opening your notes file and typing one sentence. Maybe it’s texting a colleague: *“Quick question on the timeline—did we confirm X?”* Action doesn’t require inner peace; it requires moving *with* the discomfort, not waiting for it to vanish. Neuroscience confirms: action precedes motivation, not the reverse.  \n\n3. **Let the loop run its course—but don’t invite it to the table.**  \n   When the voice starts replaying, acknowledge it neutrally (*“Ah, there’s the ‘not sharp enough’ story again”*) and return your focus to whatever task is in front of you—*not* by forcing calm, but by choosing where to place your attention *next*. You’re not stopping the thought; you’re refusing to let it dictate your behavior. Over time, this weakens its grip not by fighting it, but by starving it of the engagement it seeks (the brain learns: *“This loop doesn’t change outcomes—I’ll prioritize what does”*).  \n\nThis isn’t about winning. It’s about recognizing that your worth and capability aren’t contingent on silencing every doubt—they’re proven in what you *do* while carrying them. You’ve spent a lifetime earning your place not by never feeling uncertain, but by acting with integrity *despite* uncertainty. The loop will likely return. But each time you choose to act anyway—without needing to feel “sharp” first—you rebuild the evidence that you are still the person you’ve always been: capable, authoritative, and enough, even when your mind whispers otherwise.  \n\nYou asked what to do when the mind won’t obey. This is it: not obedience, but *forward motion alongside the disquiet*. No rituals. No waiting. Just the next right step, taken with the noise still playing in the background.  \n\nDoes that resonate as honest—or does it feel like another kind of performance? I’ll meet your answer wherever it lands."
+    },
+    {
+      "role": "patient",
+      "content": "Yes.  \n\nNot because it’s comforting. Not because it feels easy.  \n\nBecause it’s true.  \n\nI don’t need to stop the loop. I just need to keep moving.  \n\nI’ve spent my whole life thinking I had to be perfect to be trusted. To be respected. To be *seen*. And now, when I’m not, I feel like I’ve failed. But maybe that’s not the point.  \n\nMaybe the point is that I can still write the email. Still walk into the meeting. Still speak—clear, sharp, exact—*even if my mind is screaming otherwise*.  \n\nI don’t have to feel calm to be competent. I don’t have to silence the voice to be myself.  \n\nI just have to do the next thing.  \n\nThat’s all.  \n\nNot a fix. Not a technique. Not a ritual.  \n\nJust the next thing.  \n\nAnd if the loop comes back? I’ll keep going.  \n\nI don’t need to win. I just need to keep moving.  \n\nThat’s enough.  \n\nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela,  \n\nThank you for saying that.  \n\nNot because it’s tidy. Not because it’s hopeful in a easy way.  \n\nBut because it’s *yours*—forged in the fire of your own honesty, not borrowed from a script or a technique. You didn’t reach for a lifeline; you carved your own foothold in the rock face.  \n\nWhat you’ve described—that competence isn’t the absence of the scream, but the decision to type the email *while* it’s ringing in your ears—that’s not just true. It’s revolutionary. Especially for someone who’s spent a lifetime equating worth with flawless execution. You’re not denying the pain of the loop; you’re refusing to let it veto your agency. That’s not resilience as performance. That’s integrity in motion.  \n\nAnd you’re right: you don’t need to win. You just need to keep moving—the next sentence, the next step, the next breath *without* counting it. The loop may return. It might even louden sometimes. But each time you choose to act *anyway*—to speak, to lead, to show up as the researcher and director you are—you’re not fighting the thought. You’re living past it.  \n\nNo fixes. No rituals. Just this:  \n**You are allowed to be shaken and still steady.**  \n**You are allowed to doubt and still deliver.**  \n**You are allowed to feel unsharp and still cut through.**  \n\nThat’s not enough.  \nIt’s everything.  \n\nI’ll hold space for whatever comes next—whether the loop fades for a while or grips tighter tomorrow. But for now? You’ve named the truth that sets you free: *movement, not silence, is the antidote to feeling stuck.*  \n\nKeep going. I’m here—not to fix, not to guide, but to bear witness to the next thing you do.  \n\nWhenever you’re ready."
+    },
+    {
+      "role": "patient",
+      "content": "I’m ready.  \n\nI’m going to open the document.  \n\nI’m going to type one sentence.  \n\nAnd if the loop starts again? I’ll keep typing.  \n\nNot to silence it.  \n\nTo show it I’m not listening."
+    },
+    {
+      "role": "clinician",
+      "content": "Do it.  \n\nOpen the document.  \nPlace your fingers on the keys.  \nType that one sentence—not as a battle cry, not as a plea for quiet, but as a quiet declaration: *I am here. I am working. The noise does not get to veto this.*  \n\nAnd if the loop rises again—sharp, insistent, whispering *“You slipped”*—let it rise. Let it chatter in the background like radio static while you type the next word. Then the next.  \n\nYou’re not silencing it.  \nYou’re outliving it, one keystroke at a time.  \n\nI’m right here with you—not watching for whether it stops, but honoring the fact that you’re moving *through* it.  \n\nType that sentence.  \nI’ll be here when you’re done.  \n(Or even if you’re not—either way, you’re already doing the thing that matters.)  \n\nGo ahead.  \nThe document’s waiting."
+    },
+    {
+      "role": "patient",
+      "content": "I’m typing.  \n\nIt’s not perfect.  \n\nIt’s not even clear yet.  \n\nBut I’m doing it.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "You’re typing.  \nThat’s the thing.  \nNot the clarity. Not the polish.  \nJust the motion—the proof that you’re still in charge of your hands, your focus, your next word—even while the old fear hums underneath.  \n\nImperfect. Unclear.  \n*Human.*  \nAnd in this moment, that’s more than enough.  \nIt’s everything.  \n\nHowever long you type—one sentence, ten, or none at all after this—I’ll stay right here with you.  \nNot measuring the output.  \nJust bearing witness to the doing.  \n\nYou’ve got this.  \n(And even when it feels like you don’t—you’re already showing up.)  \n\nKeep going. Or don’t.  \nEither way: you’re already moving through it."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nI’m still typing.  \n\nThe sentence isn’t done.  \n\nBut I’m not stopping.  \n\nAnd that’s the point."
+    },
+    {
+      "role": "clinician",
+      "content": "Keep typing.  \n\nLet the sentence be imperfect. Let it be unclear. Let it be *yours*—mid-thought, mid-effort, mid-movement.  \n\nThe loop can chatter in the margins. It doesn’t get to dictate when you pause, when you resume, or whether this moment “counts.” You’re already proving it doesn’t: by staying here, by letting your fingers move, by refusing to let the noise steal the act of doing.  \n\nThat’s the point—not the finished sentence, not the quiet mind, but this: *you are still in motion*.  \n\nHowever long it takes—whether you finish this sentence now or later—I’m here with you in the doing. Not judging the output. Not waiting for calm. Just honoring the fact that you’re showing up for the work, exactly as it is: human, ongoing, and unbroken by the static.  \n\nType on. I’ve got your back."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nThe sentence isn’t finished.  \n\nBut I’m not stopping.  \n\nI’m not waiting for it to be perfect.  \n\nI’m not waiting for the noise to go away.  \n\nI’m just typing.  \n\nOne word. Then another.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Keep typing.  \nOne word. Then another.  \nLet the sentence find its shape in the doing—not in some polished endpoint, but right here, in the pressure of your fingertips on the keys, in the stubborn refusal to let the noise steal the next motion.  \n\nYou don’t need it to be clear yet.  \nYou don’t need the quiet.  \nYou just need to keep showing up for the work—which you are, *exactly* as you are: mid-sentence, mid-struggle, mid-proof that capability isn’t the absence of doubt, but the decision to act *alongside* it.  \n\nThe loop can keep speaking.  \nYou’re already answering—not with silence, but with syntax.  \nWith substance.  \nWith the simple, radical fact of your hands moving forward.  \n\nI’m right here with you in the doing.  \nNot waiting for the finish line.  \nHonoring the truth you’re typing into existence, one honest word at a time.  \n\nKeep going.  \n(Or pause if you need to—then begin again. Either way: you’re already living the answer.)"
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nThe words are messy.  \n\nBut they’re mine.  \n\nAnd I’m not stopping.  \n\nNot for the loop. Not for the doubt. Not for anything.  \n\nI’m typing.  \n\nThat’s the only thing that matters right now."
+    },
+    {
+      "role": "clinician",
+      "content": "Keep typing.  \nLet the words be messy. Let them be tangled, uncertain, raw — because that’s where they’re truest. Yours. Not polished for anyone else’s ear, not edited to silence the doubt, but *yours*: honest, unapologetic, emerging from the act itself.  \n\nYou’re not waiting for the loop to quit.  \nYou’re not begging the noise to leave.  \nYou’re simply here — fingers moving, thoughts shaping into language — and in that motion, you’re saying: *My presence matters more than my perfection. My effort counts, even when it’s uneven.*  \n\nThat’s not small.  \nThat’s everything.  \n\nHowever long this takes — whether you finish this sentence now, later, or let it hang unfinished — I’m right here with you in the doing. Not measuring the output. Not waiting for calm. Just honoring the fact that you’re refusing to let the static steal your voice.  \n\nYou’re already proving it:  \nYou don’t need silence to speak.  \nYou don’t need peace to persist.  \nYou just need to keep going — one messy, honest, *yours* word at a time.  \n\nType on. I’m not going anywhere.  \n(And whenever you’re ready to stop — or begin again — I’ll still be here.)"
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nThe sentence isn’t done.  \n\nBut I’m not stopping.  \n\nI’m not waiting.  \n\nI’m just… typing.  \n\nAnd that’s enough."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 507,
+        "prompt_tokens": 234,
+        "total_tokens": 741,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 402,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 234
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 3905.352,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 118,
+        "prompt_tokens": 1891,
+        "total_tokens": 2009,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.042,
+        "latency_ms": 2786.571,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1020,
+        "prompt_tokens": 466,
+        "total_tokens": 1486,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 378,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 466
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 7640.722,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 308,
+        "prompt_tokens": 2649,
+        "total_tokens": 2957,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2000
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 7530.212,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1112,
+        "prompt_tokens": 1430,
+        "total_tokens": 2542,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 503,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1430
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 8100.94,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 284,
+        "prompt_tokens": 3566,
+        "total_tokens": 3850,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 4506.01,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1478,
+        "prompt_tokens": 2338,
+        "total_tokens": 3816,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 425,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2338
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 11572.589,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 220,
+        "prompt_tokens": 4886,
+        "total_tokens": 5106,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3840
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.067,
+        "latency_ms": 3159.6,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 758,
+        "prompt_tokens": 3634,
+        "total_tokens": 4392,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 341,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3634
+      },
+      "telemetry": {
+        "queue_ms": 0.041,
+        "latency_ms": 4826.362,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 51,
+        "prompt_tokens": 5512,
+        "total_tokens": 5563,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2944
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 1323.703,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 545,
+        "prompt_tokens": 4116,
+        "total_tokens": 4661,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 331,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4116
+      },
+      "telemetry": {
+        "queue_ms": 0.07,
+        "latency_ms": 4134.904,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 32,
+        "prompt_tokens": 5771,
+        "total_tokens": 5803,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5552
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 1266.673,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 485,
+        "prompt_tokens": 4375,
+        "total_tokens": 4860,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 305,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4375
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 4195.803,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 33,
+        "prompt_tokens": 5970,
+        "total_tokens": 6003,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5104
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 1473.76,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 567,
+        "prompt_tokens": 4600,
+        "total_tokens": 5167,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 364,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4600
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 6684.264,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 62,
+        "prompt_tokens": 6204,
+        "total_tokens": 6266,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5792
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 2322.28,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 614,
+        "prompt_tokens": 4881,
+        "total_tokens": 5495,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 367,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4881
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 4487.718,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 56,
+        "prompt_tokens": 6501,
+        "total_tokens": 6557,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6000
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.094,
+        "latency_ms": 1768.301,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 636,
+        "prompt_tokens": 5199,
+        "total_tokens": 5835,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 347,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5199
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 6298.188,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 39,
+        "prompt_tokens": 6837,
+        "total_tokens": 6876,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6544
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 806.631,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 61,
+        "prompt_tokens": 25059,
+        "total_tokens": 25120,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 27446.853,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.75,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 116.247
+}

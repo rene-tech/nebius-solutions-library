@@ -1,9 +1,113 @@
 # Workload lifecycle telemetry and GPU accounting
 
+## Accepted-to-ready window totals
+
+The serving Models list/detail retains the legacy `cold_start_seconds` API key,
+but labels it **Accepted-to-ready total (window)**. This is a sum over terminal
+operations in the selected window, including queue/dispatch, not per-start
+latency or pure initialization time. PostgreSQL and memory readers separately
+count non-null recorded spans. No recorded spans is unavailable with an explicit
+"No samples" reason; one recorded span of zero seconds remains an available
+zero. Individual operation durations are unchanged. This view does not substitute
+for scientific-batch per-attempt lifecycle accounting.
+
+Verification: 29 admin API tests, the actual PostgreSQL reporting integration
+test, three Models UI tests, production admin build, and four changed backend
+modules under mypy; scoped Ruff passes. The database fixture uses a task-owned
+local PostgreSQL container, not production data.
+
 The lifecycle ledger is the durable attribution source for online operations
 and scientific-batch attempts. OpenTelemetry preserves causality; Kubernetes,
 Kueue, kubelet and DCGM provide independently observed allocation facts. The
 ledger never derives GPU allocation from request latency.
+
+## Bounded DCGM sample capture (separate from allocation clocks)
+
+The existing scientific lifecycle bridge optionally reads the existing configured
+Prometheus origin once when an attempt is terminal and its resources are released.
+It uses an instant query with a raw range selector, not `query_range` resampling.
+Operation, attempt, model, tenant, stage, Pod UID/name/namespace and GPU UUID must
+match the durable attempt and kubelet allocation correlation. Samples must lie
+inside the exact observed half-open device-allocation interval. A node UID is
+reported only from the exact Pod's unambiguous durable node correlation. Duplicate
+exporter points must agree; a conflict rejects that device's samples.
+
+The existing append-only lifecycle table stores one compact immutable summary
+per verified allocation, plus a capture-outcome marker. It retains sample count,
+zero/positive counts, min/max utilization, first/last timestamps, maximum gap
+including unsampled edges, phase-associated counts, and the canonical raw-vector
+SHA-256. Missing/overlapping phase evidence stays unclassified. This is not a
+second telemetry table or poller. Replay reuses the marker without querying or
+rewriting the capture. All reservation, occupancy, execution and idle clocks and
+retry decisions are unchanged.
+
+Run detail displays these observed sample counts separately from GPU-seconds.
+Raw vectors remain subject to existing Prometheus retention (observed live: ten
+days; DCGM scrape interval five seconds), while summaries remain in the ledger.
+The source's device measurement window is not a kernel-exact phase boundary:
+zero samples do not prove continuous idle, positive samples do not establish a
+busy duration, and neither becomes billable time. Phase wall time is not device
+utilization. No interpolation or average-utilization integration is performed.
+
+Limits are explicit: terminal attempts only, no retrospective rewrite of old
+rows, no capture when the existing Prometheus URL is unset, and no automatic
+re-query after a persisted unsuccessful capture. Scrape lag can leave the tail
+unobserved; short attempts may have no samples. Per capture, the reader keeps the
+existing HTTP timeout/response-size bounds and permits at most ten days, 128 raw
+series and 100,000 raw samples. Missing identity, source errors, conflicting
+samples and partial device coverage remain visible; telemetry read/parse failure
+does not fail inference. These are telemetry bounds, not workload limits.
+
+Candidate verification: 63 focused backend tests (three PostgreSQL cases run
+separately), 140 lifecycle/controller/disruption regressions, five actual
+PostgreSQL-backed tests plus six associated projection tests, 14 run-detail UI
+tests, production admin build, scoped Ruff and seven-module mypy.
+
+A read-only retrospective projection of the two actual release183 maintenance
+eviction/recovery attempts joined 13 and 14 raw samples (one and three positive),
+with zero rejected identity groups and maximum gaps 5.018s and 5.007s. The second
+attempt included a positive device sample labelled application-observed resident
+idle and zero samples labelled active compute, illustrating the clock distinction.
+Protected receipt SHA-256:
+`a88f730defca0c93ffdb8d5fcb97214debfa37b2bc4161f996a45a2118352bad`.
+This is candidate join evidence, not deployed ingestion qualification. The actual
+release183 eviction test separately proved automatic bounded retry, successful
+semantic artifacts and same-operation idempotent replay; original182 failure is
+retained. Root owns the next exact-image deployment and ingestion/browser checks.
+
+### Bounded release184 public ingestion proof
+
+On 2026-09-19, one ordinary scientist02 ESMFold2-Fast request on source
+`3dccbdc878225fb7b26fa79fd5295f5c646d71a8` completed without a fault or policy
+change. Control-plane image
+`sha256:be36dc7cf85618de274a50b08ff890261c70596e0b531d7681c8e368c1f5d089`
+and admin image
+`sha256:72581f9f4035742e8c0b52a197c9b9a702f17fe8a6a837990dd2f7bf42ce4ae4`
+were observed installed. Both output artifacts passed hash/semantic validation;
+same-key replay returned the same operation and workload. No new scientific
+quality, recovery, concurrency or combined customer-readiness claim follows.
+
+The released GPU attempt durably retained 12 exact-identity samples: two
+positive and ten zero, maximum unsampled gap 5.006 seconds. Its 65 scheduler
+GPU-seconds partitioned into one image-pull, 34 artifact-load, 29 execution-span
+and one unclassified second. The independent device clock was 64.341259 seconds.
+Reconciliation passed; `trace_context_missing` remained visible. A later ledger
+read preserved the same event digest/watermark. The actual admin browser showed
+the exact Pod/node/GPU join, phase counts and sampling limitations. Samples are
+not continuous busy/idle duration or billing. Protected combined receipt SHA256:
+`a3fc87b396652917ae2c9360e2d74bccfa83e7765e3bafa89ac2699d3b0118cb`.
+
+This proof also exposed a real display defect: the successful CPU prepare stage
+was falsely shown as `batch-cpu: blocked` because node-fit matched only the GPU
+pool label. Its original184 API/browser evidence is retained. The narrow
+successor projection uses CPU capacity pool identity and its frozen selector;
+older single-pool reference-data classes without a pool-ID label use their exact
+frozen selector. Missing/ambiguous CPU selectors remain unknown, not a guessed
+match. GPU label matching and scheduler decisions are unchanged. Local replay
+against the retained admission and a read-only current node capture finds two
+possible CPU nodes and identical GPU pool results; this is not successor live
+deployment evidence. Replay receipt SHA256:
+`17a612e7d094b68464ec408c097c195fdc7b0d17ef44ab13eb6f250c12e03c58`.
 
 ## Immutable identity
 
@@ -145,6 +249,58 @@ GPU-second rollups.
 These calls are additive and do not give the telemetry lane ownership of
 controller, artifact or scientific-admin state.
 
+### Scientific gang quota-count correction (2026-10-03)
+
+`SchedulingAdmission.accelerator_count` is **per Pod**, not the total JobSet
+reservation. The Kubernetes adapter compares each Kueue PodSet's aggregate
+`resourceUsage` and replica count against its frozen rendered envelope before
+recording that per-Pod quantity. A scientific quota interval belongs to one
+attempt: its GPU count is now the admitted per-Pod count multiplied by the
+frozen stage's `gang_size` for `TRUE_GANG` (`gang-jobset`), or by one for an
+independent Job. Fanout shard count, MPI thread count and the number of Pods
+observed in a particular poll are not quota multipliers.
+
+| Frozen shape | Per-Pod admission | Quota interval GPU count |
+| --- | ---: | ---: |
+| 1 node × 1 GPU | 1 | 1 |
+| 1 node × 4 GPUs | 4 | 4 |
+| 2 nodes × 1 GPU | 1 | 2 |
+| 2 nodes × 8 GPUs | 8 | 16 |
+
+The legacy bridge omitted the gang multiplier on both quota edges. Two completed
+internal QA operations (`b453cad7-9526-4c7b-a2b7-904e21c13ffe` and
+`6c2459a2-abc6-462a-a363-1367b43f2276`) independently establish the defect:
+their frozen stages have `gang_size=2`; their verified admissions record one
+GPU per Pod; retained API-server Pod snapshots show two distinct one-GPU Pods
+on distinct nodes in the `gang` PodSet with replica count two; and their four
+persisted quota edges each record only one GPU. The original Kueue Workloads
+were deleted after release and their raw `podSetAssignments` were not retained.
+Thus the evidence is the frozen contract, admission validator, actual PodSet
+membership/resource requests and durable quota signals—not a timing ratio.
+The private bounded read-only receipt is
+`secure-handoff/fs2-gromacs-mpinat-20261003/quota-count-r1/evidence.json`,
+SHA-256 `4dba71b1e2a7a35b33ba6836e482d261d1d55a8cd2ef4ce094b5d3b72ab35082`.
+
+This is a future-interval correction, not a ledger migration or billing
+adjustment. Existing signals and rollups remain immutable. If an exact legacy
+quota start already exists, replay preserves it and closes that same interval
+with its original per-Pod count; it neither substitutes a total nor appends a
+second reservation. Only the known per-Pod-to-total difference is tolerated;
+changes to timestamps, counts outside that exact legacy case or other event
+facts still fail closed. This also keeps in-flight old attempts replayable.
+Historical gang quota GPU-seconds therefore remain undercounted by the gang
+size for these intervals. A historical correction requires a separately
+reviewed, explicitly labelled derived report; it must not rewrite stored rows.
+
+Scheduler occupancy still sums exact per-Pod requests, and device allocation
+still counts observed device identities. Neither clock changes in this fix.
+The generic scientific operation `reserved_gpu_seconds=0` is a separate,
+intentional admission-accounting field, not measured zero allocation cost.
+Complete the controller-image rollout before admitting new gangs that could
+be reconciled by an older writer: that older writer cannot replay new total-count
+quota edges. Deployment and live qualification are separate gates; these
+source tests do not establish that the running release includes this fix.
+
 ## Security, retention and cardinality
 
 Raw prompts, sequences, images, request/response values, credentials, bearer
@@ -201,6 +357,89 @@ estimate grouped by the original catalog qualification class, not observed
 hardware usage. Historical totals are not relabelled when deployment placement
 changes. Use the lifecycle clocks and immutable node/GPU correlations above
 for measured allocation and occupied-idle analysis.
+
+## Scientific attempt accounting and placement visibility (2026-09-19)
+
+The scientific admin detail joins existing durable lifecycle subjects and
+correlations by operation, tenant and immutable attempt ID. Each attempt exposes
+only its observed Pod/node/GPU identities, plus its own phase durations. Retries
+are separate subjects; shared online serving requests must not be summed as if
+each owned the whole serving Pod. Conflicting latest rollups fail closed.
+
+New scientific Pod observations retain an admission-to-PodScheduled dispatch
+interval on the lifecycle clock (zero GPU attribution). The existing controller
+reconcile also reads at most 1,000 namespace Events once, not once per Pod. Exact
+Pod-UID/container matched, single-occurrence Pulling/Pulled pairs become durable
+image-pull intervals with both source Event UIDs. Missing, expired, aggregated or
+truncated Event lists leave startup unknown. Generic ContainerCreating is no
+longer labelled measured image pull: mounts, networking and other setup cannot
+be separated without evidence. Historical immutable ledger rows are not rewritten.
+
+The GPU partition displays load, restore, compile, warmup, execution span,
+workflow wait, resident idle, cooldown, checkpoint drain, teardown and unknown.
+Existing collector completion and cleanup edges supply occupied non-execution
+boundaries. Queue/dispatch does not enter this GPU occupancy partition. Phase
+wall-time unions may overlap; the GPU partition uses the existing ledger's
+single-assignment precedence. The compatibility `grace-drain` wall-time field
+overlaps the new cooldown/checkpoint-drain fields and must not be added to them.
+Quota reservation, scheduler occupancy and observed device allocation remain
+three different clocks. Missing clocks are unavailable, never substituted with
+zero. The legacy `idle_total` includes startup/unknown non-execution occupancy;
+it is not a classified idle or utilization measurement.
+
+No attempt-correlated device-utilization samples are retained by the current
+observer/DCGM join in the first source candidate. The bounded terminal-attempt
+DCGM capture described above adds observed sample counts in run detail; historical
+or unavailable captures remain unavailable, never fabricated busy GPU-seconds.
+Container execution spans are not kernel-exact busy time. Neither this view nor
+allocation counters establish billing or physically free/placeable capacity.
+The legacy API field `cold_start_seconds` retains its numeric contract but is
+labelled accepted-to-ready, including queue/dispatch, not pure cold start.
+
+Stage placement shows the frozen eligible pools, namespace, required labels,
+reference-data requirement and stage/whole-Pod CPU, memory and disk requests.
+Whole-Pod requests use the actual renderer calculation, including the concurrent
+collector. For example, a 16-CPU stage plus 100m collector requires 16,100m and
+cannot fit a 15,900m node merely because a GPU is unreserved. This is an immutable
+eligibility explanation, not a fresh node-fit claim; `live_fit` is not-observed.
+The existing observed Pending reason remains the source for current scheduler
+rejections. No resource, queue, quota, timeout or attempt limit changes.
+
+The additive `node_upper_bound_fit` on each stage compares that frozen whole-Pod
+request with a single current node inventory obtained through the existing
+capacity reader. Exact renderer pool labels and required selectors fence the
+comparison. CPU/RAM/disk/accelerator bounds, required-label mismatches and
+unready/cordoned nodes produce explicit per-pool negative reasons. Missing
+quantities stay unknown. Maxima are descriptive only: CPU on one node and RAM
+on another never combine into a fictitious fit. Passing all tested upper bounds
+is only `possible`, not available, free or schedulable. Other Pods' requests,
+taints/tolerations, gang placement and actual reference-data contents remain
+unassessed. The observation timestamp is current even for a historical run.
+
+This optional node read happens only after existing tenant/run authorization,
+with the existing per-source timeout. Its failure yields an unavailable source
+warning and leaves durable run details/frozen constraints usable. It never
+changes scheduling, pool preference, snapshot compatibility or admission. No
+new poller, endpoint, permission or limit is introduced for this follow-up.
+The fit follow-up passed 85 focused backend/source-composition tests (three
+PostgreSQL tests deselected, with no SQL change), 13 run-detail UI tests and the
+production UI build. Its four accounting/fit modules pass mypy and scoped Ruff
+passes; checking the CLI wiring also reports the pre-existing Uvicorn
+`timeout_graceful_shutdown` float-versus-int annotation mismatch, left unchanged.
+
+Exact true Kubernetes `DisruptionTarget/EvictionByEvictionAPI` is classified as
+infrastructure loss under the existing bounded retry policy. Known application
+errors, OOM and execution timeout retain priority and remain non-retryable.
+The retained 182 API-eviction failure is preserved in a payload-free status
+fixture; offline classification/retry tests are not live recovery qualification.
+
+Candidate verification: 327 control-plane/controller/admin/chart tests passed
+(three PostgreSQL tests excluded from that run); the three excluded tests then
+passed against a task-owned PostgreSQL 16 instance. Sixteen admin UI tests and
+the production UI build passed. Mypy passed for all eight changed Python source
+modules. Ruff passed the changed Python source/test files except three existing
+long lines in `test_helm_chart.py` unrelated to the namespaced Event-list rule.
+Root-owned deployed API/UI and automatic-recovery acceptance remains required.
 
 ## Verification
 

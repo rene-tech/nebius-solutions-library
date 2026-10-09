@@ -1,0 +1,77 @@
+{
+  "schema": "fs2-serve.nebius.ai/recorded-transfer-exact-size-evidence/v1",
+  "status": "passed-at-stated-scope",
+  "customer_ready": false,
+  "release": 173,
+  "scope": "Ordinary scientific MCP request, exact raw child geometry, strict native snapshot restore and complete recorded LeRobot dataset readback; no physical-action or policy-training qualification.",
+  "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "project": "project-e00rene",
+  "scientist": "scientist-10",
+  "parent_operation_id": "df3282bb-df3d-48e1-8e86-d044c2a1e46c",
+  "control_plane_image_digest": "sha256:8ef559f18bec233b37fc16b5b8a16270c4685f44c72f07d0a9b336023ac58b52",
+  "coordinator_image_digest": "sha256:41a01714ed6d89b90a5b4a4527e2eb9907433f7932970544d2a712333996de04",
+  "coordinator_execution_identity_sha256": "d540d6c7cdb04476732cc8d7e50bce0cb4370e2b00199324e9766d6c067ef18e",
+  "native_image_digest": "sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+  "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+  "coordinator_node": "computeinstance-e00np06w11et5qq9xp",
+  "native_node": "computeinstance-e00k0hdq51xykanvqs",
+  "native_pod_uid": "96e53885-516a-4c97-b7cc-401a2787687d",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "gpu_uuid": "GPU-a49a2242-2714-1f6d-f372-97b06758b88e",
+  "driver": "580.159.04",
+  "kernel": "6.11.0-1016-nvidia",
+  "snapshot": {
+    "policy": "Require",
+    "mechanism": "cuda-criu-restored",
+    "fresh_load_fallback": false,
+    "criu_restore_seconds": 17.45270869199976,
+    "cuda_restore_seconds": [5.326718266000171, 0.034540838999419066],
+    "scope": "Existing node and shared filesystem path; not empty-node cold start. CPU dataset coordinator itself is not GPU-snapshotted."
+  },
+  "observed_end_to_end_seconds": 184.3057358264923,
+  "children": [
+    {
+      "operation_id": "93c064f3-746a-4759-b5d1-7c8e4e8e57d1",
+      "episode": 0,
+      "started_at": "2026-09-19T01:22:26.375459Z",
+      "completed_at": "2026-09-19T01:23:01.951302Z",
+      "active_inference_seconds": 35.575843,
+      "input_video_sha256": "3a7aad57488e57db15ca091b9098662de8e187b4a3cd9b551ccb644ca8f2b1ab",
+      "raw_output_video_sha256": "b01067886f19288da617301ba47eac9f859649b5e63014746ccbd8a99f669053"
+    },
+    {
+      "operation_id": "11eb552f-b024-4cd3-88e6-33755eb09000",
+      "episode": 1,
+      "started_at": "2026-09-19T01:23:08.808472Z",
+      "completed_at": "2026-09-19T01:23:42.070151Z",
+      "active_inference_seconds": 33.261679,
+      "input_video_sha256": "e8532ceb7831be935f8a90ea7296adb4cf153ed573d27ae4e7e0a6696e2fe85e",
+      "raw_output_video_sha256": "e4c97e264008cb26a43a6891a5f950edfb7b9137cba55c890a424a16a070d48e"
+    }
+  ],
+  "independent_checks": {
+    "raw_child_videos_checked_before_dataset_writer": 2,
+    "raw_child_shape_each": [640, 480],
+    "raw_child_frames_each": 64,
+    "raw_child_fps_each": 25,
+    "reader": "lerobot==0.6.1",
+    "episodes": 2,
+    "frames": 128,
+    "cameras": 2,
+    "nonvideo_values_compared": 6144,
+    "nonvideo_values_exact": true,
+    "physical_action_alignment_verified": false,
+    "policy_training_validity_verified": false
+  },
+  "receipt_sha256": "ea828a9e28959c2c0a873ff31d2dda9de777af29d912089ab9fb56b7038e3e5a",
+  "request_sha256": "c7168254a100523d16e74acaacea4d29c9507b0ba3f4b753245f2aed8e91c77d",
+  "independent_validation_sha256": "a09d570f3d309e229c6eaba4d4a98bbb62f8184f43f0ce62359433a2eb48cca0",
+  "retained_evidence": "scientific-qualification-20260918/lerobot-admission-diagnosis/public-v4-lerobot-edge-transfer-r2",
+  "limitations": [
+    "Original failed requests and old raw 448x256 outputs remain preserved; this success does not erase them.",
+    "Generated appearance, robot contacts and recorded action alignment still require independent assessment.",
+    "Unselected cameras are reencoded within declared codec tolerance, not pixel-bit-identical.",
+    "One two-episode run does not qualify concurrency, maximum input bounds, new-node cold start or all datasets.",
+    "The actual LibreChat customer path and unchanged-release clean cohorts remain separate release gates."
+  ]
+}

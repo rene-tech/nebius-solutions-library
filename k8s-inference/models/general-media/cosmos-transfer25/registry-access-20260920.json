@@ -1,0 +1,29 @@
+{
+  "schema": "fs2-serve.nebius.ai/ngc-registry-probe/v1",
+  "observed_at": "2026-09-20T04:06:02Z",
+  "target_cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "namespace": "fs2-models",
+  "pod_name": "cosmos-transfer25-registry-preflight-20260920-r2",
+  "pod_uid": "2503fc57-fac0-4b26-8f9d-09022472f8f1",
+  "secret_reference": "wan2-ngc-api/NGC_API_KEY",
+  "secret_values_retained": false,
+  "status": "passed",
+  "repository": "nim/nvidia/cosmos-transfer2.5-2b",
+  "tag": "1.1",
+  "index_digest": "sha256:970b21c10b2efd38c362b1fa2560cb94bed3eaa8065273d36ce885ee6e8d1cae",
+  "linux_amd64_manifest_digest": "sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+  "config_digest": "sha256:1e158a752a9ee0fa010a864544df1c600171b1d4eb8b55fb0081319da66a48dc",
+  "compressed_layer_bytes": 19461097170,
+  "layer_count": 122,
+  "authenticated_manifest_access": true,
+  "model_artifact_access_tested": false,
+  "gpu_requests": 0,
+  "prior_attempt": {
+    "pod_uid": "7558102a-cb86-476a-92f8-ba7bf15769b3",
+    "status": "failed",
+    "phase": "untrusted-authentication-realm",
+    "cause": "Probe incorrectly required service=nvcr.io; the verified NVIDIA challenge uses service=registry",
+    "credentials_sent": false,
+    "corrected_with_regression_test": true
+  }
+}

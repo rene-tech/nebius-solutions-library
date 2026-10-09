@@ -1,0 +1,13 @@
+{
+  "schema": "fs2-serve.nebius.ai/lerobot-qualification-evidence-index/v1",
+  "scope": "One LeRobot App only; not a scientific fleet-wide acceptance result",
+  "model_id": "cosmos3-lerobot-augmentation",
+  "operation_id": "e50a8f50-c388-4eb7-a53d-bd943d82070c",
+  "public_completion": {
+    "path": "models/general-media/lerobot-augmentation/activation/qualification/public-completion-r148.json",
+    "sha256": "013bd1a753c2fa2b440509a50bd14dbee0b068438431567055d1e6052f4b4e7e"
+  },
+  "accepted_scheduler_observation_sha256": "34f0f1fd1294c8ca2c6a70ee5d0a964ff9083303b98cca9e05c53a14ef13f200",
+  "reader_validation_sha256": "5ce1b818ccf5d1748ef1f4c17a951b383acc271ca6b1d4b238c176c55451e11a",
+  "qualified_at": "2026-09-18T00:41:50.980231+00:00"
+}

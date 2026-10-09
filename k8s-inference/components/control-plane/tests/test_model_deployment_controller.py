@@ -356,6 +356,12 @@ class FakeApi(ModelControllerApi):
         self.calls.append(("get", key.text))
         return copy.deepcopy(self.model)
 
+    async def list_pool_nodes(self) -> list[dict[str, Any]] | None:
+        return None
+
+    async def list_allocated_pods(self) -> list[dict[str, Any]] | None:
+        return None
+
     async def discover(self, *, key: ModelKey, owner_uid: str, render: RenderPlan) -> Discovery:
         self.calls.append(("discover", key.text))
         return Discovery(resources=[item.model_copy(deep=True) for item in self.resources.values()], complete=True)

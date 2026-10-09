@@ -1,0 +1,611 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-002",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Jennifer, it's good to see you again. How are you doing today?"
+    },
+    {
+      "role": "patient",
+      "content": "Not terrible. Just… tired in a way that’s not about sleep. Work was one of those days where everyone kept asking the same thing three times over, and I found myself explaining the same thing again, then realizing no one was actually listening. I kept thinking, why do I even care so much? It’s not like it changes anything."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds like a frustrating kind of day — the kind where the energy goes out but nothing seems to come back. And that question you landed on, \"why do I even care so much,\" — that seems like it might be pointing at something deeper than just today's round of repeating yourself.\n\nWhat do you think that's about?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. Maybe it’s just the weight of doing things that feel necessary but not meaningful. I used to think if I just kept the wheels turning, the rest would follow. But lately, it’s like the turning doesn’t matter anymore. I’m not angry at the people in the meetings, not really. It’s more like… I’m tired of being the one who notices the small things, who remembers the deadlines, who keeps track. And when I do, no one says thank you. Just moves on.  \n\nIt’s not that I want praise. But I used to feel useful. Now I just feel like a machine that’s running out of fuel."
+    },
+    {
+      "role": "clinician",
+      "content": "There's a real shift in what you're describing — from feeling useful to feeling like a machine running out of fuel. That's not just about being tired. That sounds like something has changed in how you experience the work itself, maybe even how you experience yourself in relation to it.\n\nAnd I notice you made a point of saying it's not about praise. So it's not about recognition from others — it sounds more like something internal that used to be there and isn't anymore. That sense of mattering.\n\nDo you have a sense of when that shift started? Was it gradual, or was there something that knocked it loose?"
+    },
+    {
+      "role": "patient",
+      "content": "It was gradual. I don’t remember a single moment. But I do remember a few months ago, I was sitting in my kitchen after a long day, just staring at the coffee cup, and I realized I hadn’t felt anything—no satisfaction, no frustration, no relief. Just… quiet. And that quiet wasn’t peaceful. It was like the engine had stalled, but I was still driving.  \n\nI think it started when I stopped caring about the little things. Not because I stopped noticing them, but because I stopped believing they mattered. Like when I corrected a typo in a report, and no one even saw it. I thought, why did I do that? I don’t even care. But then I felt worse for not caring. That’s when I started to notice the pattern.  \n\nI don’t know if it’s about work specifically. Maybe it’s about not wanting to feel anything at all."
+    },
+    {
+      "role": "clinician",
+      "content": "That kitchen moment sounds like it was an important one. Not because anything dramatic happened, but because you noticed something was gone. And what you're describing — still noticing, still functioning, but the feeling has drained out of it — that's a particular kind of experience. The engine stalled but you're still driving. That takes a lot, actually.\n\nAnd I want to sit with that last thing you said for a moment. \"Not wanting to feel anything at all.\" That could mean a few different things, and I want to make sure I understand what you're pointing at.\n\nAre you saying that the numbness has started to feel preferable — like it would be easier to just not feel? Or is it more that the numbness itself is what's scaring you — that you *want* to feel something and can't?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s both.  \n\nThe numbness feels easier. Like a kind of relief. No more carrying the weight of other people’s confusion, no more trying to fix things that don’t need fixing. Just… quiet. But then I catch myself thinking, if I don’t feel anything, am I still here?  \n\nAnd that’s the part that unsettles me. Not the irritability, not the tiredness — that’s just noise. It’s the quiet that’s worse. Because I don’t know if I’m losing myself or just finally seeing who I’ve been all along.  \n\nI don’t want to be numb. But I also don’t know how to turn it off."
+    },
+    {
+      "role": "clinician",
+      "content": "Thank you for being that honest about it. That's not an easy thing to admit — that the numbness feels like relief and also like losing yourself at the same time.\n\nAnd that question you're sitting with — \"am I losing myself, or just finally seeing who I've been all along\" — that's a heavy one. Because both possibilities are unsettling in different ways. If you're losing yourself, something is being taken from you. And if this is who you've been all along, then what does that mean about the years before?\n\nI'm curious about something. You described being the one who notices, who remembers, who keeps track — at work, and maybe beyond that too. Was that something you chose? Or something that just became your role over time?"
+    },
+    {
+      "role": "patient",
+      "content": "It wasn’t a choice. Not really.  \n\nI think I just started doing it because no one else seemed to. My sister used to say I was the one who “kept things together,” even when I didn’t want to. And I guess I believed it. That I was the reliable one. The one who could handle it.  \n\nBut now I wonder — was I doing it because I actually wanted to, or because I didn’t know how to stop? Because if I stopped, what would happen? Would things fall apart? Or would they just… keep going, like they always do, without me?  \n\nI don’t know. I just don’t know anymore."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a powerful thing to sit with. The role of \"the one who keeps things together\" — especially when it starts that young, with your sister naming it for you — it can become something you don't even see anymore. It just becomes who you are. And questioning it at 52, after decades of that being your identity, that's not a small thing.\n\nAnd I notice there are really two fears wrapped up in what you just said. One is that things would fall apart without you. But the other one — and this might be the harder one — is that they *wouldn't*. That things would just keep going. And then what does that mean about whether you mattered at all?\n\nIs that close to what's underneath this?"
+    },
+    {
+      "role": "patient",
+      "content": "Yes.  \n\nIt’s not just about the work. It’s about the quiet. The way my partner doesn’t ask me to check the grocery list anymore. The way my sister texts me less. I don’t know if they’ve stopped needing me, or if I’ve just stopped being noticeable.  \n\nAnd that’s the part that feels worse than the numbness. Not being needed. Not being seen. Not being *there* in a way that matters.  \n\nI used to think being useful was enough. Now I’m not even sure it ever was."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a really important thing to name. And I think it takes courage to say it — that being useful maybe was never actually enough, even when it felt like it was.\n\nBecause what you're describing sounds like it was never really about the tasks themselves. The checking, the remembering, the keeping things together — that was a way of being *present* in a way that got noticed. A way of mattering. And now that the need for those things is fading, or the noticing has stopped, the question underneath all of it is: **if I'm not the one who holds things together, do I still exist in a way that matters to anyone?**\n\nThat's not a small question. And I don't think it's just about depression talking. I think it's a question that was always there, and the numbness just made it loud enough to hear.\n\nCan I ask you something? Before all of this — before the tiredness, the quiet, the numbness — was there ever a time when you felt like you mattered just for being you? Not for what you did for someone, but just because you were *there*?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know.  \n\nI can’t think of a single moment. Not really.  \n\nI remember once, years ago, my partner said something like, “I like being around you,” and I thought, okay, that’s nice. But I didn’t believe it. Not really. I thought it was just because I was the one who remembered their birthday, who kept the calendar straight, who made the plans.  \n\nI think I’ve always been so busy proving I was useful that I never let myself just… be. Not even in the quiet. Not even in the dark.  \n\nAnd now that I’m not doing the work, I’m not even sure what’s left."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a profound thing to realize. And I think it matters that you're saying it now, even if it feels like arriving at something empty.\n\nBecause what I'm hearing is that for most of your life, being useful wasn't just something you did — it was how you knew you were real. It was the proof. And when someone offered you something that wasn't about what you did — your partner saying they like being around you — you couldn't even take it in. Not because you didn't want to, but because you didn't have a place to put it. There was no framework for \"mattering just because.\"\n\nThat's not a flaw in you, Jennifer. That's a pattern that started early — being the one who keeps things together — and it ran so deep that it became the only language you had for existing. And now the numbness has stripped that away, and you're left with the question underneath all of it.\n\nI don't think the answer is to figure out how to be useful again. I think the question you're actually sitting with is much harder and much more important than that.\n\nWhat would it mean to you if there was nothing left underneath the doing? Not as a conclusion, but as a starting place — what would that feel like?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know.  \n\nI keep thinking about that kitchen again. The quiet. The coffee cup. I didn’t move. I didn’t want to. And for the first time in a long time, I wasn’t trying to fix anything.  \n\nI just… was.  \n\nAnd it was terrifying.  \n\nBecause if I’m not doing, not fixing, not holding things together — then who am I?  \n\nBut also… it was the first time I didn’t feel like I had to be anything. Not even a machine. Just… here.  \n\nI don’t know if that’s enough. But it’s different. And that’s what scares me. Not the emptiness. The possibility that maybe the emptiness is where I start."
+    },
+    {
+      "role": "clinician",
+      "content": "I want to stay with that for a moment rather than moving past it.\n\nWhat you just described — that moment in the kitchen where you weren't doing, fixing, or holding anything together, and it was terrifying, but also the first time you didn't have to be anything — that sounds like something genuinely new. Not a symptom. Not a problem to solve. Something that maybe hasn't had space to exist before.\n\nAnd I think it's significant that you're not just saying the emptiness is scary. You're saying the *possibility* is what scares you. That the emptiness might not be the thing that's wrong with you. That it might be the first honest space you've found.\n\nI don't think that's something to rush past or fix. I think it's something worth sitting in, even though it's uncomfortable.\n\nAnd I want to be honest with you about something. You came in today talking about being tired, about work, about the numbness. And what you've actually been describing is something much bigger — a question about whether you're allowed to exist without earning it. That's not a small thing to be carrying, especially alone.\n\nSo I want to ask — is this something you've ever said out loud before? To your partner, to anyone?"
+    },
+    {
+      "role": "patient",
+      "content": "No.  \n\nNot even to myself.  \n\nI’ve told my partner I’m tired. I’ve said I’m overwhelmed. But never that I don’t know who I am if I’m not doing something. Never that I’m afraid I’ve spent my whole life being useful so I wouldn’t have to be seen.  \n\nI don’t know how to say it. It feels too much like admitting I’ve been pretending. Like I’ve been faking my way through every relationship, every day, every role — just to keep the machine running.  \n\nAnd now that it’s not running, I don’t know how to stop being afraid of being nothing."
+    },
+    {
+      "role": "clinician",
+      "content": "Jennifer, I want to be careful here. Because what you just said is important, and I don't want to smooth it over with reassurance that you're not nothing. That would be too easy, and I don't think it's what you need to hear right now.\n\nBut I do want to challenge one thing. You said it feels like admitting you've been pretending. And I understand why it feels that way. But I don't think that's what this is.\n\nPretending implies you knew the truth and chose to hide it. What you're describing sounds more like you found a way to survive early — being useful, being the one who holds things together — and it worked well enough that it became invisible to you. Not a deception. A structure. The only structure you had.\n\nAnd now that structure is coming apart, and you're calling it pretending. But maybe it's more like... discovering that a wall you've been leaning against for decades isn't actually a wall. It's just something you built so young you forgot you were the one who built it.\n\nThat doesn't make the fear of being nothing less real. But it might mean you're not uncovering a fraud. You're uncovering a person who never had the chance to find out who she was without the scaffolding.\n\nYou said something remarkable a few minutes ago — that maybe the emptiness is where you start. You've already begun asking that question. What feels different about saying all of this out loud, here, versus keeping it in the quiet of your own head?"
+    },
+    {
+      "role": "patient",
+      "content": "It feels like… I’m not alone in the quiet anymore.  \n\nI’ve spent so long thinking my thoughts were mine alone — that the way I feel, the way I’ve been carrying everything, that it was just me. That I was broken or lazy or too much. But saying it out loud, even like this, makes it feel less like a personal failing and more like something that happened to me. Something that happened because of how I was raised, how I was expected to be.  \n\nIt’s not that I’m not responsible. I am. But I’m not the only one who shaped this.  \n\nAnd now, for the first time, I’m not just trying to fix it. I’m just… letting it be.  \n\nEven if it’s terrifying. Even if I don’t know what comes next."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 64,
+        "prompt_tokens": 237,
+        "total_tokens": 301,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 46,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 237,
+        "reasoning_tokens": 46
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 1079.856,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 71,
+        "prompt_tokens": 1776,
+        "total_tokens": 1847,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 2098.199,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 271,
+        "prompt_tokens": 328,
+        "total_tokens": 599,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 203,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 328,
+        "reasoning_tokens": 203
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 1964.684,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 138,
+        "prompt_tokens": 1923,
+        "total_tokens": 2061,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1840
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 3733.373,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 454,
+        "prompt_tokens": 536,
+        "total_tokens": 990,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 326,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 536,
+        "reasoning_tokens": 326
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 3153.003,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 187,
+        "prompt_tokens": 2197,
+        "total_tokens": 2384,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1744
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 3276.538,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 663,
+        "prompt_tokens": 853,
+        "total_tokens": 1516,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 495,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 853,
+        "reasoning_tokens": 495
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 4772.008,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 140,
+        "prompt_tokens": 2560,
+        "total_tokens": 2700,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2368
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 2206.684,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 788,
+        "prompt_tokens": 1163,
+        "total_tokens": 1951,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 631,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1163,
+        "reasoning_tokens": 631
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 5381.772,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 138,
+        "prompt_tokens": 2865,
+        "total_tokens": 3003,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2688
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.073,
+        "latency_ms": 2388.391,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 592,
+        "prompt_tokens": 1460,
+        "total_tokens": 2052,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 439,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1460,
+        "reasoning_tokens": 439
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 3868.695,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 114,
+        "prompt_tokens": 3165,
+        "total_tokens": 3279,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2048
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 3233.547,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 758,
+        "prompt_tokens": 1729,
+        "total_tokens": 2487,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 524,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1729,
+        "reasoning_tokens": 524
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 4450.415,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 140,
+        "prompt_tokens": 3521,
+        "total_tokens": 3661,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2992
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 1853.188,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 750,
+        "prompt_tokens": 2105,
+        "total_tokens": 2855,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 490,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2105,
+        "reasoning_tokens": 490
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 4669.187,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 152,
+        "prompt_tokens": 3929,
+        "total_tokens": 4081,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3264
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 3003.344,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 658,
+        "prompt_tokens": 2519,
+        "total_tokens": 3177,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 397,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2519,
+        "reasoning_tokens": 397
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 3987.251,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 133,
+        "prompt_tokens": 4350,
+        "total_tokens": 4483,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4080
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 2295.855,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 795,
+        "prompt_tokens": 2915,
+        "total_tokens": 3710,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 479,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2915,
+        "reasoning_tokens": 479
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 5218.588,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 168,
+        "prompt_tokens": 4807,
+        "total_tokens": 4975,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4480
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 3312.562,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 58,
+        "prompt_tokens": 22957,
+        "total_tokens": 23015,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 3021.237,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 68.977
+}

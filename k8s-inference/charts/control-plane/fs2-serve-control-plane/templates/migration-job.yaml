@@ -28,6 +28,10 @@ spec:
         {{- include "fs2-serve.migrationSelectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "migration") }}
       automountServiceAccountToken: false
       enableServiceLinks: false

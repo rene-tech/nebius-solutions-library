@@ -1,0 +1,907 @@
+{
+  "schema": "fs2-diffdock-retained-independent-review/v1",
+  "source_commit": "a5583e15957b1766c0668dba5af265a72f054f8b",
+  "build_receipt_sha256": "ba8fd27815b1692656083234ab1b3c53ce7343677fe0e68a2216e45a5bb13363",
+  "upstream_model_and_weight_identity_unchanged": true,
+  "original_candidate_receipt_sha256": "f75f38e466e9ef894e54ea240773e45892864e9a24bc5df8fe2d6898320bfaf8",
+  "original_evaluator_stderr_sha256": "50365e1037195424aa016dca10a081e2edfb58f6a487b9feac88f86cdb9ec2cf",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:9766b4fb2a22787874bd8d90306980a4cb1ff9808941f0f1ae429d8b8f7cc948",
+  "rdkit_version": "2025.09.6",
+  "customer_ready": false,
+  "new_gpu_calls": 0,
+  "cases_sha256": "38d5cdc85e16ff52855f5e20c5013a44a3cef7b365efae94a9f9739ee761878b",
+  "cross_report_sha256": "3b8b617b11e1a69fd8edbbc0bc236454729e1d2ad1891b74e8a31ac4e49a2afc",
+  "inference_calls": 48,
+  "generated_poses": 192,
+  "all_retained_input_result_reference_hashes_verified": true,
+  "all_rmsds_independently_recomputed_and_matched": true,
+  "generated_sdf_headers": [
+    "     RDKit          3D"
+  ],
+  "generated_parse_warnings": [],
+  "reference_diagnostics": [
+    {
+      "path": "references/1a52-est/reference-ligand.sdf",
+      "sha256": "01853a1388db2cb974eedc9510f7c31b9218a408b81c15feee4556834ae9174f",
+      "header_line": "  ModelServer 0.9.13",
+      "parse_warning": "[01:57:48] Warning: molecule is tagged as 2D, but at least one Z coordinate is not zero. Marking the mol as 3D.\n",
+      "parsed_as_3d": true,
+      "has_nonzero_z": true
+    },
+    {
+      "path": "references/1iep-sti/reference-ligand.sdf",
+      "sha256": "bf134e1ca1ee3b713c75981e5a8881f7b91ca8c534b8032b5e14043ae2815a6d",
+      "header_line": "  ModelServer 0.9.13",
+      "parse_warning": "[01:57:48] Warning: molecule is tagged as 2D, but at least one Z coordinate is not zero. Marking the mol as 3D.\n",
+      "parsed_as_3d": true,
+      "has_nonzero_z": true
+    },
+    {
+      "path": "references/1stp-btn/reference-ligand.sdf",
+      "sha256": "03159fa72e0cac8128b1ccdfda715cf82bae716b9101718f35d720c3bebdd854",
+      "header_line": "  ModelServer 0.9.13",
+      "parse_warning": "[01:57:48] Warning: molecule is tagged as 2D, but at least one Z coordinate is not zero. Marking the mol as 3D.\n",
+      "parsed_as_3d": true,
+      "has_nonzero_z": true
+    },
+    {
+      "path": "references/3ert-oht/reference-ligand.sdf",
+      "sha256": "f0a9e5a59d0587e6fbd1a21454da2953f81725ff09f5308a6f6de21654715358",
+      "header_line": "  ModelServer 0.9.13",
+      "parse_warning": "[01:57:49] Warning: molecule is tagged as 2D, but at least one Z coordinate is not zero. Marking the mol as 3D.\n",
+      "parsed_as_3d": true,
+      "has_nonzero_z": true
+    },
+    {
+      "path": "references/3o96-iqo/reference-ligand.sdf",
+      "sha256": "b18642f19874da98499755586879ecf4bfd58393e1cd3090dbd839f40c564026",
+      "header_line": "  ModelServer 0.9.13",
+      "parse_warning": "[01:57:49] Warning: molecule is tagged as 2D, but at least one Z coordinate is not zero. Marking the mol as 3D.\n",
+      "parsed_as_3d": true,
+      "has_nonzero_z": true
+    },
+    {
+      "path": "references/3ptb-ben/reference-ligand.sdf",
+      "sha256": "2f6f18c253a6255f40fb255f831b981618ab65d3b2c8abecbd40ce8eb68002c0",
+      "header_line": "  ModelServer 0.9.13",
+      "parse_warning": "[01:57:49] Warning: molecule is tagged as 2D, but at least one Z coordinate is not zero. Marking the mol as 3D.\n",
+      "parsed_as_3d": true,
+      "has_nonzero_z": true
+    }
+  ],
+  "original_independent_evaluator_warning_count": 192,
+  "warning_explanation": "The six unchanged RCSB ModelServer reference SDFs omit a 3D flag despite nonzero Z coordinates. Each reference parse emits the warning; all 192 generated poses are flagged 3D and parse without it. The earlier evaluator parses the reference once per prediction, explaining 192 warnings without changing scientific coordinates.",
+  "runs": [
+    {
+      "name": "diffdock-final-isolated-r6",
+      "receipt_sha256": "54d576392364923d4fffcfdba6ede25532e0ac41d3bc9e588435c908851fa37c",
+      "pod": "fs2-diffdock-final-r6",
+      "pod_uid": "6142f199-c0a1-4d30-aa8f-2ae5640d5f6c",
+      "node": "computeinstance-e00p2817cbemf7w6q5",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:9766b4fb2a22787874bd8d90306980a4cb1ff9808941f0f1ae429d8b8f7cc948",
+      "started_at": "2026-09-19T01:31:10Z",
+      "completed_at": "2026-09-19T01:34:14Z",
+      "gpu": "NVIDIA H100 80GB HBM3, GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8, 580.159.04",
+      "model_load_seconds": 15.371511186000134,
+      "torsion_normalization": {
+        "sha256": "c659445fea83bdaadd10e5585f9e874aa23a376b162c03f992578d7c0ea04a1c",
+        "shape": [
+          5001
+        ],
+        "dtype": "float64"
+      },
+      "adapter_identity": {
+        "candidate_id": "diffdock-upstream-v1-1",
+        "model_id": "gcorso/DiffDock",
+        "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+        "release": "v1.1",
+        "release_archive_sha256": "5a95b6a1555be47ab1d6f0a8ffd25152f7fe32f5956005bb821e13e7a37d4a3d",
+        "esm_checkpoint_sha256": "ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c",
+        "license": "MIT",
+        "relationship": "same-named-upstream-fallback-parity-unproven",
+        "nim_version": "2.3.0",
+        "scope": "molecular-docking/research",
+        "compatibility_shims": [
+          "torch_cluster:pytorch-native",
+          "torch_scatter:pytorch-native",
+          "rdkit:request-seeded-conformers",
+          "torch:deterministic-kernels",
+          "torus:fixed-local-normalization-rng"
+        ]
+      },
+      "result_files": [
+        {
+          "file": "diffdock-1a52-est-s19-n4-repeat1.json",
+          "sha256": "efc96c12f2ce39b7fa76a63a6dbd2ca2dcf0eb489cd4e0f466d60b85fbfa0163"
+        },
+        {
+          "file": "diffdock-1a52-est-s23-n4-repeat1.json",
+          "sha256": "48158c90f8cd33a018543e8d4dc2d0caf55f2cfac8b122cec920d326e1188923"
+        },
+        {
+          "file": "diffdock-1iep-sti-s19-n4-repeat1.json",
+          "sha256": "b2d1195ac678d7ad10862bac8fa0ef4098d76925fb46bdfcd7091055763f675a"
+        },
+        {
+          "file": "diffdock-1iep-sti-s23-n4-repeat1.json",
+          "sha256": "4c5181771c3a898a85066de5174cdc20ebd40e2981ee3fc94bca239962f605bb"
+        },
+        {
+          "file": "diffdock-1stp-btn-s19-n4-repeat1.json",
+          "sha256": "e7f3d40fad811c84bf2b59b05964e81ed51d953359017f903496d874fe929034"
+        },
+        {
+          "file": "diffdock-1stp-btn-s23-n4-repeat1.json",
+          "sha256": "40d5077f993dcafd2aa457f3f4227db212e883939cc3dc04b87b44819b837cfe"
+        },
+        {
+          "file": "diffdock-3ert-oht-s19-n4-repeat1.json",
+          "sha256": "fc13269285c08ac7f34a08abdfd5394b9dd35d6ff12197bcac923f293c6f48a1"
+        },
+        {
+          "file": "diffdock-3ert-oht-s23-n4-repeat1.json",
+          "sha256": "c58c0f10434a5c5a1c9e9e3fdfcd688a9ebb6638a28a46d5da9b5ccd198f73ce"
+        },
+        {
+          "file": "diffdock-3o96-iqo-s19-n4-repeat1.json",
+          "sha256": "94d3475fa0330f5b0fc426a184d89188b62eba2a9b1c5329b73b3fc0028c9898"
+        },
+        {
+          "file": "diffdock-3o96-iqo-s23-n4-repeat1.json",
+          "sha256": "240ce6b129cc1f279680644b4a38c881466208f86b7020c7a29af009b7df16e2"
+        },
+        {
+          "file": "diffdock-3ptb-ben-s19-n4-repeat1.json",
+          "sha256": "e526b36564484949ccf0c6316564bdd0ebc79d2bfc9b6bb150ccc12157c59f7f"
+        },
+        {
+          "file": "diffdock-3ptb-ben-s23-n4-repeat1.json",
+          "sha256": "f6a5b629372b486fd3be8ab94156d0e8c9839e02d588de64ddd44222e16e77fb"
+        },
+        {
+          "file": "diffdock-1a52-est-s19-n4-repeat2.json",
+          "sha256": "1a054f6270ad52cb9a0f04f9a089560ba6a9ada407e28e7e7a343e629d513657"
+        },
+        {
+          "file": "diffdock-1a52-est-s23-n4-repeat2.json",
+          "sha256": "48158c90f8cd33a018543e8d4dc2d0caf55f2cfac8b122cec920d326e1188923"
+        },
+        {
+          "file": "diffdock-1iep-sti-s19-n4-repeat2.json",
+          "sha256": "b2d1195ac678d7ad10862bac8fa0ef4098d76925fb46bdfcd7091055763f675a"
+        },
+        {
+          "file": "diffdock-1iep-sti-s23-n4-repeat2.json",
+          "sha256": "4c5181771c3a898a85066de5174cdc20ebd40e2981ee3fc94bca239962f605bb"
+        },
+        {
+          "file": "diffdock-1stp-btn-s19-n4-repeat2.json",
+          "sha256": "e7f3d40fad811c84bf2b59b05964e81ed51d953359017f903496d874fe929034"
+        },
+        {
+          "file": "diffdock-1stp-btn-s23-n4-repeat2.json",
+          "sha256": "40d5077f993dcafd2aa457f3f4227db212e883939cc3dc04b87b44819b837cfe"
+        },
+        {
+          "file": "diffdock-3ert-oht-s19-n4-repeat2.json",
+          "sha256": "fc13269285c08ac7f34a08abdfd5394b9dd35d6ff12197bcac923f293c6f48a1"
+        },
+        {
+          "file": "diffdock-3ert-oht-s23-n4-repeat2.json",
+          "sha256": "c58c0f10434a5c5a1c9e9e3fdfcd688a9ebb6638a28a46d5da9b5ccd198f73ce"
+        },
+        {
+          "file": "diffdock-3o96-iqo-s19-n4-repeat2.json",
+          "sha256": "94d3475fa0330f5b0fc426a184d89188b62eba2a9b1c5329b73b3fc0028c9898"
+        },
+        {
+          "file": "diffdock-3o96-iqo-s23-n4-repeat2.json",
+          "sha256": "240ce6b129cc1f279680644b4a38c881466208f86b7020c7a29af009b7df16e2"
+        },
+        {
+          "file": "diffdock-3ptb-ben-s19-n4-repeat2.json",
+          "sha256": "e526b36564484949ccf0c6316564bdd0ebc79d2bfc9b6bb150ccc12157c59f7f"
+        },
+        {
+          "file": "diffdock-3ptb-ben-s23-n4-repeat2.json",
+          "sha256": "f6a5b629372b486fd3be8ab94156d0e8c9839e02d588de64ddd44222e16e77fb"
+        }
+      ],
+      "runtime_warning_messages": [
+        "/opt/fs2/model/upstream/datasets/parse_chi.py:91: RuntimeWarning: invalid value encountered in cast",
+        "/usr/lib/python3.12/ast.py:407: UserWarning: The TorchScript type system doesn't support instance-level annotations on empty non-base types in `__init__`. Instead, either 1) use a type annotation in the class body, or 2) wrap the type in `torch.jit.Attribute`.",
+        "/usr/local/lib/python3.12/dist-packages/torch_geometric/typing.py:97: UserWarning: An issue occurred while importing 'torch-cluster'. Disabling its usage. Stacktrace: module 'torch_cluster' has no attribute 'knn'"
+      ],
+      "runtime_warning_count": 67
+    },
+    {
+      "name": "diffdock-final-isolated-r7",
+      "receipt_sha256": "90ccc4666d8b55ab68c743ee615b2ed3e96995f402ad3ab91dd8ebd3561fd1cb",
+      "pod": "fs2-diffdock-final-r7",
+      "pod_uid": "781f9c13-8f4f-429c-848c-b4cb3a9a8571",
+      "node": "computeinstance-e00sfarnxpxmaj056b",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:9766b4fb2a22787874bd8d90306980a4cb1ff9808941f0f1ae429d8b8f7cc948",
+      "started_at": "2026-09-19T01:31:11Z",
+      "completed_at": "2026-09-19T01:34:14Z",
+      "gpu": "NVIDIA H100 80GB HBM3, GPU-1bdbdb30-4e41-5144-ef59-8b93002148dc, 580.159.04",
+      "model_load_seconds": 16.554953282000042,
+      "torsion_normalization": {
+        "sha256": "c659445fea83bdaadd10e5585f9e874aa23a376b162c03f992578d7c0ea04a1c",
+        "shape": [
+          5001
+        ],
+        "dtype": "float64"
+      },
+      "adapter_identity": {
+        "candidate_id": "diffdock-upstream-v1-1",
+        "model_id": "gcorso/DiffDock",
+        "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+        "release": "v1.1",
+        "release_archive_sha256": "5a95b6a1555be47ab1d6f0a8ffd25152f7fe32f5956005bb821e13e7a37d4a3d",
+        "esm_checkpoint_sha256": "ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c",
+        "license": "MIT",
+        "relationship": "same-named-upstream-fallback-parity-unproven",
+        "nim_version": "2.3.0",
+        "scope": "molecular-docking/research",
+        "compatibility_shims": [
+          "torch_cluster:pytorch-native",
+          "torch_scatter:pytorch-native",
+          "rdkit:request-seeded-conformers",
+          "torch:deterministic-kernels",
+          "torus:fixed-local-normalization-rng"
+        ]
+      },
+      "result_files": [
+        {
+          "file": "diffdock-1a52-est-s19-n4-repeat1.json",
+          "sha256": "efc96c12f2ce39b7fa76a63a6dbd2ca2dcf0eb489cd4e0f466d60b85fbfa0163"
+        },
+        {
+          "file": "diffdock-1a52-est-s23-n4-repeat1.json",
+          "sha256": "48158c90f8cd33a018543e8d4dc2d0caf55f2cfac8b122cec920d326e1188923"
+        },
+        {
+          "file": "diffdock-1iep-sti-s19-n4-repeat1.json",
+          "sha256": "b2d1195ac678d7ad10862bac8fa0ef4098d76925fb46bdfcd7091055763f675a"
+        },
+        {
+          "file": "diffdock-1iep-sti-s23-n4-repeat1.json",
+          "sha256": "4c5181771c3a898a85066de5174cdc20ebd40e2981ee3fc94bca239962f605bb"
+        },
+        {
+          "file": "diffdock-1stp-btn-s19-n4-repeat1.json",
+          "sha256": "e7f3d40fad811c84bf2b59b05964e81ed51d953359017f903496d874fe929034"
+        },
+        {
+          "file": "diffdock-1stp-btn-s23-n4-repeat1.json",
+          "sha256": "40d5077f993dcafd2aa457f3f4227db212e883939cc3dc04b87b44819b837cfe"
+        },
+        {
+          "file": "diffdock-3ert-oht-s19-n4-repeat1.json",
+          "sha256": "fc13269285c08ac7f34a08abdfd5394b9dd35d6ff12197bcac923f293c6f48a1"
+        },
+        {
+          "file": "diffdock-3ert-oht-s23-n4-repeat1.json",
+          "sha256": "c58c0f10434a5c5a1c9e9e3fdfcd688a9ebb6638a28a46d5da9b5ccd198f73ce"
+        },
+        {
+          "file": "diffdock-3o96-iqo-s19-n4-repeat1.json",
+          "sha256": "94d3475fa0330f5b0fc426a184d89188b62eba2a9b1c5329b73b3fc0028c9898"
+        },
+        {
+          "file": "diffdock-3o96-iqo-s23-n4-repeat1.json",
+          "sha256": "240ce6b129cc1f279680644b4a38c881466208f86b7020c7a29af009b7df16e2"
+        },
+        {
+          "file": "diffdock-3ptb-ben-s19-n4-repeat1.json",
+          "sha256": "e526b36564484949ccf0c6316564bdd0ebc79d2bfc9b6bb150ccc12157c59f7f"
+        },
+        {
+          "file": "diffdock-3ptb-ben-s23-n4-repeat1.json",
+          "sha256": "f6a5b629372b486fd3be8ab94156d0e8c9839e02d588de64ddd44222e16e77fb"
+        },
+        {
+          "file": "diffdock-1a52-est-s19-n4-repeat2.json",
+          "sha256": "1a054f6270ad52cb9a0f04f9a089560ba6a9ada407e28e7e7a343e629d513657"
+        },
+        {
+          "file": "diffdock-1a52-est-s23-n4-repeat2.json",
+          "sha256": "48158c90f8cd33a018543e8d4dc2d0caf55f2cfac8b122cec920d326e1188923"
+        },
+        {
+          "file": "diffdock-1iep-sti-s19-n4-repeat2.json",
+          "sha256": "b2d1195ac678d7ad10862bac8fa0ef4098d76925fb46bdfcd7091055763f675a"
+        },
+        {
+          "file": "diffdock-1iep-sti-s23-n4-repeat2.json",
+          "sha256": "4c5181771c3a898a85066de5174cdc20ebd40e2981ee3fc94bca239962f605bb"
+        },
+        {
+          "file": "diffdock-1stp-btn-s19-n4-repeat2.json",
+          "sha256": "e7f3d40fad811c84bf2b59b05964e81ed51d953359017f903496d874fe929034"
+        },
+        {
+          "file": "diffdock-1stp-btn-s23-n4-repeat2.json",
+          "sha256": "40d5077f993dcafd2aa457f3f4227db212e883939cc3dc04b87b44819b837cfe"
+        },
+        {
+          "file": "diffdock-3ert-oht-s19-n4-repeat2.json",
+          "sha256": "fc13269285c08ac7f34a08abdfd5394b9dd35d6ff12197bcac923f293c6f48a1"
+        },
+        {
+          "file": "diffdock-3ert-oht-s23-n4-repeat2.json",
+          "sha256": "c58c0f10434a5c5a1c9e9e3fdfcd688a9ebb6638a28a46d5da9b5ccd198f73ce"
+        },
+        {
+          "file": "diffdock-3o96-iqo-s19-n4-repeat2.json",
+          "sha256": "94d3475fa0330f5b0fc426a184d89188b62eba2a9b1c5329b73b3fc0028c9898"
+        },
+        {
+          "file": "diffdock-3o96-iqo-s23-n4-repeat2.json",
+          "sha256": "240ce6b129cc1f279680644b4a38c881466208f86b7020c7a29af009b7df16e2"
+        },
+        {
+          "file": "diffdock-3ptb-ben-s19-n4-repeat2.json",
+          "sha256": "e526b36564484949ccf0c6316564bdd0ebc79d2bfc9b6bb150ccc12157c59f7f"
+        },
+        {
+          "file": "diffdock-3ptb-ben-s23-n4-repeat2.json",
+          "sha256": "f6a5b629372b486fd3be8ab94156d0e8c9839e02d588de64ddd44222e16e77fb"
+        }
+      ],
+      "runtime_warning_messages": [
+        "/opt/fs2/model/upstream/datasets/parse_chi.py:91: RuntimeWarning: invalid value encountered in cast",
+        "/usr/lib/python3.12/ast.py:407: UserWarning: The TorchScript type system doesn't support instance-level annotations on empty non-base types in `__init__`. Instead, either 1) use a type annotation in the class body, or 2) wrap the type in `torch.jit.Attribute`.",
+        "/usr/local/lib/python3.12/dist-packages/torch_geometric/typing.py:97: UserWarning: An issue occurred while importing 'torch-cluster'. Disabling its usage. Stacktrace: module 'torch_cluster' has no attribute 'knn'"
+      ],
+      "runtime_warning_count": 67
+    }
+  ],
+  "within_process_repeat_pairs": [
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1a52-est-s19-n4",
+      "coordinate_angstrom": 0.0015999999999998238,
+      "confidence": 0.0002269744873046875
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1a52-est-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1iep-sti-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1iep-sti-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1stp-btn-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1stp-btn-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ert-oht-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ert-oht-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3o96-iqo-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3o96-iqo-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ptb-ben-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ptb-ben-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1a52-est-s19-n4",
+      "coordinate_angstrom": 0.0015999999999998238,
+      "confidence": 0.0002269744873046875
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1a52-est-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1iep-sti-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1iep-sti-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1stp-btn-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1stp-btn-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ert-oht-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ert-oht-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3o96-iqo-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3o96-iqo-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ptb-ben-s19-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ptb-ben-s23-n4",
+      "coordinate_angstrom": 0,
+      "confidence": 0
+    }
+  ],
+  "cross_process_pairs": 24,
+  "cross_process_coordinate_and_confidence_maximum": {
+    "coordinate_angstrom": 0,
+    "confidence": 0
+  },
+  "coordinate_tolerance_angstrom": 0.01,
+  "confidence_tolerance": 0.001,
+  "scientific_metrics": [
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1a52-est-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 9.727675434912495,
+      "best_of_4_rmsd_angstrom": 9.727675434912495,
+      "maximum_pose_rmsd_angstrom": 32.83675245788628
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1a52-est-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 33.666400081267966,
+      "best_of_4_rmsd_angstrom": 33.666400081267966,
+      "maximum_pose_rmsd_angstrom": 40.75553070305305
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1iep-sti-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 1.9692640004614703,
+      "best_of_4_rmsd_angstrom": 1.9692640004614703,
+      "maximum_pose_rmsd_angstrom": 15.6706129246451
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1iep-sti-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 1.7047594359100422,
+      "best_of_4_rmsd_angstrom": 1.529682264658517,
+      "maximum_pose_rmsd_angstrom": 14.282007120840184
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1stp-btn-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 1.4288443698055433,
+      "best_of_4_rmsd_angstrom": 1.4288443698055433,
+      "maximum_pose_rmsd_angstrom": 26.1183000769695
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1stp-btn-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 1.0041388001665907,
+      "best_of_4_rmsd_angstrom": 1.0041388001665907,
+      "maximum_pose_rmsd_angstrom": 19.049411816264172
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ert-oht-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 22.201105223544534,
+      "best_of_4_rmsd_angstrom": 12.210279726370189,
+      "maximum_pose_rmsd_angstrom": 22.201105223544534
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ert-oht-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 17.933456014830554,
+      "best_of_4_rmsd_angstrom": 6.330972949903813,
+      "maximum_pose_rmsd_angstrom": 29.87677744084283
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3o96-iqo-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 5.164700264893451,
+      "best_of_4_rmsd_angstrom": 4.960856127966316,
+      "maximum_pose_rmsd_angstrom": 705.8664230996361
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3o96-iqo-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 4.3881401595393354,
+      "best_of_4_rmsd_angstrom": 4.382840461281658,
+      "maximum_pose_rmsd_angstrom": 4.556689441307561
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ptb-ben-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 0.21464083954364235,
+      "best_of_4_rmsd_angstrom": 0.21464083954364235,
+      "maximum_pose_rmsd_angstrom": 27.470211753542134
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ptb-ben-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 0.2217955489985215,
+      "best_of_4_rmsd_angstrom": 0.2217955489985215,
+      "maximum_pose_rmsd_angstrom": 0.4754000584303235
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1a52-est-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 9.727679381949223,
+      "best_of_4_rmsd_angstrom": 9.727679381949223,
+      "maximum_pose_rmsd_angstrom": 32.83737938009061
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1a52-est-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 33.666400081267966,
+      "best_of_4_rmsd_angstrom": 33.666400081267966,
+      "maximum_pose_rmsd_angstrom": 40.75553070305305
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1iep-sti-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 1.9692640004614703,
+      "best_of_4_rmsd_angstrom": 1.9692640004614703,
+      "maximum_pose_rmsd_angstrom": 15.6706129246451
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1iep-sti-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 1.7047594359100422,
+      "best_of_4_rmsd_angstrom": 1.529682264658517,
+      "maximum_pose_rmsd_angstrom": 14.282007120840184
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1stp-btn-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 1.4288443698055433,
+      "best_of_4_rmsd_angstrom": 1.4288443698055433,
+      "maximum_pose_rmsd_angstrom": 26.1183000769695
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-1stp-btn-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 1.0041388001665907,
+      "best_of_4_rmsd_angstrom": 1.0041388001665907,
+      "maximum_pose_rmsd_angstrom": 19.049411816264172
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ert-oht-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 22.201105223544534,
+      "best_of_4_rmsd_angstrom": 12.210279726370189,
+      "maximum_pose_rmsd_angstrom": 22.201105223544534
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ert-oht-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 17.933456014830554,
+      "best_of_4_rmsd_angstrom": 6.330972949903813,
+      "maximum_pose_rmsd_angstrom": 29.87677744084283
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3o96-iqo-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 5.164700264893451,
+      "best_of_4_rmsd_angstrom": 4.960856127966316,
+      "maximum_pose_rmsd_angstrom": 705.8664230996361
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3o96-iqo-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 4.3881401595393354,
+      "best_of_4_rmsd_angstrom": 4.382840461281658,
+      "maximum_pose_rmsd_angstrom": 4.556689441307561
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ptb-ben-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 0.21464083954364235,
+      "best_of_4_rmsd_angstrom": 0.21464083954364235,
+      "maximum_pose_rmsd_angstrom": 27.470211753542134
+    },
+    {
+      "run": "diffdock-final-isolated-r6",
+      "case_id": "diffdock-3ptb-ben-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 0.2217955489985215,
+      "best_of_4_rmsd_angstrom": 0.2217955489985215,
+      "maximum_pose_rmsd_angstrom": 0.4754000584303235
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1a52-est-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 9.727675434912495,
+      "best_of_4_rmsd_angstrom": 9.727675434912495,
+      "maximum_pose_rmsd_angstrom": 32.83675245788628
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1a52-est-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 33.666400081267966,
+      "best_of_4_rmsd_angstrom": 33.666400081267966,
+      "maximum_pose_rmsd_angstrom": 40.75553070305305
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1iep-sti-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 1.9692640004614703,
+      "best_of_4_rmsd_angstrom": 1.9692640004614703,
+      "maximum_pose_rmsd_angstrom": 15.6706129246451
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1iep-sti-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 1.7047594359100422,
+      "best_of_4_rmsd_angstrom": 1.529682264658517,
+      "maximum_pose_rmsd_angstrom": 14.282007120840184
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1stp-btn-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 1.4288443698055433,
+      "best_of_4_rmsd_angstrom": 1.4288443698055433,
+      "maximum_pose_rmsd_angstrom": 26.1183000769695
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1stp-btn-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 1.0041388001665907,
+      "best_of_4_rmsd_angstrom": 1.0041388001665907,
+      "maximum_pose_rmsd_angstrom": 19.049411816264172
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ert-oht-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 22.201105223544534,
+      "best_of_4_rmsd_angstrom": 12.210279726370189,
+      "maximum_pose_rmsd_angstrom": 22.201105223544534
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ert-oht-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 17.933456014830554,
+      "best_of_4_rmsd_angstrom": 6.330972949903813,
+      "maximum_pose_rmsd_angstrom": 29.87677744084283
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3o96-iqo-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 5.164700264893451,
+      "best_of_4_rmsd_angstrom": 4.960856127966316,
+      "maximum_pose_rmsd_angstrom": 705.8664230996361
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3o96-iqo-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 4.3881401595393354,
+      "best_of_4_rmsd_angstrom": 4.382840461281658,
+      "maximum_pose_rmsd_angstrom": 4.556689441307561
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ptb-ben-s19-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 0.21464083954364235,
+      "best_of_4_rmsd_angstrom": 0.21464083954364235,
+      "maximum_pose_rmsd_angstrom": 27.470211753542134
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ptb-ben-s23-n4",
+      "repetition": 1,
+      "top1_rmsd_angstrom": 0.2217955489985215,
+      "best_of_4_rmsd_angstrom": 0.2217955489985215,
+      "maximum_pose_rmsd_angstrom": 0.4754000584303235
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1a52-est-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 9.727679381949223,
+      "best_of_4_rmsd_angstrom": 9.727679381949223,
+      "maximum_pose_rmsd_angstrom": 32.83737938009061
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1a52-est-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 33.666400081267966,
+      "best_of_4_rmsd_angstrom": 33.666400081267966,
+      "maximum_pose_rmsd_angstrom": 40.75553070305305
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1iep-sti-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 1.9692640004614703,
+      "best_of_4_rmsd_angstrom": 1.9692640004614703,
+      "maximum_pose_rmsd_angstrom": 15.6706129246451
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1iep-sti-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 1.7047594359100422,
+      "best_of_4_rmsd_angstrom": 1.529682264658517,
+      "maximum_pose_rmsd_angstrom": 14.282007120840184
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1stp-btn-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 1.4288443698055433,
+      "best_of_4_rmsd_angstrom": 1.4288443698055433,
+      "maximum_pose_rmsd_angstrom": 26.1183000769695
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-1stp-btn-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 1.0041388001665907,
+      "best_of_4_rmsd_angstrom": 1.0041388001665907,
+      "maximum_pose_rmsd_angstrom": 19.049411816264172
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ert-oht-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 22.201105223544534,
+      "best_of_4_rmsd_angstrom": 12.210279726370189,
+      "maximum_pose_rmsd_angstrom": 22.201105223544534
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ert-oht-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 17.933456014830554,
+      "best_of_4_rmsd_angstrom": 6.330972949903813,
+      "maximum_pose_rmsd_angstrom": 29.87677744084283
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3o96-iqo-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 5.164700264893451,
+      "best_of_4_rmsd_angstrom": 4.960856127966316,
+      "maximum_pose_rmsd_angstrom": 705.8664230996361
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3o96-iqo-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 4.3881401595393354,
+      "best_of_4_rmsd_angstrom": 4.382840461281658,
+      "maximum_pose_rmsd_angstrom": 4.556689441307561
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ptb-ben-s19-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 0.21464083954364235,
+      "best_of_4_rmsd_angstrom": 0.21464083954364235,
+      "maximum_pose_rmsd_angstrom": 27.470211753542134
+    },
+    {
+      "run": "diffdock-final-isolated-r7",
+      "case_id": "diffdock-3ptb-ben-s23-n4",
+      "repetition": 2,
+      "top1_rmsd_angstrom": 0.2217955489985215,
+      "best_of_4_rmsd_angstrom": 0.2217955489985215,
+      "maximum_pose_rmsd_angstrom": 0.4754000584303235
+    }
+  ],
+  "limits": [
+    "Isolated candidate, not public route or client qualification.",
+    "Reference-frame symmetry-aware heavy-atom RMSD without ligand alignment; not affinity or functional validation.",
+    "Six bound-receptor fixtures, no waters/cofactors, four poses and two seeds; training overlap unknown.",
+    "Within-process repeats are numerically close, not universally byte-identical; cross-process comparison follows the same request order.",
+    "No snapshot or other GPU architecture qualification.",
+    "Earlier failed candidates and warnings remain retained; this receipt does not replace them."
+  ]
+}

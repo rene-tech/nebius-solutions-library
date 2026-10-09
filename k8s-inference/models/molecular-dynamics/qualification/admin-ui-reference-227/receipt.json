@@ -1,0 +1,258 @@
+{
+  "schema": "fs2-serve.nebius.ai/admin-artifact-reference-browser-qualification/v1",
+  "status": "passed",
+  "customer_ready": false,
+  "recorded_at": "2026-09-23T19:58:22.048768+00:00",
+  "scope": "Live operator-admin rendering and reference-copy actions for the six known owned large-artifact debug records. No new scientific simulations or artifact downloads were requested. This is not general browser or whole-platform readiness.",
+  "origin": "https://89.169.99.188",
+  "helm_revision": 227,
+  "backend_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+  "backend_source": "a36ff62d2ee619e88ecf841944fdedda3fd08394",
+  "admin_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4",
+  "admin_source": "85abb29f5b1868e8b6b5b1f067b32ec27835729e",
+  "ui_patch_commit": "a05b37e1308397e21db8c371344eb1cec4d63a2f",
+  "browser": {
+    "engine": "Chromium",
+    "version": "149.0.7827.114",
+    "viewport": {
+      "width": 1440,
+      "height": 1100
+    },
+    "headless": true,
+    "live_asset": {
+      "url": "https://89.169.99.188/admin/assets/index-C-0PQqXB.js",
+      "status": 200,
+      "size_bytes": 663298,
+      "sha256": "d77a71bc7b9835b3b32f4a281e95a6a5f963349267180b3d9d65c931757e6a5f",
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.0.0 Safari/537.36"
+    },
+    "served_js_matches_locally_tested_production_build": true,
+    "development_tls_scope": "The approved sandbox origin uses the existing development TLS configuration; this isolated browser ignored certificate validation. Authentication and authorization remained enabled."
+  },
+  "live_observation": {
+    "recorded_at": "2026-09-23T19:59:41.098664+00:00",
+    "context": "fs2-remediation-sandbox2",
+    "namespace": "fs2-system",
+    "api_generation": 337,
+    "api_ready": 3,
+    "admin_generation": 38,
+    "admin_ready": 2,
+    "images_matched": true,
+    "source": "read-only post-browser kubectl deployment observation; source commit provenance supplied by release owner"
+  },
+  "owner": {
+    "tenant_id": "md-qualification-20260923",
+    "principal_id": "md-test",
+    "authorization": "existing approved operator session; only the six previously verified qualification-owner records were inspected"
+  },
+  "counts": {
+    "records": 6,
+    "complete_verified": 4,
+    "interrupted_unverified": 2,
+    "browser_debug_list_gets": 6,
+    "browser_debug_detail_gets": 6,
+    "preflight_owned_detail_gets": 6,
+    "clipboard_checks": 6,
+    "clipboard_bytes_each": 307,
+    "artifact_content_request_attempts": 0,
+    "scope_violations": 0,
+    "synthetic_responses": 0
+  },
+  "checks": [
+    {
+      "exchange_id": "ca265c7f-b080-4393-b91c-e8c59d5edea0",
+      "cohort": 1,
+      "status": "passed",
+      "declared_artifact_bytes": 465681353,
+      "observed_bytes": 25165824,
+      "delivered_bytes": 25165824,
+      "capture": "Stream incomplete",
+      "verification": "Not verified — incomplete or mismatched stream",
+      "expected_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+      "observed_sha256": "653a818814d6c7a07b73fd33a5bfd83cacf0b2569e40d19b43c7734b67c43747",
+      "all_rendered_metadata_matches_server": true,
+      "clipboard_exact_reference": true,
+      "clipboard_bytes": 307,
+      "clipboard_sha256": "5e35b01fcd25f690b4e473433dc765639db129deccdd3913cfe5a4ee0a4ccb4a",
+      "debug_detail_bytes": 2720,
+      "raw_payload_pre_elements": 0,
+      "screenshot": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/cohort1-interrupted.png",
+        "sha256": "813329e5eb183c76ef01aa2c224bda588d0965fc03389071a797d0ed0f78e32c",
+        "size_bytes": 76733
+      },
+      "checked_at": "2026-09-23T19:52:52.908Z"
+    },
+    {
+      "exchange_id": "a3578ebc-7d67-4a4e-a90e-4894d80c3b69",
+      "cohort": 1,
+      "status": "passed",
+      "declared_artifact_bytes": 465681353,
+      "observed_bytes": 465681353,
+      "delivered_bytes": 465681353,
+      "capture": "Stream complete",
+      "verification": "Verified size and SHA-256",
+      "expected_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+      "observed_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+      "all_rendered_metadata_matches_server": true,
+      "clipboard_exact_reference": true,
+      "clipboard_bytes": 307,
+      "clipboard_sha256": "f3ef04c10ed0e912014467546717536802fe0163de180fcc7ee0e825dc0ae50f",
+      "debug_detail_bytes": 2704,
+      "raw_payload_pre_elements": 0,
+      "screenshot": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/cohort1-complete-large.png",
+        "sha256": "ad9b71addee5ebe423e3cb7cd8db2d1e3afadd6c7c2c9472a2051afdb4268854",
+        "size_bytes": 71073
+      },
+      "checked_at": "2026-09-23T19:53:53.669Z"
+    },
+    {
+      "exchange_id": "a168f09f-d806-427e-a250-a16bf3e69463",
+      "cohort": 1,
+      "status": "passed",
+      "declared_artifact_bytes": 321192501,
+      "observed_bytes": 321192501,
+      "delivered_bytes": 321192501,
+      "capture": "Stream complete",
+      "verification": "Verified size and SHA-256",
+      "expected_sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+      "observed_sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+      "all_rendered_metadata_matches_server": true,
+      "clipboard_exact_reference": true,
+      "clipboard_bytes": 307,
+      "clipboard_sha256": "012efcfdcc6209874c4d0567071d9c9012d6923461690acecbbcb1dca6edb358",
+      "debug_detail_bytes": 2704,
+      "raw_payload_pre_elements": 0,
+      "screenshot": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/cohort1-complete-second.png",
+        "sha256": "e0bb4f5c90cd1e5205d4077a49a0463b16424df54e8d7cced4f21f09a9debc22",
+        "size_bytes": 69998
+      },
+      "checked_at": "2026-09-23T19:54:50.726Z"
+    },
+    {
+      "exchange_id": "75bed081-8cfd-4f39-9c54-cdcfadfe9b48",
+      "cohort": 2,
+      "status": "passed",
+      "declared_artifact_bytes": 465681353,
+      "observed_bytes": 25165824,
+      "delivered_bytes": 25165824,
+      "capture": "Stream incomplete",
+      "verification": "Not verified — incomplete or mismatched stream",
+      "expected_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+      "observed_sha256": "653a818814d6c7a07b73fd33a5bfd83cacf0b2569e40d19b43c7734b67c43747",
+      "all_rendered_metadata_matches_server": true,
+      "clipboard_exact_reference": true,
+      "clipboard_bytes": 307,
+      "clipboard_sha256": "5e35b01fcd25f690b4e473433dc765639db129deccdd3913cfe5a4ee0a4ccb4a",
+      "debug_detail_bytes": 2786,
+      "raw_payload_pre_elements": 0,
+      "screenshot": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/cohort2-interrupted.png",
+        "sha256": "8f62e74c9b0c738bd8dba56ae340e877a2bb9dfd3a05ce52aefeca2b901224ba",
+        "size_bytes": 76732
+      },
+      "checked_at": "2026-09-23T19:55:36.279Z"
+    },
+    {
+      "exchange_id": "e67a0262-622d-455e-a070-628394e63174",
+      "cohort": 2,
+      "status": "passed",
+      "declared_artifact_bytes": 465681353,
+      "observed_bytes": 465681353,
+      "delivered_bytes": 465681353,
+      "capture": "Stream complete",
+      "verification": "Verified size and SHA-256",
+      "expected_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+      "observed_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+      "all_rendered_metadata_matches_server": true,
+      "clipboard_exact_reference": true,
+      "clipboard_bytes": 307,
+      "clipboard_sha256": "f3ef04c10ed0e912014467546717536802fe0163de180fcc7ee0e825dc0ae50f",
+      "debug_detail_bytes": 2770,
+      "raw_payload_pre_elements": 0,
+      "screenshot": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/cohort2-complete-large.png",
+        "sha256": "cae8263f927b7378c4460c7f64eefbdb7c3245123d09c1cbfe49d35ff56705d2",
+        "size_bytes": 71054
+      },
+      "checked_at": "2026-09-23T19:56:28.222Z"
+    },
+    {
+      "exchange_id": "c41ab567-d9c6-49b5-bef2-b1ba59a1a26f",
+      "cohort": 2,
+      "status": "passed",
+      "declared_artifact_bytes": 321192501,
+      "observed_bytes": 321192501,
+      "delivered_bytes": 321192501,
+      "capture": "Stream complete",
+      "verification": "Verified size and SHA-256",
+      "expected_sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+      "observed_sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+      "all_rendered_metadata_matches_server": true,
+      "clipboard_exact_reference": true,
+      "clipboard_bytes": 307,
+      "clipboard_sha256": "012efcfdcc6209874c4d0567071d9c9012d6923461690acecbbcb1dca6edb358",
+      "debug_detail_bytes": 2770,
+      "raw_payload_pre_elements": 0,
+      "screenshot": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/cohort2-complete-second.png",
+        "sha256": "6d9dec551de556b8781c9616ce981a2e588d57f6fda1cd8ab1ac352b1714639f",
+        "size_bytes": 69975
+      },
+      "checked_at": "2026-09-23T19:57:26.884Z"
+    }
+  ],
+  "browser_evidence": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/browser-evidence.json",
+    "sha256": "3e4366ca25986c5cfc2c6226e77133e931a9383dabf046ac3b9372f6f037635a",
+    "size_bytes": 10850
+  },
+  "owned_metadata_evidence": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/owned-records.json",
+    "sha256": "01850da639f5ae3d24fc66814682a1f6c06fa72b5ca597648c44c1a4db783dfb",
+    "size_bytes": 6166
+  },
+  "upstream_qualification": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/large-artifact-release-04/receipt.json",
+    "sha256": "0c7d86f90095a26722f04f38a54547e20146fb4314b757ed57980d2f76144b56",
+    "size_bytes": 73692
+  },
+  "guard_source": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/setup-guard.js",
+    "sha256": "d7e383b2ea01f32d1be8609dfa12a3130622094b8772423dbc25dbc5a94c69ce",
+    "size_bytes": 7936
+  },
+  "validator_source": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/check-rendered.js",
+    "sha256": "2c0be048716afa72b1c8a5bb3cc0f27abe7d25c21f8b618e6e086cf174659a9e",
+    "size_bytes": 2575
+  },
+  "summary_row_screenshot": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/admin-ui-reference-227/output/playwright/cohort2-complete-summary.png",
+    "sha256": "53cd2077ae88afa87a3cd3476c3ba88dba3147b47ce5d35ebdb6cb7fe5734d4a",
+    "size_bytes": 23165
+  },
+  "screenshot_sanitization": "Element screenshots contain only the response-reference section or one owned summary row. No login/session, headers, authorization values, cookies, other owners or original artifact bytes are visible. Representative complete/incomplete screenshots and the summary-row screenshot were visually inspected.",
+  "scope_controls": "The real deployed UI fetched unmodified server responses. A local browser guard allowed debug lists only at the approved one-microsecond windows and detail GETs only for the six known UUIDs; it would block content downloads. Every list returned exactly the expected owned UUID. No request was blocked or response mocked in the completed six-record cohort.",
+  "limitations": [
+    "Artifact-content records have no operation/model attribution. The UI has neither an owner filter nor a direct exchange route; inspection required parent-approved exact timestamp windows in the global request-log view. This does not qualify broad operator history browsing.",
+    "All six original rows contain disconnected=true. The four complete rows still explicitly say HTTP 200, succeeded · not applicable, Complete, Stream complete and Verified size and SHA-256. The standalone Disconnected label is potentially confusing but does not relabel success as failure.",
+    "Delivered bytes are bytes accepted by the ASGI server send operation, not a proof of remote application consumption; interrupted transfer counts retain that distinction.",
+    "This gate exercised rendering and reference copy, not the Download exchange JSON button, which remains covered by existing component tests rather than a new browser-download claim."
+  ],
+  "preserved_harness_failure": {
+    "stage": "initial local Playwright request guard",
+    "error": "ReferenceError: URL is not defined in the CLI execution sandbox",
+    "resolution": "Replaced only the private guard URL parser and restarted the isolated browser. No deployed application code or captured debug record changed. The completed six-record cohort passed on the unchanged release."
+  },
+  "cleanup": {
+    "browser_closed": true,
+    "operator_session_delete_status": 204,
+    "temporary_cookie_file_removed": true,
+    "no_credential_changes": true,
+    "no_deployment_or_resource_changes": true,
+    "no_gpu_workloads": true
+  }
+}

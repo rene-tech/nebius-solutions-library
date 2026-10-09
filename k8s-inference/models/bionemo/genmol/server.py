@@ -18,8 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from huggingface_hub import hf_hub_download
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from rdkit import Chem
-from rdkit.Chem import Crippen, QED
+from generation import GenerationExhausted, generate_valid_molecules
 
 
 LOGGER = logging.getLogger("fs2.genmol")
@@ -189,31 +188,16 @@ async def generate(request: GenerateRequest) -> dict[str, Any]:
     started = time.monotonic()
     try:
         async with RUNTIME.lock:
-            samples = await asyncio.to_thread(
-                RUNTIME.sampler.de_novo_generation,
-                request.num_molecules,
-                temperature,
-                randomness,
-                (minimum + maximum) // 2,
+            molecules, generation_metrics = await asyncio.to_thread(
+                generate_valid_molecules,
+                RUNTIME.sampler,
+                requested=request.num_molecules,
+                temperature=temperature,
+                randomness=randomness,
+                token_length=(minimum + maximum) // 2,
+                scoring=request.scoring,
+                unique=request.unique,
             )
-        molecules: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        for smiles in samples:
-            molecule = Chem.MolFromSmiles(smiles)
-            if molecule is None or molecule.GetNumAtoms() < 1:
-                continue
-            canonical = Chem.MolToSmiles(molecule)
-            if request.unique and canonical in seen:
-                continue
-            seen.add(canonical)
-            score = (
-                float(QED.qed(molecule))
-                if request.scoring == "QED"
-                else float(Crippen.MolLogP(molecule))
-            )
-            molecules.append({"smiles": canonical, "score": score})
-        if not molecules:
-            raise RuntimeError("GenMol produced no valid molecule")
         RUNTIME.generated += len(molecules)
         return {
             "status": "success",
@@ -223,8 +207,20 @@ async def generate(request: GenerateRequest) -> dict[str, Any]:
                 "elapsed_seconds": round(time.monotonic() - started, 6),
                 "source_revision": SOURCE_REVISION,
                 "model_revision": MODEL_REVISION,
+                **generation_metrics,
             },
         }
+    except GenerationExhausted as exc:
+        RUNTIME.failures += 1
+        LOGGER.warning("GenMol generation exhausted metrics=%s", exc.metrics)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "generation_exhausted",
+                "message": str(exc),
+                "metrics": exc.metrics,
+            },
+        ) from exc
     except HTTPException:
         RUNTIME.failures += 1
         raise

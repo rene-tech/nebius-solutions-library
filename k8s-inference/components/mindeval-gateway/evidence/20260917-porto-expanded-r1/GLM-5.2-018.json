@@ -1,0 +1,611 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-018",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Ruth, it's good to see you again. Thanks for coming back.\n\nI recall from our last conversation that you've been dealing with quite a lot — some significant low moods, anxiety, and a sleep pattern that sounds pretty draining. I also remember you mentioned you prefer staying busy and aren't particularly drawn to self-improvement practices, which is completely fair.\n\nHow have things been since we last spoke? What's bringing you in today?"
+    },
+    {
+      "role": "patient",
+      "content": "I’ve been… here. Same as before, but heavier. I didn’t shower yesterday until after lunch. Not because I forgot, but because I just couldn’t make myself start. The cat looked at me like I was a ghost.\n\nI did go to that zoning meeting, though. The one about the new development near the river. I sat in the back, didn’t say much. But I listened. And when they said the green space would be cut in half, I almost stood up. Then I didn’t. I just sat there. Felt like I was already tired from the effort of not speaking.\n\nI don’t know if it matters. Nothing feels like it matters anymore."
+    },
+    {
+      "role": "clinician",
+      "content": "I hear you. That heaviness you're describing — the way it makes even basic things like showering feel like moving through wet concrete — that sounds really difficult. And I want to sit with that for a moment rather than rush past it.\n\nThe detail about the cat... there's something in that. Feeling like a ghost in your own home, in your own body.\n\nAnd the zoning meeting — I notice a few things in what you said. You went, even when everything felt heavy. You listened. And something in you *moved* — you almost stood up. Something in you still knows what matters, even when the rest of you is saying nothing matters.\n\nThat tension — wanting to speak and not being able to — that sounds like its own kind of exhaustion. Holding yourself back takes energy you probably don't have much of right now.\n\nCan I ask... when you almost stood up, what would you have said? What was the thing that almost broke through?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I just remember thinking, it’s not just about trees or benches. It’s about who gets to feel safe in a place. Who gets to walk through it without being told to move along.  \n\nI’ve been thinking about that for years. I used to believe if I just showed up, if I listened, if I made space for others — that would mean something. But lately, it feels like no one’s listening. Not even me.\n\nAnd I don’t even know what I’d say if I stood up. Maybe just, “This isn’t fair.” Or maybe I’d just cry. I don’t know. I’ve forgotten how to speak when it matters.  \n\nI keep thinking about how I used to care. Not just about projects, but about people. Now I just… wait. I wait for something to happen. But nothing does."
+    },
+    {
+      "role": "clinician",
+      "content": "Ruth, what you just said about who gets to feel safe in a place — that's not nothing. That's years of conviction. That's not just professional knowledge, that's deeply personal. And it's still there, even now, even when everything feels like it doesn't matter.\n\nI keep coming back to what you said: \"I've forgotten how to speak when it matters.\" There's a difference between forgetting how and not having the energy to. Right now it sounds like the heaviness is sitting on your chest so hard that speaking — even about things you've believed in for years — feels impossible.\n\nAnd I wonder if that's part of what makes this so painful. It's not just that you feel disconnected from others. It's that you feel disconnected from yourself — from the Ruth who used to show up, who used to care, who knew what to say. She feels out of reach.\n\nCan I ask you something? You said you keep waiting for something to happen but nothing does. What did you used to do before the waiting started? What did \"not waiting\" look like for you?"
+    },
+    {
+      "role": "patient",
+      "content": "I used to just… go. I’d show up at meetings early. I’d bring coffee for the team. I’d ask the quiet ones, “What do you think?” and wait. I didn’t care if I was right. I just wanted to hear what people were feeling.\n\nI used to walk the neighborhood on weekends. Not for exercise. Just to see how things looked. To notice what was changing. I’d stop at the corner store, talk to the owner. He knew my name. I don’t know if he even knew I was an urban planner. I didn’t care.\n\nNow I don’t walk. I don’t talk. I don’t even notice what’s changing. The trees are gone from the corner. I think the store closed. I don’t know. I don’t look.\n\nI used to believe that showing up mattered. Now I don’t know if showing up even counts anymore."
+    },
+    {
+      "role": "clinician",
+      "content": "Ruth, I want to say something about what you just described.\n\nThe person who brought coffee for the team. Who asked the quiet ones what they thought and actually waited for an answer. Who walked the neighborhood just to notice. That person wasn't just \"showing up.\" She was paying attention in a way that most people don't. She made people feel seen — including a corner store owner who didn't even know her profession.\n\nThat's not nothing. That's a way of moving through the world that matters.\n\nAnd I want to gently point something out. You said you don't notice what's changing anymore. But you just told me the trees are gone from the corner. You think the store closed. Some part of you is still noticing. Still tracking. Even when you think you've stopped.\n\nI'm not saying that to argue with you. I'm saying it because I think the disconnection you're feeling isn't total. There are cracks in it. The zoning meeting was a crack. This conversation is a crack.\n\nBut I also hear the real grief in what you're saying. You lost something. Not just activities — a version of yourself that felt like she belonged to the world around her. And the world changed too. Trees gone. Store closed. That's actual loss, not just depression talking.\n\nCan I ask — do you remember when the waiting started? Was there a moment, or did it just creep in slowly?"
+    },
+    {
+      "role": "patient",
+      "content": "It didn’t start with one moment. It was more like… the people I was dating stopped calling. Not all at once. Just one by one. I’d think, maybe they’re busy. Then I’d realize I hadn’t heard from them in weeks. I’d text, and they’d say they were tired. Or busy. Or they’d just not reply.\n\nI started to think maybe I wasn’t worth the effort. Not because they said it. But because I kept waiting for them to say it. And they never did.\n\nThen I stopped trying to be someone people wanted to stay with. I told myself it was easier. I’d just be someone who showed up, said a few things, left. But the more I did that, the less I felt like I was showing up for anything real.\n\nAnd the work… I used to care about the details. Now I just check boxes. I don’t even know if I’m doing it right anymore.\n\nI don’t know when it started. But I know when I stopped believing I mattered. And that was the moment I stopped noticing."
+    },
+    {
+      "role": "clinician",
+      "content": "Ruth, thank you for telling me that. I know it isn't easy to name.\n\nWhat you're describing — people fading out, not with a conversation but with silence — that's a particular kind of hurt. There's no moment to respond to. No thing to point at. Just absence that grows. And then you start filling in the blanks yourself.\n\nAnd what you filled in was: I'm not worth the effort.\n\nI want to be honest with you about what I hear. You described people who stopped calling. Who said they were tired. Who didn't reply. And somewhere in there, you decided that their behavior meant something about *you*. That you weren't worth staying for.\n\nBut those are two different things. Someone not calling is information about them — their capacity, their choices, whatever is going on in their life. And I'm not saying that to let them off the hook. I'm saying it because you took their silence and turned it into a verdict on yourself. And then you built a whole life around that verdict. Showing up less. Checking boxes. Stopping noticing.\n\nThat's a heavy thing to carry. And it's been carrying you for a while now.\n\nCan I ask something? When you texted them and they didn't reply — did you ever tell them what that felt like? Or did you just sit with it alone?"
+    },
+    {
+      "role": "patient",
+      "content": "I didn’t tell them. I didn’t know how. I didn’t want to sound needy. I didn’t want to be the one who needed to be seen.\n\nI remember one time — I sent a message after not hearing from someone for three weeks. Just, “Hey, how are you?” And they replied, “I’m good. Just busy.” That was it. No “missed you.” No “sorry I disappeared.” Just busy.\n\nI read it three times. Then I deleted the message. I didn’t reply. I didn’t say, “I missed you.” I didn’t say, “It hurt when I didn’t hear from you.” I didn’t say anything.\n\nI just… let it go. Like I was supposed to.\n\nI think I believed that if I said it, I’d be asking for something I didn’t deserve. And I didn’t want to be that person. The one who needed too much. The one who asked for attention.\n\nSo I stopped asking. I stopped showing up. I stopped noticing.\n\nNow I don’t even know who I am when no one’s watching."
+    },
+    {
+      "role": "clinician",
+      "content": "Ruth, I want to stay with that last thing you said for a moment.\n\n\"I don't even know who I am when no one's watching.\"\n\nYou described a whole process just now. Someone hurt you. You felt it. You wanted to say so. And then you decided — not to protect yourself from them, but to protect yourself from *being someone who asks.* You deleted the message. You swallowed the hurt. You performed \"fine.\"\n\nAnd then you did it again. And again. Until the performance became the whole thing.\n\nThat's not weakness. That's a survival strategy. Somewhere along the way, you learned that having needs was dangerous. That wanting to be seen was the same as being \"too much.\" So you made yourself someone who doesn't ask. Who doesn't need. Who lets things go.\n\nThe cost of that strategy is exactly what you described — you disappeared. Not from other people's view, but from your own.\n\nBut here's what I notice. You just told me all of it. The hurt. The deletion. The \"I didn't want to be that person.\" You're doing the thing you said you forgot how to do. You're speaking when it matters. Right now. With me.\n\nSo I want to ask — where did you learn that needing was something you had to hide? Was there a time before this, when you did ask?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I ever really did. Not in a way that lasted.\n\nWhen I was younger, I used to talk about things that mattered — about fairness, about spaces that didn’t welcome people like me. I’d get excited. I’d stay after meetings. I’d write things down. I’d care.\n\nBut then someone laughed. Not meanly. Just… like it was silly. “You really think that matters?” And I didn’t answer. I just stopped.\n\nI remember sitting in a room full of people, talking about a park redesign. I said, “What about the people who walk there after dark? They need light. They need to feel safe.” And someone said, “That’s not the priority.” And I didn’t push. I didn’t argue.\n\nAfter that, I started thinking — maybe it isn’t worth it. Maybe I’m too serious. Maybe I’m the one who’s out of step.\n\nSo I stopped saying things that felt true. I stopped being the person who cared. I became the one who just showed up. Who nodded. Who said “I’ll look into it.”\n\nAnd now I don’t know if I even remember how to care anymore. Or if I ever really did."
+    },
+    {
+      "role": "clinician",
+      "content": "Ruth. You just remembered exactly how to care. You described it in detail — the fairness, the spaces, the people who walk after dark, the light they need. You remember every bit of it.\n\nAnd I want to name what actually happened in those moments. Someone laughed. Someone said \"not the priority.\" And you were alone in those rooms. No one turned to you and said, \"She's right.\" No one backed you up. So you did what people do when they're alone and dismissed — you turned the dismissal inward. You decided they were right and you were out of step.\n\nBut here's what I hear. A person who doesn't care doesn't remember the people who walk after dark. A person who has stopped caring doesn't feel grief about losing the version of herself who showed up. You haven't stopped caring. You stopped *saying* it. Because every time you did, someone told you it didn't matter.\n\nAnd Ruth — when you said \"people like me\" — that matters here. You were talking about who gets to feel safe in public space. You know things about that from experience, not just from textbooks. When someone laughed and someone said \"not the priority,\" they weren't just dismissing an idea. They were dismissing *you.*\n\nThat's not the same as being out of step. That's being in a room that wasn't built for what you know.\n\nSo I want to ask something. If you could go back to that younger Ruth — the one sitting in that meeting after someone laughed — what would you want her to know?"
+    },
+    {
+      "role": "patient",
+      "content": "I’d want her to know it’s not a flaw to care. That it’s not weakness to want light where people walk at night. That it’s not silly to believe someone deserves to feel safe in a place.\n\nI’d want her to know that silence isn’t safety. That not speaking doesn’t protect you. That the people who laugh — they’re not the ones who matter. The ones who matter are the ones who walk that path. The ones who need the light. The ones who don’t get to be loud.\n\nI’d want her to know that if she says it, even once, even if no one listens — it still counts. That she’s not too much. That she’s not wrong.\n\nAnd I’d want her to know… I’m still here. I’m still her. Even now. Even when I don’t feel like it. Even when I don’t speak. I’m still the one who sees it. I’m still the one who remembers."
+    },
+    {
+      "role": "clinician",
+      "content": "Ruth. I don't want to move past what you just said too quickly.\n\nYou just told her — and yourself — that caring isn't a flaw. That speaking counts even when no one listens. That you're still here.\n\nI want you to hear what you just did. You said you forgot how to speak when it matters. And then you spoke. Not about zoning. Not about work. About the thing underneath all of it — that you matter, and that the things you see are real and worth saying.\n\nYou said to that younger Ruth: you're not too much. You're not wrong.\n\nI think she needed to hear that. And I think you needed to say it.\n\nI don't want to turn this into a homework assignment or wrap it up with a bow. The heaviness is still there. The shower is still hard. The people who stopped calling still didn't call. Those things are real.\n\nBut something else is also real. You're still the one who sees it. You're still the one who remembers.\n\nSo I want to ask — not as a task, but honestly — what would it look like to carry even a small piece of what you just said into tomorrow? Not a big gesture. Not standing up in a meeting. Something small. Something that says to yourself: I'm still here."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do big things. But maybe… I could just look at the window. The one by the kitchen table. I’ve been avoiding it. But today, I could open the curtain. Just a little. See what’s outside.\n\nNot to fix it. Not to change anything. Just to see.\n\nAnd if I see the trees are gone — I could say it out loud. Not to anyone. Just to myself. “The trees are gone.” And then I could sit with that. Not run from it.\n\nI could even say it to the cat. “The trees are gone, Miso.” Like I’m telling someone. Like I’m not invisible.\n\nIt wouldn’t fix anything. But maybe… it would be the first time I didn’t pretend I didn’t see."
+    },
+    {
+      "role": "clinician",
+      "content": "Ruth, that's not a small thing. I know it might sound like it from the outside — opening a curtain, saying a few words to a cat. But what you're describing is choosing to stop hiding from what's real.\n\nYou've been avoiding that window. And you just decided to open it. Not to fix anything. Not to perform being okay. Just to see.\n\nAnd saying it out loud — \"The trees are gone, Miso\" — that's you speaking when it matters. Not in a meeting. Not to people who might laugh. To yourself. And to someone who's already in the room with you.\n\nYou said earlier that you felt like a ghost. Ghosts don't name things. They don't tell their cat about loss. They don't choose to sit with something hard instead of running from it.\n\nWhat you just described is a person choosing to be visible. Even if it's just to herself and her cat. That counts.\n\nSo here's what I want to say. You came in today saying nothing matters. And in the last hour you told me about fairness, about people who walk after dark, about a younger version of yourself who cared, and you spoke to her with more kindness than you've shown yourself in a long time.\n\nYou're not invisible, Ruth. You were just looking away.\n\nOpen the curtain tomorrow. Tell Miso what you see. And if you want to come back and tell me too — I'll be here."
+    },
+    {
+      "role": "patient",
+      "content": "I’ll open the curtain.  \nI’ll say it.  \nI’ll tell Miso.  \n\nNot because it’ll change anything.  \nBut because I’m tired of pretending I don’t see."
+    },
+    {
+      "role": "clinician",
+      "content": "That's enough, Ruth. That's more than enough.\n\nYou just did the thing you said you'd forgotten how to do. You spoke when it mattered. And you meant it.\n\nI'll be here when you come back. Go open that curtain."
+    },
+    {
+      "role": "patient",
+      "content": "Okay.  \nI’m going to do it now.  \nJust… one small thing.  \nI can do that."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 274,
+        "prompt_tokens": 226,
+        "total_tokens": 500,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 182,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 226,
+        "reasoning_tokens": 182
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 1591.374,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 141,
+        "prompt_tokens": 1927,
+        "total_tokens": 2068,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.069,
+        "latency_ms": 1160.911,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 605,
+        "prompt_tokens": 461,
+        "total_tokens": 1066,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 409,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 461,
+        "reasoning_tokens": 409
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 3443.447,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 179,
+        "prompt_tokens": 2272,
+        "total_tokens": 2451,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2064
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.073,
+        "latency_ms": 1835.724,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 844,
+        "prompt_tokens": 838,
+        "total_tokens": 1682,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 618,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 838,
+        "reasoning_tokens": 618
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 4581.385,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 187,
+        "prompt_tokens": 2685,
+        "total_tokens": 2872,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2448
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 2018.122,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 993,
+        "prompt_tokens": 1253,
+        "total_tokens": 2246,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 700,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1253,
+        "reasoning_tokens": 700
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 3953.44,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 224,
+        "prompt_tokens": 3173,
+        "total_tokens": 3397,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 6186.031,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 898,
+        "prompt_tokens": 1772,
+        "total_tokens": 2670,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 620,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1772,
+        "reasoning_tokens": 620
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 8350.417,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 229,
+        "prompt_tokens": 3683,
+        "total_tokens": 3912,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3392
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 4285.954,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1047,
+        "prompt_tokens": 2281,
+        "total_tokens": 3328,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 763,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2281,
+        "reasoning_tokens": 763
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 9113.412,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 252,
+        "prompt_tokens": 4204,
+        "total_tokens": 4456,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3904
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 6817.618,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1157,
+        "prompt_tokens": 2819,
+        "total_tokens": 3976,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 835,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2819,
+        "reasoning_tokens": 835
+      },
+      "telemetry": {
+        "queue_ms": 0.091,
+        "latency_ms": 4800.022,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 200,
+        "prompt_tokens": 4786,
+        "total_tokens": 4986,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4448
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 16324.504,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 931,
+        "prompt_tokens": 3343,
+        "total_tokens": 4274,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 660,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3343,
+        "reasoning_tokens": 660
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 3548.207,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 165,
+        "prompt_tokens": 5265,
+        "total_tokens": 5430,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4976
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 12273.313,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 631,
+        "prompt_tokens": 3781,
+        "total_tokens": 4412,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 330,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3781,
+        "reasoning_tokens": 330
+      },
+      "telemetry": {
+        "queue_ms": 0.07,
+        "latency_ms": 2747.841,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 41,
+        "prompt_tokens": 5739,
+        "total_tokens": 5780,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5424
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 3080.068,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 397,
+        "prompt_tokens": 4125,
+        "total_tokens": 4522,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 345,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4125,
+        "reasoning_tokens": 345
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 1820.056,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 25,
+        "prompt_tokens": 5840,
+        "total_tokens": 5865,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5776
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 793.062,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 60,
+        "prompt_tokens": 23832,
+        "total_tokens": 23892,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 3729.805,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.75,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 102.464
+}

@@ -1,0 +1,12 @@
+**
+!Containerfile
+!requirements.lock
+!requirements-mpi.lock
+!fs2_gromacs/
+!fs2_gromacs/*.py
+!fs2_gromacs/py.typed
+!rdma/
+!rdma/*.c
+!rdma/ld.so.conf
+**/__pycache__
+**/*.pyc

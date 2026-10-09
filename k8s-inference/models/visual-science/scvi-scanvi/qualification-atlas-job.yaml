@@ -1,0 +1,65 @@
+# Existing full-node H100 pool supplies host RAM; this requests ONE GPU only.
+# No node/capacity/quota changes. Review/export/cleanup by 2026-10-08.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: scvi-whitelab-atlas-20261006
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 128Gi}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scvi-whitelab-atlas-20261006-r7
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  activeDeadlineSeconds: 21600
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector:
+        accelerator.fs2.nebius/pool-id: h100-reserved-8x
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: atlas
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:1471ca507c2ecee9ce0441b7b0ff5fc5a8bc504759e338db50d1a10681242f02
+          command: [sh, -c, "python -m unittest discover -s /qualification -p test_batch.py -v && python -u /qualification/qualify_atlas.py"]
+          env:
+            - {name: OMP_NUM_THREADS, value: "8"}
+            - {name: MPLCONFIGDIR, value: /work/cache/matplotlib}
+            - {name: NUMBA_CACHE_DIR, value: /work/cache/numba}
+            - {name: PYTORCH_KERNEL_CACHE_PATH, value: /work/cache/torch-kernels}
+          resources:
+            requests: {cpu: "8", memory: 256Gi, nvidia.com/gpu: "1"}
+            limits: {cpu: "8", memory: 256Gi, nvidia.com/gpu: "1"}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: harness, mountPath: /qualification, readOnly: true}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: work
+          persistentVolumeClaim: {claimName: scvi-whitelab-atlas-20261006}
+        - name: harness
+          configMap: {name: scvi-whitelab-atlas-harness-20261006-r7}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 8Gi}

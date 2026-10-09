@@ -1,0 +1,623 @@
+{
+  "model": "diar-streaming-sortformer-4spk-v2-1",
+  "key_revoked": true,
+  "scale_applied_during_established_session": true,
+  "scale": {
+    "mode": "scale",
+    "results": [
+      {
+        "model": "diar-streaming-sortformer-4spk-v2-1",
+        "proposal": {
+          "name": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "base_etag": "sha256:cb015dc838a60288ce25555526df385ae04de2c82df5bba0549eaa5b83de9c9c",
+          "spec": {
+            "modelRef": "diar-streaming-sortformer-4spk-v2-1",
+            "app": null,
+            "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+            "lifecycle": {
+              "desiredState": "Enabled"
+            },
+            "artifact": {
+              "revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+              "manifestDigest": "sha256:43c517f7fcf432ede6f00ac28eee93657b6c803806788bb5e3d37e4989fda99e",
+              "storageRef": null
+            },
+            "runtime": {
+              "profile": "custom",
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+              "templateRef": {
+                "name": "diar-streaming-sortformer-4spk-v2-1.legacy-v1",
+                "digest": "sha256:ee9682644b685818ed79df34446659a8002362badb7f0f04cf5170410c9d8fe7"
+              }
+            },
+            "placement": {
+              "poolRefs": [
+                "l40s-1x"
+              ],
+              "acceleratorsPerReplica": 1,
+              "topologyPolicy": "SingleNode"
+            },
+            "availability": {
+              "minReplicas": 2,
+              "maxReplicas": 2,
+              "idleSeconds": 300,
+              "targetQueueDepth": 1,
+              "pollingIntervalSeconds": 5,
+              "cooldownSeconds": 300,
+              "startupTimeoutSeconds": null,
+              "warmWindows": []
+            },
+            "cache": {
+              "tier": "Disabled",
+              "snapshotPreference": "Never",
+              "snapshotRef": null,
+              "mechanism": null
+            },
+            "queue": {
+              "localQueue": "inference-models",
+              "priorityClass": "standard",
+              "maxQueueSeconds": 7200
+            },
+            "rollout": {
+              "strategy": "Rolling",
+              "maxUnavailable": 0,
+              "maxSurge": 1,
+              "progressDeadlineSeconds": 7200
+            },
+            "exposure": {
+              "openAI": false,
+              "openAIAliases": [],
+              "mcp": true,
+              "mcpToolName": "infer_diar_streaming_sortformer_4spk_v2_1"
+            },
+            "policy": {
+              "visibility": "Tenant",
+              "policyRef": "tenant-default.v1",
+              "allowedPrincipalIds": [],
+              "ratePolicyRef": null
+            },
+            "adoption": {
+              "mode": "None",
+              "receiptRef": null
+            },
+            "fastStart": {
+              "mode": "Fixed",
+              "level": "Off",
+              "minimumLevel": null,
+              "maximumLevel": null,
+              "fallbackPolicy": "AllowLowerLevel"
+            }
+          }
+        },
+        "preview": {
+          "schema_version": "fs2-serve.nebius.ai/model-deployment-render-preview/v1",
+          "preview_id": "2bf9d257-4925-41d1-8f9b-d036fa8ba515",
+          "name": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "base_etag": "sha256:cb015dc838a60288ce25555526df385ae04de2c82df5bba0549eaa5b83de9c9c",
+          "proposed_etag": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+          "decision": {
+            "disposition": "accepted",
+            "specDigest": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+            "issues": [],
+            "terraformInputs": [],
+            "admittedPoolRef": "l40s-1x",
+            "fastStart": {
+              "mode": "Fixed",
+              "fallbackPolicy": "AllowLowerLevel",
+              "requestedLevel": "Off",
+              "minimumLevel": null,
+              "maximumLevel": null,
+              "qualifiedLevel": "Off",
+              "assignedLevel": "Off",
+              "requestedTargetSeconds": null,
+              "targetSeconds": null,
+              "qualification": {
+                "state": "NoTarget",
+                "reason": "NoFastStartTarget",
+                "message": "assigned level Off has no startup-time target (l40s-1x: no compatible model-start p95)"
+              },
+              "modelStart": null,
+              "capacityWait": null,
+              "endToEnd": null,
+              "selectedIdentityDigest": null,
+              "pools": [
+                {
+                  "poolRef": "l40s-1x",
+                  "acceleratorClass": "nvidia-l40s-48gb",
+                  "qualifiedLevel": "Off",
+                  "reason": "NoCurrentRuntimeEvidence",
+                  "mechanisms": [],
+                  "selectedMechanism": null,
+                  "selectedCompatibilityTupleDigest": null,
+                  "selectedIdentityDigest": null,
+                  "receiptDigests": [],
+                  "modelStart": null,
+                  "capacityWait": null,
+                  "endToEnd": null,
+                  "paths": [],
+                  "retainedPaths": []
+                }
+              ]
+            },
+            "fastStartMechanism": {
+              "mechanism": "conventional",
+              "source": "Default",
+              "renderable": true,
+              "reason": "ConventionalDefault"
+            }
+          },
+          "render": {
+            "renderer": "legacy-manifest-v1",
+            "specDigest": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+            "renderDigest": "sha256:18ba85ee3e6fa4178d56c999a73e32963c38b40b5308323e1f4f86bfbeb047d1",
+            "resources": [
+              {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "namespace": "fs2-models",
+                "name": "diar-streaming-sortformer-4spk-v2-1",
+                "manifest": {
+                  "apiVersion": "apps/v1",
+                  "kind": "Deployment",
+                  "metadata": {
+                    "labels": {
+                      "app.kubernetes.io/component": "model-runtime",
+                      "app.kubernetes.io/name": "diar-streaming-sortformer-4spk-v2-1",
+                      "app.kubernetes.io/part-of": "fs2-serve",
+                      "fs2-serve.nebius.ai/model-id": "diar-streaming-sortformer-4spk-v2-1",
+                      "fs2.voice/model": "diar-streaming-sortformer-4spk-v2-1",
+                      "workload.fs2.nebius/owner": "voice-agent-20260916",
+                      "app.kubernetes.io/managed-by": "fs2-model-controller",
+                      "fs2-serve.nebius.ai/model-deployment": "diar-streaming-sortformer-4spk-v2-1",
+                      "kueue.x-k8s.io/queue-name": "inference-models",
+                      "kueue.x-k8s.io/priority-class": "standard",
+                      "fs2-serve.nebius.ai/workload-role": "hot-l40s-1x"
+                    },
+                    "name": "diar-streaming-sortformer-4spk-v2-1",
+                    "namespace": "fs2-models",
+                    "annotations": {
+                      "fs2-serve.nebius.ai/spec-digest": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+                      "fs2-serve.nebius.ai/effective-hot-floor": "2",
+                      "fs2-serve.nebius.ai/workload-pool-ref": "l40s-1x",
+                      "fs2-serve.nebius.ai/workload-role": "hot",
+                      "fs2-serve.nebius.ai/workload-segment-capacity": "2",
+                      "fs2-serve.nebius.ai/workload-segment-offset": "0"
+                    }
+                  },
+                  "spec": {
+                    "replicas": 2,
+                    "selector": {
+                      "matchLabels": {
+                        "app.kubernetes.io/name": "diar-streaming-sortformer-4spk-v2-1"
+                      }
+                    },
+                    "strategy": {
+                      "type": "RollingUpdate",
+                      "rollingUpdate": {
+                        "maxUnavailable": 0,
+                        "maxSurge": 1
+                      }
+                    },
+                    "template": {
+                      "metadata": {
+                        "labels": {
+                          "app.kubernetes.io/component": "model-runtime",
+                          "app.kubernetes.io/name": "diar-streaming-sortformer-4spk-v2-1",
+                          "app.kubernetes.io/part-of": "fs2-serve",
+                          "fs2-serve.nebius.ai/model-id": "diar-streaming-sortformer-4spk-v2-1",
+                          "fs2.voice/model": "diar-streaming-sortformer-4spk-v2-1",
+                          "workload.fs2.nebius/owner": "voice-agent-20260916",
+                          "app.kubernetes.io/managed-by": "fs2-model-controller",
+                          "fs2-serve.nebius.ai/model-deployment": "diar-streaming-sortformer-4spk-v2-1"
+                        },
+                        "annotations": {
+                          "fs2-serve.nebius.ai/spec-digest": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+                          "fs2-serve.nebius.ai/effective-hot-floor": "2",
+                          "fs2-serve.nebius.ai/workload-pool-ref": "l40s-1x",
+                          "fs2-serve.nebius.ai/workload-role": "hot",
+                          "fs2-serve.nebius.ai/workload-segment-capacity": "2",
+                          "fs2-serve.nebius.ai/workload-segment-offset": "0"
+                        }
+                      },
+                      "spec": {
+                        "automountServiceAccountToken": false,
+                        "containers": [
+                          {
+                            "env": [
+                              {
+                                "name": "FS2_VOICE_MODEL",
+                                "value": "diar-streaming-sortformer-4spk-v2-1"
+                              },
+                              {
+                                "name": "OMP_NUM_THREADS",
+                                "value": "2"
+                              },
+                              {
+                                "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                                "valueFrom": {
+                                  "configMapKeyRef": {
+                                    "key": "artifact-hosts",
+                                    "name": "fs2-speech-runtime-settings"
+                                  }
+                                }
+                              }
+                            ],
+                            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+                            "imagePullPolicy": "IfNotPresent",
+                            "lifecycle": {
+                              "preStop": {
+                                "exec": {
+                                  "command": [
+                                    "python",
+                                    "-c",
+                                    "import json,time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain',method='POST'),timeout=5); deadline=time.monotonic()+1850; exec(\"while time.monotonic()<deadline:\\n try:\\n  r=urllib.request.urlopen('http://127.0.0.1:8000/metrics',timeout=5).read().decode()\\n  if 'fs2_voice_occupied 0.0' in r: break\\n except Exception: break\\n time.sleep(1)\"); time.sleep(5)"
+                                  ]
+                                }
+                              }
+                            },
+                            "livenessProbe": {
+                              "failureThreshold": 5,
+                              "httpGet": {
+                                "path": "/healthz",
+                                "port": "http"
+                              },
+                              "periodSeconds": 30
+                            },
+                            "name": "voice",
+                            "ports": [
+                              {
+                                "containerPort": 8000,
+                                "name": "http"
+                              }
+                            ],
+                            "readinessProbe": {
+                              "httpGet": {
+                                "path": "/readyz",
+                                "port": "http"
+                              },
+                              "periodSeconds": 3
+                            },
+                            "resources": {
+                              "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "32Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                              },
+                              "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "16Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                              }
+                            },
+                            "startupProbe": {
+                              "failureThreshold": 180,
+                              "httpGet": {
+                                "path": "/readyz",
+                                "port": "http"
+                              },
+                              "periodSeconds": 5
+                            },
+                            "volumeMounts": [
+                              {
+                                "mountPath": "/cache",
+                                "name": "cache"
+                              }
+                            ]
+                          }
+                        ],
+                        "nodeSelector": {
+                          "accelerator.fs2.nebius/class": "nvidia-l40s-48gb",
+                          "accelerator.fs2.nebius/pool-id": "l40s-1x",
+                          "capacity.fs2.nebius/gpu-count": "1",
+                          "capacity.fs2.nebius/type": "regular",
+                          "local-nvme.fs2.nebius/eligible": "false",
+                          "snapshot.fs2.nebius/eligible": "false",
+                          "topology.fs2.nebius/scope": "standalone",
+                          "workload.fs2.nebius/gpu": "true"
+                        },
+                        "securityContext": {
+                          "fsGroup": 10001,
+                          "runAsGroup": 10001,
+                          "runAsUser": 10001
+                        },
+                        "terminationGracePeriodSeconds": 1900,
+                        "tolerations": [
+                          {
+                            "effect": "NoSchedule",
+                            "key": "dedicated",
+                            "operator": "Equal",
+                            "value": "fs2-inference"
+                          }
+                        ],
+                        "volumes": [
+                          {
+                            "emptyDir": {
+                              "sizeLimit": "16Gi"
+                            },
+                            "name": "cache"
+                          }
+                        ]
+                      }
+                    },
+                    "progressDeadlineSeconds": 7200
+                  }
+                },
+                "digest": "sha256:b83aa30cb7bffd2ea8cdc36ea508fc47019c84289b95e22b54b8bea38dd47298",
+                "fieldManager": "fs2-model-controller",
+                "forceConflicts": false
+              },
+              {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "namespace": "fs2-models",
+                "name": "fs2-model-publication-diar-streaming-sortformer-4spk-v2-1",
+                "manifest": {
+                  "apiVersion": "v1",
+                  "kind": "ConfigMap",
+                  "metadata": {
+                    "name": "fs2-model-publication-diar-streaming-sortformer-4spk-v2-1",
+                    "namespace": "fs2-models",
+                    "labels": {
+                      "app.kubernetes.io/managed-by": "fs2-model-controller",
+                      "app.kubernetes.io/part-of": "fs2-serve",
+                      "app.kubernetes.io/component": "model-runtime",
+                      "fs2-serve.nebius.ai/model-deployment": "diar-streaming-sortformer-4spk-v2-1",
+                      "fs2-serve.nebius.ai/model-id": "diar-streaming-sortformer-4spk-v2-1",
+                      "fs2-serve.nebius.ai/component": "publication-intent"
+                    },
+                    "annotations": {
+                      "fs2-serve.nebius.ai/spec-digest": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+                      "fs2-serve.nebius.ai/effective-hot-floor": "2"
+                    }
+                  },
+                  "data": {
+                    "schema": "fs2-serve.nebius.ai/model-publication-intent/v1",
+                    "model_id": "diar-streaming-sortformer-4spk-v2-1",
+                    "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+                    "openai": "false",
+                    "openai_aliases_json": "[]",
+                    "mcp": "true",
+                    "mcp_tool_name": "infer_diar_streaming_sortformer_4spk_v2_1",
+                    "policy_ref": "tenant-default.v1",
+                    "readiness_gate": "ModelDeployment/Ready=True"
+                  }
+                },
+                "digest": "sha256:44db7ba393abe4213fc7a1d4af2bc9fc02b066fc04b7dfa922eafd154a1524cf",
+                "fieldManager": "fs2-model-controller",
+                "forceConflicts": false
+              },
+              {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "namespace": "fs2-models",
+                "name": "diar-streaming-sortformer-4spk-v2-1",
+                "manifest": {
+                  "apiVersion": "v1",
+                  "kind": "Service",
+                  "metadata": {
+                    "labels": {
+                      "app.kubernetes.io/component": "model-runtime",
+                      "app.kubernetes.io/name": "diar-streaming-sortformer-4spk-v2-1",
+                      "app.kubernetes.io/part-of": "fs2-serve",
+                      "fs2-serve.nebius.ai/model-id": "diar-streaming-sortformer-4spk-v2-1",
+                      "fs2.voice/model": "diar-streaming-sortformer-4spk-v2-1",
+                      "workload.fs2.nebius/owner": "voice-agent-20260916",
+                      "app.kubernetes.io/managed-by": "fs2-model-controller",
+                      "fs2-serve.nebius.ai/model-deployment": "diar-streaming-sortformer-4spk-v2-1"
+                    },
+                    "name": "diar-streaming-sortformer-4spk-v2-1",
+                    "namespace": "fs2-models",
+                    "annotations": {
+                      "fs2-serve.nebius.ai/spec-digest": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+                      "fs2-serve.nebius.ai/effective-hot-floor": "2"
+                    }
+                  },
+                  "spec": {
+                    "ports": [
+                      {
+                        "name": "http",
+                        "port": 8000,
+                        "targetPort": "http"
+                      }
+                    ],
+                    "selector": {
+                      "app.kubernetes.io/name": "diar-streaming-sortformer-4spk-v2-1"
+                    }
+                  }
+                },
+                "digest": "sha256:a85714544cb56e1b8bc9a48239c1a3ec9e489ed1d2c98204467168b4c6170a94",
+                "fieldManager": "fs2-model-controller",
+                "forceConflicts": false
+              }
+            ],
+            "endpoint": {
+              "namespace": "fs2-models",
+              "serviceName": "diar-streaming-sortformer-4spk-v2-1",
+              "servicePort": 8000
+            }
+          },
+          "created_at": "2026-09-16T17:39:27.186763Z",
+          "expires_at": "2026-09-16T17:54:27.186763Z",
+          "mutation_supported": true,
+          "blocked_actions": []
+        },
+        "apply_status": 200,
+        "apply": {
+          "meta": {
+            "schema_version": "fs2.admin-api/v1",
+            "generated_at": "2026-09-16T17:39:27.383065Z",
+            "context": {
+              "project": "project-e00rene",
+              "cluster": "k8s-inference-h100",
+              "region": "eu-north1",
+              "from_at": "2026-09-16T16:39:27.383025Z",
+              "to_at": "2026-09-16T17:39:27.383025Z",
+              "timezone": "UTC"
+            },
+            "sources": [
+              {
+                "id": "postgresql",
+                "state": "available",
+                "observed_at": "2026-09-16T17:39:27.383065Z",
+                "age_seconds": 0,
+                "reason": null
+              }
+            ],
+            "warnings": []
+          },
+          "data": {
+            "revision": {
+              "namespace": "fs2-models",
+              "name": "diar-streaming-sortformer-4spk-v2-1",
+              "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+              "revision": 2,
+              "etag": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+              "spec": {
+                "modelRef": "diar-streaming-sortformer-4spk-v2-1",
+                "app": null,
+                "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+                "lifecycle": {
+                  "desiredState": "Enabled"
+                },
+                "artifact": {
+                  "revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+                  "manifestDigest": "sha256:43c517f7fcf432ede6f00ac28eee93657b6c803806788bb5e3d37e4989fda99e",
+                  "storageRef": null
+                },
+                "runtime": {
+                  "profile": "custom",
+                  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+                  "templateRef": {
+                    "name": "diar-streaming-sortformer-4spk-v2-1.legacy-v1",
+                    "digest": "sha256:ee9682644b685818ed79df34446659a8002362badb7f0f04cf5170410c9d8fe7"
+                  }
+                },
+                "placement": {
+                  "poolRefs": [
+                    "l40s-1x"
+                  ],
+                  "acceleratorsPerReplica": 1,
+                  "topologyPolicy": "SingleNode"
+                },
+                "availability": {
+                  "minReplicas": 2,
+                  "maxReplicas": 2,
+                  "idleSeconds": 300,
+                  "targetQueueDepth": 1,
+                  "pollingIntervalSeconds": 5,
+                  "cooldownSeconds": 300,
+                  "startupTimeoutSeconds": null,
+                  "warmWindows": []
+                },
+                "cache": {
+                  "tier": "Disabled",
+                  "snapshotPreference": "Never",
+                  "snapshotRef": null,
+                  "mechanism": null
+                },
+                "queue": {
+                  "localQueue": "inference-models",
+                  "priorityClass": "standard",
+                  "maxQueueSeconds": 7200
+                },
+                "rollout": {
+                  "strategy": "Rolling",
+                  "maxUnavailable": 0,
+                  "maxSurge": 1,
+                  "progressDeadlineSeconds": 7200
+                },
+                "exposure": {
+                  "openAI": false,
+                  "openAIAliases": [],
+                  "mcp": true,
+                  "mcpToolName": "infer_diar_streaming_sortformer_4spk_v2_1"
+                },
+                "policy": {
+                  "visibility": "Tenant",
+                  "policyRef": "tenant-default.v1",
+                  "allowedPrincipalIds": [],
+                  "ratePolicyRef": null
+                },
+                "adoption": {
+                  "mode": "None",
+                  "receiptRef": null
+                },
+                "fastStart": {
+                  "mode": "Fixed",
+                  "level": "Off",
+                  "minimumLevel": null,
+                  "maximumLevel": null,
+                  "fallbackPolicy": "AllowLowerLevel"
+                }
+              },
+              "action": "update",
+              "created_at": "2026-09-16T17:39:27.321359Z",
+              "created_by": "bootstrap-admin",
+              "previous_revision": 1
+            },
+            "idempotent_replay": false,
+            "projection": "applied",
+            "receipt": {
+              "namespace": "fs2-models",
+              "name": "diar-streaming-sortformer-4spk-v2-1",
+              "uid": "68256880-33c3-4381-8ae5-e3f07011e933",
+              "resource_version": "45353318",
+              "generation": 2,
+              "spec_digest": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde"
+            },
+            "reason": null
+          }
+        }
+      }
+    ],
+    "previous_availability": {
+      "minReplicas": 1,
+      "maxReplicas": 2,
+      "idleSeconds": 300,
+      "targetQueueDepth": 1,
+      "pollingIntervalSeconds": 5,
+      "cooldownSeconds": 300,
+      "startupTimeoutSeconds": null,
+      "warmWindows": []
+    },
+    "status": "applied"
+  },
+  "timing": {
+    "scale_started_monotonic": 8132938.624791309,
+    "scale_applied_monotonic": 8132940.56264743,
+    "existing_session_completed_monotonic": 8132957.251238662
+  },
+  "measurements": [
+    {
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "backend_id": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "ready_seconds": 1.1820097053423524,
+      "first_output_from_ready_seconds": 0.523044440895319,
+      "output_before_end_of_input": true,
+      "end_of_input_seconds": 17.23593946173787,
+      "completed": {
+        "type": "session.done",
+        "operation_id": "466cf40f-00b7-4273-921a-3ac4ce5371d3",
+        "code": null,
+        "result_path": "/v1/operations/466cf40f-00b7-4273-921a-3ac4ce5371d3/result",
+        "retryable": false
+      },
+      "finalization_seconds": 0.3016024697571993,
+      "durable_result": {
+        "model": "diar-streaming-sortformer-4spk-v2-1",
+        "audio_seconds": 17.2354375,
+        "text": ""
+      },
+      "elapsed_seconds": 20.331402817741036,
+      "event_count": 39,
+      "durable_event_count": 36
+    }
+  ],
+  "status": "passed",
+  "raw_receipt_sha256": "e3fbffba02d19d51cd40932ee0347142262da6ba8300daf936480203b9c7054f",
+  "receipt_note": "Frame-level events omitted from this condensed evidence; raw receipt hash retained. Complete durable results were fetched and validated by the probe."
+}

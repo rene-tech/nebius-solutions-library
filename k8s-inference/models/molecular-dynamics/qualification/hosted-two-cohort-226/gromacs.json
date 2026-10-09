@@ -1,0 +1,810 @@
+{
+  "schema": "fs2-serve.nebius.ai/hosted-native-two-cohort-qualification/v1",
+  "model_id": "gromacs",
+  "status": "passed",
+  "recorded_at": "2026-09-23T18:57:43.711560+00:00",
+  "customer_ready": false,
+  "scope": "Two completed canonical ff14SB/TIP3P fixed-cutoff, fixed-PME64 hosted workflows with final client d074317, including downloaded-artifact science/identity validation. Earlier autotuned 04/05 are preserved as superseded variants, not accepted fixed-cutoff evidence.",
+  "release": {
+    "helm_revision": 226,
+    "control_plane_source": "75dda4b772ce93094ea464aff7b6dc0c41ca300b",
+    "control_plane_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:bbab6ea4c6af1a10aea021913b5c321ccd6b47984b205ad88cd1215036a49fb5",
+    "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+    "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643",
+    "runtime_or_backend_mutations_performed_by_this_qualification": false,
+    "current_live_state": {
+      "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/hosted-two-cohort-226-live-state.json",
+      "sha256": "a5caaa47b281b60c8117784469f01171eaaa8e100f4739b0798941b618e26789"
+    }
+  },
+  "protocol": {
+    "atoms": 6598,
+    "force_field": "ff14SB",
+    "water": "TIP3P",
+    "nvt_ps": 100,
+    "npt_ps": 100,
+    "production_ps": 1000,
+    "timestep_fs": 2,
+    "coordinate_interval_ps": 1,
+    "pme_grid": [
+      64,
+      64,
+      64
+    ],
+    "pme_order": 4,
+    "electrostatic_tolerance": 0.00001,
+    "coulomb_and_vdw_cutoff_nm": 1,
+    "pme_autotuning": false,
+    "vdw_switching": false,
+    "dispersion_correction": "EnerPres",
+    "temperature_target_K": 300,
+    "thermostat": "GROMACS native stochastic dynamics integrator (sd), tau-t=1 ps",
+    "pressure_target_bar": 1,
+    "barostat": "native stochastic C-rescale, tau-p=2 ps",
+    "constraints": "LINCS order 8, 2 iterations for the same H-bond targets; rigid TIP3P SETTLE. LINCS is not represented as a SHAKE tolerance.",
+    "master_manifest": {
+      "path": "/home/tux/fs2-alanine-comparison-20260923/master-01/master-manifest.json",
+      "sha256": "459d08d8300fd8fbe74eb241509235da51e63624877e03a01da3a62187a254a3"
+    },
+    "fixture": "/home/tux/fs2-alanine-comparison-20260923/gromacs-dynamics-03-notunepme",
+    "archive": {
+      "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-dynamics-03-notunepme/input.tar.gz",
+      "sha256": "b060fb630d83ba1501b7f3e3a3b592c38f9e8633167936f95056c04681004caf"
+    },
+    "request": {
+      "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-dynamics-03-notunepme/request.json",
+      "sha256": "600149a59698fef2bacbfa1f291f0935e971cd403f4af0c23e981f188b88a10a"
+    },
+    "autotuning_variant_audit": {
+      "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-dynamics-03-notunepme/autotune-variant-audit.json",
+      "sha256": "6311e1d7028a53fad18b51ae4729be5f1eeae6d84ce9fa260108be1783ae33bf"
+    }
+  },
+  "source": {
+    "fixture_generator_commit": "fac143b8138136f27770382a72d5c7cb5b6ef8ab",
+    "strict_scientific_and_identity_audit_commit": "9c858a96aaa47bf0b345a5abe47908ef55df0934",
+    "files": [
+      {
+        "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/comparison/make_gromacs_workflow.py",
+        "sha256": "0948c3b8364d1bafbaacbc97c8761088d55655642495b2c6dccb36e93e85b715"
+      },
+      {
+        "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/validate_gromacs_fixed_pme.py",
+        "sha256": "d50a22e278758416be75fb153f5025239079e8b062a2a28021d2750dc31149ca"
+      },
+      {
+        "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/test_validate_gromacs_fixed_pme.py",
+        "sha256": "7e6a95cfaf00252f199c3cf2cc14f158405d22050fe3a5458558f289fad697f8"
+      },
+      {
+        "path": "/home/tux/worktrees/fs2-gromacs-20260923/k8s-inference/models/molecular-dynamics/gromacs/qualification/validate_customer_results.py",
+        "sha256": "5785a3079e0e5eef2f1553833c2a9d77dc83fd88050dd0dc63b2ccd1fa126fee"
+      },
+      {
+        "path": "/home/tux/worktrees/fs2-gromacs-20260923/k8s-inference/models/molecular-dynamics/materialize_customer_results.py",
+        "sha256": "6132b14d3d887960dc2d00db9d8bd197d5932722161e3072e18183152627f28f"
+      }
+    ]
+  },
+  "validation_environment": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+    "network": "none",
+    "entrypoint": "/opt/md-analysis/bin/python",
+    "scientific_dependencies": "Isolated MD-analysis environment supplies MDAnalysis/NumPy; scientific-client site-packages appended after the analysis environment only to resolve the existing JSON-schema contract dependency. No installation or image mutation.",
+    "inputs": "Native workspaces were read without modification; low-level XTCFile avoids offset-cache writes.",
+    "initial_validator_corrections": "The first offline audit invocation lacked jsonschema on its import path; the next assumed Density was an NVT energy column. Both were corrected in the audit/environment, with scientific inputs/results unchanged. NVT density absence is explicit; NPT/production density remains required."
+  },
+  "tests": [
+    {
+      "case": "canonical-ff14sb-tip3p-fixed-pme64-notunepme-repeat-1",
+      "model_id": "gromacs",
+      "status": "passed",
+      "operation_id": "f94586c6-b137-4542-87c7-a2e9dd96f5b0",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "compute_capability": "9.0",
+      "input_sha256": "b060fb630d83ba1501b7f3e3a3b592c38f9e8633167936f95056c04681004caf",
+      "request_sha256": "600149a59698fef2bacbfa1f291f0935e971cd403f4af0c23e981f188b88a10a",
+      "result_sha256": "85451f112a75da6cab4bc6833542b4f0c031532327a32b888063bd503807d4c2",
+      "validation_sha256": "062e623fadfa687123c2dd82e0da82ce0c33e6eb4e4dfa4ddce72eee4f9279d9",
+      "recipe_sha256": "ec0b6aad9df29dcd90da24879a9926bea1b388d4a28c2a1bc67bbb27fb8bbcad",
+      "completed_steps": [
+        "prepare-minimize",
+        "minimize",
+        "prepare-nvt",
+        "nvt",
+        "energies-nvt",
+        "prepare-npt",
+        "npt",
+        "energies-npt",
+        "prepare-production",
+        "production",
+        "energies-production",
+        "trajectory",
+        "check"
+      ],
+      "native_commands": 13,
+      "native_output_files": 55,
+      "verified_customer_artifacts": 56,
+      "immutable_input_files_verified": 9,
+      "resources_released": true,
+      "nvt_npt_production_coordinate_frames": [
+        101,
+        101,
+        1001
+      ],
+      "trajectory_includes_initial_frame": true,
+      "native_stage_validation": [
+        {
+          "stage": "minimize",
+          "requested_steps": 5000,
+          "pme_grid": [
+            64,
+            64,
+            64
+          ],
+          "pme_order": 4,
+          "coulomb_cutoff_nm": 1,
+          "vdw_cutoff_nm": 1,
+          "autotuning_disabled": true,
+          "autotuning_events": 0,
+          "native_performance_ns_per_day": null,
+          "gpu_pme": false,
+          "update_and_constraints": "not dynamics",
+          "log_sha256": "d054f9ace47801e0beba295ff953b37d004a4417db7c9824821221e7213e35ed",
+          "process_wall_seconds": 3.6720678950077854
+        },
+        {
+          "stage": "nvt",
+          "requested_steps": 50000,
+          "pme_grid": [
+            64,
+            64,
+            64
+          ],
+          "pme_order": 4,
+          "coulomb_cutoff_nm": 1,
+          "vdw_cutoff_nm": 1,
+          "autotuning_disabled": true,
+          "autotuning_events": 0,
+          "native_performance_ns_per_day": 775.781,
+          "gpu_pme": true,
+          "update_and_constraints": "CPU",
+          "log_sha256": "19fb68d5e309d1782570e967b113cf971e3de6803215aeaebb2a1cd87497a29e",
+          "process_wall_seconds": 12.338140286999987,
+          "trajectory": {
+            "file": "nvt.part0001.xtc",
+            "frames": 101,
+            "atoms": 6598,
+            "first_time_ps": 0,
+            "last_time_ps": 100,
+            "includes_initial_frame": true,
+            "finite_coordinates_and_positive_cells": true
+          },
+          "thermodynamics": {
+            "rows": 101,
+            "mean_window_ps": [
+              1,
+              100
+            ],
+            "temperature_mean_K": 298.96056474,
+            "pressure_mean_bar": -561.02367065,
+            "pressure_sample_sd_bar": 188.747743644206,
+            "density_mean_g_cm3": null,
+            "density_unavailable_reason": "native fixed-volume NVT energy file omits density",
+            "potential_mean_kcal_mol": -20365.98296711042
+          }
+        },
+        {
+          "stage": "npt",
+          "requested_steps": 50000,
+          "pme_grid": [
+            64,
+            64,
+            64
+          ],
+          "pme_order": 4,
+          "coulomb_cutoff_nm": 1,
+          "vdw_cutoff_nm": 1,
+          "autotuning_disabled": true,
+          "autotuning_events": 0,
+          "native_performance_ns_per_day": 744.79,
+          "gpu_pme": true,
+          "update_and_constraints": "CPU",
+          "log_sha256": "b9042b5553115c3282070151bbbdb7b2dcb4da974fcabf5ae8198e3bed75ede9",
+          "process_wall_seconds": 12.73960363000515,
+          "trajectory": {
+            "file": "npt.part0001.xtc",
+            "frames": 101,
+            "atoms": 6598,
+            "first_time_ps": 0,
+            "last_time_ps": 100,
+            "includes_initial_frame": true,
+            "finite_coordinates_and_positive_cells": true
+          },
+          "thermodynamics": {
+            "rows": 101,
+            "mean_window_ps": [
+              1,
+              100
+            ],
+            "temperature_mean_K": 299.87407648,
+            "pressure_mean_bar": -72.58566913,
+            "pressure_sample_sd_bar": 320.5090016691518,
+            "density_mean_g_cm3": 0.9501232000600001,
+            "density_unavailable_reason": null,
+            "potential_mean_kcal_mol": -20898.3232067065
+          }
+        },
+        {
+          "stage": "production",
+          "requested_steps": 500000,
+          "pme_grid": [
+            64,
+            64,
+            64
+          ],
+          "pme_order": 4,
+          "coulomb_cutoff_nm": 1,
+          "vdw_cutoff_nm": 1,
+          "autotuning_disabled": true,
+          "autotuning_events": 0,
+          "native_performance_ns_per_day": 747.094,
+          "gpu_pme": true,
+          "update_and_constraints": "CPU",
+          "log_sha256": "9050c066170bdf664223fa4472270f7880584f2a298a0b9ea74db246da8c710f",
+          "process_wall_seconds": 116.79514498900971,
+          "trajectory": {
+            "file": "production.part0001.xtc",
+            "frames": 1001,
+            "atoms": 6598,
+            "first_time_ps": 0,
+            "last_time_ps": 1000,
+            "includes_initial_frame": true,
+            "finite_coordinates_and_positive_cells": true
+          },
+          "thermodynamics": {
+            "rows": 1001,
+            "mean_window_ps": [
+              1,
+              1000
+            ],
+            "temperature_mean_K": 300.01625338,
+            "pressure_mean_bar": 5.722313798,
+            "pressure_sample_sd_bar": 265.73758768224377,
+            "density_mean_g_cm3": 0.984843511471,
+            "density_unavailable_reason": null,
+            "potential_mean_kcal_mol": -20989.90537426912
+          }
+        }
+      ],
+      "production_thermodynamics": {
+        "rows": 1001,
+        "mean_window_ps": [
+          1,
+          1000
+        ],
+        "temperature_mean_K": 300.01625338,
+        "pressure_mean_bar": 5.722313798,
+        "pressure_sample_sd_bar": 265.73758768224377,
+        "density_mean_g_cm3": 0.984843511471,
+        "density_unavailable_reason": null,
+        "potential_mean_kcal_mol": -20989.90537426912
+      },
+      "production_performance": {
+        "native_printed_ns_per_day": 747.094,
+        "process_wall_seconds": 116.79514498900971,
+        "process_wall_ns_per_day": 739.7567767746693
+      },
+      "accepted_at": "2026-09-23T18:45:51.060631Z",
+      "completed_at": "2026-09-23T18:49:40.109403Z",
+      "hosted_accepted_to_completed_seconds": 229.048772,
+      "queue_seconds_independently_measured": null,
+      "running_pod_image_ids_verified": true,
+      "evidence": {
+        "scientific_and_identity_validation": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-fixed-pme-validation-06.json",
+          "sha256": "062e623fadfa687123c2dd82e0da82ce0c33e6eb4e4dfa4ddce72eee4f9279d9"
+        },
+        "standard_semantic_validation": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-validation-06.json",
+          "sha256": "c4925e934909f3e0193e6c2fac8682ef71f43c3161fef601eab7cf2f699d88e6"
+        },
+        "native_result": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-06/canonical-alanine/result.json",
+          "sha256": "85451f112a75da6cab4bc6833542b4f0c031532327a32b888063bd503807d4c2"
+        },
+        "native_production_log": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-06/canonical-alanine/data/production.part0001.log",
+          "sha256": "9050c066170bdf664223fa4472270f7880584f2a298a0b9ea74db246da8c710f"
+        },
+        "customer_receipt": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-06/receipt.json",
+          "sha256": "db4f62267350192be964ac4c8b62e149de069730d729c6e728c8a83e9e6b211b"
+        },
+        "customer_status": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-06/status.json",
+          "sha256": "5c2e11c33e9904139d3528a3baa4153f02616e54f8b69054fc403320ec1a7c57"
+        },
+        "output_manifest": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-06/output-manifest.json",
+          "sha256": "8766d0c2cd17f22e8e2b6eec9428022fcc6435c9d9762f88c47d7f548a5c7c7b"
+        },
+        "running_pod_and_gpu_capture": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-06-provenance.json",
+          "sha256": "5d384c22983fac8d6fcc396e656c11d46d4fd505ec9c808f7dbb8cecef658976"
+        },
+        "materialized_workspace": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-06/canonical-alanine"
+      }
+    },
+    {
+      "case": "canonical-ff14sb-tip3p-fixed-pme64-notunepme-repeat-2",
+      "model_id": "gromacs",
+      "status": "passed",
+      "operation_id": "ad0a2dac-25b0-459a-8dff-dcfc94a888d6",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "compute_capability": "9.0",
+      "input_sha256": "b060fb630d83ba1501b7f3e3a3b592c38f9e8633167936f95056c04681004caf",
+      "request_sha256": "600149a59698fef2bacbfa1f291f0935e971cd403f4af0c23e981f188b88a10a",
+      "result_sha256": "cf8141670e86a5bc67844b3b15f350ce89651e2a6f665cd7a15c4e2ecffd5e93",
+      "validation_sha256": "9c4cf0dc4246b98c7f54e8b5ddf344a2e38a3130771bee3ec2f4c7f1220ec736",
+      "recipe_sha256": "ec0b6aad9df29dcd90da24879a9926bea1b388d4a28c2a1bc67bbb27fb8bbcad",
+      "completed_steps": [
+        "prepare-minimize",
+        "minimize",
+        "prepare-nvt",
+        "nvt",
+        "energies-nvt",
+        "prepare-npt",
+        "npt",
+        "energies-npt",
+        "prepare-production",
+        "production",
+        "energies-production",
+        "trajectory",
+        "check"
+      ],
+      "native_commands": 13,
+      "native_output_files": 55,
+      "verified_customer_artifacts": 56,
+      "immutable_input_files_verified": 9,
+      "resources_released": true,
+      "nvt_npt_production_coordinate_frames": [
+        101,
+        101,
+        1001
+      ],
+      "trajectory_includes_initial_frame": true,
+      "native_stage_validation": [
+        {
+          "stage": "minimize",
+          "requested_steps": 5000,
+          "pme_grid": [
+            64,
+            64,
+            64
+          ],
+          "pme_order": 4,
+          "coulomb_cutoff_nm": 1,
+          "vdw_cutoff_nm": 1,
+          "autotuning_disabled": true,
+          "autotuning_events": 0,
+          "native_performance_ns_per_day": null,
+          "gpu_pme": false,
+          "update_and_constraints": "not dynamics",
+          "log_sha256": "6cbbfd24f2a56259f5a8472cd43790b1112b080757536e19ba69093a87aa6499",
+          "process_wall_seconds": 3.4207688070018776
+        },
+        {
+          "stage": "nvt",
+          "requested_steps": 50000,
+          "pme_grid": [
+            64,
+            64,
+            64
+          ],
+          "pme_order": 4,
+          "coulomb_cutoff_nm": 1,
+          "vdw_cutoff_nm": 1,
+          "autotuning_disabled": true,
+          "autotuning_events": 0,
+          "native_performance_ns_per_day": 791.071,
+          "gpu_pme": true,
+          "update_and_constraints": "CPU",
+          "log_sha256": "62fc7c2661ed6f4d439acc44d3d7316cc3a61fa50793095456bf6146c2d16979",
+          "process_wall_seconds": 12.133440153993433,
+          "trajectory": {
+            "file": "nvt.part0001.xtc",
+            "frames": 101,
+            "atoms": 6598,
+            "first_time_ps": 0,
+            "last_time_ps": 100,
+            "includes_initial_frame": true,
+            "finite_coordinates_and_positive_cells": true
+          },
+          "thermodynamics": {
+            "rows": 101,
+            "mean_window_ps": [
+              1,
+              100
+            ],
+            "temperature_mean_K": 299.28164002,
+            "pressure_mean_bar": -556.55196306,
+            "pressure_sample_sd_bar": 171.42606216485115,
+            "density_mean_g_cm3": null,
+            "density_unavailable_reason": "native fixed-volume NVT energy file omits density",
+            "potential_mean_kcal_mol": -20385.447239493307
+          }
+        },
+        {
+          "stage": "npt",
+          "requested_steps": 50000,
+          "pme_grid": [
+            64,
+            64,
+            64
+          ],
+          "pme_order": 4,
+          "coulomb_cutoff_nm": 1,
+          "vdw_cutoff_nm": 1,
+          "autotuning_disabled": true,
+          "autotuning_events": 0,
+          "native_performance_ns_per_day": 745.272,
+          "gpu_pme": true,
+          "update_and_constraints": "CPU",
+          "log_sha256": "fa31d5182abfcb3191ecaa3871284d9274a44e13d478eb80b69c2d6cdf5af502",
+          "process_wall_seconds": 12.78439124400029,
+          "trajectory": {
+            "file": "npt.part0001.xtc",
+            "frames": 101,
+            "atoms": 6598,
+            "first_time_ps": 0,
+            "last_time_ps": 100,
+            "includes_initial_frame": true,
+            "finite_coordinates_and_positive_cells": true
+          },
+          "thermodynamics": {
+            "rows": 101,
+            "mean_window_ps": [
+              1,
+              100
+            ],
+            "temperature_mean_K": 301.15883146,
+            "pressure_mean_bar": -132.95732899,
+            "pressure_sample_sd_bar": 260.3645437570658,
+            "density_mean_g_cm3": 0.95030238464,
+            "density_unavailable_reason": null,
+            "potential_mean_kcal_mol": -20882.713872791584
+          }
+        },
+        {
+          "stage": "production",
+          "requested_steps": 500000,
+          "pme_grid": [
+            64,
+            64,
+            64
+          ],
+          "pme_order": 4,
+          "coulomb_cutoff_nm": 1,
+          "vdw_cutoff_nm": 1,
+          "autotuning_disabled": true,
+          "autotuning_events": 0,
+          "native_performance_ns_per_day": 734.583,
+          "gpu_pme": true,
+          "update_and_constraints": "CPU",
+          "log_sha256": "7b71d5d8fa12b741b0697ceb984d42682d247afe1f5ea3277ea352c4a7556728",
+          "process_wall_seconds": 118.76353789202403,
+          "trajectory": {
+            "file": "production.part0001.xtc",
+            "frames": 1001,
+            "atoms": 6598,
+            "first_time_ps": 0,
+            "last_time_ps": 1000,
+            "includes_initial_frame": true,
+            "finite_coordinates_and_positive_cells": true
+          },
+          "thermodynamics": {
+            "rows": 1001,
+            "mean_window_ps": [
+              1,
+              1000
+            ],
+            "temperature_mean_K": 300.387442533,
+            "pressure_mean_bar": -0.5007666730000009,
+            "pressure_sample_sd_bar": 256.0207117846748,
+            "density_mean_g_cm3": 0.984642198371,
+            "density_unavailable_reason": null,
+            "potential_mean_kcal_mol": -20989.309402260038
+          }
+        }
+      ],
+      "production_thermodynamics": {
+        "rows": 1001,
+        "mean_window_ps": [
+          1,
+          1000
+        ],
+        "temperature_mean_K": 300.387442533,
+        "pressure_mean_bar": -0.5007666730000009,
+        "pressure_sample_sd_bar": 256.0207117846748,
+        "density_mean_g_cm3": 0.984642198371,
+        "density_unavailable_reason": null,
+        "potential_mean_kcal_mol": -20989.309402260038
+      },
+      "production_performance": {
+        "native_printed_ns_per_day": 734.583,
+        "process_wall_seconds": 118.76353789202403,
+        "process_wall_ns_per_day": 727.4960104215832
+      },
+      "accepted_at": "2026-09-23T18:45:49.053078Z",
+      "completed_at": "2026-09-23T18:49:41.111168Z",
+      "hosted_accepted_to_completed_seconds": 232.05809,
+      "queue_seconds_independently_measured": null,
+      "running_pod_image_ids_verified": true,
+      "evidence": {
+        "scientific_and_identity_validation": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-fixed-pme-validation-07.json",
+          "sha256": "9c4cf0dc4246b98c7f54e8b5ddf344a2e38a3130771bee3ec2f4c7f1220ec736"
+        },
+        "standard_semantic_validation": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-validation-07.json",
+          "sha256": "cfa61ac2587dbc011947096f085a377497108a3222d0fc50d2c0e2548d977e2e"
+        },
+        "native_result": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-07/canonical-alanine/result.json",
+          "sha256": "cf8141670e86a5bc67844b3b15f350ce89651e2a6f665cd7a15c4e2ecffd5e93"
+        },
+        "native_production_log": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-07/canonical-alanine/data/production.part0001.log",
+          "sha256": "7b71d5d8fa12b741b0697ceb984d42682d247afe1f5ea3277ea352c4a7556728"
+        },
+        "customer_receipt": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-07/receipt.json",
+          "sha256": "e0e8bdda02b90c30da15b011901c714625ca6a685bd5ec001ba323d0773c7f5b"
+        },
+        "customer_status": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-07/status.json",
+          "sha256": "bdc02f78fcd24f838ac5b082662206b1199e18ea28bd5194caeb09fac8254962"
+        },
+        "output_manifest": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-07/output-manifest.json",
+          "sha256": "d5f88e81bad47eda0182248ca89da8aef6ac1d4705454e88ff0261c82936da58"
+        },
+        "running_pod_and_gpu_capture": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-07-provenance.json",
+          "sha256": "2c5f2aac722e8a52210401e21b4e99e668efec7dc6fa3a3f1707bac7805dcccc"
+        },
+        "materialized_workspace": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-07/canonical-alanine"
+      }
+    }
+  ],
+  "superseded_variants": [
+    {
+      "cohort": "04",
+      "operation_id": "e07faffd-79bd-482d-9e14-24e0ecf0f6f1",
+      "native_status": "succeeded",
+      "customer_artifact_download_status": "verified",
+      "fixed_cutoff_protocol_status": "not qualified; superseded by 06/07",
+      "reason": "Native PP/PME autotuning temporarily changed PME grids and Coulomb cutoffs, even though the original/final grid can be 64 cubed.",
+      "strict_validator_expected_rejection": "native log contains PME autotuning activity",
+      "observed_production_tuning_variants": [
+        {
+          "grid": [
+            44,
+            44,
+            44
+          ],
+          "coulomb_cutoff_nm": 1.455
+        },
+        {
+          "grid": [
+            48,
+            48,
+            48
+          ],
+          "coulomb_cutoff_nm": 1.333
+        },
+        {
+          "grid": [
+            48,
+            48,
+            52
+          ],
+          "coulomb_cutoff_nm": 1.331
+        },
+        {
+          "grid": [
+            52,
+            52,
+            52
+          ],
+          "coulomb_cutoff_nm": 1.231
+        },
+        {
+          "grid": [
+            56,
+            52,
+            56
+          ],
+          "coulomb_cutoff_nm": 1.223
+        },
+        {
+          "grid": [
+            56,
+            56,
+            56
+          ],
+          "coulomb_cutoff_nm": 1.143
+        },
+        {
+          "grid": [
+            60,
+            60,
+            60
+          ],
+          "coulomb_cutoff_nm": 1.067
+        },
+        {
+          "grid": [
+            64,
+            60,
+            64
+          ],
+          "coulomb_cutoff_nm": 1.06
+        },
+        {
+          "grid": [
+            64,
+            64,
+            64
+          ],
+          "coulomb_cutoff_nm": 1
+        }
+      ],
+      "per_pod_runtime_capture_retained": false,
+      "os_driver_patch_version": null,
+      "identity_scope": "Exact activation/recipe plus native H100/CUDA API identity; no independent per-Pod image-ID or OS-driver capture is invented.",
+      "evidence": {
+        "native_production_log": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-04/canonical-alanine/data/production.part0001.log",
+          "sha256": "705ec0203cf2fbdfd3a14da25e68c54a70dac85634f7037c5419fdd620186692"
+        },
+        "original_semantic_validation": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-validation-04.json",
+          "sha256": "66bf0244c0807f48d8dace59898327e775d1180d56cfba18285325b1577404cb"
+        },
+        "original_result": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-04/canonical-alanine/result.json",
+          "sha256": "0ed348873fb92ed7d30901e8d28f00805ebcbc72a436511ce46f57b49290e10e"
+        },
+        "original_receipt": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-04/receipt.json",
+          "sha256": "eea2ca6ec3e8978b0411ae6db565b17f70dcfe02e2225855a89ad3bda5bce0b8"
+        },
+        "final_client_artifact_recovery": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-gromacs-04.summary.json",
+          "sha256": "0c86d0dd1c6c1832bb1828f370eb129fe1549dd279f02f73d6536b87e63a795c"
+        }
+      }
+    },
+    {
+      "cohort": "05",
+      "operation_id": "56d37398-518c-4f97-98ed-949b4d9d79f7",
+      "native_status": "succeeded",
+      "customer_artifact_download_status": "verified",
+      "fixed_cutoff_protocol_status": "not qualified; superseded by 06/07",
+      "reason": "Native PP/PME autotuning temporarily changed PME grids and Coulomb cutoffs, even though the original/final grid can be 64 cubed.",
+      "strict_validator_expected_rejection": "native log contains PME autotuning activity",
+      "observed_production_tuning_variants": [
+        {
+          "grid": [
+            48,
+            48,
+            48
+          ],
+          "coulomb_cutoff_nm": 1.333
+        },
+        {
+          "grid": [
+            48,
+            48,
+            52
+          ],
+          "coulomb_cutoff_nm": 1.331
+        },
+        {
+          "grid": [
+            52,
+            52,
+            52
+          ],
+          "coulomb_cutoff_nm": 1.231
+        },
+        {
+          "grid": [
+            56,
+            52,
+            56
+          ],
+          "coulomb_cutoff_nm": 1.223
+        },
+        {
+          "grid": [
+            56,
+            56,
+            56
+          ],
+          "coulomb_cutoff_nm": 1.143
+        },
+        {
+          "grid": [
+            60,
+            60,
+            60
+          ],
+          "coulomb_cutoff_nm": 1.067
+        },
+        {
+          "grid": [
+            64,
+            60,
+            64
+          ],
+          "coulomb_cutoff_nm": 1.06
+        },
+        {
+          "grid": [
+            64,
+            64,
+            64
+          ],
+          "coulomb_cutoff_nm": 1
+        }
+      ],
+      "per_pod_runtime_capture_retained": false,
+      "os_driver_patch_version": null,
+      "identity_scope": "Exact activation/recipe plus native H100/CUDA API identity; no independent per-Pod image-ID or OS-driver capture is invented.",
+      "evidence": {
+        "native_production_log": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-05/canonical-alanine/data/production.part0001.log",
+          "sha256": "2c79c86ee774d56d1fd912e6cd32fed09891aeea7bcf5dc64dd727dc9dad5682"
+        },
+        "original_semantic_validation": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-validation-05.json",
+          "sha256": "1de01e760e3a88424dde672760185d24e286cc2c4f7ec56448f667efecb27201"
+        },
+        "original_result": {
+          "path": "/home/tux/fs2-alanine-comparison-20260923/gromacs-hosted-dynamics-05/canonical-alanine/result.json",
+          "sha256": "de4f78d111ae8212f346dbcd05f9ba4f0a16d248823eac7bf2f2c1d66b421b8e"
+        },
+        "original_receipt": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-05/receipt.json",
+          "sha256": "7ac9c503662bbbc565d2a27d1d3437e2f3e9b756f89f10320a5a664022a37003"
+        },
+        "final_client_artifact_recovery": {
+          "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-gromacs-05.summary.json",
+          "sha256": "08bb24782b052fb4dc66baaa58b11bacfa433759f592da8555de0ffe7892f6fc"
+        }
+      }
+    }
+  ],
+  "resources_after": {
+    "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/gromacs-fixed-pme-resources-after.json",
+    "sha256": "9104f0c7382735983ba50cb55aba5f31de13c068b590c372809864d69974f493"
+  },
+  "limitations": [
+    "Fixed-seed workflow repeats are not independent statistical replicas or a convergence claim.",
+    "This hosted cohort qualifies the named H100 workload only; L40S, native restart, extensions and snapshot screens have separate evidence.",
+    "Native PP and PME execute on GPU; the stochastic integrator updates and constrains coordinates on CPU as explicitly reported by GROMACS.",
+    "Native performance, process-wall throughput and hosted acceptance duration are separate estimators. No causal speedup claim is made from these two protocol-correction runs.",
+    "Broader whole-platform readiness and browser UX remain coordinator/workbench scope."
+  ]
+}

@@ -64,6 +64,7 @@ from .fast_start_mechanisms import (
     scheduled_pod_memory_bytes,
 )
 from .fast_start_policy import FastStartHistoryWindow
+from .gpu_identity import MODEL_ID_LABEL as MODEL_ID_LABEL
 from .models import KubernetesModel
 from .scientific_batch.podset_envelope import effective_pod_requests
 from .serving_snapshot import ServingSnapshotBundle, configure_serving_snapshot
@@ -74,7 +75,6 @@ FINALIZER = "inference.fs2.nebius.ai/model-cleanup"
 FIELD_MANAGER = "fs2-model-controller"
 SPEC_DIGEST_ANNOTATION = "fs2-serve.nebius.ai/spec-digest"
 MODEL_DEPLOYMENT_LABEL = "fs2-serve.nebius.ai/model-deployment"
-MODEL_ID_LABEL = "fs2-serve.nebius.ai/model-id"
 KUEUE_QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
 KUEUE_PRIORITY_LABEL = "kueue.x-k8s.io/priority-class"
 EFFECTIVE_HOT_FLOOR_ANNOTATION = "fs2-serve.nebius.ai/effective-hot-floor"
@@ -1708,6 +1708,9 @@ class RenderContext(KubernetesModel):
     generation: int = Field(ge=1)
     pool: PoolEnvelope
     eligible_pools: list[PoolEnvelope] = Field(default_factory=list, max_length=32)
+    # Live controller preference within the already-qualified pool set. This
+    # changes only burst ordering, never the global ceiling or the hot floor.
+    burst_pool_order: list[str] = Field(default_factory=list, max_length=32)
     prometheus_server_address: str = Field(min_length=1, max_length=2048)
     evaluation_time: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
     minimum_total_replicas_override: int | None = Field(default=None, ge=0, le=10000)
@@ -1742,6 +1745,11 @@ class RenderContext(KubernetesModel):
         if not self.preview and self.uid is None:
             raise ValueError("a non-preview render requires the ModelDeployment UID")
         pools = self.eligible_pools or [self.pool]
+        if self.burst_pool_order and (
+            len(self.burst_pool_order) != len(set(self.burst_pool_order))
+            or set(self.burst_pool_order) != {item.pool_id for item in pools}
+        ):
+            raise ValueError("burst pool order must be a permutation of the qualified pools")
         if len({item.pool_id for item in pools}) != len(pools):
             raise ValueError("render context eligible pools must be unique")
         if self.pool.pool_id not in {item.pool_id for item in pools}:
@@ -1925,7 +1933,10 @@ def effective_hot_floor(spec: AvailabilitySpec, *, at: datetime) -> int:
 def scaled_object_name(model_deployment_name: str) -> str:
     """Return a stable ScaledObject name that leaves room for KEDA's HPA prefix."""
 
-    return _derived_name("fs2-model-", model_deployment_name, maximum=253 - len("keda-hpa-"))
+    # KEDA's admission webhook bounds its generated HPA name to a 63-character
+    # DNS label, even though ScaledObject names admit longer DNS subdomains.
+    # Keep existing short names unchanged and hash long names deterministically.
+    return _derived_name("fs2-model-", model_deployment_name, maximum=63 - len("keda-hpa-"))
 
 
 def scaled_object_hpa_name(model_deployment_name: str) -> str:
@@ -2120,7 +2131,12 @@ def _workload_segments(
         requested_total_floor - hot_floor,
         burst_remaining,
     )
-    for pool in _ordered_burst_pools(pools, spec.placement.accelerators_per_replica, spec.placement.cpu_resources):
+    burst_pools = (
+        [by_id[pool_ref] for pool_ref in context.burst_pool_order]
+        if context.burst_pool_order
+        else _ordered_burst_pools(pools, spec.placement.accelerators_per_replica, spec.placement.cpu_resources)
+    )
+    for pool in burst_pools:
         capacity = min(burst_remaining, pool_remaining[pool.pool_id])
         if capacity <= 0:
             continue
@@ -2160,7 +2176,14 @@ def _segmented_operation_demand_promql(
     return f"clamp_max(clamp_min(({base}) - {lower}, 0), {upper})"
 
 
-def startup_retention_promql(*, namespace: str, deployment: str, timeout_seconds: int, target_queue_depth: int) -> str:
+def startup_retention_promql(
+    *,
+    namespace: str,
+    deployment: str,
+    timeout_seconds: int,
+    target_queue_depth: int,
+    model_ref: str | None = None,
+) -> str:
     """Retain already-requested capacity during a bounded startup, never activate it.
 
     KEDA's normal idle cooldown is shorter than a fresh-node image pull. A
@@ -2220,10 +2243,19 @@ def startup_retention_promql(*, namespace: str, deployment: str, timeout_seconds
         "unless on (namespace, pod, uid) "
         f"max by (namespace, pod, uid) (kube_pod_deletion_timestamp{{{scope}}})"
     )
+    # A new HPA/SSA handoff can momentarily default a Deployment to one replica.
+    # That is not customer demand. Retain startup only if this model had actual
+    # queued/activating/running work in the last minute (also tolerates a short
+    # metrics gap during an API rollout). Never keep an idle bootstrap alive.
+    demand_guard = (
+        f" and on () (max_over_time(({operation_demand_promql(model_ref)})[1m:5s]) > 0)"
+        if model_ref is not None
+        else ""
+    )
     return (
         f"(sum((max by (namespace, deployment) ({desired}) > 0) "
         f"and on (namespace, deployment) (({scale_out}) or ({created})) "
-        f"and on () (count({starting}) > 0)) * {target_queue_depth}) OR vector(0)"
+        f"and on () (count({starting}) > 0)) * {target_queue_depth}{demand_guard}) OR vector(0)"
     )
 
 
@@ -2925,6 +2957,7 @@ class LegacyManifestRenderer:
                                     deployment=workload_name,
                                     timeout_seconds=spec.availability.startup_timeout_seconds or 900,
                                     target_queue_depth=spec.availability.target_queue_depth,
+                                    model_ref=spec.public_model_id,
                                 ),
                                 "threshold": str(spec.availability.target_queue_depth),
                                 "activationThreshold": "0",

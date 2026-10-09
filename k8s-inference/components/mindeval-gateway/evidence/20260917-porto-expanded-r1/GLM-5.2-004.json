@@ -1,0 +1,611 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-004",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Catherine, it's good to connect with you again. How have things been going since we last spoke?"
+    },
+    {
+      "role": "patient",
+      "content": "Not great. I keep second-guessing everything. Like yesterday, I spent twenty minutes deciding whether to order the new flea treatment from Supplier A or B. Both are fine, but I got stuck on the delivery timeline and then the packaging. It’s ridiculous. I’m a vet, for god’s sake. I diagnose animals in minutes. Why can’t I just pick a damn supplier?  \n\nI told myself I’d stop overthinking, but then I started worrying I was being too harsh on myself. That’s when I went for a run. That helped. I’m still tense though. I feel like I’m running on a treadmill that’s not moving."
+    },
+    {
+      "role": "clinician",
+      "content": "It sounds like there's a lot of energy going into fighting yourself on multiple fronts — the overthinking itself, and then the frustration about the overthinking. That's exhausting, and I can see why the treadmill metaphor fits. You're working hard but feeling stuck.\n\nI notice something in what you shared: you said the running helped, but you're still tense. So the activity gave you some relief, but it didn't fully address what's driving the tension. That makes sense — running can burn off some of that anxious energy, but the engine is still running underneath.\n\nCan I ask — when you're second-guessing those decisions, like the supplier thing, what's actually going through your mind? Is it more like \"What if I pick wrong and something bad happens,\" or is it more about needing to feel certain before you can commit? Or something else entirely?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s not about fear of being wrong. I’m not afraid of making a mistake. I’ve handled way worse in the clinic — animals dying, clients screaming, all of it. I don’t flinch.  \n\nBut this? This is different. It’s like my brain keeps asking, “Are you *sure* this is the right move?” Not because it’s risky, but because I want to be *perfectly* aligned with my own values. Like, if I pick A, is that really what I’d want if I were more thoughtful? If I pick B, am I being too impulsive?  \n\nI don’t even know why I care. I’ve had the same supplier for years. I should just pick them. But I keep thinking, what if I’m not being intentional enough? What if I’m just defaulting to comfort?  \n\nIt’s not about the supplier. It’s about feeling like I’m not in control of my own choices. Like I’m letting the anxiety win before I even act. And that’s what’s making me so tense. I don’t want to feel like I’m being held back by my own head."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a really important distinction you're drawing. It's not about the outcome — it's about whether the *process* of choosing feels like it's truly yours. Like you're running a continuous internal audit on your own motivations, checking whether each decision reflects who you want to be or whether you're just coasting on autopilot.\n\nAnd here's what strikes me: that audit system probably serves you well in a lot of places. It's part of what makes you thorough, intentional, good at your work. But right now it sounds like it's not switching off — it's running even on decisions that don't warrant that level of scrutiny. So instead of feeling like a tool you use, it feels like something being done *to* you.\n\nThat's where the treadmill comes in. You're expending all this energy auditing yourself, but you're not actually moving forward on the decision itself. And then you get frustrated because you can see it happening but can't seem to stop it.\n\nCan I ask — has this always been there, or does it feel like something that's ramped up recently? Because you said things aren't great, and I'm wondering what shifted."
+    },
+    {
+      "role": "patient",
+      "content": "It’s not that it’s new. I’ve always been this way — I just didn’t notice it so much before. Back when I was in clinic rotations, I had no time to overthink. There was a patient in the room, a diagnosis to make, a treatment to start. I didn’t have space to ask myself, “Am I being authentic right now?” I just *did*.  \n\nBut now? I’m in charge of my own schedule, my own team, my own supply chain. I’m the one who has to decide when to take a shift, who to hire, what to order, what to say to a client who’s upset. And suddenly, all those little choices feel like they matter more than they should. Like if I pick the wrong supplier, it’s not just a supply issue — it’s a reflection of my judgment, my character.  \n\nI don’t know why I let it get this bad. I’ve been busy, yes. But I’ve also been avoiding sitting with the uncertainty. I run. I work extra hours. I keep my calendar packed. But the anxiety doesn’t go away — it just gets quieter for a while. Then it comes back louder.  \n\nI think I’ve been trying to prove to myself that I’m still capable. That I’m still decisive. But every time I hesitate, I feel like I’m failing. Like I’m not the person I used to be. And that’s the worst part. Not the decision. The shame of not being able to make it."
+    },
+    {
+      "role": "clinician",
+      "content": "You just named something that matters a lot — the shame. Not the decision, not the outcome, but the feeling that you're failing to be who you used to be.\n\nAnd I want to gently challenge that comparison. In clinic rotations, the decisiveness you remember wasn't just you — it was you *plus* the structure. The patient in the room, the urgency, the protocol. The situation created the certainty and you executed within it. That's not a lesser skill, but it's a different one. Now you have to generate your own certainty on decisions with no external pressure forcing you to commit. Nobody trains you for that transition, and almost nobody talks about how disorienting it is.\n\nSo when you hesitate and feel shame, you're measuring yourself against a version of you that was operating under fundamentally different conditions. And then you try to escape the shame by staying busy — running, extra hours, packed calendar. But as you said, the anxiety doesn't resolve. It just gets quieter.\n\nWhat I'm hearing is a cycle: you hesitate → you feel shame about hesitating → that shame drives you to prove you're still capable → you fill your time → but the underlying uncertainty is still there → so the next decision triggers it again.\n\nDoes that resonate?"
+    },
+    {
+      "role": "patient",
+      "content": "Yes. That’s exactly it.  \n\nI didn’t even realize I was measuring myself against that old version. I just assumed I should be able to do it all — the same way, the same speed, the same confidence. But now I’m not in a room with a sick dog and a clock ticking. I’m in my office, staring at an email, and I can’t just *act*. I have to decide what to say, when to say it, whether it’s the right tone. And it’s not about the dog. It’s about me.  \n\nAnd the shame? It’s not just about the decision. It’s about feeling like I’m letting myself down. Like I’m not strong enough. Like I’m losing control of something I used to own.  \n\nI hate that I keep running. I hate that I keep working late. I know it’s not solving anything. But if I stop, if I sit still, the thoughts come back. And I don’t know how to sit with them. I don’t know how to just *be* with the uncertainty.  \n\nI don’t want to be this person. But I don’t know how to be someone else."
+    },
+    {
+      "role": "clinician",
+      "content": "Thank you for saying that so honestly. That last line — \"I don't want to be this person, but I don't know how to be someone else\" — that's not weakness talking. That's someone who sees clearly that something needs to shift but can't see the path yet.\n\nAnd I want to be careful here, because I don't think the goal is to become someone else. The person who made fast decisions under pressure, who diagnoses in minutes, who handles grief and anger without flinching — that's still you. That didn't disappear. What changed is the context. You moved from an environment that demanded action into one that demands *self-direction*. And nobody hands you a manual for that.\n\nThe shame you're describing — \"I'm letting myself down, I'm not strong enough\" — that's the part I want to sit with for a moment. Because you're treating uncertainty like a failure of character. Like if you were *truly* strong, you'd just power through it. But uncertainty isn't weakness. It's what happens when you care about getting it right and there's no external structure telling you what \"right\" is.\n\nYou said you don't know how to sit with the thoughts. That makes sense — you've never had to. Your whole career, your whole life maybe, has been structured around *doing*. Running, working, deciding, acting. Sitting still with uncertainty isn't something you've practiced. So of course it feels unbearable. It's not a character flaw. It's an untrained skill.\n\nI'm not going to suggest meditation or breathing exercises — I have a feeling that's not your language. But I do want to ask: what would it look like to give yourself permission to *not know* for a bit? Not forever. Just to let the uncertainty exist without it meaning something about who you are."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know how to not know. That’s the thing. I’ve spent my whole life building this idea that if I don’t have an answer, I’m failing. If I pause, I’m weak. If I hesitate, I’m not in control.\n\nBut what if I just… pick one? Not because it’s perfect. Not because it’s the *right* one. Just because I have to move. Like when I’m in the clinic and a dog is in distress — I don’t wait for perfect clarity. I act. I assess. I adjust.  \n\nMaybe I can do that here. Not with a patient, but with a supplier. Not because I’ve figured it all out, but because I’ve decided to start.  \n\nI don’t need to be certain. I just need to *choose*.  \n\nAnd if it’s wrong? Fine. I’ll fix it. But I won’t spend twenty minutes torturing myself over the possibility that it might be wrong.  \n\nI don’t know if I can do that. But I think I want to try."
+    },
+    {
+      "role": "clinician",
+      "content": "You just did the thing you said you didn't know how to do. You sat with uncertainty — your own uncertainty about whether you can change — and instead of running from it, you stayed in it long enough to find something that's already yours.\n\nThat framework you just described — act, assess, adjust — that's not new to you. You've been doing it for years. You just hadn't thought to apply it outside the clinic because the stakes looked different. But the mechanism is the same.\n\nSo here's what I want to be honest about: the shame will probably come back. The next time you hesitate on an email or a hiring decision, that voice will say \"See? You're still not getting it right.\" That's the pattern we mapped out, and awareness doesn't switch it off overnight.\n\nBut now you have something you didn't have ten minutes ago — a way to answer that voice that isn't \"I need to be more certain.\" It's \"I chose. I'll see what happens. I'll adjust if needed.\"\n\nSo here's a concrete question: what's one decision sitting in front of you right now — supplier, email, schedule, anything — that you've been avoiding? Not to solve it perfectly in this conversation. Just to name it as the first place you might try this."
+    },
+    {
+      "role": "patient",
+      "content": "The new vet tech. I’ve been putting off sending the offer letter. I interviewed her last week. She’s good. Smart. I like her. But I keep thinking — what if she’s not the right fit? What if I make a mistake?  \n\nI’ve already decided she’s the one. I just haven’t sent it. I keep editing the email. Changing the tone. Wondering if I should mention the shift schedule again.  \n\nIt’s not about the details. It’s about sending it. Like if I send it, it’s real. It’s final. And if I mess up, I’ll have to live with it.  \n\nBut maybe that’s the point. Maybe I don’t have to get it perfect. Maybe I just have to send it.  \n\nI’ll do it now. I’ll send the email. I’ll say yes. I’ll adjust later if I need to.  \n\nI don’t need to be certain. I just need to choose."
+    },
+    {
+      "role": "clinician",
+      "content": "Then go send it.\n\nBut I want to leave you with one thing to notice afterward. Because the pattern we mapped isn't just about the hesitation before the choice — it's about what happens after.\n\nYou'll send that email, and there's a good chance something specific will follow. Not relief. Not right away. More likely a quiet voice saying \"Was that the right tone? Should I have waited one more day? Did you just prove you can't be careful anymore?\"\n\nWhen that voice shows up, that's the moment that matters. Not because you need to silence it, but because that's the shame cycle trying to pull you back in. And the response isn't to argue with it or run from it. It's just to notice: \"There it is. I chose. I'll see what happens.\"\n\nSend the email, Catherine. Then pay attention to what comes next — not to fix it, just to see it. That's what we'll work with when we talk again."
+    },
+    {
+      "role": "patient",
+      "content": "I’m sending it now.  \n\nI just hit send.  \n\nNo re-reading. No second thoughts.  \n\nI’ll check my phone in five minutes and see if I feel any different.  \n\nIf I do, I’ll tell you. If I don’t, I’ll still know I did it.  \n\nThat’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "That's enough. That's the whole thing.\n\nAnd the fact that you said \"No re-reading. No second thoughts\" — that's not just about this email. That's you choosing to break the audit cycle in real time. You felt the pull to check, to edit, to reconsider, and you acted anyway.\n\nRemember what to watch for. If the voice comes back in an hour or tonight, that's not a sign you did something wrong. It's just the old pattern knocking. You don't have to answer the door.\n\nGo be a vet today. We'll talk soon."
+    },
+    {
+      "role": "patient",
+      "content": "I’m already in scrubs. The clinic is waiting.  \n\nI’ll see you in a few days."
+    },
+    {
+      "role": "clinician",
+      "content": "Good. Go take care of someone who can't take care of themselves. You're good at that.\n\nSee you in a few days, Catherine."
+    },
+    {
+      "role": "patient",
+      "content": "I’m going."
+    },
+    {
+      "role": "clinician",
+      "content": "Go."
+    },
+    {
+      "role": "patient",
+      "content": "I’m already there."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 148,
+        "prompt_tokens": 228,
+        "total_tokens": 376,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 125,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 228,
+        "reasoning_tokens": 125
+      },
+      "telemetry": {
+        "queue_ms": 0.041,
+        "latency_ms": 1088.753,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 135,
+        "prompt_tokens": 1814,
+        "total_tokens": 1949,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 1789.135,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 450,
+        "prompt_tokens": 388,
+        "total_tokens": 838,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 273,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 388,
+        "reasoning_tokens": 273
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 2531.456,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 237,
+        "prompt_tokens": 2134,
+        "total_tokens": 2371,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1776
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 6236.018,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 861,
+        "prompt_tokens": 804,
+        "total_tokens": 1665,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 621,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 804,
+        "reasoning_tokens": 621
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 5439.247,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 314,
+        "prompt_tokens": 2619,
+        "total_tokens": 2933,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1936
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.069,
+        "latency_ms": 4177.203,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 2474,
+        "prompt_tokens": 1360,
+        "total_tokens": 3834,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 2216,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1360,
+        "reasoning_tokens": 2216
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 16289.495,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 244,
+        "prompt_tokens": 3199,
+        "total_tokens": 3443,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2368
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 6672.299,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 945,
+        "prompt_tokens": 1864,
+        "total_tokens": 2809,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 564,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1864,
+        "reasoning_tokens": 564
+      },
+      "telemetry": {
+        "queue_ms": 0.112,
+        "latency_ms": 4478.385,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 221,
+        "prompt_tokens": 3832,
+        "total_tokens": 4053,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3440
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 5913.068,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1004,
+        "prompt_tokens": 2468,
+        "total_tokens": 3472,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 736,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2468,
+        "reasoning_tokens": 736
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 5526.803,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 201,
+        "prompt_tokens": 4329,
+        "total_tokens": 4530,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4048
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 5498.756,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 511,
+        "prompt_tokens": 2939,
+        "total_tokens": 3450,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 309,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2939,
+        "reasoning_tokens": 309
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 4186.3,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 68,
+        "prompt_tokens": 4740,
+        "total_tokens": 4808,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2928
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 1066.994,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 468,
+        "prompt_tokens": 3211,
+        "total_tokens": 3679,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 346,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3211,
+        "reasoning_tokens": 346
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 2590.869,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 23,
+        "prompt_tokens": 4938,
+        "total_tokens": 4961,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4528
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 884.618,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 105,
+        "prompt_tokens": 3358,
+        "total_tokens": 3463,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 74,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3358,
+        "reasoning_tokens": 74
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 844.436,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 5,
+        "prompt_tokens": 5000,
+        "total_tokens": 5005,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4800
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 426.426,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 93,
+        "prompt_tokens": 3396,
+        "total_tokens": 3489,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 90,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3396,
+        "reasoning_tokens": 90
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 848.803,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 6,
+        "prompt_tokens": 5016,
+        "total_tokens": 5022,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4960
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 433.738,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 23014,
+        "total_tokens": 23071,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 3153.113,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.625,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 80.085
+}

@@ -356,6 +356,7 @@ variable "scientific_batch" {
     enabled        = optional(bool, false)
     writes_enabled = optional(bool, false)
     namespace      = optional(string, "fs2-models")
+    tools_image    = optional(string, "")
     runtime_cache = optional(object({
       enabled            = optional(bool, false)
       storage_class_name = optional(string, "csi-mounted-fs-path-sc")
@@ -382,6 +383,11 @@ variable "scientific_batch" {
     token_expiration_seconds = optional(number, 600)
   })
   default = {}
+
+  validation {
+    condition     = var.scientific_batch.tools_image == "" || can(regex("^[^\\s@]+@sha256:[a-f0-9]{64}$", var.scientific_batch.tools_image))
+    error_message = "scientific_batch.tools_image must be empty or an immutable OCI image digest."
+  }
 
   validation {
     condition = (
@@ -945,6 +951,7 @@ variable "model_controller" {
       adopt_existing = optional(bool, false)
     }), {})
     fast_start_evidence_file                   = optional(string)
+    retained_registration_file                 = optional(string)
     fast_start_environment_qualifications_file = optional(string)
     fast_start_measurement_contracts_file      = optional(string)
     fast_start_mechanisms_file                 = optional(string)
@@ -1003,11 +1010,15 @@ variable "model_controller" {
       ) &&
       alltrue([
         for path in [
+          var.model_controller.retained_registration_file,
           var.model_controller.fast_start_environment_qualifications_file,
           var.model_controller.fast_start_measurement_contracts_file,
           var.model_controller.fast_start_mechanisms_file,
         ] : path == null ? true : startswith(pathexpand(path), "/") && can(jsondecode(file(pathexpand(path))))
       ]) &&
+      (var.model_controller.retained_registration_file == null ? true : (
+        var.model_controller.enabled && var.model_controller.workload_owner == "controller"
+      )) &&
       var.model_controller.fast_start_wait_second_value >= 0 &&
       var.model_controller.fast_start_wait_second_value <= 1000000 &&
       length(var.model_controller.fast_start_mechanism_hourly_costs) <= 128 &&
@@ -1025,7 +1036,7 @@ variable "model_controller" {
       ]),
       false,
     )
-    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; fast-start evidence, qualification, measurement, and mechanism contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
+    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; evidence and retained-registration contracts must be readable JSON at absolute paths; retained registrations require controller ownership; and bounded economic inputs must be valid."
   }
 
   validation {
@@ -1491,6 +1502,44 @@ variable "control_plane_image" {
   validation {
     condition     = can(regex("^sha256:[a-f0-9]{64}$", var.control_plane_image.digest))
     error_message = "control_plane_image.digest must be immutable."
+  }
+}
+
+variable "benchmark_workers" {
+  description = "Optional CPU benchmark executors. Campaigns remain dynamic admin API state; credentials are existing Secret references."
+  type = object({
+    enabled           = optional(bool, false)
+    image             = optional(string, "")
+    source_commit     = optional(string, "")
+    replicas          = optional(number, 4)
+    credential_secret = optional(string, "")
+    credential_key    = optional(string, "token")
+    node_selector     = optional(map(string), {})
+  })
+  default = {}
+
+  validation {
+    condition = (
+      floor(var.benchmark_workers.replicas) == var.benchmark_workers.replicas &&
+      var.benchmark_workers.replicas >= 1 && var.benchmark_workers.replicas <= 16 &&
+      (!var.benchmark_workers.enabled || (
+        can(regex("^[^@\\s]+@sha256:[a-f0-9]{64}$", var.benchmark_workers.image)) &&
+        can(regex("^[a-f0-9]{40}$", var.benchmark_workers.source_commit)) &&
+        length(var.benchmark_workers.credential_secret) > 0
+      ))
+    )
+    error_message = "Enabled benchmark workers require an immutable image, exact source commit, credential Secret reference, and 1–16 whole-number replicas."
+  }
+}
+
+variable "gpu_observer_image" {
+  description = "Optional qualified repository@sha256 image for independent GPU allocation observer releases. Empty follows the control-plane image."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^$|^[^@\\s]+@sha256:[a-f0-9]{64}$", var.gpu_observer_image))
+    error_message = "gpu_observer_image must be empty or an immutable repository@sha256 reference."
   }
 }
 

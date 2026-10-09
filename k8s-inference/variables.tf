@@ -207,7 +207,9 @@ variable "deployment" {
         }), {})
         adopt_existing = optional(bool, false)
       }), {})
-      fast_start_evidence_file                   = optional(string)
+      fast_start_evidence_file = optional(string)
+      # Exact registrations for existing admin-owned Apps; never seeds replicas.
+      retained_registration_file                 = optional(string)
       fast_start_environment_qualifications_file = optional(string)
       fast_start_measurement_contracts_file      = optional(string)
       fast_start_mechanisms_file                 = optional(string)
@@ -521,6 +523,19 @@ variable "deployment" {
       # a separate bucket, identity and key from reference_data above: results
       # and immutable public inputs have different retention and different blast
       # radius, so neither store is ever widened to serve the other.
+      customer_buckets = optional(object({
+        enabled          = optional(bool, true)
+        default_mode     = optional(string, "tenant")
+        quota_bytes      = optional(number, 5000000000)
+        excluded_tenants = optional(set(string), [])
+        starter_pack = optional(object({
+          enabled         = optional(bool, false)
+          image           = optional(string, "")
+          manifest_sha256 = optional(string, "")
+          tenants         = optional(set(string), [])
+        }), {})
+      }), {})
+
       scientific_artifacts = optional(object({
         enabled = optional(bool, false)
         lifecycle = optional(object({
@@ -553,6 +568,10 @@ variable "deployment" {
           "application/json",
           "application/octet-stream",
           "application/vnd.fs2.scientific-manifest+json",
+          "application/vnd.fs2.gromacs-checkpoint+json",
+          "application/vnd.fs2.lammps-checkpoint+json",
+          "application/vnd.fs2.namd-checkpoint+json",
+          "application/vnd.fs2.amber-checkpoint+json",
           "application/vnd.fs2.scientific-validation+json",
           "application/x-nifti",
           "application/x-tar",
@@ -581,6 +600,9 @@ variable "deployment" {
       enabled        = optional(bool, false)
       writes_enabled = optional(bool, false)
       namespace      = optional(string, "fs2-models")
+      # Keep a qualified collector independently pinned during API-only releases.
+      # Empty retains the Helm default: the control-plane image.
+      tools_image = optional(string, "")
 
       # Optional cross-attempt cache for compiled kernels and runtime-owned
       # derived data. Model weights stay on their immutable read-only planes;
@@ -646,6 +668,16 @@ variable "deployment" {
       alertmanager = optional(object({
         enabled   = optional(bool, false)
         retention = optional(string, "120h")
+        email = optional(object({
+          enabled         = optional(bool, false)
+          to              = optional(string, "")
+          from            = optional(string, "")
+          smarthost       = optional(string, "smtp.resend.com:587")
+          username        = optional(string, "resend")
+          password_secret = optional(string, "fs2-important-alert-mail")
+          password_key    = optional(string, "smtp-password")
+          admin_url       = optional(string, "")
+        }), {})
         storage = optional(object({
           storage_class_name = optional(string, "compute-csi-default-sc")
           size_gib           = optional(number, 10)
@@ -658,6 +690,16 @@ variable "deployment" {
         repository             = string
         digest                 = string
         catalog_rollout_digest = string
+        gpu_observer_image     = optional(string, "")
+        benchmark_workers = optional(object({
+          enabled           = optional(bool, false)
+          image             = optional(string, "")
+          source_commit     = optional(string, "")
+          replicas          = optional(number, 4)
+          credential_secret = optional(string, "")
+          credential_key    = optional(string, "token")
+          node_selector     = optional(map(string), {})
+        }), {})
         autoscaling = optional(object({
           enabled                           = optional(bool, true)
           min_replicas                      = optional(number, 2)
@@ -971,6 +1013,7 @@ variable "deployment" {
       can(regex("^[a-zA-Z0-9._:/-]+$", var.deployment.applications.control_plane.repository)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.digest)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.catalog_rollout_digest)) &&
+      can(regex("^$|^[^@\\s]+@sha256:[a-f0-9]{64}$", var.deployment.applications.control_plane.gpu_observer_image)) &&
       floor(var.deployment.applications.control_plane.autoscaling.min_replicas) == var.deployment.applications.control_plane.autoscaling.min_replicas &&
       floor(var.deployment.applications.control_plane.autoscaling.max_replicas) == var.deployment.applications.control_plane.autoscaling.max_replicas &&
       floor(var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage) == var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage &&
@@ -1544,11 +1587,16 @@ variable "deployment" {
       ) &&
       alltrue([
         for path in [
+          var.deployment.dynamic_models.retained_registration_file,
           var.deployment.dynamic_models.fast_start_environment_qualifications_file,
           var.deployment.dynamic_models.fast_start_measurement_contracts_file,
           var.deployment.dynamic_models.fast_start_mechanisms_file,
         ] : path == null ? true : startswith(pathexpand(path), "/") && can(jsondecode(file(pathexpand(path))))
       ]) &&
+      (var.deployment.dynamic_models.retained_registration_file == null ? true : (
+        var.deployment.dynamic_models.enabled &&
+        var.deployment.dynamic_models.workload_owner == "controller"
+      )) &&
       var.deployment.dynamic_models.fast_start_wait_second_value >= 0 &&
       var.deployment.dynamic_models.fast_start_wait_second_value <= 1000000 &&
       length(var.deployment.dynamic_models.fast_start_mechanism_hourly_costs) <= 128 &&
@@ -1558,7 +1606,7 @@ variable "deployment" {
       ]),
       false,
     )
-    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; fast-start evidence, qualification, measurement, and mechanism contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
+    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; evidence and retained-registration contracts must be readable JSON at absolute paths; retained registrations require controller ownership; and bounded economic inputs must be valid."
   }
 
   validation {

@@ -88,7 +88,8 @@ class PolicyAwareScientificBatchController(ScientificBatchController):
         through unchanged. This operational adaptation preserves model recipes.
         """
         candidate = (
-            replace(observation, pod_lifecycle=(), pending_code=None)
+            replace(observation, pod_lifecycle=(), pending_code=None,
+                    pods_unstarted=False, pool_unavailable_since=None)
             if isinstance(observation, DiagnosedWorkloadObservation)
             else replace(observation, pod_lifecycle=())
         )

@@ -1,0 +1,10 @@
+email:
+  to: rene@nebius.com
+  from: onboarding@resend.dev
+  smarthost: smtp.resend.com:587
+  username: resend
+  passwordSecret: fs2-important-alert-mail
+  passwordKey: smtp-password
+adminUrl: https://89.169.99.188/admin
+ruleLabels:
+  release: fs2-r927c465c6d-monitoring

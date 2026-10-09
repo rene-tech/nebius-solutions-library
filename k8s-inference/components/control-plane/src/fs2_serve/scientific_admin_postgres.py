@@ -18,8 +18,10 @@ from uuid import UUID
 import asyncpg
 
 from .apps_scientific import AppScientificModels, ScientificAppsInventory
-from .lifecycle import _signal_from_row
+from .lifecycle import LifecycleSignal, _signal_from_row
 from .registry import Registry
+from .reporting_reads import read_phase, reporting_connection
+from .scientific_activity import activity_capture_reason, activity_summaries
 from .scientific_admin import (
     ScientificAdminQueryError,
     ScientificAdminReadService,
@@ -41,6 +43,7 @@ from .scientific_admin_catalog import (
     ScientificProfileDiscoveryAdapter,
     scientific_receipts_file,
 )
+from .scientific_admin_fit import ScientificNodeFitAdapter
 from .scientific_admin_models import (
     ScientificArtifact,
     ScientificArtifactDownload,
@@ -60,6 +63,7 @@ from .scientific_admin_models import (
     ScientificModelPolicyUpdate,
     ScientificModelReadiness,
     ScientificObservabilityLink,
+    ScientificPlacementConstraints,
     ScientificQueueState,
     ScientificRetry,
     ScientificRunDetail,
@@ -94,6 +98,7 @@ from .scientific_batch.models import (
     StageStatus,
     WorkloadKind,
 )
+from .scientific_batch.placement import execution_resource_envelope, stage_pod_request
 from .scientific_batch.policy import (
     PostgresScientificModelPolicyRepository,
     ScientificModelPolicyRecord,
@@ -105,6 +110,25 @@ from .scientific_batch.service import ScientificBatchService
 from .scientific_run_result import ArtifactRef
 
 _TERMINAL_BATCH_STATUS = {BatchStatus.SUCCEEDED, BatchStatus.FAILED, BatchStatus.CANCELLED}
+
+# Same columns and total ordering as fs2_reporting_lifecycle_latest, scoped to
+# each selected subject before reading history. Joining the global DISTINCT ON
+# view can repeatedly sort all rollups for one small run during admin reads.
+_SCIENTIFIC_GPU_ACCOUNTING_QUERY = """
+    SELECT subject.operation_id,subject.attempt_id,rollup.*
+    FROM fs2_telemetry_subjects subject
+    LEFT JOIN LATERAL (
+        SELECT rollup_id,subject_id,generated_at,event_watermark,events_sha256,terminal,outcome,
+               quota_reserved_gpu_seconds,scheduler_occupied_gpu_seconds,device_allocated_gpu_seconds,
+               active_gpu_seconds,occupied_idle_gpu_seconds,phase_gpu_seconds,
+               reconciliation_delta_seconds,device_scheduler_delta_seconds,tolerance_seconds,
+               reconciled,quality,data_gaps,output_shape
+        FROM fs2_lifecycle_rollups
+        WHERE subject_id=subject.subject_id
+        ORDER BY event_watermark DESC,generated_at DESC,rollup_id DESC LIMIT 1
+    ) rollup ON true
+    WHERE subject.operation_id=ANY($1::uuid[]) AND subject.workload_kind='scientific_batch'
+"""
 
 
 def _bounded(value: object, maximum: int, fallback: str) -> str:
@@ -393,6 +417,12 @@ def _attempt(
             "Waiting for a matching node: the Pod's placement or affinity requirements are not satisfied."
         ),
         "NodeProvisioning": "Waiting for a schedulable node in the selected pool; GPU computation has not started.",
+        "AdmittedPoolUnavailable": (
+            "The admitted pool has lost all registered nodes and has no observed scale-up progress. "
+            "The controller is confirming the bounded automatic recovery deadline; no GPU work has started."
+        ),
+        "PoolScaleUpInProgress": "Waiting for the selected pool's observed node scale-up; GPU work has not started.",
+        "PoolHealthUnknown": "Waiting for a node; current pool-health telemetry is unavailable or stale.",
     }
     phase_reason = None
     if attempt.outcome is AttemptOutcome.ACTIVE and attempt.last_phase is LifecyclePhase.NODE_PENDING:
@@ -403,7 +433,16 @@ def _attempt(
         code = _bounded(attempt.failure_code, 64, "scientific_attempt_failed")
         failure = ScientificError(
             code=code,
-            message=f"Scientific attempt failed with code {code}.",
+            message={
+                "admitted_pool_unavailable": (
+                    "The admitted GPU pool lost all registered nodes before this attempt started. "
+                    "Automatic recovery uses only this run's qualified pools and original attempt budget."
+                ),
+                "admitted_scheduling_timeout": (
+                    "The admitted attempt could not schedule before its startup deadline. "
+                    "Inspect the selected pool's capacity and placement constraints."
+                ),
+            }.get(code, f"Scientific attempt failed with code {code}."),
             retryable=attempt.failure_kind.retryable if attempt.failure_kind is not None else False,
         )
     return ScientificAttempt(
@@ -430,11 +469,68 @@ def _attempt(
     )
 
 
-def _stages(state: ScientificBatchState, events: tuple[BatchEvent, ...]) -> list[ScientificStage]:
+def _placement(state: ScientificBatchState, stage_id: str) -> ScientificPlacementConstraints:
+    decision = state.scheduling.stage(stage_id)
+    plan = next(item for item in state.plan.stages if item.stage_id == stage_id)
+    binding = next(
+        (item for item in state.execution_plan.stage_bindings if item.stage_id == stage_id), None
+    ) if state.execution_plan else None
+    resources = plan.resources or (execution_resource_envelope(binding) if binding else None)
+    # Same canonical stage + concurrent collector arithmetic as admission.
+    # This is a frozen envelope, not a query of available resources on nodes.
+    pod = stage_pod_request(
+        resources, accelerator_resource=decision.accelerator_resource_name or "nvidia.com/gpu",
+        accelerator_count=decision.accelerator_count,
+    ) if resources else None
+    labels = dict(decision.node_selector)
+    if binding:
+        labels.update(binding.required_node_labels)
+    return ScientificPlacementConstraints(
+        scheduling_digest=state.scheduling.digest,
+        eligible_pool_ids=list(decision.resolved_pool_preference),
+        namespace=decision.workload_namespace or state.scheduling.workload_namespace,
+        required_node_labels=labels,
+        stage_cpu_millis=resources.cpu_millis if resources else None,
+        stage_memory_bytes=resources.memory_bytes if resources else None,
+        stage_ephemeral_storage_bytes=resources.ephemeral_storage_bytes if resources else None,
+        pod_cpu_millis=pod.cpu_millis if pod else None,
+        pod_memory_bytes=pod.memory_bytes if pod else None,
+        pod_ephemeral_storage_bytes=pod.ephemeral_storage_bytes if pod else None,
+        accelerator_count=decision.accelerator_count,
+        accelerator_resource_name=decision.accelerator_resource_name,
+        reference_data_required=(any(mount.kind == "reference" for mount in binding.mounts) if binding else None),
+    )
+
+
+def _stages(
+    state: ScientificBatchState, events: tuple[BatchEvent, ...], signals: tuple[LifecycleSignal, ...] = (),
+    correlations: tuple[Mapping[str, Any], ...] = (),
+) -> list[ScientificStage]:
     by_attempt: dict[UUID, list[BatchEvent]] = defaultdict(list)
     for event in events:
         if event.draft.attempt_id is not None:
             by_attempt[event.draft.attempt_id].append(event)
+    by_subject: dict[UUID, list[LifecycleSignal]] = defaultdict(list)
+    for signal in signals:
+        by_subject[signal.subject_id].append(signal)
+
+    def observed_attempt(attempt: ScientificAttemptState, resource_class: ResourceClass) -> ScientificAttempt:
+        from .scientific_batch.recovery_view import recovery_view
+
+        observed = by_subject.get(attempt.attempt_id, [])
+        joined = [row for row in correlations if row["attempt_id"] == attempt.attempt_id]
+        result = _attempt(attempt, tuple(by_attempt.get(attempt.attempt_id, ())), resource_class=resource_class)
+        return result.model_copy(update={
+            "recovery": recovery_view(state, attempt),
+            "device_activity": activity_summaries(observed),
+            "activity_capture_reason": activity_capture_reason(observed),
+            "lifecycle_subject_id": str(attempt.attempt_id) if observed else None,
+            "lifecycle_phases": project_phase_times(observed),
+            "observed_pod_uids": sorted({row["pod_uid"] for row in joined if row["pod_uid"]}),
+            "observed_node_uids": sorted({row["node_uid"] for row in joined if row["node_uid"]}),
+            "observed_gpu_uuids": sorted({row["gpu_uuid"] for row in joined if row["gpu_uuid"]}),
+            "node_count": len({row["node_uid"] for row in joined if row["node_uid"]}) or None,
+        })
     result: list[ScientificStage] = []
     for ordinal, plan in enumerate(state.plan.stages, start=1):
         stage = state.stage(plan.stage_id)
@@ -448,14 +544,8 @@ def _stages(state: ScientificBatchState, events: tuple[BatchEvent, ...]) -> list
                 admission_mode=plan.mode.value,
                 checkpoint_mode=plan.checkpoint_mode.value,
                 status=cast(Any, _stage_status(stage)),
-                attempts=[
-                    _attempt(
-                        attempt,
-                        tuple(by_attempt.get(attempt.attempt_id, ())),
-                        resource_class=plan.resource_class,
-                    )
-                    for attempt in stage.attempts
-                ],
+                attempts=[observed_attempt(attempt, plan.resource_class) for attempt in stage.attempts],
+                placement=_placement(state, plan.stage_id),
             )
         )
     return result
@@ -480,12 +570,9 @@ class PostgresScientificRunAdminAdapter:
     async def _accounting(self, states: list[ScientificBatchState]) -> dict[UUID, ScientificGpuAccounting]:
         if not self.lifecycle_accounting or not states:
             return {}
-        async with self.pool.acquire() as connection:
+        async with reporting_connection(self.pool, "accounting") as connection:
             rows = await connection.fetch(
-                """SELECT subject.operation_id,subject.attempt_id,rollup.*
-                   FROM fs2_telemetry_subjects subject
-                   LEFT JOIN fs2_reporting_lifecycle_latest rollup USING(subject_id)
-                   WHERE subject.operation_id=ANY($1::uuid[]) AND subject.workload_kind='scientific_batch'""",
+                _SCIENTIFIC_GPU_ACCOUNTING_QUERY,
                 [state.operation_id for state in states],
             )
         grouped: dict[UUID, list[Mapping[str, Any]]] = defaultdict(list)
@@ -497,33 +584,52 @@ class PostgresScientificRunAdminAdapter:
             if (accounting := project_gpu_accounting(state, grouped[state.operation_id])) is not None
         }
 
-    async def _phase_times(self, state: ScientificBatchState) -> list[ScientificLifecyclePhase]:
+    async def _lifecycle_signals(self, state: ScientificBatchState) -> tuple[LifecycleSignal, ...]:
         if not self.lifecycle_accounting:
-            return project_phase_times(())
+            return ()
         expected = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
-        async with self.pool.acquire() as connection:
+        async with reporting_connection(self.pool, "lifecycle_signals") as connection:
             rows = await connection.fetch(
                 """SELECT subject.attempt_id,signal.*
                    FROM fs2_telemetry_subjects subject
                    JOIN fs2_lifecycle_signals signal USING(subject_id)
                    WHERE subject.operation_id=$1 AND subject.tenant_id=$2
                      AND subject.workload_kind='scientific_batch'
-                     AND signal.clock IN ('phase','lifecycle')
                    ORDER BY signal.id LIMIT 100001""",
                 state.operation_id,
                 state.tenant_id,
             )
         # Match the existing lifecycle detail's bounded signal projection.
         if len(rows) > 100000:
-            return project_phase_times(())
+            return ()
         selected = [row for row in rows if row["attempt_id"] in expected]
+        return tuple(_signal_from_row(row) for row in selected)
+
+    async def _phase_times(self, state: ScientificBatchState) -> list[ScientificLifecyclePhase]:
+        signals = await self._lifecycle_signals(state)
+        expected = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
         return project_phase_times(
-            tuple(_signal_from_row(row) for row in selected),
-            incomplete_attempts={row["attempt_id"] for row in selected} != expected,
+            signals, incomplete_attempts={row.subject_id for row in signals} != expected,
         )
 
+    async def _lifecycle_correlations(self, state: ScientificBatchState) -> tuple[Mapping[str, Any], ...]:
+        if not self.lifecycle_accounting:
+            return ()
+        async with reporting_connection(self.pool, "lifecycle_correlations") as connection:
+            rows = await connection.fetch(
+                """SELECT subject.attempt_id,correlation.pod_uid,correlation.node_uid,correlation.gpu_uuid
+                   FROM fs2_telemetry_subjects subject
+                   JOIN fs2_telemetry_correlations correlation USING(subject_id)
+                   WHERE subject.operation_id=$1 AND subject.tenant_id=$2
+                     AND subject.workload_kind='scientific_batch'
+                   ORDER BY correlation.observed_at,correlation.correlation_key LIMIT 10001""",
+                state.operation_id, state.tenant_id,
+            )
+        return tuple(rows) if len(rows) <= 10000 else ()
+
     async def _model_map(self, *, tenant_id: str | None) -> dict[str, ScientificModelReadiness]:
-        snapshot = await self.models.list_models(tenant_id=tenant_id)
+        with read_phase("model_inventory_and_catalog"):
+            snapshot = await self.models.list_models(tenant_id=tenant_id)
         return {item.model_id: item for item in snapshot.data.items}
 
     @staticmethod
@@ -648,7 +754,7 @@ class PostgresScientificRunAdminAdapter:
         if tenant_id is not None:
             args.append(tenant_id)
             tenant_clause = " AND operation.tenant_id=$2"
-        async with self.pool.acquire() as connection:
+        async with reporting_connection(self.pool, "run_record") as connection:
             observed_at = await connection.fetchval("SELECT clock_timestamp()")
             record = await connection.fetchrow(
                 self._base_select() + " WHERE operation.id=$1" + tenant_clause,
@@ -656,41 +762,68 @@ class PostgresScientificRunAdminAdapter:
             )
         if record is None:
             raise KeyError(operation_id)
-        state = state_from_value(record["state"])
+        with read_phase("decode_state"):
+            state = state_from_value(record["state"])
         models = await self._model_map(tenant_id=tenant_id)
         try:
             model = models[state.model_id]
         except KeyError as error:
             raise ScientificAdminSourceUnavailableError("scientific run model identity is absent") from error
-        events = tuple(await self.batches.list_events(operation_id, tenant_id=state.tenant_id, limit=1000))
+        with read_phase("events_repository"):
+            events = tuple(await self.batches.list_events(operation_id, tenant_id=state.tenant_id, limit=1000))
         max_attempts = max(stage.max_attempts for stage in state.plan.stages)
-        detail = ScientificRunDetail(
-            run=_summary(cast(Mapping[str, Any], record), state, model),
-            lifecycle_phases=await self._phase_times(state),
-            stages=_stages(state, events),
-            artifacts=[],
-            retry=ScientificRetry(max_attempts_per_stage=max_attempts, retryable_exit_codes=[]),
-            semantic_validation=ScientificSemanticValidation(
-                validator_id="unavailable",
-                status="not-run",
-                receipt_digest=None,
-            ),
-            observability=[
-                ScientificObservabilityLink(
-                    kind=cast(Any, kind),
-                    label=label,
-                    available=True,
-                    href=f"/admin/observability?operation_id={operation_id}&signal={kind}",
-                    reason=None,
-                )
-                for kind, label in (("trace", "Request trace"), ("logs", "Workload logs"), ("metrics", "GPU metrics"))
-            ],
-        )
+        with read_phase("lifecycle_signals"):
+            signals = await self._lifecycle_signals(state)
+        with read_phase("lifecycle_correlations"):
+            correlations = await self._lifecycle_correlations(state)
+        expected_subjects = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
+        with read_phase("detail_projection"):
+            detail = ScientificRunDetail(
+                run=_summary(cast(Mapping[str, Any], record), state, model),
+                lifecycle_phases=project_phase_times(
+                    signals, incomplete_attempts={row.subject_id for row in signals} != expected_subjects,
+                ),
+                stages=_stages(state, events, signals, correlations),
+                artifacts=[],
+                retry=ScientificRetry(max_attempts_per_stage=max_attempts, retryable_exit_codes=[]),
+                semantic_validation=ScientificSemanticValidation(
+                    validator_id="unavailable",
+                    status="not-run",
+                    receipt_digest=None,
+                ),
+                observability=[
+                    ScientificObservabilityLink(
+                        kind=cast(Any, kind),
+                        label=label,
+                        available=True,
+                        href=f"/admin/observability?operation_id={operation_id}&signal={kind}",
+                        reason=None,
+                    )
+                    for kind, label in (
+                        ("trace", "Request trace"), ("logs", "Workload logs"), ("metrics", "GPU metrics")
+                    )
+                ],
+            )
         accounting = await self._accounting([state])
         if operation_id in accounting:
             detail = detail.model_copy(
                 update={"run": detail.run.model_copy(update={"gpu_accounting": accounting[operation_id]})}
             )
+        sample_count = sum(
+            item.sample_count for stage in detail.stages
+            for attempt in stage.attempts for item in attempt.device_activity
+        )
+        if sample_count:
+            detail = detail.model_copy(update={"run": detail.run.model_copy(update={
+                "gpu_accounting": detail.run.gpu_accounting.model_copy(update={
+                    "sampled_device_activity": ScientificMeasurement(
+                        value=sample_count, unit="count", evidence=ScientificEvidenceState.MEASURED,
+                        source="lifecycle-ledger",
+                        reason=("Verified raw sample observations; see attempt gaps/phase counts. "
+                                "Not busy or billable GPU-seconds."),
+                    ),
+                }),
+            })})
         return ScientificRunDetailSnapshot(data=detail, observed_at=observed_at)
 
 
@@ -1061,6 +1194,7 @@ def postgres_scientific_admin_read_service(
     source_max_age_seconds: float,
     adapter_timeout_seconds: float,
     scientific_apps: ScientificAppsInventory | None = None,
+    placement: ScientificNodeFitAdapter | None = None,
 ) -> ScientificAdminReadService:
     """Build the production admin service over canonical durable sources."""
 
@@ -1090,6 +1224,7 @@ def postgres_scientific_admin_read_service(
             startup_options=getattr(renderer, "startup_policy_options", None),
         ),
         models=models,
+        placement=placement,
         source_max_age_seconds=source_max_age_seconds,
         adapter_timeout_seconds=adapter_timeout_seconds,
     )

@@ -1,0 +1,32 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "diar-streaming-sortformer-4spk-v2-1",
+  "kind": "weights",
+  "source": {
+    "uri": "https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2.1/tree/fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+    "revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d"
+  },
+  "content": {
+    "digest": "efa69d7c50327fc8f710009a8f382d7e032cddd1ccac09ea5fc05edc6aa0d53f",
+    "expanded_bytes": 896389120,
+    "files": [
+      {
+        "path": "diar_streaming_sortformer_4spk-v2.1.nemo",
+        "bytes": 471367680,
+        "sha256": "8abd32832159c6ac1148c926b7276f35ba34582c444e559dce1f1253fea42ef8"
+      },
+      {
+        "path": "nanocodec.nemo",
+        "bytes": 425021440,
+        "sha256": "28c2518de3e3d5a2c7d9bca40a7ebc0644eb76c60b890970365325bdd8e9f099"
+      }
+    ]
+  },
+  "license": {
+    "id": "NVIDIA-Open-Model-License",
+    "state": "verified"
+  },
+  "entitlement_state": "not-required",
+  "owner": "runtime-image",
+  "retention": "retained-platform"
+}

@@ -1,0 +1,56 @@
+{
+  "evidence_kind": "real-native-md",
+  "master_directory": "/absolute/canonical/master-01",
+  "runs": [
+    {
+      "engine": "gromacs",
+      "image": "registry/image@sha256:REPLACE_WITH_ACTUAL_DIGEST",
+      "trajectory": "/absolute/real/gromacs/production.xtc",
+      "trajectory_format": "XTC",
+      "native_topology": "/absolute/real/gromacs/production.tpr",
+      "production_log": "/absolute/real/gromacs/production.log",
+      "thermo": {"kind": "gromacs_xvg", "path": "/absolute/real/gromacs/production-energy.xvg"},
+      "production_origin_step": 0,
+      "production_origin_time_ps": 0,
+      "canonical_to_native": "identity",
+      "provenance_files": ["/absolute/real/gromacs/production.edr"],
+      "provenance": {"note": "EXAMPLE ONLY. Origins/mapping must be verified from actual native input and conversion receipts."}
+    },
+    {
+      "engine": "namd",
+      "image": "registry/image@sha256:REPLACE_WITH_ACTUAL_DIGEST",
+      "trajectory": "/absolute/real/namd/production.dcd",
+      "native_topology": "/absolute/canonical/master-01/system.prmtop",
+      "production_log": "/absolute/real/namd/production.log",
+      "thermo": {"kind": "namd_log", "path": "/absolute/real/namd/production.log"},
+      "production_origin_step": 100000,
+      "production_origin_time_ps": 200,
+      "canonical_to_native": "identity",
+      "provenance_files": []
+    },
+    {
+      "engine": "amber",
+      "image": "registry/image@sha256:REPLACE_WITH_ACTUAL_DIGEST",
+      "trajectory": "/absolute/real/amber/production.nc",
+      "native_topology": "/absolute/canonical/master-01/system.prmtop",
+      "production_log": "/absolute/real/amber/production.mdout",
+      "thermo": {"kind": "amber_mdout", "path": "/absolute/real/amber/production.mdout"},
+      "production_origin_step": 0,
+      "production_origin_time_ps": 200,
+      "canonical_to_native": "identity",
+      "provenance_files": []
+    },
+    {
+      "engine": "lammps",
+      "image": "registry/image@sha256:REPLACE_WITH_ACTUAL_DIGEST",
+      "trajectory": "/absolute/real/lammps/production.lammpstrj",
+      "native_topology": "/absolute/real/lammps/system.data",
+      "production_log": "/absolute/real/lammps/production.log",
+      "thermo": {"kind": "lammps_log", "path": "/absolute/real/lammps/production.log"},
+      "production_origin_step": 100000,
+      "production_origin_time_ps": 200,
+      "canonical_to_native": "identity",
+      "provenance_files": []
+    }
+  ]
+}

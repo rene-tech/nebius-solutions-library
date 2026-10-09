@@ -947,7 +947,7 @@ def test_scientific_discovery_never_exposes_incomplete_qualification(
 
 @pytest.mark.parametrize(
     ("profile_state", "semantic_state"),
-    [("active", "qualified"), ("qualified", "active")],
+    [("qualified", "active")],
 )
 def test_scientific_discovery_requires_explicit_qualified_states(
     registry,
@@ -970,6 +970,51 @@ def test_scientific_discovery_requires_explicit_qualified_states(
 
     assert (
         runtime.scientific_batches.discovery_profiles(
+            tenant_id="tenant-a",
+            allowed_models=frozenset({"*"}),
+            surface="mcp",
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize("semantic_state", ["active", "qualified"])
+def test_active_scientific_discovery_is_invocable_but_explicitly_unqualified(
+    registry,
+    cipher,
+    hasher,
+    semantic_state,
+) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    service = runtime.scientific_batches
+    assert service is not None
+    profile = profile_value()
+    profile["state"] = "active"
+    profile["semantic_validation"]["state"] = semantic_state
+    profile["qualification"]["public_completion_receipt_sha256"] = None
+    profile["qualification"]["scheduler_eligibility_receipt_sha256"] = None
+    service.profiles = profile_catalog_for("protein-design", profile_document=profile)
+    for surface in ("admin", "http", "mcp"):
+        (discovered,) = service.discovery_profiles(
+            tenant_id="tenant-a",
+            allowed_models=frozenset({"protein-design"}),
+            surface=surface,
+        )
+        assert discovered.state == "active"
+        assert discovered.public_completion_receipt_sha256 is None
+        assert discovered.scheduler_eligibility_receipt_sha256 is None
+        assert (
+            service.discovery_profiles(
+                tenant_id="tenant-a",
+                allowed_models=frozenset({"another-model"}),
+                surface=surface,
+            )
+            == ()
+        )
+    profile["qualification"]["h100_semantic_receipt_sha256"] = None
+    service.profiles = profile_catalog_for("protein-design", profile_document=profile)
+    assert (
+        service.discovery_profiles(
             tenant_id="tenant-a",
             allowed_models=frozenset({"*"}),
             surface="mcp",
@@ -1266,6 +1311,56 @@ async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cip
     await controller.reconcile_once()
     assert cluster.apply_history[0].kind is WorkloadKind.JOB
     assert cluster.apply_history[0].scheduling == state.scheduling.stages[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing_boundary", ["state_from_value", "state_to_value"])
+async def test_unreadable_execution_plan_is_rejected_before_durable_admission(
+    cipher, hasher, monkeypatch, failing_boundary
+):
+    from fs2_serve.scientific_batch.profile_catalog import ScientificProfileError
+
+    store = MemoryStore(cipher, hasher)
+    identity = await principal(store)
+    repository = FakeScientificBatchRepository()
+    controller = ScientificBatchController(
+        repository=repository,
+        cluster=FakeScientificBatchCluster(),
+        controller_id="controller-a",
+        namespace="fs2-models",
+    )
+    pointer = {"artifact_id": str(uuid4()), "sha256": "1" * 64, "size_bytes": 100, "media_type": "application/json"}
+    service = ScientificBatchService(
+        store=store,
+        repository=repository,
+        controller=controller,
+        profiles=profile_catalog(),
+        scheduling=scheduling(),
+        artifacts=FakeArtifactAccess(pointer),
+        execution_binding=FakeExecutionBinding(),
+    )
+    request = {
+        "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "operation": "design",
+        "service_class": "customer-batch",
+        "input_manifest": pointer,
+        "parameters": {},
+    }
+
+    def incompatible_reader(payload):
+        raise ValueError("injected writer/reader mismatch")
+
+    monkeypatch.setattr(f"fs2_serve.scientific_batch.service.{failing_boundary}", incompatible_reader)
+    with pytest.raises(ScientificProfileError, match="cannot be durably restored"):
+        await service.submit(
+            principal=identity,
+            model_id="protein-design",
+            request=request,
+            idempotency_key="unreadable-plan-must-not-be-admitted",
+        )
+    assert store.operations == {}
+    assert await store.list_scientific_admissions() == []
+    assert repository.records == {}
 
 
 @pytest.mark.asyncio
@@ -2203,6 +2298,12 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
             assert body["metadata"]["annotations"][ACCELERATOR_RESOURCE_ANNOTATION] == "nvidia.com/gpu"
             assert body["metadata"]["annotations"][ACCELERATOR_COUNT_ANNOTATION] == "1"
             assert body["spec"]["suspend"] is True and body["spec"]["backoffLimit"] == 0
+            assert body["spec"]["podFailurePolicy"] == {
+                "rules": [
+                    {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [143]}},
+                    {"action": "FailJob", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]},
+                ]
+            }
             assert body["spec"]["activeDeadlineSeconds"] == 3600
             assert body["spec"]["template"]["metadata"]["labels"][ATTEMPT_LABEL] == str(attempt_id)
             pool_expression = body["spec"]["template"]["spec"]["affinity"]["nodeAffinity"][
@@ -3651,7 +3752,15 @@ async def test_kubernetes_delete_refuses_a_recreated_name_and_a_missing_resource
 
 
 @pytest.mark.asyncio
-async def test_workload_capability_materializes_and_commits_through_single_artifact_port(hasher) -> None:
+@pytest.mark.parametrize(
+    "mode,shard",
+    [
+        (ExecutionMode.FANOUT, "main"),
+        (ExecutionMode.FANOUT, "gang"),
+        (ExecutionMode.TRUE_GANG, "gang"),
+    ],
+)
+async def test_workload_capability_materializes_and_commits_through_single_artifact_port(hasher, mode, shard) -> None:
     now = datetime(2026, 9, 2, 21, tzinfo=UTC)
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()
@@ -3665,10 +3774,19 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
     operation_id = uuid4()
     input_id = uuid4()
     manifest_id = uuid4()
-    controller_plan = ScientificBatchPlan((ScientificStagePlan(stage_id="design"),))
+    controller_plan = ScientificBatchPlan(
+        (
+            ScientificStagePlan(
+                stage_id="design",
+                mode=mode,
+                shards=(shard,),
+                gang_size=2 if mode is ExecutionMode.TRUE_GANG else None,
+            ),
+        )
+    )
     invocation = StageInvocation(
         stage_id="design",
-        shard_id="main",
+        shard_id=shard,
         argv=("protein-design", "run", "--input", "/mnt/fs2-scientific/work/design/main/input.json"),
         environment=(),
         working_directory="/mnt/fs2-scientific/work/design/main",
@@ -3889,6 +4007,7 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
         stale = await client.get(f"/internal/scientific-workloads/artifacts/{input_id}:download")
         assert stale.status_code == 409
     assert artifacts.upload_attempts == [resource.attempt_id] * 3
+    assert artifacts.attempts[resource.attempt_id].shard_id == (None if mode is ExecutionMode.TRUE_GANG else shard)
     assert repository.records[operation_id].status is BatchStatus.CANCELLED
 
 

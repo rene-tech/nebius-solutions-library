@@ -97,6 +97,15 @@ EXPECTED_MIGRATIONS: Final = (
     ("0027_inference_users.sql", "214e66821db3747db2ea7473bdfcafee47abc1de4d9206bc834e3d5532935337"),
     ("0028_request_telemetry.sql", "219810a23343e8aed0542ca6ea7ee48bcea5ef7eebfbddf0d32acb4590ab3104"),
     ("0029_request_debug.sql", "a02fe7eb59ea664c4cb4972158a59d52b5df22aa937eb83cd9a287939a90438a"),
+    ("0030_mcp_semantic_outcomes.sql", "25228cd592492009f0d8b6c43be64c5075e2c454f6407d078f8b4add7c98f3f3"),
+    ("0031_user_storage.sql", "c3c97b15e58ddc165a4c03c262a878189e2245293cf571e96eb4eaa516f23030"),
+    ("0032_scientific_child_delegation.sql", "dc22191ef0162488ad06fb1f9971c530d8380a64e2ad26e76cb39cbb60cac215"),
+    ("0033_customer_starter_packs.sql", "d45ea62fe285915afcad8302f4a53563b5439692eab1f3e9f756a9c29f1f5601"),
+    ("0034_retired_event_tenants.sql", "87c4f70bf7c84bb3b5b85b3e771866246cc842944a558d1828510ad4c68cdca8"),
+    ("0035_benchmark_campaigns.sql", "eb614e35d3091a6ba10eaf150f65b230a755eb17eb9493dc7585bd7a3bd512af"),
+    ("0036_model_retirement.sql", "5506eb0d119b6c1fa4f366e36f530a0a6f20808730942579b9cc0c9db2bf7470"),
+    ("0037_customer_workbenches.sql", "8f1c3d4a634894cdb37f3955892224c576d9a04465cc1eb924f13241e29ccbe1"),
+    ("0038_scientific_claimable_index.sql", "fed73c3987c65954c165f1359c1be2c8e79025d64d6006c2b728bc7c94aa7f91"),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

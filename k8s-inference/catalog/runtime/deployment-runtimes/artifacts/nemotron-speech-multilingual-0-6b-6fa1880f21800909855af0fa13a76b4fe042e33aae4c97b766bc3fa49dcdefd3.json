@@ -1,0 +1,27 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "nemotron-speech-multilingual-0-6b",
+  "kind": "weights",
+  "source": {
+    "uri": "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/tree/ea30d66debe3740a08b573244286791d423d6b3e",
+    "revision": "ea30d66debe3740a08b573244286791d423d6b3e"
+  },
+  "content": {
+    "digest": "91ffa6c0da798f94d90bb2bf8800e7a63b48ebf61668e68628ca80622884598b",
+    "expanded_bytes": 2368284501,
+    "files": [
+      {
+        "path": "nemotron-3.5-asr-streaming-0.6b.nemo",
+        "bytes": 2368284501,
+        "sha256": "210214ed94039bf6bfbb9a047c7fa289628db75b103e2bf6381fa78285436a74"
+      }
+    ]
+  },
+  "license": {
+    "id": "OpenMDW-1.1",
+    "state": "verified"
+  },
+  "entitlement_state": "not-required",
+  "owner": "runtime-image",
+  "retention": "retained-platform"
+}

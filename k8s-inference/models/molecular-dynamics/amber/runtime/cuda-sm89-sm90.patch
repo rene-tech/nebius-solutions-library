@@ -1,0 +1,9 @@
+--- a/cmake/CudaConfig.cmake
++++ b/cmake/CudaConfig.cmake
+@@ -80,3 +80,3 @@
+        elseif((${CUDA_VERSION} VERSION_GREATER_EQUAL 12.7) AND (${CUDA_VERSION} VERSION_LESS 12.9))
+-           message(STATUS "Configuring for SM7.0, SM7.5, SM8.0, SM8.6, SM8.9, SM9.0, SM10.0 and SM12.0")
+-           list(APPEND CUDA_NVCC_FLAGS ${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM89FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS} -Wno-deprecated-gpu-targets -Wno-deprecated-declarations -std=c++14)
++           message(STATUS "FS2 bounded build: native SM8.9 and SM9.0 only")
++           list(APPEND CUDA_NVCC_FLAGS ${SM89FLAGS} ${SM90FLAGS} -Wno-deprecated-gpu-targets -Wno-deprecated-declarations -std=c++14)
+

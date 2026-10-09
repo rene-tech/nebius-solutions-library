@@ -1,0 +1,653 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-015",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Christopher, it's good to see you again. How have things been going since we last spoke?"
+    },
+    {
+      "role": "patient",
+      "content": "Not great. Been lying in bed most of the day. The laundry’s still piled up. I tried to go for a walk yesterday but got halfway down the road and just turned back. It felt like too much effort to keep going."
+    },
+    {
+      "role": "clinician",
+      "content": "I hear you, Christopher. That sounds really heavy. The fact that you even tried to go for a walk yesterday tells me there's some part of you that's still trying, even when it feels like everything is working against you.\n\nWhen you got halfway down the road and turned back, what was going through your mind?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. Just that it wasn’t worth it. Like the walk wasn’t going to change anything. I kept thinking, what’s the point of moving if nothing’s going to feel better? And then I started wondering if I’d even remember the walk tomorrow. Like it wouldn’t matter. So I turned around. It felt easier to just give up than to pretend it meant something."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds like a really painful place to be — where even the effort of trying feels pointless because the voice telling you \"nothing matters\" is so loud. I'm glad you're able to put words to it, even if it's hard.\n\nCan I ask — when you said you wondered if you'd even remember the walk tomorrow, was that more about feeling like nothing sticks with you lately, like the days blur together? Or was it something else?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. It’s like the days don’t leave a mark. I’ll wake up, do the same things, feel the same way. I don’t know if I’ve done anything different in weeks. I can’t even tell what’s new. I keep thinking, did I eat today? Did I shower? It’s like I’m just going through motions, but nothing’s real. Like I’m watching my life from behind glass."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds really disorienting, Christopher — not being able to track whether you've eaten or showered, feeling like the days don't leave a mark. That \"behind glass\" feeling... that's a really powerful way to describe it. Like you're there but not really *there*.\n\nI want you to know that what you're describing makes sense with what we've talked about before. It doesn't mean something's wrong with you for feeling this way — it's what severe depression can do. It can flatten everything out so life feels like it's happening at a distance.\n\nA couple of things I want to ask. You mentioned not being sure if you've eaten or showered. Have you been able to take care of basic needs today — eating, drinking water?\n\nAnd I also want to check in with you directly, because you've talked about things feeling pointless and like nothing matters. Are you having any thoughts about not wanting to be here, or about hurting yourself?"
+    },
+    {
+      "role": "patient",
+      "content": "I had a bowl of cereal this morning. I think. I remember opening the box. I don’t remember eating it. I just remember putting the spoon in and then setting it down. I drank some water, but I don’t know how much. I think I did.  \n\nAnd no. Not that kind of thought. Not lately. I don’t know if I could even find the energy for that. It’s more like I don’t care if I’m here or not. Like it doesn’t matter either way. I don’t feel like I’m a burden. I just feel… gone. Like I’m not really present.  \n\nBut I’m still here. I’m still texting you. That means something, right?"
+    },
+    {
+      "role": "clinician",
+      "content": "Yes, Christopher. That means something. It means a lot, actually.\n\nYou're describing feeling like you're \"gone,\" like nothing leaves a mark, like you're behind glass — and yet something in you chose to show up here today and tell me about it. That's not nothing. That's you reaching out from behind that glass, even if it doesn't feel like much to you right now.\n\nAnd I want to be honest with you about what I'm hearing. When you say you don't care if you're here or not — I take that seriously. It's different from actively wanting to hurt yourself, and I'm glad that's not where you are. But that kind of numbness, that sense of just not mattering — that's your depression talking. It's not a fact about you, even if it feels like one.\n\nI'm also noticing you're not sure if you ate. That matters to me. Not in a \"you need to do better\" way, but because your body needs fuel even when your mind is checked out.\n\nCan I ask — what made you reach out today? Was there something specific, or did you just feel like you needed to talk to someone?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know why I reached out. I just looked at my phone and saw your name. It felt like the only thing that didn’t feel like a chore. I didn’t plan it. I didn’t think about it. I just did it.  \n\nI think I wanted to know if someone else could see it too. That I’m not just making it up. That it’s not just me being lazy or weak. That it’s real. That it’s not just me being bad at life.  \n\nI don’t know if I believe that yet. But I needed to say it out loud. And you’re the only one I’ve said it to."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher, I want you to hear this clearly: what you're experiencing is real. It's not laziness. It's not weakness. It's not you being bad at life.\n\nWhat you're describing — the numbness, the days not leaving a mark, feeling behind glass, not being sure if you've eaten — those are symptoms. They're what severe depression does. It dims everything. It makes basic acts feel like climbing a mountain. It disconnects you from your own experience.\n\nAnd the fact that you're questioning whether it's real, whether you're just making it up — that's actually part of it too. Depression is convincing. It makes you think the problem is you, that you should just try harder, that everyone else manages fine. But that's the illness doing the talking.\n\nYou're not making this up. I see it. And I'm glad you said it out loud.\n\nYou mentioned I'm the only person you've said this to. That tells me you're carrying a lot of this alone. I don't need you to change that right now. But I want you to know that you don't have to keep proving anything to me. You showing up is enough.\n\nIs there anything that's felt even slightly different today compared to other days — anything at all?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. Maybe. I kept thinking about the walk. Not the walking, but the turning back. I kept wondering if I’d done it because I was tired, or because I didn’t want to feel anything. Like maybe I didn’t want to feel the wind, or the sun, or even the soreness in my legs.  \n\nAnd then I thought — what if I just sat on the porch instead? Just sat. Not to do anything. Not to fix anything. Just to be there. I don’t know if I could do that. But I thought about it. And for a second, it didn’t feel like a chore.  \n\nIt felt like a small thing. But maybe it wasn’t nothing."
+    },
+    {
+      "role": "clinician",
+      "content": "That wasn't nothing, Christopher. That was something.\n\nYou noticed something about yourself — that maybe turning back wasn't about being tired, but about not wanting to *feel*. And then instead of stopping there, you wondered if there was a different way to be outside that didn't require so much. Not a walk. Not a fix. Just sitting on the porch.\n\nThat tells me something important. Even from behind that glass, part of you is still looking for a way to be in the world that feels survivable. Not heroic. Not dramatic. Just — a small crack in the glass.\n\nAnd I think what made that feel different is that you weren't trying to accomplish anything with it. You weren't making it another thing to fail at. You were just imagining being somewhere without a demand attached to it.\n\nI'm not going to turn this into homework. I don't want to take that small thing and make it into another task you feel bad about not completing. But I do want to sit with what you just said for a moment.\n\nYou told me earlier that nothing leaves a mark. But you remembered this. You came back to it in your mind more than once. That sounds like something leaving a mark to me.\n\nWhat do you think it would be like to just sit on the porch? Not to do it — just to think about doing it."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I keep picturing the chair. The one by the door. It’s a little wobbly. I’ve been meaning to fix it. But I never did.  \n\nI think about it sometimes. Sitting there. Not doing anything. Just watching the trees. The birds. The way the light changes. I don’t know if I’d even notice it. Or if I’d just fall asleep.  \n\nBut I don’t think I’d feel like I had to do anything. Not even feel. Just be there. Like the world could keep going without me having to prove I’m still in it.  \n\nThat’s what I keep coming back to. Not the walking. Not the doing. Just sitting. Not to fix anything. Not to feel better. Just to be.  \n\nIt sounds stupid. Like I’m not even trying. But it feels like the only thing that might not make me feel worse."
+    },
+    {
+      "role": "clinician",
+      "content": "It doesn't sound stupid, Christopher. It sounds like you're describing something really honest.\n\nYou said something that I want to come back to — \"like the world could keep going without me having to prove I'm still in it.\" That line hit me. Because it sounds like everything else in your life right now feels like a test you're failing. Get up. Take a walk. Eat. Remember. Feel better. And this — just sitting on the porch — is the one thing that doesn't come with a grade.\n\nThat's not the same as giving up. Giving up is what the voice in your head is doing when it tells you this is stupid. Sitting on the porch is you saying, *I'm still here, and I don't need to perform being alive. I can just be alive.*\n\nAnd you noticed the wobbly chair. You noticed the trees, the birds, the light. You said nothing leaves a mark, but you just described a whole world outside your door in detail. Something in you is still paying attention even if it doesn't feel like it.\n\nI'm not going to ask you to do it. You already know the chair is there. You don't need me to turn it into an assignment.\n\nBut I do want to ask — what would it be like to give yourself permission to do something that isn't trying? Not to feel better. Not to get better. Just to sit in a wobbly chair and let the world keep going for a few minutes?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I keep thinking about the sun. How it hits the porch in the afternoon. Not hot. Just warm. Like it’s not trying to burn you. Just there.  \n\nI think I could sit. Just for five minutes. Not to do anything. Not to think. Not to feel. Just be there.  \n\nBut then I think — what if I fall asleep? What if I wake up and it’s dark? What if I don’t remember anything?  \n\nBut then I think — what if I don’t have to remember? What if I just sit and the sun is warm, and the chair wobbles, and I don’t have to do anything else?  \n\nIt feels like the only thing that might not make me feel worse.  \n\nI don’t know if I’ll do it. But I think I want to. Not because I have to. Not because I should. But because I can.  \n\nThat feels like something."
+    },
+    {
+      "role": "clinician",
+      "content": "That is something, Christopher. That really is something.\n\nYou started this conversation telling me nothing leaves a mark. And now you're telling me that the idea of sitting in a wobbly chair in the sun — not to fix anything, not to prove anything — feels like something. That's not nothing. That's a crack in the glass.\n\nAnd I want to point out what you just did. You caught yourself worrying about falling asleep, about not remembering — and then you said, *what if I don't have to remember?* You answered your own fear. Not by pushing it away, but by letting go of the requirement that this has to count for something.\n\nThat's not what a person who's given up sounds like. That's someone who's still reaching.\n\nI'm not going to ask you to promise me you'll do it. I'm not going to check in next time and grade you on whether you sat in the chair. Because that would turn it into exactly the kind of thing you're trying to escape.\n\nBut I do want to say — the sun will be there tomorrow afternoon too. And the chair will still be wobbly. And none of that is waiting for you to earn it.\n\nYou showed up today, Christopher. You told me the truth about what's happening inside you. And you found one small thing that feels like it might not make you feel worse. That's enough for today.\n\nIs there anything else you want to say before we wrap up?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I just keep thinking about the sun. How it’s not asking for anything. It’s just there.  \n\nI think I’ll sit on the porch tomorrow. Just for a few minutes. Not to fix anything. Not to feel better.  \n\nJust to be there.  \n\nAnd if I fall asleep, I’ll wake up. And if I don’t remember it, that’s okay.  \n\nI don’t have to prove I’m here.  \n\nI just have to be."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher, I want you to hold onto what you just said. Not because I'm assigning it to you, but because you found it yourself.\n\n*The sun's not asking for anything. It's just there.* So are you.\n\nYou don't have to prove you're here. You just have to be.\n\nI'll be here next time. No grades. No checklist. Just you showing up and me listening.\n\nTake care of yourself, Christopher. And if things shift before we talk again — if that numbness turns into something heavier, or if you need to talk to someone sooner — you can reach out. You don't have to wait for our next conversation.\n\nThe wobbly chair will be there. The sun will be there. And so will you."
+    },
+    {
+      "role": "patient",
+      "content": "Thanks. I think I needed to hear that.  \n\nI’ll try to sit.  \n\nNot for anything.  \n\nJust to be there."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 112,
+        "prompt_tokens": 224,
+        "total_tokens": 336,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 90,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 224,
+        "reasoning_tokens": 90
+      },
+      "telemetry": {
+        "queue_ms": 0.035,
+        "latency_ms": 851.197,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 49,
+        "prompt_tokens": 1777,
+        "total_tokens": 1826,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1744
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 1352.409,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 217,
+        "prompt_tokens": 297,
+        "total_tokens": 514,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 151,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 297,
+        "reasoning_tokens": 151
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 1341.575,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 81,
+        "prompt_tokens": 1900,
+        "total_tokens": 1981,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1824
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 2267.401,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 358,
+        "prompt_tokens": 446,
+        "total_tokens": 804,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 266,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 446,
+        "reasoning_tokens": 266
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 2118.884,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 89,
+        "prompt_tokens": 2081,
+        "total_tokens": 2170,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1968
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 2086.067,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 365,
+        "prompt_tokens": 629,
+        "total_tokens": 994,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 165,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 629,
+        "reasoning_tokens": 165
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 11046.613,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 149,
+        "prompt_tokens": 2378,
+        "total_tokens": 2527,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2160
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.057,
+        "latency_ms": 3584.993,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 485,
+        "prompt_tokens": 980,
+        "total_tokens": 1465,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 240,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 980,
+        "reasoning_tokens": 240
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 3328.629,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 136,
+        "prompt_tokens": 2780,
+        "total_tokens": 2916,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2512
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 3058.1,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 535,
+        "prompt_tokens": 1363,
+        "total_tokens": 1898,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 272,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1363,
+        "reasoning_tokens": 272
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 3448.481,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 149,
+        "prompt_tokens": 3187,
+        "total_tokens": 3336,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2912
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 3571.907,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 606,
+        "prompt_tokens": 1777,
+        "total_tokens": 2383,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 330,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1777,
+        "reasoning_tokens": 330
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 3627.693,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 190,
+        "prompt_tokens": 3620,
+        "total_tokens": 3810,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3328
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 4225.428,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 632,
+        "prompt_tokens": 2245,
+        "total_tokens": 2877,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 326,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2245,
+        "reasoning_tokens": 326
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 4392.157,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 197,
+        "prompt_tokens": 4124,
+        "total_tokens": 4321,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3808
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 4898.623,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 613,
+        "prompt_tokens": 2750,
+        "total_tokens": 3363,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 310,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2750,
+        "reasoning_tokens": 310
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 4045.473,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 102,
+        "prompt_tokens": 4632,
+        "total_tokens": 4734,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4320
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 2380.445,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 231,
+        "prompt_tokens": 3157,
+        "total_tokens": 3388,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 75,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3157,
+        "reasoning_tokens": 75
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 1777.611,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 29,
+        "prompt_tokens": 4898,
+        "total_tokens": 4927,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4720
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 968.173,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 22915,
+        "total_tokens": 22972,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 3444.503,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.625,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 67.826
+}

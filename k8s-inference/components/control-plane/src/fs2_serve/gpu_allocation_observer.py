@@ -21,11 +21,11 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .model_deployment import MODEL_ID_LABEL
-from .runtime_kubernetes import (
+from .gpu_identity import (
     GPU_ALLOCATION_OBSERVED_AT_ANNOTATION,
     GPU_OBSERVER_RESOLUTION_ANNOTATION,
     GPU_UUIDS_ANNOTATION,
+    MODEL_ID_LABEL,
     pod_gpu_count,
 )
 

@@ -1,0 +1,24 @@
+{
+  "schema": "fs2-serve.nebius.ai/customer-deployment-identity/v1",
+  "observed_at": "2026-09-15T00:00:00Z",
+  "project_id": "replace-with-project-id",
+  "region": "replace-with-region",
+  "cluster_context": "replace-with-context",
+  "accelerator": "replace-with-exact-GPU-class",
+  "capacity_type": "preemptible",
+  "artifact_store": "replace-with-artifact-store-identity",
+  "release_identity": {
+    "source_revision": "0000000000000000000000000000000000000000",
+    "runtime_images": {
+      "control-plane": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cosmos3-nano": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "cosmos3-lerobot-augmentation": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "configuration_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "model_revision": "0000000000000000000000000000000000000000",
+    "client_build_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "tenant_policy_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "public_endpoint": "https://replace.example/mcp",
+    "public_tool_catalog_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

@@ -1,0 +1,328 @@
+[
+  {
+    "name": "imatinib-retained-request",
+    "request": {
+      "smi": "Cc1ccc(NC(=O)c2ccc(CN3CCN(C)CC3)cc2)cc1Nc1nccc(-c2cccnc2)n1",
+      "algorithm": "CMA-ES",
+      "num_molecules": 8,
+      "property_name": "QED",
+      "minimize": false,
+      "min_similarity": 0.3,
+      "particles": 8,
+      "iterations": 4,
+      "radius": 1
+    },
+    "purpose": "unchanged campaign request"
+  },
+  {
+    "name": "oht-retained-request",
+    "request": {
+      "smi": "CC/C(=C(\\c1ccc(O)cc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+      "algorithm": "CMA-ES",
+      "num_molecules": 8,
+      "property_name": "QED",
+      "minimize": false,
+      "min_similarity": 0.7,
+      "particles": 8,
+      "iterations": 4,
+      "radius": 1
+    },
+    "purpose": "unchanged campaign request"
+  },
+  {
+    "name": "estrogen-retained-request",
+    "request": {
+      "smi": "C[C@]12CC[C@@H]3c4ccc(O)cc4CC[C@H]3[C@@H]1CC[C@@H]2O",
+      "algorithm": "CMA-ES",
+      "num_molecules": 8,
+      "property_name": "QED",
+      "minimize": true,
+      "min_similarity": 0.3,
+      "particles": 8,
+      "iterations": 4,
+      "radius": 1
+    },
+    "purpose": "unchanged campaign request"
+  },
+  {
+    "name": "imatinib-max-p16-i8",
+    "request": {
+      "smi": "Cc1ccc(NC(=O)c2ccc(CN3CCN(C)CC3)cc2)cc1Nc1nccc(-c2cccnc2)n1",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "imatinib-min-p32-i16",
+    "request": {
+      "smi": "Cc1ccc(NC(=O)c2ccc(CN3CCN(C)CC3)cc2)cc1Nc1nccc(-c2cccnc2)n1",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 32,
+      "iterations": 16,
+      "minimize": true
+    },
+    "purpose": "explicit new budget and objective"
+  },
+  {
+    "name": "oht-max-p16-i8",
+    "request": {
+      "smi": "CC/C(=C(\\c1ccc(O)cc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+      "num_molecules": 8,
+      "min_similarity": 0.7,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "oht-min-p32-i16",
+    "request": {
+      "smi": "CC/C(=C(\\c1ccc(O)cc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+      "num_molecules": 8,
+      "min_similarity": 0.7,
+      "particles": 32,
+      "iterations": 16,
+      "minimize": true
+    },
+    "purpose": "explicit new budget and objective"
+  },
+  {
+    "name": "estrogen-max-p16-i8",
+    "request": {
+      "smi": "C[C@]12CC[C@@H]3c4ccc(O)cc4CC[C@H]3[C@@H]1CC[C@@H]2O",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "estrogen-min-p32-i16",
+    "request": {
+      "smi": "C[C@]12CC[C@@H]3c4ccc(O)cc4CC[C@H]3[C@@H]1CC[C@@H]2O",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 32,
+      "iterations": 16,
+      "minimize": true
+    },
+    "purpose": "explicit new budget and objective"
+  },
+  {
+    "name": "aspirin-max-p16-i8",
+    "request": {
+      "smi": "CC(=O)Oc1ccccc1C(=O)O",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "aspirin-min-p32-i16",
+    "request": {
+      "smi": "CC(=O)Oc1ccccc1C(=O)O",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 32,
+      "iterations": 16,
+      "minimize": true
+    },
+    "purpose": "explicit new budget and objective"
+  },
+  {
+    "name": "caffeine-max-p16-i8",
+    "request": {
+      "smi": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "caffeine-min-p32-i16",
+    "request": {
+      "smi": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 32,
+      "iterations": 16,
+      "minimize": true
+    },
+    "purpose": "explicit new budget and objective"
+  },
+  {
+    "name": "ibuprofen-max-p16-i8",
+    "request": {
+      "smi": "CC(C)Cc1ccc(C(C)C(=O)O)cc1",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "ibuprofen-min-p32-i16",
+    "request": {
+      "smi": "CC(C)Cc1ccc(C(C)C(=O)O)cc1",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 32,
+      "iterations": 16,
+      "minimize": true
+    },
+    "purpose": "explicit new budget and objective"
+  },
+  {
+    "name": "erlotinib-max-p16-i8",
+    "request": {
+      "smi": "COCCOC1=C(C=C2C(=C1)C(=NC=N2)NC3=CC=CC(=C3)C#C)OCCOC",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "erlotinib-min-p32-i16",
+    "request": {
+      "smi": "COCCOC1=C(C=C2C(=C1)C(=NC=N2)NC3=CC=CC(=C3)C#C)OCCOC",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 32,
+      "iterations": 16,
+      "minimize": true
+    },
+    "purpose": "explicit new budget and objective"
+  },
+  {
+    "name": "gefitinib-max-p16-i8",
+    "request": {
+      "smi": "C1COCCN1CCCOc2c(OC)cc3ncnc(c3c2)Nc4cc(Cl)c(F)cc4",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "gefitinib-min-p32-i16",
+    "request": {
+      "smi": "C1COCCN1CCCOc2c(OC)cc3ncnc(c3c2)Nc4cc(Cl)c(F)cc4",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 32,
+      "iterations": 16,
+      "minimize": true
+    },
+    "purpose": "explicit new budget and objective"
+  },
+  {
+    "name": "oht-max-p32-i16-r0.1",
+    "request": {
+      "smi": "CC/C(=C(\\c1ccc(O)cc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+      "num_molecules": 8,
+      "min_similarity": 0.7,
+      "particles": 32,
+      "iterations": 16,
+      "radius": 0.1
+    },
+    "purpose": "explicit radius sensitivity profile"
+  },
+  {
+    "name": "oht-max-p32-i16-r0.25",
+    "request": {
+      "smi": "CC/C(=C(\\c1ccc(O)cc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+      "num_molecules": 8,
+      "min_similarity": 0.7,
+      "particles": 32,
+      "iterations": 16,
+      "radius": 0.25
+    },
+    "purpose": "explicit radius sensitivity profile"
+  },
+  {
+    "name": "oht-max-p32-i16-r0.5",
+    "request": {
+      "smi": "CC/C(=C(\\c1ccc(O)cc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+      "num_molecules": 8,
+      "min_similarity": 0.7,
+      "particles": 32,
+      "iterations": 16,
+      "radius": 0.5
+    },
+    "purpose": "explicit radius sensitivity profile"
+  },
+  {
+    "name": "oht-max-p32-i16-r2.0",
+    "request": {
+      "smi": "CC/C(=C(\\c1ccc(O)cc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+      "num_molecules": 8,
+      "min_similarity": 0.7,
+      "particles": 32,
+      "iterations": 16,
+      "radius": 2.0
+    },
+    "purpose": "explicit radius sensitivity profile"
+  },
+  {
+    "name": "oht-max-p32-i16-sim03",
+    "request": {
+      "smi": "CC/C(=C(\\c1ccc(O)cc1)c1ccc(OCCN(C)C)cc1)c1ccccc1",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 32,
+      "iterations": 16
+    },
+    "purpose": "explicit relaxed-constraint experiment; not original success"
+  },
+  {
+    "name": "aspirin-defaults",
+    "request": {
+      "smi": "CC(=O)Oc1ccccc1C(=O)O"
+    },
+    "purpose": "unchanged runtime defaults"
+  },
+  {
+    "name": "caffeine-defaults",
+    "request": {
+      "smi": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C"
+    },
+    "purpose": "unchanged runtime defaults"
+  },
+  {
+    "name": "ibuprofen-defaults",
+    "request": {
+      "smi": "CC(C)Cc1ccc(C(C)C(=O)O)cc1"
+    },
+    "purpose": "unchanged runtime defaults"
+  },
+  {
+    "name": "invalid-smiles",
+    "request": {
+      "smi": "not a molecule"
+    },
+    "purpose": "negative input"
+  },
+  {
+    "name": "impossible-count-budget",
+    "request": {
+      "smi": "CC",
+      "num_molecules": 8,
+      "particles": 2,
+      "iterations": 1
+    },
+    "purpose": "negative budget"
+  }
+]

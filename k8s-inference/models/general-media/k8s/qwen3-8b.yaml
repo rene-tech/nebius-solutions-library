@@ -489,7 +489,7 @@ spec:
       containers:
         - name: vllm
           image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
-          args: [/models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload, --served-model-name, qwen3-8b, Qwen/Qwen3-8B, --host, 0.0.0.0, --port, "8000", --dtype, bfloat16, --tensor-parallel-size, "1", --max-model-len, "32768", --gpu-memory-utilization, "0.80", --generation-config, vllm, --enable-prefix-caching]
+          args: [/models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload, --served-model-name, qwen3-8b, Qwen/Qwen3-8B, --host, 0.0.0.0, --port, "8000", --dtype, bfloat16, --tensor-parallel-size, "1", --max-model-len, "32768", --gpu-memory-utilization, "0.80", --generation-config, vllm, --enable-prefix-caching, --enable-auto-tool-choice, --tool-call-parser, hermes, --reasoning-parser, qwen3]
           env:
             - {name: HF_HUB_OFFLINE, value: "1"}
             - {name: TRANSFORMERS_OFFLINE, value: "1"}

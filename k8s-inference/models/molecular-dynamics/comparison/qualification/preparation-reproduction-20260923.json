@@ -1,0 +1,32 @@
+{
+  "schema": "fs2-canonical-md-preparation-reproduction/v1",
+  "status": "passed-with-documented-non-byte-identical-conversion",
+  "observed_on": "2026-09-23",
+  "engine_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber26-engine@sha256:cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+  "master_preparation": {
+    "method": "Reran prepare_master.py through AmberTools LEaP in the pinned academic engine; CPU-only and network disabled.",
+    "force_fields": ["leaprc.protein.ff14SB", "leaprc.water.tip3p"],
+    "peptide": "ACE-ALA-NME",
+    "accepted_master_manifest_sha256": "459d08d8300fd8fbe74eb241509235da51e63624877e03a01da3a62187a254a3",
+    "coordinates_byte_identical": true,
+    "coordinates_sha256": "a402729188a58515f01fab8f611bf776b8146f6323445a2f666f76d7c658d898",
+    "original_topology_sha256": "805a5f22bd3d3b0045b1ed02652f4272a8e6df8a143fe98278f924d77ad4b61a",
+    "reproduced_topology_sha256": "b97ecdc3602af9845447e275106f79a23d5abe2449f4674f0843d69291c02c71",
+    "topology_difference": "Only the first-line timestamp; every remaining line compared byte-identically."
+  },
+  "conversion": {
+    "environment": "Fresh Python 3.12 virtual environment; exact dependencies listed in PREPARATION.md.",
+    "parmed": "4.3.1",
+    "intermol_revision": "7125764d42f6e6c589dc2d1df71e3e812b3a7b27",
+    "patch_scope": "Versioneer configparser compatibility only; no conversion physics changes.",
+    "gromacs_coordinates_byte_identical": true,
+    "gromacs_coordinates_sha256": "ce285e9ab154774c7684fabfcc37752bf9440239d24aeebfc0d41fffa505b000",
+    "gromacs_topology_difference": "Nonphysical generated date/path/command comments.",
+    "lammps_original_sha256": "84db163c36a833cdfa611d894aaf8db3137cb949e8609d4ac904d98ecf61ce9c",
+    "lammps_reproduced_sha256": "6e12903c425f6816ed2242461a82633d05e86486672756ce997561f9d5883b7b",
+    "lammps_difference": "InterMol reassigned some internal torsion type IDs and ordering; atom-indexed potential curves and topology semantics still pass the independent audit.",
+    "parameter_audit_status": "passed",
+    "parameter_audit_sha256": "bbfbc7041e85fc4077e42c16c327d3ff12351b448c59e520438e70a20d0d4f31"
+  },
+  "scope": "Preparation/conversion reproduction only. Complete native dynamics, single-point energies/forces, and customer-path delivery are separate recorded tests. Use archived accepted engine inputs for the exact accepted simulation."
+}

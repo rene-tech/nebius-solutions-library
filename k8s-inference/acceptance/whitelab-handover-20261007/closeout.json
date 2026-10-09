@@ -1,0 +1,33 @@
+{
+  "schema": "fs2-whitelab-closeout/v1",
+  "recorded_at": "2026-10-07T12:19:39Z",
+  "customer_endpoint": "aiendpoint-e00axdvs33j7ycdqt1",
+  "customer_workbench_url": "https://port3080-qxnvfnk6ancxhd3.tunnel.applications.eu-north1.nebius.cloud",
+  "customer_image_index": "sha256:243ba1dc462ea8e9dc72d620509cc09add24df325297d591e7cb5e4b62438eff",
+  "customer_immutable_runtime_verified": true,
+  "customer_key_binding_verified_without_inference": true,
+  "customer_login": "verified",
+  "customer_login_resolved_at": "2026-10-07T10:44:20.149424+00:00",
+  "customer_login_evidence": "catalog-upgrade-evidence.json",
+  "initial_customer_login_evidence": "customer-login-evidence.json",
+  "deleted_task_only_qa_endpoints": [
+    "aiendpoint-e00w4g4epattkvnnq6",
+    "aiendpoint-e00r6emkt3nhqp7cg3",
+    "aiendpoint-e00tenmz80qhrdapr1",
+    "aiendpoint-e00n6bxtd138sq8agy",
+    "aiendpoint-e00ga9q5ax94r5qqwz",
+    "aiendpoint-e00xy7xfm7mxte1mmg"
+  ],
+  "task_only_qa_key_revoked": true,
+  "original_qa_key_preserved": true,
+  "qa_chat_and_endpoint_spec_evidence_exported": true,
+  "preserved_qa_state_filesystem": "computefilesystem-e00y8j7zypsqv823st",
+  "preserved_qa_bucket": "fs2-system-35f1ad07f2fe32cf",
+  "preserved_customer_state_filesystem": "computefilesystem-e00zpv5gnsct0hhat1",
+  "preserved_customer_bucket": "fs2-whitelab-951ca2389f78c7ca",
+  "customer_predecessor_retained_stopped_for_managed_rollback": "aiendpoint-e00zzbdhd3hkmaxtnc",
+  "post_cleanup_api_readyz_http": 200,
+  "post_cleanup_customer_health_http": 200,
+  "no_customer_inference_used_for_internal_qa": true,
+  "no_cloud_quota_or_node_pool_change": true
+}

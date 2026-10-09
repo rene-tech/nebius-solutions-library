@@ -38,7 +38,7 @@ class Adapter:
         "relationship": "same-named-upstream-fallback-parity-unproven",
         "nim_version": "2.3.0",
         "scope": "molecular-docking/research",
-        "compatibility_shims": ["torch_cluster:pytorch-native", "torch_scatter:pytorch-native"],
+        "compatibility_shims": ["torch_cluster:pytorch-native", "torch_scatter:pytorch-native", "rdkit:request-seeded-conformers", "torch:deterministic-kernels", "torus:fixed-local-normalization-rng"],
     }
 
     def __init__(self) -> None:
@@ -55,6 +55,14 @@ class Adapter:
     def load(self) -> None:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required")
+        # A seeded conformer alone does not make CUDA scatter reductions
+        # reproducible. Select PyTorch's deterministic implementations; never
+        # silently downgrade to warn_only when a kernel lacks an equivalent.
+        # The image sets CUBLAS_WORKSPACE_CONFIG before CUDA is initialized.
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cuda.matmul.allow_tf32 = False
         from esm.pretrained import load_model_and_alphabet_core
         from utils.diffusion_utils import get_t_schedule, t_to_sigma as t_to_sigma_impl
         from utils.utils import get_model
@@ -216,6 +224,7 @@ class Adapter:
                 atom_radius=self.score_args.atom_radius,
                 atom_max_neighbors=self.score_args.atom_max_neighbors,
                 knn_only_graph=not getattr(self.score_args, "not_knn_only_graph", True),
+                random_seed=seed,
             )
             original = dataset[0]
             if not bool(original.success):
@@ -235,6 +244,7 @@ class Adapter:
                 atom_radius=self.confidence_args.atom_radius,
                 atom_max_neighbors=self.confidence_args.atom_max_neighbors,
                 knn_only_graph=False,
+                random_seed=seed,
             )
             confidence_original = confidence_dataset[0]
             if not bool(confidence_original.success):
@@ -290,6 +300,10 @@ class Adapter:
                 molecule = copy.deepcopy(ligand_template)
                 if self.score_args.remove_hs:
                     molecule = RemoveAllHs(molecule)
+                # The untouched SMILES template may carry a 2D conformer tag.
+                # The model supplies genuine xyz coordinates; advertise their
+                # dimensionality correctly for downstream SDF readers/viewers.
+                molecule.GetConformer().Set3D(True)
                 sdf_path = root / f"rank{rank}.sdf"
                 write_mol_with_coords(molecule, coordinates, str(sdf_path))
                 sdf = sdf_path.read_text(encoding="utf-8")

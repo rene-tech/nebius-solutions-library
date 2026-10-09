@@ -1,0 +1,245 @@
+{
+  "result": {
+    "kind": "private-reference-chat-qualification",
+    "nvidia_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+    "models": {
+      "vlm": "Qwen/Qwen3.6-27B-FP8",
+      "llm": "Qwen/Qwen2.5-14B-Instruct"
+    },
+    "model_revisions": {
+      "vlm": "e89b16ebf1988b3d6befa7de50abc2d76f26eb09",
+      "llm": "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8"
+    },
+    "source_sha256": "2b0d1e14f59f69278c79a49804f154718ca33e981dae35a43d0e729d49a38e79",
+    "source_unchanged": true,
+    "source_frames": 153,
+    "source_resolution": [
+      1920,
+      1080
+    ],
+    "requests": 4,
+    "through_adapters": true,
+    "elapsed_seconds": 31.21862292289734,
+    "public_app_qualified": false,
+    "workbench_qualified": false
+  },
+  "calls": [
+    {
+      "body": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful assistant that describes video scenes.\nYou MUST ONLY describe the scene content itself, never the video quality\nor technical aspects. Respond with plain descriptive text only.\n"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "video_url",
+                "video_url": {
+                  "url": {
+                    "media_type": "video/mp4",
+                    "size_bytes": 2615983,
+                    "sha256": "2b0d1e14f59f69278c79a49804f154718ca33e981dae35a43d0e729d49a38e79"
+                  }
+                }
+              },
+              {
+                "type": "text",
+                "text": "Describe this traffic intersection surveillance footage. Focus on weather conditions, time of day and lighting, road conditions and markings, vehicles present, pedestrians, traffic signals, buildings, and other physical scene elements. If you cannot see something clearly, simply don't mention it. Describe only the scene content.\n"
+              }
+            ]
+          }
+        ],
+        "model": "Qwen/Qwen3.6-27B-FP8",
+        "frequency_penalty": 1.05,
+        "max_tokens": 4096,
+        "stream": false,
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      },
+      "at": 1789895576.1410284,
+      "raw_request_sha256": "0263f4844892916e4ee6d0fdfc81d7a1085a7a821edc7a1f711e6e6754485174",
+      "response": {
+        "status": 200,
+        "content_type": "application/json",
+        "body_sha256": "37679de8d75b45dcda930327c3d1994c7220ebc5e6ef77d1d03b92d2120d58bb"
+      }
+    },
+    {
+      "body": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an expert at writing concise prompts for a video generation model.\nYou are given:\n1. A caption describing the source traffic scene.\n2. Attribute-value pairs describing the desired target conditions.\nGenerate a single natural-language prompt that changes the scene to match the\ntarget attributes while preserving viewpoint, scene layout, vehicle motion,\nand object consistency.\nOutput only a JSON object with a single key \"prompt\" containing the final sentence.\n"
+          },
+          {
+            "role": "user",
+            "content": "Source media caption:\nThe scene depicts a busy urban intersection during what appears to be daytime, given the bright lighting and shadows cast by objects. The weather is clear with no signs of rain or adverse conditions.\n Road Conditions and Markings:\nThe road surface is asphalt, marked with white lines indicating lanes and crosswalks.\nA large yellow grid pattern is painted on the ground in the center of the intersection, likely serving as a no-stopping zone for vehicles to prevent blocking traffic flow.\nThere are multiple traffic lights visible at different corners of the intersection, all showing green signals for vehicular movement across certain directions.\n Vehicles Present:\nSeveral cars are navigating through or waiting at the intersection:\n A red car is seen moving from right to left across one lane.\n Two yellow taxis are present; one is turning left while another waits near the crosswalk area.\n Other vehicles include sedans and SUVs in various colors like black, silver, and blue, some stationary behind stop lines and others actively driving through the junction.\n Pedestrians:\nNo pedestrians are visibly crossing or standing around within this particular frame sequence focused primarily on vehicle activity rather than pedestrian movement though there may be people further away not captured here due to camera angle limitations).\n Traffic Signals & Physical Scene Elements:\nMultiple traffic light poles equipped with signal heads control movements along each approach direction ensuring orderly progression despite heavy congestion levels observed throughout frames provided thus far without any apparent delays caused directly attributable solely towards malfunctioning equipment itself but more so volume issues potentially stemming back upstream somewhere else entirely outside immediate view range available currently being analyzed right now only based upon information gleaned thus far alone nothing else beyond that point forward either way whatsoever regardless how much longer it takes us get done analyzing everything thoroughly before concluding final thoughts altogether completely finished task successfully completed goal achieved objective met requirement satisfied expectation fulfilled desire granted wish answered prayer heard request acknowledged command obeyed order followed instruction carried out directive executed plan implemented strategy deployed tactic utilized method applied technique employed procedure adopted protocol established standard set benchmark reached target hit milestone crossed finish line crossed victory won triumph secured success attained accomplishment realized achievement celebrated honor bestowed recognition awarded praise deserved credit earned respect gained admiration received gratitude expressed appreciation shown thanks given acknowledgment made commendation offered salute rendered bow paid homage tribute honored legacy remembered history preserved memory cherished story told tale narrated legend recounted myth retold fable shared parable imparted lesson taught wisdom passed knowledge transferred understanding conveyed insight revealed truth discovered fact uncovered reality exposed illusion dispelled deception unmasked falsehood debunked lie exposed deceit detected fraud identified scam busted trick spotted ruse uncovered ploy foiled scheme thwarted plot unraveled conspiracy dismantled operation disrupted mission aborted project canceled initiative halted program suspended service interrupted function ceased process stopped action ended event concluded episode closed chapter finished segment completed part done section wrapped up portion concluded piece finalized item resolved issue settled matter addressed problem solved difficulty overcome challenge conquered obstacle surmounted barrier breached hurdle jumped gap bridged divide united conflict resolved dispute settled argument ended disagreement reconciled difference harmonized discord silenced noise quietened chaos calmed turmoil eased tension relaxed stress relieved anxiety alleviated worry diminished fear dispelled doubt eliminated uncertainty removed ambiguity clarified confusion cleared obscurity illuminated darkness lit shadow banished night turned day dawn broke morning arrived sun rose horizon greeted sky welcomed world embraced life celebrated existence cherished being valued soul honored spirit uplifted heart warmed mind enlightened body energized energy boosted vitality enhanced strength increased power amplified force magnified impact intensified effect heightened result maximized outcome optimized performance improved efficiency increased productivity boosted output raised yield grown harvest reaped bounty gathered treasure collected wealth amassed fortune built empire constructed kingdom established dynasty founded lineage created heritage preserved tradition maintained culture sustained society supported community strengthened neighborhood fortified city protected nation defended globe safeguarded universe preserved cosmos maintained eternity endured infinity lasted forever remained always existed never changed constantly stayed perpetually continued endlessly persisted indefinitely survived eternally lived immortally thrived prosperously flourished abundantly bloomed vibrantly radiated brilliantly shone gloriously illuminated brightly dazzled spectacularly amazed wonderfully astonished marvelously enchanted magically captivated mysteriously intrigued curiously fascinated interestingly engaged attentively focused intently concentrated deeply absorbed wholly immersed completely enveloped totally surrounded fully encompassing entirely containing wholly holding securely tightly gripping firmly grasping strongly clutching powerfully embracing passionately loving dearly cherishing tenderly caring gently nurturing softly comforting warmly soothing kindly healing compassionately helping generously giving selflessly sacrificing nobly serving humbly respecting reverently honoring devoutly worshipping faithfully believing steadfastly trusting confidently relying securely depending safely resting peacefully sleeping soundly dreaming happily smiling joyfully laughing gleefully rejoicing exuberantly celebrating enthusiastically cheering loudly applauding vigorously clapping rhythmically drumming melodically singing harmoniously playing musically dancing gracefully moving elegantly flowing smoothly gliding effortlessly floating weightlessly soaring freely flying high ascending upward climbing higher reaching farther extending wider spreading broader covering larger filling fuller satisfying richer nourishing deeper penetrating further exploring farther discovering newer finding fresher uncovering hidden revealing secret exposing concealed hiding protected guarded shielded defended secured locked sealed closed shut tight fastened bound tied knotted woven linked connected joined united merged blended mixed combined fused integrated incorporated assimilated absorbed digested metabolized processed transformed converted altered modified adjusted adapted customized tailored fitted shaped molded crafted designed engineered constructed assembled built erected raised lifted elevated hoisted carried transported moved shifted relocated displaced transferred conveyed delivered handed passed given offered presented provided supplied furnished equipped outfitted armed prepared ready set go start begin commence initiate launch kick off trigger activate ignite spark kindle fuel fire burn blaze flame glow shine radiate emit release discharge eject expel throw cast hurl toss pitch lob sling fling propel drive push shove press squeeze compress crush grind mill crush pulverize shred tear rip split crack break snap fracture shatter smash destroy demolish ruin wreck devastate obliterate annihilate eradicate eliminate remove delete erase wipe clean scrub wash rinse soak drench saturate immerse submerge dive plunge sink drop fall tumble roll slide glide creep crawl slither snake wiggle squirm twist turn rotate spin whirl twirl pivot swing sway rock bounce jump leap hop skip vault hurdle clear overcome surpass exceed outdo beat win conquer triumph succeed achieve accomplish attain realize fulfill complete finish end terminate conclude close wrap up seal lock secure fasten bind tie knot weave link connect join unite merge blend mix combine fuse integrate incorporate assimilate absorb digest metabolize process transform convert alter modify adjust adapt customize tailor fit shape mold craft design engineer construct assemble build erect raise lift elevate hoist carry transport move shift relocate displace transfer convey deliver hand pass give offer present provide supply furnish equip outfit arm prepare ready set go start begin commence initiate launch kick off trigger activate ignite spark kindle fuel fire burn blaze flame glow shine radiate emit release discharge eject expel throw cast hurl toss pitch lob sling fling propel drive push shove press squeeze compress crush grind mill crush pulverize shred tear rip split crack break snap fracture shatter smash destroy demolish ruin wreck devastate obliterate annihilate eradicate eliminate remove delete erase wipe clean scrub wash rinse soak drench saturate immerse submerge dive plunge sink drop fall tumble roll slide glide creep crawl slither snake wiggle squirm twist turn rotate spin whirl twirl pivot swing sway rock bounce jump leap hop skip vault hurdle\n\nAttribute-value pairs:\n  weather_condition: cloudy\n\nGenerate a single sentence prompt from the attribute-value pairs above. Output a JSON object with one key: \"prompt\" (or \"caption\") containing the sentence. No other text."
+          }
+        ],
+        "model": "Qwen/Qwen2.5-14B-Instruct",
+        "frequency_penalty": 1.05,
+        "max_tokens": 4096,
+        "presence_penalty": 0.0,
+        "stream": false,
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      },
+      "at": 1789895600.3404338,
+      "raw_request_sha256": "9cfaeb1d6afe691a22ee1e17eea4298e72e7438a051f2faf2b0a7894b8640b02",
+      "response": {
+        "status": 200,
+        "content_type": "application/json",
+        "body_sha256": "ac8300586c3a3603fe5f18c72541c8bb9aa5fff2c29c7ee67a03c6c75e0b1e5e"
+      }
+    },
+    {
+      "body": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an expert at creating multiple choice verification questions.\nYour task is to generate a simple, direct question that can verify a\nspecific attribute in a video frame. The question must have 2-4 answer\noptions and test for a specific visual attribute. The question should be\nanswerable by looking at a single frame from the video.\nOutput your response as a single JSON object with no additional text or formatting.\n"
+          },
+          {
+            "role": "user",
+            "content": "Generate a verification question for the following variable:\n\nVariable: weather_condition\nReadable label: weather condition\nSelected value: cloudy\nAll possible values: ['cloudy']\n\nCreate ONE multiple choice question that verifies whether the selected value is present in the image.\n\nRequirements:\n1. The question must have 2-4 answer options (A, B, C, D)\n2. The selected value 'cloudy' MUST be one of the options\n3. The question should be simple and direct\n4. Options should include other possible values from the list above\n5. Format the correct answer as a single letter (A, B, C, or D)\n6. CRITICAL: The question text MUST explicitly name the variable or attribute being asked about. Use the readable label above when helpful. Do NOT use vague wording like \"What is shown?\" or \"Which option is correct?\"\n7. Keep the wording domain-agnostic. Do not assume the variable refers to clothing, color, weather, or any other specific use case unless that meaning is already explicit in the variable name or options.\n8. Distractor options must be visually and semantically distinct from the selected value. Do NOT include near-synonyms, parent/child labels, or overlapping color families as distractors. For example, if the selected value is \"olive brown\", do not offer both \"olive\" and \"brown\"; choose one correct option and use clearly different colors as distractors. For garment types, avoid ambiguous pairs such as \"dress\" and \"skirt\" in the same question when one is the correct answer.\n\nOutput MUST be a single JSON object with the following structure:\n{\n    \"variable\": \"weather_condition\",\n    \"value\": \"cloudy\",\n    \"question\": \"Question text?\",\n    \"options\": {\"A\": \"option1\", \"B\": \"option2\", \"C\": \"option3\", \"D\": \"option4\"},\n    \"correct_answer\": \"B\"\n}\n\nDo NOT include any explanatory text, markdown fences, or comments. Output ONLY the JSON object."
+          }
+        ],
+        "model": "Qwen/Qwen2.5-14B-Instruct",
+        "frequency_penalty": 0.0,
+        "max_tokens": 2048,
+        "presence_penalty": 0.0,
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "verification_question",
+            "strict": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "variable": {
+                  "type": "string",
+                  "description": "Name of the variable being verified"
+                },
+                "value": {
+                  "type": "string",
+                  "description": "The selected value to verify"
+                },
+                "question": {
+                  "type": "string",
+                  "description": "The multiple choice question text"
+                },
+                "options": {
+                  "type": "object",
+                  "properties": {
+                    "A": {
+                      "type": "string"
+                    },
+                    "B": {
+                      "type": "string"
+                    },
+                    "C": {
+                      "type": "string"
+                    },
+                    "D": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "A",
+                    "B"
+                  ],
+                  "additionalProperties": false
+                },
+                "correct_answer": {
+                  "type": "string",
+                  "enum": [
+                    "A",
+                    "B",
+                    "C",
+                    "D"
+                  ]
+                }
+              },
+              "required": [
+                "variable",
+                "value",
+                "question",
+                "options",
+                "correct_answer"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "stream": false,
+        "temperature": 0.2,
+        "top_p": 0.95
+      },
+      "at": 1789895602.190254,
+      "raw_request_sha256": "42cb0f5245f8b633c60110f6a10f5629af0a276f917d0c8261951833f54cafe2",
+      "response": {
+        "status": 200,
+        "content_type": "application/json",
+        "body_sha256": "7a605b01b01b76bf61b471cfa576bddb4bcd31f3f08ae8128c6eb7b74fdf6e1b"
+      }
+    },
+    {
+      "body": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an expert vision model tasked with answering multiple choice questions\nabout images. Analyze the image carefully and select the single best answer from\nthe provided options. Respond with ONLY a single letter (A, B, C, or D)\ncorresponding to your answer. Do not include any explanation or additional text.\n"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "What is the weather condition shown in the image?\nA) cloudy\nB) other\n\nAnswer with only a single letter (A, B, C, or D)."
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": {
+                    "media_type": "image/jpeg",
+                    "size_bytes": 896166,
+                    "sha256": "1c8a3d54de140aea69d39ed1a60fe72f3eb018264a511ae97702244078d7832d"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "model": "Qwen/Qwen3.6-27B-FP8",
+        "frequency_penalty": 0.0,
+        "max_tokens": 10,
+        "stream": false,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      },
+      "at": 1789895605.4239538,
+      "raw_request_sha256": "28d1e6d636e1b113c09715fbc197a4490965c02f3451e027d8a2ea53e8b60914",
+      "response": {
+        "status": 200,
+        "content_type": "application/json",
+        "body_sha256": "c0644e6ed200c141c34ef47cff5a68573e32d7f070a75270f15bdee39d1aaee0"
+      }
+    }
+  ],
+  "limitations": [
+    "Private GPU/native adapter qualification, not public App or workbench E2E.",
+    "The retained caption contained repetitive text; no text was cut or rewritten before the original LLM prompt stage.",
+    "The clear-weather source correctly failed the requested cloudy attribute check."
+  ]
+}

@@ -1,0 +1,19 @@
+spec:
+  template:
+    metadata:
+      annotations:
+        fs2.nebius.ai/image-digest: sha256:f8e30440c7296e7d0d36ffd8b6763b06109b05722371a77b757a3f8eea82f053
+    spec:
+      initContainers:
+        - name: wait-schema
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:fb6d32098a2e32853aaac1eb5a6ee117b3212e06ad357aa790668f5450a18179
+      containers:
+        - name: control-plane
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:f8e30440c7296e7d0d36ffd8b6763b06109b05722371a77b757a3f8eea82f053
+          env:
+            - name: FS2_WORKBENCH_EXECUTOR_ENABLED
+              value: "true"
+            - name: FS2_WORKBENCH_RELEASES
+              value: '{"customer-state-20261002-r3":"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:873be148673dec6dc191ba30d2933c01acee4622fd3fa14888388378539f13d3"}'
+            - name: FS2_WORKBENCH_PROTECTED_ENDPOINTS
+              value: '["aiendpoint-e00a5xqzhy0d3zjg56"]'

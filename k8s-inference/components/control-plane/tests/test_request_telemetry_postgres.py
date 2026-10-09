@@ -79,7 +79,17 @@ async def test_sql_incomplete_coverage_tool_errors_and_tenant_window_boundaries(
     store = PostgresRequestTelemetryStore(database.pool)
     owner = await token(database)
     operation_id = await operation(database, owner)
-    complete = observation(operation_id, owner, transport="mcp", mcp_tool="invoke_model", mcp_is_error=True)
+    # Match middleware's protocol-semantic observation; a bare HTTP200 or legacy
+    # boolean alone is intentionally not a classified semantic failure.
+    complete = observation(
+        operation_id,
+        owner,
+        transport="mcp",
+        mcp_tool="invoke_model",
+        mcp_is_error=True,
+        semantic_outcome="failed",
+        admission_stage="pre_admission",
+    )
     partial = observation(operation_id, owner, response_complete=False, response_bytes=None, http_status=503)
     foreign = observation(operation_id, owner, tenant_id="tenant-b")
     old = observation(operation_id, owner, started_at=CONTEXT.from_at - timedelta(seconds=1))
@@ -88,6 +98,7 @@ async def test_sql_incomplete_coverage_tool_errors_and_tenant_window_boundaries(
     usage = await store.usage("qwen3-8b", CONTEXT.from_at, CONTEXT.to_at, "tenant-a")
     assert usage.request_count == 2 and usage.completed_response_count == usage.incomplete_response_count == 1
     assert usage.successful_http_count == usage.failed_http_count == usage.mcp_tool_error_count == 1
+    assert usage.semantic_failed_count == usage.pre_admission_failure_count == 1
     assert usage.response_bytes is None and usage.response_bytes_known_count == 1
     assert usage.request_bytes == 0
     assert usage.status_classes == {"2xx": 1, "5xx": 1}

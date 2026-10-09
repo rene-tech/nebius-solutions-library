@@ -1,0 +1,44 @@
+# CPU-only transfer/evidence helper; no customer route and no GPU allocation.
+# Owner scvi-whitelab-20261006; review/export/cleanup by 2026-10-08.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scvi-whitelab-api-20261006-r2
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  activeDeadlineSeconds: 7200
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: computeinstance-e00k0hdq51xykanvqs
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:493b1a1f9e93e0fa5cde4f77ad00db6cb0d9540fe5c1097ea62d1da35ac7b190
+          command: [python, -c, "import time; time.sleep(7100)"]
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "2", memory: 1Gi}
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: work
+          persistentVolumeClaim:
+            claimName: scvi-whitelab-qualification-20261006

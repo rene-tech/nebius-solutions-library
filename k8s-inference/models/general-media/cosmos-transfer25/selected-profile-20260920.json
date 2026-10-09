@@ -1,0 +1,800 @@
+{
+  "image_digest": "sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+  "manifest_release": "1.0.0",
+  "manifest_sha256": "67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17",
+  "model": "cosmos-transfer2.5",
+  "profile": {
+    "id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+    "tags": {
+      "gpu": "h100",
+      "gpu_device": "2330:10de",
+      "llm_precision": "fp8",
+      "model_type": "transfer2",
+      "nim_workspace_hash_v1": "d485a348fef571a1c6bc69cc25327bcf8606151f46a5abe4da0cc04caa9eab79",
+      "precision": "bf16",
+      "profile": "throughput"
+    },
+    "workspace": {
+      "files": {
+        "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/config.json": {
+          "checksum": "blake3:3cdf8b1aae60f796ff341e648e5f43f22bf99beca5a58b1db106755f34e5f230",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-reason1?file=config.json"
+        },
+        "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/generation_config.json": {
+          "checksum": "blake3:ca6e0d0c637a6cb5d5d7b44142f36d14c039def4cffe35fd42f079c808f184b8",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-reason1?file=generation_config.json"
+        },
+        "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model-00001-of-00004.safetensors": {
+          "checksum": "blake3:b58d58859789c6da69dc65db14c27973e3908fe418611285428298997587d297",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-reason1?file=model-00001-of-00004.safetensors"
+        },
+        "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model-00002-of-00004.safetensors": {
+          "checksum": "blake3:b6391701e31c1b0eab093a2c399e3c47d1694944d3b3d9f0daf63ae82d8befbb",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-reason1?file=model-00002-of-00004.safetensors"
+        },
+        "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model-00003-of-00004.safetensors": {
+          "checksum": "blake3:e831beafc0669764e8b428b1f6931fe24818457cd2e03fdbab584453629f754f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-reason1?file=model-00003-of-00004.safetensors"
+        },
+        "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model-00004-of-00004.safetensors": {
+          "checksum": "blake3:e05f1eca455fb00aa62e98d773dc5c7855427ea21dc038173360eaeb557201f0",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-reason1?file=model-00004-of-00004.safetensors"
+        },
+        "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model.safetensors.index.json": {
+          "checksum": "blake3:0fddbe46f89f46a7f17c3561616bda1061dd2818f7ba015799321fb1c9e63a15",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-reason1?file=model.safetensors.index.json"
+        },
+        "checkpoints/685afcaa-4de2-42fe-b7b9-69f7a2dee4d8.pth": {
+          "checksum": "blake3:e06f132d03ae10bc68a6844f77ad5c89416c05c8adb2be28539a03912a417649",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-predict2?file=tokenizer.pth"
+        },
+        "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/chat_template.json": {
+          "checksum": "blake3:946dbdca15175811faf2bf2bfd4a3c2075fc68ad9e3080be1340e4d136d4efbe",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-vl?file=chat_template.json"
+        },
+        "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/config.json": {
+          "checksum": "blake3:3cdf8b1aae60f796ff341e648e5f43f22bf99beca5a58b1db106755f34e5f230",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-vl?file=config.json"
+        },
+        "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/generation_config.json": {
+          "checksum": "blake3:61dc508eea0c7c92a005d8ba60924280642e2cb28dc4c39529179bb930daa1f6",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-vl?file=generation_config.json"
+        },
+        "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/merges.txt": {
+          "checksum": "blake3:1af09d2fb0802de70033177197c481ae7beea7f01def35ae4e87c9d8df39d653",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-vl?file=merges.txt"
+        },
+        "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/preprocessor_config.json": {
+          "checksum": "blake3:5e5bd90dd16ceecfc81b794159fa261cf40e49e27a92cde45c4c261df3a15757",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-vl?file=preprocessor_config.json"
+        },
+        "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/tokenizer.json": {
+          "checksum": "blake3:b91332ca0c7a5f8e173effc53337026f64f17d4f25ca09205d4c1d5ecae4d621",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-vl?file=tokenizer.json"
+        },
+        "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/tokenizer_config.json": {
+          "checksum": "blake3:535c383f60555ad75fdd8597204fcf66930734f227f66c3ac006bbfa726173db",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-vl?file=tokenizer_config.json"
+        },
+        "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/vocab.json": {
+          "checksum": "blake3:8837532945f70ff1bef751f8011ba713b2d119f4f58ff3765a6fb24001d6c5fe",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-vl?file=vocab.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/README.md": {
+          "checksum": "blake3:bea7db90130f04852c45403a8872c1cf20c40d3e292dc088c83791521b8b1abf",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=README.md"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/custom/blocklist": {
+          "checksum": "blake3:5cabe14cbe7d6ed526286c06c926a6756f87f8626fc1cae58993c092b7917d3e",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fcustom%2Fblocklist"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/exact_match/blocked": {
+          "checksum": "blake3:83b8db5e50fd0392b6fad1ce698dc07e6ce1b66a19c021fee36f367587c0000e",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fexact_match%2Fblocked"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/corpora/wordnet.zip": {
+          "checksum": "blake3:6732be5289a0f3e68ee0d5003996794d19d04f3cef624005e7263fce2b37d9e2",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Fcorpora%2Fwordnet.zip"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab.zip": {
+          "checksum": "blake3:6faf8ba6eb96f9f8f5945133e847f326bbf2199a9ed7880495948223ba01e40d",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab.zip"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/README": {
+          "checksum": "blake3:27660b11cea5d308c8ae2916e0911f0854c2a0759d4923df936cbe8928ef1c2f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2FREADME"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/czech/abbrev_types.txt": {
+          "checksum": "blake3:5acfbcc680f6429bf67e70ccfb0d152ef5b9f546a763867e74deb850711f145b",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fczech%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/czech/collocations.tab": {
+          "checksum": "blake3:bec08214ca534c6d8253086cae209ebecabcfb641d90b6fa41fecd3becfc6874",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fczech%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/czech/ortho_context.tab": {
+          "checksum": "blake3:825ba570352e402ebb6d6beb6cbc2272816f12ceb47a31c1fdea0cc92fc30b7a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fczech%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/czech/sent_starters.txt": {
+          "checksum": "blake3:2bea36cb62e0055154db41ef50f7d4c367357ba92f6ce22fbb6026e4289795b2",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fczech%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/danish/abbrev_types.txt": {
+          "checksum": "blake3:32afa74352b625ff0f096a02af34aab509976b0ea5a52afaf2ab4479c20a8bfe",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fdanish%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/danish/collocations.tab": {
+          "checksum": "blake3:3a05bc74d0cb55cc0026bdbe5df40487afd7c0c26ab6a260a7e49a9b39ca1f5c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fdanish%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/danish/ortho_context.tab": {
+          "checksum": "blake3:dbd98e0ad5a9ebd816c0b6d85259f513775a0a7b56d98f398f74f343d343a7ca",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fdanish%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/danish/sent_starters.txt": {
+          "checksum": "blake3:9cafc8c16580912f60525298fca9fa123ce665d1c2336e4bf7d05e012ada90cf",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fdanish%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/dutch/abbrev_types.txt": {
+          "checksum": "blake3:3325c8ffc4bbc5b825d3806c5a3f9546092bde3c200a4966ba7cbbc849e23404",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fdutch%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/dutch/collocations.tab": {
+          "checksum": "blake3:39a4cb3fe07f56ad5d14807df753232db77dba08fe5f12af6ec75818d11ad7a3",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fdutch%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/dutch/ortho_context.tab": {
+          "checksum": "blake3:deb3b50104b9c6d77ce7cf8042c87818e7437628e2361f13da058a54632d7b56",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fdutch%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/dutch/sent_starters.txt": {
+          "checksum": "blake3:3d5a536f0f2c07ee19ed75adf1bf920e617e313934fd1c83f3ef2680a055727a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fdutch%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/english/abbrev_types.txt": {
+          "checksum": "blake3:e09ccb52b083e4107c4fb437e784813185790deab552e13ba0009fc224e08061",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fenglish%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/english/collocations.tab": {
+          "checksum": "blake3:ecb9eabbea88864e7ea4af1b09320f0bfd2d576b0f8dc0f22e32fae7d3a35b7a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fenglish%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/english/ortho_context.tab": {
+          "checksum": "blake3:34057e8fecb231f69aec7c72e5fc73dceb6907513b4fe187f30c50a79ceff26a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fenglish%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/english/sent_starters.txt": {
+          "checksum": "blake3:13e607a035f8404fedc6c9dc2f19f0789c2328da91f29fe9e26d9ae005d83417",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fenglish%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/estonian/abbrev_types.txt": {
+          "checksum": "blake3:78c5f30e90ca4b93ae457a4a42b284fae41a69210b48bbec07e966292e9be926",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Festonian%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/estonian/collocations.tab": {
+          "checksum": "blake3:418cbdf9a7d4ba84019e19d1a4a76f6dc0c18d19b1e2c2c4d73c106aa8631d3e",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Festonian%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/estonian/ortho_context.tab": {
+          "checksum": "blake3:f274bb82ba58c7272cedd386aab4a96040a2c5171201196ff47fac9d719bf798",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Festonian%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/estonian/sent_starters.txt": {
+          "checksum": "blake3:73dec5d3998dcb7144c366e400765cd66f1913a509a461cbba9c2ccf997e0d71",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Festonian%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/finnish/abbrev_types.txt": {
+          "checksum": "blake3:00321f134ee1576089ddb389d73b2a2aae249785b334f6ff2681bf54e349a5b7",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Ffinnish%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/finnish/collocations.tab": {
+          "checksum": "blake3:06eb0eb2276ac84ce9139280c0a47de57beb43fd4052b5ad4ff5f8fcc0d025c8",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Ffinnish%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/finnish/ortho_context.tab": {
+          "checksum": "blake3:d6df5ab7fa156ac87325df9f20e65e26aefebb18d196f5211362e331a56ff28d",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Ffinnish%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/finnish/sent_starters.txt": {
+          "checksum": "blake3:84cffe7bb88fee2904c855f49f62bafcff3af897a4b8ba526a9a1a24854e99fe",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Ffinnish%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/french/abbrev_types.txt": {
+          "checksum": "blake3:6e14adb279eb4b8d7786076e7a0314e9ffddc1f702614a472599b05aaafce858",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Ffrench%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/french/collocations.tab": {
+          "checksum": "blake3:0b2ee8b3f8520da6425f49d5b6b0e2677b8d12c51965c329b89b384fa9707ce2",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Ffrench%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/french/ortho_context.tab": {
+          "checksum": "blake3:2466c86a89eae7a4163a38f78e4c81c5d573ccbdcae112c0e348d051c53a9f8c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Ffrench%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/french/sent_starters.txt": {
+          "checksum": "blake3:76b998d573cf25f33b7eb45ace55fc1b71be88c8cb2c48e6b1f4257737dec640",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Ffrench%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/german/abbrev_types.txt": {
+          "checksum": "blake3:ff52922cff833866f5cc13ce1535664a25a8ae06ecac8b0e3ca4dd22d53debaf",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fgerman%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/german/collocations.tab": {
+          "checksum": "blake3:015ffe0c97c6e9141bb59867244fa7853135c86a7d901e931f3d0617d0b6b9f6",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fgerman%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/german/ortho_context.tab": {
+          "checksum": "blake3:e9a6040d51e480c0b0ddaf662405807bd82be1bcedf13b7f1e1c118a5d415459",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fgerman%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/german/sent_starters.txt": {
+          "checksum": "blake3:6b1853dea63b628db6ecf32eb1697ad557e34df90aa0210cbf0f7c61158ee75c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fgerman%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/greek/abbrev_types.txt": {
+          "checksum": "blake3:526b8be266c26a49cc59a9161de70bb832f0839aa5b3ddc754953e940b7d595c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fgreek%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/greek/collocations.tab": {
+          "checksum": "blake3:10a1110de746d4b21b2b4009a15eeec3eae5015151613a310a2e13ef50223c16",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fgreek%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/greek/ortho_context.tab": {
+          "checksum": "blake3:7c2d7c357bee3d471801a9c86b8d3a218acc3460825ec7ed81149341ee6e6f01",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fgreek%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/greek/sent_starters.txt": {
+          "checksum": "blake3:a5e4bdec9186ea3e2d62511137157ade69455d2c0ed5752a9ef5eeb1d40b19e9",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fgreek%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/italian/abbrev_types.txt": {
+          "checksum": "blake3:5a47fa336eafd1925353d10185c2bf145d0fd2a2cc3daed5a7586b7d3117d12e",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fitalian%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/italian/collocations.tab": {
+          "checksum": "blake3:3bf412fc88db53908e3db3578e44be7d2c26738e7422c4857af1100be358d06f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fitalian%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/italian/ortho_context.tab": {
+          "checksum": "blake3:53fec885cb46cc99f57fc91fa8218217bc9fb6ca83427d83824f5edf6b61f8b6",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fitalian%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/italian/sent_starters.txt": {
+          "checksum": "blake3:dc31686459e0f24597deca526b96fc04400a5dc8b0cf83f69f2180fe75d2dfc0",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fitalian%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/norwegian/abbrev_types.txt": {
+          "checksum": "blake3:9a31a585beb7573929ad79a1fb2d943314b67f5baa17fd4ba5472db732c9adf0",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fnorwegian%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/norwegian/collocations.tab": {
+          "checksum": "blake3:33ef2207bda124b9af9935cb4dd4bfde9c6dfd5c0d4abeb0d22ae40d0928f77d",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fnorwegian%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/norwegian/ortho_context.tab": {
+          "checksum": "blake3:911ffe4a182024fd00bbcf9d26af1d1dc7e2b25157e634b8a6e62e915bcda3de",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fnorwegian%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/norwegian/sent_starters.txt": {
+          "checksum": "blake3:280100464d712dd082fdd778face431a33145392866b1fbcfab5ad0c3a8c862c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fnorwegian%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/polish/abbrev_types.txt": {
+          "checksum": "blake3:207ee59c6ede502e135eae5bc263f4c5a7b67fa7ccd175e127f5dc0efc69af61",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fpolish%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/polish/collocations.tab": {
+          "checksum": "blake3:f82ad4fed5568e9978ca2f0c0654c65bf81b7993723ce48dc3cd740b662e34fd",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fpolish%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/polish/ortho_context.tab": {
+          "checksum": "blake3:ed694323575c45910ed4079feceb6090576ee94766c60fa1acb4413c3164803c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fpolish%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/polish/sent_starters.txt": {
+          "checksum": "blake3:fb37b490fb2aacce52e01b1c5befbeb5d6eaaa900cc349bb71027976f756ec46",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fpolish%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/portuguese/abbrev_types.txt": {
+          "checksum": "blake3:bab8285a251ba59017a4dae9abc19a717e2e0cf86e3b1f6b57e914910ca9c7aa",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fportuguese%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/portuguese/collocations.tab": {
+          "checksum": "blake3:edf1da706bcee7ff90d368c551d3a03f654572ad8ca755cfe25ba350ba1a795f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fportuguese%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/portuguese/ortho_context.tab": {
+          "checksum": "blake3:2106b513d0709e1317703177c7cd84c4f49ddb9bfc92c02e74e42af0318b90c1",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fportuguese%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/portuguese/sent_starters.txt": {
+          "checksum": "blake3:cedbdc566d378b143cc01a3e848a0370166e484bb4042f1a533cd10943942b43",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fportuguese%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/russian/abbrev_types.txt": {
+          "checksum": "blake3:661cf3bb006c9c885d41728803252a598c8f17406e64383451878f94a4eccda0",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Frussian%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/russian/collocations.tab": {
+          "checksum": "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Frussian%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/russian/ortho_context.tab": {
+          "checksum": "blake3:7c5d3f6888ca22a397bb15604b8fb522cf0a928823f4c8b5343eb4396b5114d5",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Frussian%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/russian/sent_starters.txt": {
+          "checksum": "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Frussian%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/slovene/abbrev_types.txt": {
+          "checksum": "blake3:4775485c351e3a98291ce2731a220d7691575579d193cf79459bf9e3488be2a6",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fslovene%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/slovene/collocations.tab": {
+          "checksum": "blake3:c5707ba56e9982ec1d93d0fc8e679bbf14828f75cfe1048c9497abde8e681d94",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fslovene%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/slovene/ortho_context.tab": {
+          "checksum": "blake3:6062df600fb3ee9200020b20441eddb96b3e5e81bb584b5040c3b07f018f3dbd",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fslovene%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/slovene/sent_starters.txt": {
+          "checksum": "blake3:5a73e9677a52b4d14efeafaa4e46b565ac353cff2ce4dfe5368db3a923faa0ed",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fslovene%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/spanish/abbrev_types.txt": {
+          "checksum": "blake3:23ce91ccd80bc42d257914e16141ce1de0506860f7d2b47752477d24208becd9",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fspanish%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/spanish/collocations.tab": {
+          "checksum": "blake3:47677f4f5d752e948c5ec03ac73fc155f858a37c4e2402f5724e9f831d436392",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fspanish%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/spanish/ortho_context.tab": {
+          "checksum": "blake3:8d7669ba5a08bb223ba9efcf0a746124608f8f890faeedcce89a43d2335361ec",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fspanish%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/spanish/sent_starters.txt": {
+          "checksum": "blake3:0b9f711f1d7ad85858f9089c888eb823e0a7735bb0712a6e6d4caf7cb52a6d3f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fspanish%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/swedish/abbrev_types.txt": {
+          "checksum": "blake3:f172e8c966e7873271c74081364ac4884d0ec5233521a760e7081d985af3ac85",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fswedish%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/swedish/collocations.tab": {
+          "checksum": "blake3:290b18d22cde139cbb1b2a301867d09b69f71050333af1494a7c9ab4bcf8152f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fswedish%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/swedish/ortho_context.tab": {
+          "checksum": "blake3:c03b8343ca4e610842fdf897871b857bd608862a10bf913e0daad05bba76b97f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fswedish%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/swedish/sent_starters.txt": {
+          "checksum": "blake3:8e468a08d5b250d2c76fa4bca1d7fdb645c70e7b0e5d4addf53e5ff01d22afe1",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fswedish%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/turkish/abbrev_types.txt": {
+          "checksum": "blake3:a41541245da22d400e2e079b8944072a1e987328f4cfbccf5e00e241e7ccfd91",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fturkish%2Fabbrev_types.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/turkish/collocations.tab": {
+          "checksum": "blake3:4b8bf300a95a8b7872e3a01e23f17b123dac0b74149e11e94346658433966fc5",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fturkish%2Fcollocations.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/turkish/ortho_context.tab": {
+          "checksum": "blake3:6d60627e2c05427ae2db2b7e9caed7757a80b6d565b6b79e0794ef5e0f0d99ab",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fturkish%2Fortho_context.tab"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/turkish/sent_starters.txt": {
+          "checksum": "blake3:d57ab671054669e63b7cb308b1008dc4f476b4e9c34f8641869fa3e893e02b19",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fnltk_data%2Ftokenizers%2Fpunkt_tab%2Fturkish%2Fsent_starters.txt"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/whitelist/whitelisted": {
+          "checksum": "blake3:429c11f67ca6c3c91562001357fcf13b8b856deed1c07b5ef9c257cb5552a8ea",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=blocklist%2Fwhitelist%2Fwhitelisted"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/face_blur_filter/Resnet50_Final.pth": {
+          "checksum": "blake3:2ba5282b2d444bf3f44c32d14f9fe7e3b1ab9787e5680b4b41afdc8dc8ca22f1",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=face_blur_filter%2FResnet50_Final.pth"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/adapter_config.json": {
+          "checksum": "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2F.no_exist%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fadapter_config.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/added_tokens.json": {
+          "checksum": "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2F.no_exist%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fadded_tokens.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/chat_template.jinja": {
+          "checksum": "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2F.no_exist%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fchat_template.jinja"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/chat_template.json": {
+          "checksum": "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2F.no_exist%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fchat_template.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/processor_config.json": {
+          "checksum": "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2F.no_exist%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fprocessor_config.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/051261b5a784a2e7e5f93de1f86d170d69a9efd9": {
+          "checksum": "blake3:6b9b61151a9dbbcdd17b4480ebc4994dc25463d8b05cfd2c571cddcff5ef5f6b",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fblobs%2F051261b5a784a2e7e5f93de1f86d170d69a9efd9"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/1e5036bed065526c3c212dfbe288752391797c4bb1a284aa18c9a0b23fcaf8ec": {
+          "checksum": "blake3:910a84a9e12120028e4ddaa9ec9ec4baaa83aedc6eed38fb489606616835c330",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fblobs%2F1e5036bed065526c3c212dfbe288752391797c4bb1a284aa18c9a0b23fcaf8ec"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/6555f2261d409dea394d6b6973129a53b8725803": {
+          "checksum": "blake3:9b449b6c9d627eb0a3d34b519bd5339da839cfea741a8790498ccd54f34a6fe6",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fblobs%2F6555f2261d409dea394d6b6973129a53b8725803"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/6d6fd0bd6cc263099dc98e4fa383f90c9baa3521": {
+          "checksum": "blake3:829436c714ff2c19bbf6fb9821b5f2ad0c825f4a35baf651b1910d071a39949d",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fblobs%2F6d6fd0bd6cc263099dc98e4fa383f90c9baa3521"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/70741c5c1f6d21423ebf51ee77ef2fce868c33f2": {
+          "checksum": "blake3:8cdab4ffab4628212098d405f99e80b9c116953fbdc3ee5c084bacd1a04c0402",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fblobs%2F70741c5c1f6d21423ebf51ee77ef2fce868c33f2"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/a513b447f6b05f640f9980d25f4d8a5cff6cd25d": {
+          "checksum": "blake3:dc0871cc16615b480187d343e6ed9c0496d55c6904f647dcd8717902b58c554e",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fblobs%2Fa513b447f6b05f640f9980d25f4d8a5cff6cd25d"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/ea2abad2b7f8a9c1aa5e49a244d5d57ffa71c56f720c94bc5d240ef4d6e1d94a": {
+          "checksum": "blake3:261b68a4a886bbe7e774afff8f9af12cdd8cb7d3df3638e815796d8b6fda5a93",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fblobs%2Fea2abad2b7f8a9c1aa5e49a244d5d57ffa71c56f720c94bc5d240ef4d6e1d94a"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/refs/main": {
+          "checksum": "blake3:3d759758450c1cff2928feeeb92f3cb2c7302b0e46cf04d67926f707f9fdebe0",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Frefs%2Fmain"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/config.json": {
+          "checksum": "blake3:dc0871cc16615b480187d343e6ed9c0496d55c6904f647dcd8717902b58c554e",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fsnapshots%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fconfig.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/model.safetensors": {
+          "checksum": "blake3:261b68a4a886bbe7e774afff8f9af12cdd8cb7d3df3638e815796d8b6fda5a93",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fsnapshots%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fmodel.safetensors"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/preprocessor_config.json": {
+          "checksum": "blake3:6b9b61151a9dbbcdd17b4480ebc4994dc25463d8b05cfd2c571cddcff5ef5f6b",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fsnapshots%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fpreprocessor_config.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/special_tokens_map.json": {
+          "checksum": "blake3:9b449b6c9d627eb0a3d34b519bd5339da839cfea741a8790498ccd54f34a6fe6",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fsnapshots%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fspecial_tokens_map.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/spiece.model": {
+          "checksum": "blake3:910a84a9e12120028e4ddaa9ec9ec4baaa83aedc6eed38fb489606616835c330",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fsnapshots%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fspiece.model"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/tokenizer.json": {
+          "checksum": "blake3:829436c714ff2c19bbf6fb9821b5f2ad0c825f4a35baf651b1910d071a39949d",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fsnapshots%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Ftokenizer.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/tokenizer_config.json": {
+          "checksum": "blake3:8cdab4ffab4628212098d405f99e80b9c116953fbdc3ee5c084bacd1a04c0402",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fsnapshots%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Ftokenizer_config.json"
+        },
+        "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/safety_filter.pt": {
+          "checksum": "blake3:524003ee9a0805cb8e69aafb31df4c0b4beb46c61f43ebd7d28e41b58353e799",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fsafety_filter.pt"
+        },
+        "checkpoints/detect_faces/model.onnx": {
+          "checksum": "blake3:027b2951525cf8d671d562d6296208668bbb903cd0451fc1f26edb858fef123f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-face-detection?file=detect_faces%2Fmodel.onnx"
+        },
+        "checkpoints/diffusion/torch/auto/multiview/b5ab002d-a120-4fbf-a7f9-04af8615710b_ema_bf16.pt": {
+          "checksum": "blake3:4ac5d244375b6e2b888eaa23674a8375cd553a6363d0b9c358c2be227f7b1fac",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2?file=auto%2Fmultiview%2Fb5ab002d-a120-4fbf-a7f9-04af8615710b_ema_bf16.pt"
+        },
+        "checkpoints/diffusion/torch/general/blur/20d9fd0b-af4c-4cca-ad0b-f9b45f0805f1_ema_bf16.pt": {
+          "checksum": "blake3:173ee0d9e9a7930c22a405cea035bc2a54bdc308e3238ad8e7e69e8837e2dc77",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2?file=general%2Fblur%2F20d9fd0b-af4c-4cca-ad0b-f9b45f0805f1_ema_bf16.pt"
+        },
+        "checkpoints/diffusion/torch/general/depth/0f214f66-ae98-43cf-ab25-d65d09a7e68f_ema_bf16.pt": {
+          "checksum": "blake3:20daa094a8b83cb58a2769de52a08ec25d012bdaa75366406c44294177e70f9a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2?file=general%2Fdepth%2F0f214f66-ae98-43cf-ab25-d65d09a7e68f_ema_bf16.pt"
+        },
+        "checkpoints/diffusion/torch/general/edge/ecd0ba00-d598-4f94-aa09-e8627899c431_ema_bf16.pt": {
+          "checksum": "blake3:c37b4c6bcba56bd65bb2877c43e89279260e0de18bb5a776f5fe25f0ff34c236",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2?file=general%2Fedge%2Fecd0ba00-d598-4f94-aa09-e8627899c431_ema_bf16.pt"
+        },
+        "checkpoints/diffusion/torch/general/seg/fcab44fe-6fe7-492e-b9c6-67ef8c1a52ab_ema_bf16.pt": {
+          "checksum": "blake3:6cf8da3f011f47ae81664ab48173da4cdf5956a0928854929e2ac6eb7aecf319",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2?file=general%2Fseg%2Ffcab44fe-6fe7-492e-b9c6-67ef8c1a52ab_ema_bf16.pt"
+        },
+        "checkpoints/diffusion/trt/checksums.blake3": {
+          "checksum": "blake3:422479a39119f088849f581e982973064543b308ca960e5542627a191515d405",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=checksums.blake3"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch0_block0.trt": {
+          "checksum": "blake3:85c47d2eb33c55b9d48fcb7581d5665787f0c202ed951c6d1c407fecae613de3",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch0_block0.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch0_block1.trt": {
+          "checksum": "blake3:c49ee23d12d0dec976c6304ea299e510e6935d0515622cd64a715c19703241e9",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch0_block1.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch0_block2.trt": {
+          "checksum": "blake3:75448bf214e8f5853716c6a9b2fd8887135598667d59d3b90d69da091f388a18",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch0_block2.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch0_block3.trt": {
+          "checksum": "blake3:ff705a3c410709f175d27e45d0ee080c08b1a73ef52d2965bb2ebbc69520c2d6",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch0_block3.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch1_block0.trt": {
+          "checksum": "blake3:36a86ff061b5b3964b3f9ed9c5bd9c3b2abb08fef4958eaf787391102f4ee5ca",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch1_block0.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch1_block1.trt": {
+          "checksum": "blake3:e6409c5defb4bdf80ad559f4b6aa667f4b252a2fde14e3839e3b72f09a4290de",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch1_block1.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch1_block2.trt": {
+          "checksum": "blake3:92549058bdefadad9238a94c9c3927bdf21bc4fb8df8478ff116e8698fa0d74b",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch1_block2.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch1_block3.trt": {
+          "checksum": "blake3:b0681a5abb1f54559ddde5489a3f557e1f08467fb64c3845d3b7ccf7c43d213d",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch1_block3.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch2_block0.trt": {
+          "checksum": "blake3:7bc16dc4001e28a6b6f01a0efaa793ecefb5b618c1212aeec114607ded40303a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch2_block0.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch2_block1.trt": {
+          "checksum": "blake3:9d8f0bb729b76227a38843d9984eb622b040bbc692867327feae8b4458f8f9c0",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch2_block1.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch2_block2.trt": {
+          "checksum": "blake3:777de8fbc91083d1227506a374820bdeb2982bb3f9b923b440337997a3bdc385",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch2_block2.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch2_block3.trt": {
+          "checksum": "blake3:04ef596d51b055736c7677666a896905f41f712135aceb64e50fd5142059e9c0",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch2_block3.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch3_block0.trt": {
+          "checksum": "blake3:971d0405e3c79cf0608e2426f9528f8a0b5d10110cc64f2354de188fb8750abe",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch3_block0.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch3_block1.trt": {
+          "checksum": "blake3:4c89788cd537fa2f584d30689a668d33c5cffa8d573a5908f7fa2a8dd3933810",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch3_block1.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch3_block2.trt": {
+          "checksum": "blake3:ad5334edd99e49824f5ad6b17ab37b5490e60e563661158d929da70c7d07db18",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch3_block2.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch3_block3.trt": {
+          "checksum": "blake3:74ed05cce20e991bc15b550b7f99ba657d1ccc391b19c62b3e9ca7c5d3c9c761",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_controlnet_branch3_block3.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block0.trt": {
+          "checksum": "blake3:480c36e35f64e8d852a89e53e45404b237b015eb4827d09daddd90b7d529308c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block0.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block1.trt": {
+          "checksum": "blake3:d0552948bbf490988f87fb547d08283a183146e1801aa4dd0fd1bd282a7ea619",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block1.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block10.trt": {
+          "checksum": "blake3:26053a0c13797cd18d0bb1c82ed0aa365597c8233341003f949ba321632bb0b8",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block10.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block11.trt": {
+          "checksum": "blake3:53a407d59f267b134e42908ae805cc4c1749bccf0525189c651437568fda17e5",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block11.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block12.trt": {
+          "checksum": "blake3:9a18ed0cc30f1eaabb1b327e019f9ad92924ebfacce509633693d92fa6359bfb",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block12.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block13.trt": {
+          "checksum": "blake3:ae95fb59ee962f95a3aca6a65a2430a791f862b9f3a464f097760e1703dccfb4",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block13.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block14.trt": {
+          "checksum": "blake3:bd76a7c599a684d2e918176a8bd332b17223eb4773ea91b1b3e381f9be1c99c0",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block14.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block15.trt": {
+          "checksum": "blake3:fed7093be7015d7de9befcd73d14e3ac7499469a3b8fb202477cd153ce69ca7c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block15.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block16.trt": {
+          "checksum": "blake3:5533e0fc2efd2a76cccfd2e2876758f16b98d97c896e4d52b3d68c3c09f6f8fd",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block16.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block17.trt": {
+          "checksum": "blake3:5d217bcc114137172008bcc3a2f5f5a82dea32ebfc6fc3563da9c14c98389981",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block17.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block18.trt": {
+          "checksum": "blake3:389d03267a82d0b9dbf53481b0dd05d69a428336f9e15026e2e5504907b32f1a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block18.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block19.trt": {
+          "checksum": "blake3:aa041029e73dc8c62e94594de6383dc0286d87653dd0292e0608144aa86fd7c3",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block19.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block2.trt": {
+          "checksum": "blake3:1df9032e01e8638257d118f22b649b2b9cdefc6c10b4fec0563c058ebac4413f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block2.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block20.trt": {
+          "checksum": "blake3:c98b45e85ddb8aea6f9885384ea2f39fc48e79ebf9732d8c57345b8df3c80dd4",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block20.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block21.trt": {
+          "checksum": "blake3:a99248d099668ca3ce2367adf66e8a34861bac54883774a1085d755036edb04c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block21.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block22.trt": {
+          "checksum": "blake3:4fbe2c16bfc0a0c3da20316887aeccd4cd897a49d61910ff1fa36d376b712cc9",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block22.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block23.trt": {
+          "checksum": "blake3:0fc3fa35fb22c3f34ceee30b1179f1591f0e5d4ab599191695aa432ab3b4c5f8",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block23.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block24.trt": {
+          "checksum": "blake3:794259ff1a41cf328584359694f2085ab94f9a4f1a64897854791f8e0be9266f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block24.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block25.trt": {
+          "checksum": "blake3:a117818f02f2d1c4969d9abfc7b23fe4bd4124fd7a8e1eb976dca4e4c910d82a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block25.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block26.trt": {
+          "checksum": "blake3:2f7ed21b55d393e9906bd8267f59933aea2920acb2df8bfb4062a06f3251ea08",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block26.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block27.trt": {
+          "checksum": "blake3:e414f8f4f03f710805f5e549b1dfa68e08c591be1ded331d8a1f4e0ea1c86d59",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block27.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block3.trt": {
+          "checksum": "blake3:ae23770e5098fcf263af1ae942c13b23230c9d88bd088f6f03eb715af041234a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block3.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block4.trt": {
+          "checksum": "blake3:9ba624d84a7d509f466ebeb9174dc7bfb8e4eb3b1085a4fe0cf38fc2330cc3a3",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block4.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block5.trt": {
+          "checksum": "blake3:88ab1799ccae772a00838c8dadfc45a5f6179bb200a446f750c6ab7eb677097a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block5.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block6.trt": {
+          "checksum": "blake3:203c4e1f25080e6a2350af01acc7267f529629e8e851e01af5e6468000243fba",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block6.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block7.trt": {
+          "checksum": "blake3:f2cd516fe458f988067d46c6e7c3cc63ebc5bf9759f962533500b0b05ffcbd20",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block7.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block8.trt": {
+          "checksum": "blake3:1c2b30143dce43dd762e77e006b14078b5c2bd27d831387a130e2c920c92a223",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block8.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block9.trt": {
+          "checksum": "blake3:45a6ff2d05e75d56f43a716ea9e4eca5ca25335711e8bcaa1d8b4876820b54f5",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fcosmos_transfer2.5_net_block9.trt"
+        },
+        "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/profiles_config.json": {
+          "checksum": "blake3:0511510e95a12b75ef139f692e0fa55c8b0cf0f374451d11b3e9f693d32afe10",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-transfer2.5-multicontrol-v3-bf16-h100?file=trt_edge_vis_depth_seg_2B_BF16%2Fsm90%2Fprofiles_config.json"
+        },
+        "checkpoints/qwen_guard_filter/added_tokens.json": {
+          "checksum": "blake3:2cf6d418c6fbdf1002590b46ffb92c7a1b97d09a661b41c09d05408066d33cfb",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fadded_tokens.json"
+        },
+        "checkpoints/qwen_guard_filter/chat_template.jinja": {
+          "checksum": "blake3:cc9b63b73bb882f1463a4bf967d3e2573265d88c04d16e4f1dae580a74590954",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fchat_template.jinja"
+        },
+        "checkpoints/qwen_guard_filter/config.json": {
+          "checksum": "blake3:e89d442f0664f5a8ec10859f1abcdc91a8b388193a1ad1abfb0b6b03b7ad8394",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fconfig.json"
+        },
+        "checkpoints/qwen_guard_filter/generation_config.json": {
+          "checksum": "blake3:105446346dffbff573ba5a664d366cbc30bb4f902d98107dde4dda41c8a9889c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fgeneration_config.json"
+        },
+        "checkpoints/qwen_guard_filter/hf_quant_config.json": {
+          "checksum": "blake3:457307fb1b81583335d834e0ffa5308f7a4597d7b59b9eb5d41f309a169d79cf",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fhf_quant_config.json"
+        },
+        "checkpoints/qwen_guard_filter/merges.txt": {
+          "checksum": "blake3:d001c4a60d63753a91a47bc85f6469b3faf91d3c7ebf8531b0a88f465fbc6306",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fmerges.txt"
+        },
+        "checkpoints/qwen_guard_filter/model.safetensors": {
+          "checksum": "blake3:ec3d91be226af426fe582d3939aa8ead41a2b5b638f181603dca5bf7448a4eea",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fmodel.safetensors"
+        },
+        "checkpoints/qwen_guard_filter/modelopt_model.pth": {
+          "checksum": "blake3:44131dfc73297094417e3b0e7bf1fc52dbf128440468c086a43feda1d9f22b7f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fmodelopt_model.pth"
+        },
+        "checkpoints/qwen_guard_filter/special_tokens_map.json": {
+          "checksum": "blake3:8562e30a08b89d1f192ab2afcb7bbed9cde6a6b38c6180fff900f3a584157e50",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fspecial_tokens_map.json"
+        },
+        "checkpoints/qwen_guard_filter/tokenizer.json": {
+          "checksum": "blake3:b0cb923fc505fdf0a53f0287654fa26577d3f333d4134350da0a97664b228739",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Ftokenizer.json"
+        },
+        "checkpoints/qwen_guard_filter/tokenizer_config.json": {
+          "checksum": "blake3:4e4710c586ae19db2a546db83e077ff99e9dbe93055d4b0d32833130b0bdba0b",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Ftokenizer_config.json"
+        },
+        "checkpoints/qwen_guard_filter/vocab.json": {
+          "checksum": "blake3:8837532945f70ff1bef751f8011ba713b2d119f4f58ff3765a6fb24001d6c5fe",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-qwen-guard?file=qwen_guard_filter%2Fvocab.json"
+        },
+        "checkpoints/siglip_filter/model.onnx": {
+          "checksum": "blake3:eaee9d4acbd9e15ae6b84055de91420bbb889d8863f1faba977465dc7d23c19a",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-siglip?file=siglip_filter%2Fmodel.onnx"
+        },
+        "checkpoints/siglip_filter_processor/preprocessor_config.json": {
+          "checksum": "blake3:6b9b61151a9dbbcdd17b4480ebc4994dc25463d8b05cfd2c571cddcff5ef5f6b",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-guardrail?file=video_content_safety_filter%2Fmodels--google--siglip-so400m-patch14-384%2Fsnapshots%2F9fdffc58afc957d1a03a25b10dba0329ab15c2a3%2Fpreprocessor_config.json"
+        },
+        "depth_anything_v2/config.json": {
+          "checksum": "blake3:8570d9106b5545fe7437e3e4eadd7f20f7f555551b7e9d8d21a574bbad5ff3f1",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-depth-anything-v2?file=config.json"
+        },
+        "depth_anything_v2/model.safetensors": {
+          "checksum": "blake3:0976658e243d85f35d1eded94294074cae19110b690526b63c4dcd6e5b14fd60",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-depth-anything-v2?file=model.safetensors"
+        },
+        "depth_anything_v2/preprocessor_config.json": {
+          "checksum": "blake3:62d920e5791bb5e7c650debd647af7009c8a030f4adad7d1b3c0be21e98008f5",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-depth-anything-v2?file=preprocessor_config.json"
+        },
+        "grounding_dino/config.json": {
+          "checksum": "blake3:c8c72a504fe30955a8bdd5c7944b7bf13d4566defaa823ccdfbd53b6d5fae78c",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-grounding-dino?file=config.json"
+        },
+        "grounding_dino/model.safetensors": {
+          "checksum": "blake3:a943d8611bc998b608e9fa9f37a62a58f9e49d5b0652940fd8f7b6b066394b43",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-grounding-dino?file=model.safetensors"
+        },
+        "grounding_dino/preprocessor_config.json": {
+          "checksum": "blake3:90fcfa7668303d3002fbc17f4722fccd16b8ef4681e8a2bc1eefd8db467e66a1",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-grounding-dino?file=preprocessor_config.json"
+        },
+        "grounding_dino/special_tokens_map.json": {
+          "checksum": "blake3:a18633786802dd5a6c0bd6b1a99ea58d6c846b73efd862830fdb86318943fdff",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-grounding-dino?file=special_tokens_map.json"
+        },
+        "grounding_dino/tokenizer.json": {
+          "checksum": "blake3:6e933bf59db40b8b2a0de480fe5006662770757e1e1671eb7e48ff6a5f00b0b4",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-grounding-dino?file=tokenizer.json"
+        },
+        "grounding_dino/tokenizer_config.json": {
+          "checksum": "blake3:381e3d3740d1fe00d6af4f0a474178244c9fb4584e4ac224627eee6f3e404b44",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-grounding-dino?file=tokenizer_config.json"
+        },
+        "grounding_dino/vocab.txt": {
+          "checksum": "blake3:29a772c92cf4b7bc8f4c52d801f03d36ad8528ef964f856dadc4c4e7cb14e451",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-grounding-dino?file=vocab.txt"
+        },
+        "sam2/sam2_hiera_large.pt": {
+          "checksum": "blake3:f3117c5c46871e6f268802952b2393ebd1a317d73b292ba244121ea82473c98f",
+          "uri": "ngc://nim/nvidia/cosmos-transfer2.5-2b:1.0.0-sam2?file=sam2_hiera_large.pt"
+        }
+      }
+    }
+  },
+  "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+  "schema": "fs2-serve.nebius.ai/nim-selected-profile/v1"
+}

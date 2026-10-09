@@ -80,6 +80,10 @@ export function AppsPage() {
         {formatTimestamp(params.get("to"))}, not polls or idempotent replays.
         Last used is retained across windows.
       </p>
+      <p className="supporting-copy">
+        Last qualification is recorded acceptance evidence, not a fresh live
+        health or current-release verification.
+      </p>
       {creating ? (
         <form
           className="panel form-grid"
@@ -161,6 +165,7 @@ export function AppsPage() {
                     <th>App</th>
                     <th>Model / route</th>
                     <th>Status</th>
+                    <th>Last qualification</th>
                     <th>Execution</th>
                     <th>Runs in window</th>
                     <th>Last used</th>
@@ -193,6 +198,24 @@ export function AppsPage() {
                         <span className="mini-chip">{app.status}</span>
                         <span className="secondary-line">
                           {app.status_reason}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="mini-chip">
+                          {app.customer_readiness
+                            ? `Recorded verdict: ${app.customer_readiness.verdict}`
+                            : "No recorded qualification"}
+                        </span>
+                        {app.customer_readiness && <span className="secondary-line">
+                          Tested source: <code title={app.customer_readiness.source_revision}>
+                            {app.customer_readiness.source_revision.slice(0, 12)}
+                          </code>
+                          {" · "}Evidence evaluated {app.customer_readiness.evaluated_at}
+                        </span>}
+                        <span className="secondary-line">
+                          {app.customer_readiness
+                            ? `${app.customer_readiness.capabilities.filter((item) => item.required && item.state === "qualified").length} / ${app.customer_readiness.capabilities.filter((item) => item.required).length} required capabilities recorded as qualified`
+                            : "No acceptance evidence is attached"}
                         </span>
                       </td>
                       <td>

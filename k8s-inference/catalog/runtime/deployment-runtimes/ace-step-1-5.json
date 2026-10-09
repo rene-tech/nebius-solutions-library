@@ -1,0 +1,215 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "ace-step-1-5",
+  "variant_id": "ace-step-1-5-l40s-4b-v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "ace-step-1-5",
+      "display_name": "ACE-Step 1.5",
+      "family": "music-generation",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "ACE-Step/Ace-Step1.5",
+        "revision": "19671f406d603126926c1b7e2adc169acbcade22",
+        "license": {
+          "id": "MIT",
+          "state": "verified",
+          "notes": "The exact ACE-Step 1.5 model card and upstream runtime source declare the MIT license."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Both exact Hugging Face revisions are public and ungated; no provider credential is required."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "ace-step-1.5.0-code-dce6214-vllm4b-fs2-v1",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-models/general-media/ace-step-1-5-runtime@sha256:95652cd780c78a1b1a7f6f0335530430f0ae53d96c7c12d59f9f39fa23d38567",
+        "digest": "sha256:95652cd780c78a1b1a7f6f0335530430f0ae53d96c7c12d59f9f39fa23d38567",
+        "state": "resolved"
+      },
+      "command": [
+        "/app/docker-entrypoint.sh"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 8000,
+      "memory_bytes": 38654705664,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-L40S-48GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "generate-music"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "allowed"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "No clean L40S GPU snapshot capture and restore cohort has been qualified for this image."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "fs2-serve-localizer",
+      "shared_path": "/mnt/fs2-serve-cache/models/ace-step-1-5",
+      "local_path": "/var/lib/fs2-serve/cache/models/ace-step-1-5",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "5ce06a5fe70423245a3b554f3ae52badeed5b0c0891164695b5f89be75b5b407",
+        "expanded_bytes": 14762776489,
+        "minimum_bytes": 14762776489,
+        "capacity_bound_bytes": 68719476736,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "ace-step-1-5-two-instrumental-wavs-and-invalid-duration/v1",
+      "source_path": "k8s-inference/acceptance/ace-step-20260920/qualify.py",
+      "source_sha256": "47295778da625fc66c441fb26b2e0100c608a4e49c877901f50f0436023b7396",
+      "fixture_path": "k8s-inference/acceptance/ace-step-20260920/qualify.py",
+      "fixture_sha256": "47295778da625fc66c441fb26b2e0100c608a4e49c877901f50f0436023b7396",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "Text-to-music generation is bounded to one 10\u201360 second WAV per request and serialized per L40S replica.",
+        "Generated music is model output; review audio quality and third-party rights before publication.",
+        "Only the pinned turbo diffusion model, pinned 4B planning model, vLLM backend and one L40S are qualified. Other GPUs, snapshots, elasticity and scale-to-zero remain separate gates."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA L40S 48 GB / driver 580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "00955439b043cc482ed76f2f729926284cb04833",
+        "summary": "Two distinct 12-second instrumental requests returned complete PCM WAV files and an out-of-contract duration was rejected. acceptance/ace-step-20260920/evidence/ace-step-kubernetes.json SHA256 f0fc8c80581ddcaee4e56718185d369d1615ad58844b13f2a9ac15b94585c8ef. Public gateway and MCP are not covered by this direct-Service evidence."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "00955439b043cc482ed76f2f729926284cb04833",
+        "tree": "3f7aefe788cd1d2a06b91a1a69858b93afb053d6",
+        "path": "k8s-inference/models/general-media/ace-step",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://huggingface.co/ACE-Step/Ace-Step1.5/tree/19671f406d603126926c1b7e2adc169acbcade22",
+        "revision": "19671f406d603126926c1b7e2adc169acbcade22",
+        "classification": "reviewed-input"
+      },
+      {
+        "url": "https://huggingface.co/ACE-Step/acestep-5Hz-lm-4B/tree/0a3ec94b557aea7d508da38b31cfe7341f6ff737",
+        "revision": "0a3ec94b557aea7d508da38b31cfe7341f6ff737",
+        "classification": "reviewed-input"
+      },
+      {
+        "url": "https://github.com/ace-step/ACE-Step-1.5/tree/dce621408bee8c31b4fcf4811682eb9359e1bc94",
+        "revision": "dce621408bee8c31b4fcf4811682eb9359e1bc94",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "qualification": {
+    "model_id": "ace-step-1-5",
+    "variant_id": "ace-step-1-5-l40s-4b-v1",
+    "active_runtime": {
+      "model_revision": "19671f406d603126926c1b7e2adc169acbcade22",
+      "runtime_image_digest": "sha256:95652cd780c78a1b1a7f6f0335530430f0ae53d96c7c12d59f9f39fa23d38567",
+      "service": {
+        "name": "ace-step-1-5",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "ace-step-1-5-l40s-4b-v1",
+      "source_kind": "huggingface",
+      "repository": "ACE-Step/Ace-Step1.5",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "not-applicable"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": false,
+      "elasticity_qualified": false
+    },
+    "policy": {
+      "license_id": "MIT",
+      "non_clinical": false,
+      "commercial_use": "allowed"
+    },
+    "evidence": {
+      "audited_catalog_sha256": "3e62475ce484705dfb28f0f568b5d6311956c645cc51a4f10030cbb9716c9ecc",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "f0fc8c80581ddcaee4e56718185d369d1615ad58844b13f2a9ac15b94585c8ef"
+    }
+  }
+}

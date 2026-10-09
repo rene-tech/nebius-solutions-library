@@ -12,7 +12,7 @@ for dependency in ("numpy", "torch", "yaml"):
     sys.modules.setdefault(dependency, ModuleType(dependency))
 
 from adapters.diffdock import Adapter as DiffDockAdapter  # noqa: E402
-from adapters.proteinmpnn import Adapter as ProteinMPNNAdapter  # noqa: E402
+from adapters.proteinmpnn import Adapter as ProteinMPNNAdapter, validated_chain_output  # noqa: E402
 
 
 def test_proteinmpnn_native_response_is_real_sample_data_not_fs2_envelope() -> None:
@@ -95,3 +95,41 @@ def test_frozen_proteinmpnn_validator_accepts_the_native_projection() -> None:
     )
     invariant = validator._validate_response(response, 2370)
     assert invariant["probability_shape"] == [1, 76, 21]
+
+
+def test_proteinmpnn_unresolved_gap_is_retained_with_exact_position() -> None:
+    chain = validated_chain_output("A", "ACXEF", "ADXGF", [1, 1, 0, 1, 1])
+    assert chain["sequence"] == "ACXEF"
+    assert chain["unresolved_sequence_positions_1based"] == [3]
+    assert chain["incomplete_backbone_positions_1based"] == [3]
+
+
+def test_proteinmpnn_resolved_position_cannot_become_x() -> None:
+    import pytest
+    with pytest.raises(RuntimeError, match="unexpected X"):
+        validated_chain_output("A", "ACXEF", "ADCGF", [1, 1, 1, 1, 1])
+
+
+def test_proteinmpnn_missing_position_cannot_be_invented() -> None:
+    import pytest
+    with pytest.raises(RuntimeError, match="nondesignable"):
+        validated_chain_output("A", "ACAEF", "ADXGF", [1, 1, 0, 1, 1])
+
+
+def test_proteinmpnn_known_partial_residue_remains_native() -> None:
+    chain = validated_chain_output("A", "RCDEF", "RACDE", [0, 1, 1, 1, 1])
+    assert chain["incomplete_backbone_positions_1based"] == [1]
+    assert chain["unresolved_sequence_positions_1based"] == []
+
+
+def test_proteinmpnn_incomplete_backbone_is_machine_readable_in_native_response() -> None:
+    chain = validated_chain_output("A", "ACXEF", "ADXGF", [1, 1, 0, 1, 1])
+    output = {"seed": 1, "designed_chains": ["A"], "native_sequence": "ADXGF",
+              "sequences": [{"sample": 1, "sequence": "ACXEF", "score": 0.5,
+                             "global_score": 0.6, "seq_recovery": 0.4,
+                             "probabilities": [[0] * 21] * 5, "chains": [chain]}]}
+    response = ProteinMPNNAdapter().render_native_response("/biology/ipd/proteinmpnn/predict", {}, output)
+    assert "ACXEF" in response["mfasta"]
+    assert response["backbone_coverage"]["complete"] is False
+    assert response["backbone_coverage"]["chains"][0]["unresolved_sequence_positions_1based"] == [3]
+    assert response["warnings"][0]["code"] == "incomplete_backbone"

@@ -85,7 +85,28 @@ def test_native_semantics_validate_with_only_installed_repository_mirror(archive
 def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive):
     augmented = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
     assert len(archive.records) == 16
-    assert set(augmented.records) == set(archive.records) | {"phenoage", "altumage"}
+    assert set(augmented.records) == set(archive.records) | {
+        "phenoage",
+        "altumage",
+        "admet-ai",
+        "ctoxpred2",
+        "nemotron-speech-en-0-6b",
+        "nemotron-speech-en-medical-0-6b",
+        "nemotron-speech-multilingual-0-6b",
+        "parakeet-realtime-eou-120m-v1",
+        "magpie-tts-multilingual-357m",
+        "diar-streaming-sortformer-4spk-v2-1",
+        "cellpose-cpsam-v2",
+        "scvi-scanvi",
+        "sam2-1-hiera-large",
+        "wan2-2-t2v-nim",
+        "wan2-2-i2v-nim",
+        "cosmos-transfer2-5-2b",
+        "qwen3-6-27b-fp8",
+        "ace-step-1-5",
+        "mindguard-4b",
+        "mindguard-8b",
+    }
     assert augmented.digest == archive.digest
     assert augmented.tested_model_ids == archive.tested_model_ids
     assert augmented.blocked_candidate_ids == archive.blocked_candidate_ids
@@ -136,6 +157,32 @@ def test_native_graph_is_exact_source_cpu_formula_or_cuda_weights_without_routes
     assert augmented.model("altumage").to_dict()["resources"]["gpu"]["b300_state"] == "unverified"
 
 
+def test_wan_nim_profiles_keep_exact_source_and_platform_pvc_acquisition(archive):
+    augmented = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
+    for model_id in ("wan2-2-t2v-nim", "wan2-2-i2v-nim", "cosmos-transfer2-5-2b"):
+        value = augmented.model(model_id).to_dict()
+        (variant,) = augmented.variants_for(model_id)
+        plan = augmented.acquisition_plan(model_id)
+        assert variant.to_dict()["variant_kind"] == "nim"
+        assert variant.to_dict()["relationship"]["nim_artifact_parity"] == "verified"
+        assert variant.to_dict()["source"] == value["model"]["source"]
+        assert value["cache"]["owner"] == "platform-pvc"
+        assert value["cache"]["artifact"]["kind"] == "nim-cache"
+        assert plan.method == "provider-block-pvc"
+        assert plan.to_dict()["artifact_manifest_sha256"] == value["cache"]["artifact"]["manifest_digest"]
+
+
+def test_ace_step_uses_localizer_owned_provider_block_pvc(archive):
+    augmented = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
+    value = augmented.model("ace-step-1-5").to_dict()
+    plan = augmented.acquisition_plan("ace-step-1-5")
+    assert value["runtime"]["kind"] == "custom"
+    assert value["cache"]["owner"] == "fs2-serve-localizer"
+    assert value["cache"]["artifact"]["kind"] == "weights"
+    assert plan.method == "provider-block-pvc"
+    assert plan.to_dict()["artifact_manifest_sha256"] == value["cache"]["artifact"]["manifest_digest"]
+
+
 def test_registry_selected_native_records_share_bootstrap_identity_but_do_not_grant_routes(archive, tmp_path):
     entries = selected_entries()
     actual = registry(CATALOG_ROOT, tmp_path, archive, entries=entries)
@@ -168,7 +215,7 @@ def test_original_binding_validation_precedes_native_projection(archive, native_
         (("record", "model", "id"), "molmim", "alias or replace"),
         (("variant_id",), "molmim-exact-weights-portable", "alias or replace"),
         (("runtime_architecture",), "cuda", "architecture differs"),
-        (("runtime_architecture",), "blackwell-sm103", "cpu or cuda"),
+        (("runtime_architecture",), "blackwell-sm103", "cpu, cuda or vendor-nim"),
         (("record", "support", "route_exposed"), True, "claims static routing"),
         (("record", "semantic_validator", "fixture_sha256"), hashlib.sha256(b"wrong").hexdigest(), "digest mismatch"),
         (("semantic_requests", "serialization"), "unspecified", "exact request contract"),

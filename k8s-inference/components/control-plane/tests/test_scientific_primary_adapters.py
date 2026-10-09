@@ -215,7 +215,7 @@ def output_manifest(items: list[tuple[str, str, str, bytes]]) -> tuple[dict[str,
                             "text/csv"
                             if semantic_type.endswith("csv/v1")
                             else "application/json"
-                            if semantic_type.endswith("analysis/v1")
+                            if semantic_type.endswith(("analysis/v1", "json/v1"))
                             else "chemical/x-mmcif"
                             if content.startswith(b"data_")
                             else "chemical/x-pdb"
@@ -230,10 +230,49 @@ def output_manifest(items: list[tuple[str, str, str, bytes]]) -> tuple[dict[str,
 
 
 def proteina_output_manifest(results: bytes) -> tuple[dict[str, object], dict[str, bytes]]:
+    import csv
+
+    reader = csv.DictReader(io.StringIO(results.decode()))
+    row = next(reader)
+    row.update(
+        self_sequence="A",
+        generated_structure_artifact="structure.1",
+        self_refolded_structure_artifact="self-refolded.1",
+    )
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=list(row), lineterminator="\n")
+    writer.writeheader()
+    writer.writerow(row)
+    digest = hashlib.sha256(pdb_bytes()).hexdigest()
+    provenance = {
+        "schema_version": proteina_complexa.PROVENANCE_SCHEMA,
+        "source_revision": proteina_complexa.SOURCE_REVISION,
+        "request_sha256": proteina_complexa.canonical_digest(fixture("proteina-complexa", "positive-protein.json")),
+        "designs": [
+            {
+                "id_gen": row["id_gen"],
+                "sequence_sha256": hashlib.sha256(b"A").hexdigest(),
+                "results_artifact": "results.1",
+                "results_row_sha256": proteina_complexa.canonical_digest(row),
+                "metric_prefix": "self_",
+                "refolding_model": "AlphaFold2",
+                "relaxation": "not-claimed",
+                "generated": {"artifact_name": "structure.1", "sha256": digest, "binder_chain": "B"},
+                "self_refolded": {"artifact_name": "self-refolded.1", "sha256": digest, "binder_chain": "B"},
+            }
+        ],
+    }
     return output_manifest(
         [
-            ("design-1-structure", "protein-complex-structure/v1", "proteina.structure.1", pdb_bytes()),
-            ("results.1", "proteina-complexa-results-csv/v1", "proteina.results.1", results),
+            ("structure.1", proteina_complexa.RAW_STRUCTURE_TYPE, "proteina.structure.1", pdb_bytes()),
+            ("self-refolded.1", proteina_complexa.REFOLDED_STRUCTURE_TYPE, "proteina.refolded.1", pdb_bytes()),
+            ("results.1", "proteina-complexa-results-csv/v1", "proteina.results.1", output.getvalue().encode()),
+            (
+                "design-provenance",
+                proteina_complexa.PROVENANCE_TYPE,
+                "proteina.provenance",
+                json.dumps(provenance).encode(),
+            ),
         ]
     )
 
@@ -411,9 +450,11 @@ def test_catalog_recipe_hashes_retain_the_accepted_source_and_canonical_workload
         candidate = profile(model_id)
         identity = candidate["execution_identity"]
         workload = candidate["workload"]
-        fragment = json.loads((
-            SOLUTION_ROOT / "models/cancer-immunotherapy/runtime-images" / model_id / "activation/fragment.json"
-        ).read_text())
+        fragment = json.loads(
+            (
+                SOLUTION_ROOT / "models/cancer-immunotherapy/runtime-images" / model_id / "activation/fragment.json"
+            ).read_text()
+        )
         # These accepted receipts bind their producing source, not every future
         # control-plane authorization revision. Do not overwrite historical
         # qualification with a hash of today's customer access implementation.
@@ -421,7 +462,36 @@ def test_catalog_recipe_hashes_retain_the_accepted_source_and_canonical_workload
         assert recipe["source_revision"] == "897c04aafbb4bb7b1879ae459527caf70aeeb94e"
         assert recipe["algorithm"] == "fs2-path-set-sha256-v1"
         assert "components/control-plane/src/fs2_serve/scientific_batch/execution.py" in recipe["paths"]
-        assert identity == fragment["profile_projection"]["profile"]["execution_identity"]
+        historical = fragment["profile_projection"]["profile"]
+        historical_identity = historical["execution_identity"]
+        historical_workload = json.dumps(historical["workload"], separators=(",", ":"), sort_keys=True).encode()
+        assert historical_identity["workload_recipe_sha256"] == hashlib.sha256(historical_workload).hexdigest()
+        # Successors retain these historical receipts, but must not inherit
+        # their qualification or pretend to be the same execution identity.
+        receipt_name = (
+            "variant-h100-20260919.json" if model_id == "proteina-complexa" else "protocol-repair-20260919.json"
+        )
+        evidence_path = (
+            SOLUTION_ROOT / "models/cancer-immunotherapy/runtime-images" / model_id / "qualification" / receipt_name
+        )
+        evidence_bytes = evidence_path.read_bytes()
+        evidence = json.loads(evidence_bytes)
+        assert candidate["qualification"]["h100_semantic_receipt_sha256"] == hashlib.sha256(evidence_bytes).hexdigest()
+        assert evidence["image"].endswith("@" + identity["runtime_image_digest"])
+        assert identity != historical_identity
+        assert candidate["state"] == "active"
+        assert candidate["qualification"]["public_completion_receipt_sha256"] is None
+        assert candidate["qualification"]["scheduler_eligibility_receipt_sha256"] is None
+        if model_id == "boltzgen":
+            assert identity["runtime_recipe_sha256"] == evidence["runtime_recipe_sha256"]
+        else:
+            publication = json.loads(
+                (evidence_path.parents[1] / "variant-repair-publication-r4-20260918.json").read_text()
+            )
+            assert publication["source_commit"] == evidence["source_commit"]
+            assert publication["index_digest"] == identity["runtime_image_digest"]
+            assert publication["upstream_source_revision"] == identity["model_revision"]
+            assert evidence["execution_pass"] is True
         workload_bytes = json.dumps(workload, separators=(",", ":"), sort_keys=True).encode()
         workload_hash = hashlib.sha256(workload_bytes).hexdigest()
         assert identity["workload_recipe_sha256"] == workload_hash
@@ -461,10 +531,8 @@ def test_proteina_commands_and_artifact_handoffs_are_exact_and_shell_free() -> N
             "--",
         )
         assert invocation.argv[3:5] == ("complexa", stage_id)
-        config_index = 5
-        if stage_id == "filter":
-            assert invocation.argv[5] == "--verbose"
-            config_index = 6
+        assert invocation.argv[5] == "--verbose"
+        config_index = 6
         assert invocation.argv[config_index] == "/opt/fs2/source/configs/search_ligand_binder_local_pipeline.yaml"
         assert invocation.argv[0] not in {"sh", "bash"}
         assert invocation.consumes == (previous,)
@@ -511,6 +579,11 @@ def test_proteina_filter_reuses_generated_workspace_without_a_gpu(
 ) -> None:
     request = fixture("proteina-complexa", "positive-protein.json")
     request["parameters"]["variant"] = variant
+    request["parameters"]["target_id"] = {
+        "protein-target": "02_PDL1",
+        "ligand-target": "39_7V11_LIGAND",
+        "ame": "M0024_1nzy_og",
+    }[variant]
     parameters = request["parameters"]
     result = proteina_complexa.compile_run(
         profile("proteina-complexa"),
@@ -523,6 +596,8 @@ def test_proteina_filter_reuses_generated_workspace_without_a_gpu(
         f"++run_name={parameters['run_name']}",
         f"++generation.task_name={parameters['target_id']}",
         f"++seed={parameters['seed']}",
+        f"++generation.args.nsteps={parameters['diffusion_steps']}",
+        f"++generation.dataloader.dataset.nres.nsamples={parameters['num_samples']}",
     )
     assert filter_invocation.argv[3:] == (
         "complexa",
@@ -535,8 +610,8 @@ def test_proteina_filter_reuses_generated_workspace_without_a_gpu(
     assert result.controller_plan.stage("filter").resource_class is ResourceClass.CPU
 
     for invocation in (result.invocations[0], *result.invocations[2:]):
-        assert invocation.argv[6:9] == common_overrides
-        assert "--verbose" not in invocation.argv
+        assert invocation.argv[7:12] == common_overrides
+        assert invocation.argv[5] == "--verbose"
         assert not any(argument.startswith("++root_path=") for argument in invocation.argv)
 
 
@@ -549,6 +624,11 @@ def test_proteina_runtime_dependencies_are_variant_specific_and_operation_isolat
     for variant, weight_artifact, folding_artifact in cases:
         request = fixture("proteina-complexa", "positive-protein.json")
         request["parameters"]["variant"] = variant
+        request["parameters"]["target_id"] = {
+            "protein-target": "02_PDL1",
+            "ligand-target": "39_7V11_LIGAND",
+            "ame": "M0024_1nzy_og",
+        }[variant]
         first = proteina_complexa.compile_run(profile("proteina-complexa"), request, operation_id=f"op-{variant}-one")
         second = proteina_complexa.compile_run(profile("proteina-complexa"), request, operation_id=f"op-{variant}-two")
         assert first.invocations[0].working_directory != second.invocations[0].working_directory
@@ -950,14 +1030,8 @@ def test_public_payloads_contain_only_logical_artifact_identity() -> None:
 
 def test_proteina_semantics_bind_request_structure_and_finite_metrics() -> None:
     request = fixture("proteina-complexa", "positive-protein.json")
-    structure = pdb_bytes()
     results = b"id_gen,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self\ndesign-1,0.81,4.2,1.1\n"
-    manifest, blobs = output_manifest(
-        [
-            ("design-1-structure", "protein-complex-structure/v1", "proteina.structure.1", structure),
-            ("results.1", "proteina-complexa-results-csv/v1", "proteina.results.1", results),
-        ]
-    )
+    manifest, blobs = proteina_output_manifest(results)
     result = proteina_complexa.validate_output(request, manifest, artifact_loader=blobs.__getitem__)
     assert result["status"] == "passed"
     assert result["design_count"] == 1
@@ -967,12 +1041,7 @@ def test_proteina_semantics_bind_request_structure_and_finite_metrics() -> None:
     with pytest.raises(ScientificAdapterError, match="do not match"):
         proteina_complexa.validate_output(request, manifest, artifact_loader=tampered.__getitem__)
     nonfinite = results.replace(b"0.81", b"NaN")
-    invalid_manifest, invalid_blobs = output_manifest(
-        [
-            ("design-1-structure", "protein-complex-structure/v1", "proteina.structure.1", structure),
-            ("results.1", "proteina-complexa-results-csv/v1", "proteina.results.1", nonfinite),
-        ]
-    )
+    invalid_manifest, invalid_blobs = proteina_output_manifest(nonfinite)
     with pytest.raises(ScientificAdapterError, match="finite"):
         proteina_complexa.validate_output(request, invalid_manifest, artifact_loader=invalid_blobs.__getitem__)
 
@@ -1192,9 +1261,12 @@ def test_collectors_consume_real_upstream_csv_and_structures_without_exposing_pa
     structure = proteina_root / "evaluation" / "design-1" / "design-1.pdb"
     structure.parent.mkdir(parents=True)
     structure.write_bytes(pdb_bytes())
+    refold = structure.with_name("refold.pdb")
+    refold.write_bytes(pdb_bytes())
     csv_path = proteina_root / "evaluation" / "RAW_binder_results_pipeline_combined.csv"
     csv_path.write_text(
-        f"id_gen,pdb_path,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self\ndesign-1,{structure},0.81,4.2,1.1\n",
+        f"id_gen,pdb_path,self_complex_pdb_path,self_sequence,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self\n"
+        f"design-1,{structure},{refold},A,0.81,4.2,1.1\n",
         encoding="utf-8",
     )
     proteina = proteina_complexa.collect_output(proteina_request, proteina_root)
@@ -1242,12 +1314,14 @@ def test_proteina_collector_bounds_the_pinned_best_of_n_expansion(tmp_path: Path
     assert request["parameters"]["num_samples"] == 2
     root = tmp_path / "proteina-best-of-n"
     csv_path = root / "evaluation" / "RAW_binder_results_pipeline_combined.csv"
-    rows = ["id_gen,pdb_path,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self"]
+    rows = ["id_gen,pdb_path,self_complex_pdb_path,self_sequence,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self"]
     for index in range(4):
         structure = root / "evaluation" / f"design-{index}" / f"design-{index}.pdb"
         structure.parent.mkdir(parents=True)
         structure.write_bytes(pdb_bytes())
-        rows.append(f"design-{index},{structure},0.81,4.2,1.1")
+        refold = structure.with_name("refold.pdb")
+        refold.write_bytes(pdb_bytes())
+        rows.append(f"design-{index},{structure},{refold},A,0.81,4.2,1.1")
     csv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
     collected = proteina_complexa.collect_output(request, root)
@@ -1262,7 +1336,7 @@ def test_proteina_collector_bounds_the_pinned_best_of_n_expansion(tmp_path: Path
     fifth.parent.mkdir(parents=True)
     fifth.write_bytes(pdb_bytes())
     csv_path.write_text(
-        "\n".join((*rows, f"design-4,{fifth},0.81,4.2,1.1")) + "\n",
+        "\n".join((*rows, f"design-4,{fifth},{fifth},A,0.81,4.2,1.1")) + "\n",
         encoding="utf-8",
     )
     with pytest.raises(ScientificAdapterError, match="exceeds the CSV row bound"):
@@ -1328,25 +1402,29 @@ def test_proteina_companion_collects_only_runner_completed_handoffs_and_final_ou
 
     terminal_workspace = tmp_path / "analyze"
     maximum_designs = request["parameters"]["num_samples"] * proteina_complexa.BEST_OF_N_REPLICAS
-    rows = ["id_gen,pdb_path,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self"]
+    rows = ["id_gen,pdb_path,self_complex_pdb_path,self_sequence,_res_pLDDT_self,_res_i_pae_self,_res_scRMSD_self"]
     for index in range(1, maximum_designs + 1):
         structure = terminal_workspace / "evaluation" / f"design-{index}" / f"design-{index}.pdb"
         structure.parent.mkdir(parents=True)
         structure.write_bytes(pdb_bytes())
-        rows.append(f"design-{index},{structure},0.81,4.2,1.1")
+        refold = structure.with_name("refold.pdb")
+        refold.write_bytes(pdb_bytes())
+        rows.append(f"design-{index},{structure},{refold},A,0.81,4.2,1.1")
     csv_path = terminal_workspace / "evaluation" / "RAW_binder_results_pipeline_combined.csv"
     csv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     terminal = plan.invocation("analyze", "main")
-    assert terminal.max_output_artifacts == maximum_designs + 1
+    assert terminal.max_output_artifacts == 3 * maximum_designs + 1
     terminal_completion = publish_stage_completion(terminal, terminal_workspace)
     collected = proteina_complexa.collect_companion_output(terminal, terminal_workspace)
     assert collected.validation["completion_marker_sha256"] == terminal_completion
     assert collected.validation["design_count"] == maximum_designs
     assert collected.validation["status"] == "passed"
-    assert len(collected.artifacts) == maximum_designs + 1
+    assert len(collected.artifacts) == 2 * maximum_designs + 2
     assert {item.semantic_type for item in collected.artifacts} == {
         "proteina-complexa-results-csv/v1",
         "protein-complex-structure/v1",
+        proteina_complexa.REFOLDED_STRUCTURE_TYPE,
+        proteina_complexa.PROVENANCE_TYPE,
     }
     result_csv = next(
         item.path.read_bytes()

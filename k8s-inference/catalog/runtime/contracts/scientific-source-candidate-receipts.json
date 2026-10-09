@@ -171,6 +171,131 @@
       "access_profile": "standard",
       "access_state": "unverified",
       "notes": "Native RFdiffusion batch candidate; any bounded HTTP adapter is a separate qualified interface over the same exact backend identity."
+    },
+    {
+      "model_id": "cosmos3-lerobot-augmentation",
+      "upstream_name": "NVIDIA Cosmos3-Nano LeRobot robotics augmentation",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-17",
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/Cosmos3-Nano",
+        "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "review_url": "https://huggingface.co/nvidia/Cosmos3-Nano/tree/7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Pinned source and all 68 model inventory files verified before H100 r7 preview; retained in acceptance/cosmos3-customer-20260917/snapshot-media-compatibility.json. Source observation is not public LeRobot qualification or physical/action-fidelity evidence."
+    },
+    {
+      "model_id": "gromacs",
+      "upstream_name": "GROMACS \u00b7 NVIDIA-optimized molecular dynamics",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-23",
+      "source": {
+        "kind": "oci",
+        "repository": "nvidia/gromacs",
+        "revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+        "review_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/containers/gromacs"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Official NVIDIA NGC v2026.2 HPC container, not a NIM HTTP microservice. Manifest inspected and binary identifies itself as GROMACS 2026.2-dev. This source receipt is not customer qualification; hosted runtime, storage, recovery and performance evidence are separate."
+    },
+    {
+      "model_id": "gromacs-mpi",
+      "upstream_name": "GROMACS \u00b7 distributed CUDA MPI",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-23",
+      "source": {
+        "kind": "git",
+        "repository": "gromacs/gromacs",
+        "revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
+        "review_url": "https://gitlab.com/gromacs/gromacs/-/tree/da9e013175bae98b31b34384f6b4864ff29f65a5"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Separate upstream GROMACS 2026.2 external-MPI CUDA build with pinned Open MPI 5.0.8 and UCX 1.19.0. Not the NVIDIA NGC engine binary or a NIM. This source receipt does not qualify distributed execution, performance, recovery, hosted APIs or customer storage."
+    },
+    {
+      "model_id": "namd",
+      "upstream_name": "NAMD \u00b7 NVIDIA-optimized molecular dynamics",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-23",
+      "source": {
+        "kind": "oci",
+        "repository": "nvidia/namd",
+        "revision": "e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+        "review_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/containers/namd"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Official NVIDIA NGC HPC distribution, not a NIM HTTP microservice. The source identity is pinned and inspected. Native scientific tests, hosted customer qualification, storage/recovery and GPU snapshots are separate evidence."
+    },
+    {
+      "model_id": "lammps",
+      "upstream_name": "LAMMPS \u00b7 NVIDIA-optimized molecular dynamics",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-23",
+      "source": {
+        "kind": "oci",
+        "repository": "nvidia/lammps",
+        "revision": "d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+        "review_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/containers/lammps"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Official NVIDIA NGC HPC distribution, not a NIM HTTP microservice. The source identity is pinned and inspected. Native scientific tests, hosted customer qualification, storage/recovery and GPU snapshots are separate evidence."
+    },
+    {
+      "model_id": "amber",
+      "upstream_name": "AMBER26 \u00b7 PMEMD and AmberTools",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-23",
+      "source": {
+        "kind": "oci",
+        "repository": "fs2-platform/amber26-engine",
+        "revision": "cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+        "review_url": "https://ambermd.org/GetAmber.php"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Private PMEMD26/AmberTools26 OCI bundle built from the official academic PMEMD source. Operator confirms the AMBER agreement and academic use. Not an NVIDIA NIM; the source archive and licensed binaries remain private. Native and hosted qualification are separate evidence; user access uses the existing App grants."
+    },
+    {
+      "model_id": "scvi-scanvi",
+      "upstream_name": "scVI / scANVI",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "scverse/scvi-tools",
+        "revision": "56520c713eb1d2b245c72a0f60bc393b74198c91",
+        "review_url": "https://github.com/scverse/scvi-tools/tree/1.5.0.post1"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "scvi-tools 1.5.0.post1 exact annotated tag, MIT license. Real H100 runtime tested; hosted qualification is separate."
     }
   ]
 }

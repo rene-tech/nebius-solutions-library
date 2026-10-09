@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fs2-voice-agent
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/part-of: fs2-serve
+    workload.fs2.nebius/owner: voice-agent-20260916
+spec:
+  namespaceSelector:
+    matchNames:
+      - fs2-models
+  selector:
+    matchLabels:
+      app.kubernetes.io/managed-by: fs2-model-controller
+      app.kubernetes.io/component: model-runtime
+    matchExpressions:
+      - key: fs2-serve.nebius.ai/model-id
+        operator: In
+        values:
+          - parakeet-realtime-eou-120m-v1
+          - magpie-tts-multilingual-357m
+          - diar-streaming-sortformer-4spk-v2-1
+  targetLabels:
+    - fs2-serve.nebius.ai/model-id
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s

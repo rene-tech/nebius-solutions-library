@@ -3,6 +3,8 @@
 import hashlib
 import json
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,6 +15,36 @@ from fs2_serve.artifact_inputs import ArtifactInputError, ArtifactInputMateriali
 from fs2_serve.registry import Registry
 from fs2_serve.scientific_artifacts import ArtifactContentStream
 from fs2_serve.scientific_run_result import ArtifactRef
+
+
+@pytest.mark.asyncio
+async def test_bulk_download_preserves_tenant_boundary_without_loading_audio(registry, monkeypatch):
+    reference = _reference(b"synthetic audio", media_type="audio/wav")
+    artifacts = SimpleNamespace(
+        download=AsyncMock(return_value=SimpleNamespace(
+            artifact=_Record(reference), handle=SimpleNamespace(method="GET", headers={},
+                                                               url="https://storage.example.test/signed"))),
+        open_content=AsyncMock(side_effect=AssertionError("large audio must not be buffered in the gateway")),
+    )
+    monkeypatch.setattr("fs2_serve.artifact_inputs.contract_for", lambda *args: SimpleNamespace(input_schema={
+        "type": "object", "properties": {"audio": {
+            "x-fs2-artifact-materialization": "download-url", "x-fs2-artifact-max-bytes": 512 * 1024 * 1024,
+            "x-fs2-artifact-media-types": ["audio/wav"],
+        }},
+    }))
+    materializer = ArtifactInputMaterializer(artifacts)
+    result = await materializer.materialize(_portable_model(registry, "diffdock"), "native",
+        tenant_id="tenant-a", request_body=json.dumps({"audio": reference.model_dump(mode="json")}).encode())
+    assert json.loads(result)["audio"] == {
+        "url": "https://storage.example.test/signed", "sha256": reference.sha256,
+        "size_bytes": reference.size_bytes, "media_type": "audio/wav",
+    }
+    artifacts.download.assert_awaited_once_with(UUID(reference.artifact_id), tenant_id="tenant-a")
+    artifacts.open_content.assert_not_called()
+    altered = reference.model_copy(update={"sha256": "a" * 64})
+    with pytest.raises(ArtifactInputError, match="does not match"):
+        await materializer.materialize(_portable_model(registry, "diffdock"), "native", tenant_id="tenant-a",
+            request_body=json.dumps({"audio": altered.model_dump(mode="json")}).encode())
 
 
 def _portable_model(registry: Registry, model_id: str):
@@ -104,6 +136,49 @@ async def test_materializes_caller_owned_pdb_reference_at_runtime_boundary(regis
 
 
 @pytest.mark.asyncio
+async def test_materializes_json_stringified_reference_from_tool_adapter(registry):
+    content = b"HEADER    SYNTHETIC\nATOM      1  CA  ALA A   1       0.0     0.0     0.0\nEND\n"
+    reference = _reference(content)
+    artifacts = _Artifacts(content, reference)
+    materializer = ArtifactInputMaterializer(artifacts)  # type: ignore[arg-type]
+    request = {
+        "protein": json.dumps(reference.model_dump(mode="json")),
+        "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+    }
+
+    body = await materializer.materialize(
+        _portable_model(registry, "diffdock"),
+        "native",
+        tenant_id="tenant-a",
+        request_body=json.dumps(request).encode(),
+    )
+
+    assert json.loads(body)["protein"] == content.decode()
+    assert artifacts.calls == [(UUID(reference.artifact_id), "tenant-a")]
+
+
+@pytest.mark.asyncio
+async def test_stringified_reference_retains_exact_metadata_validation(registry):
+    content = b"HEADER\nATOM\n"
+    actual = _reference(content)
+    supplied = actual.model_copy(update={"sha256": "0" * 64})
+    materializer = ArtifactInputMaterializer(_Artifacts(content, actual))  # type: ignore[arg-type]
+
+    with pytest.raises(ArtifactInputError, match="does not match"):
+        await materializer.materialize(
+            _portable_model(registry, "diffdock"),
+            "native",
+            tenant_id="tenant-a",
+            request_body=json.dumps(
+                {
+                    "protein": json.dumps(supplied.model_dump(mode="json")),
+                    "ligand": "CC",
+                }
+            ).encode(),
+        )
+
+
+@pytest.mark.asyncio
 async def test_materializes_pinned_fixture_without_artifact_or_llm_bytes(registry):
     reference = _reference(b"unused")
     artifacts = _Artifacts(b"unused", reference)
@@ -121,6 +196,38 @@ async def test_materializes_pinned_fixture_without_artifact_or_llm_bytes(registr
     protein = json.loads(body)["protein"]
     assert protein.startswith("HEADER") and "1UBQ" in protein[:256] and len(protein) == 78570
     assert not artifacts.calls
+
+
+@pytest.mark.asyncio
+async def test_materializes_nested_cosmos_transfer_control_as_data_url(registry):
+    content = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 32
+    reference = _reference(content, media_type="video/mp4")
+    artifacts = _Artifacts(content, reference)
+    materializer = ArtifactInputMaterializer(artifacts)  # type: ignore[arg-type]
+    model = bound_model_registry(registry, "cosmos3-nano").get("cosmos3-nano")
+
+    body = await materializer.materialize(
+        model,
+        "native",
+        tenant_id="tenant-a",
+        request_body=json.dumps(
+            {
+                "mode": "transfer-video",
+                "prompt": "Preserve the scene and follow the depth control.",
+                "controls": [
+                    {
+                        "control_type": "depth",
+                        "reference": reference.model_dump(mode="json"),
+                    }
+                ],
+                "output_delivery": "artifact",
+            }
+        ).encode(),
+    )
+
+    payload = json.loads(body)
+    assert payload["controls"][0]["reference"].startswith("data:video/mp4;base64,")
+    assert artifacts.calls == [(UUID(reference.artifact_id), "tenant-a")]
 
 
 @pytest.mark.asyncio

@@ -40,6 +40,10 @@ class ScientificProfileError(RuntimeError):
 class ScientificRequestError(ValueError):
     """A public request does not satisfy the canonical catalog contracts."""
 
+    def __init__(self, message: str, *, public_detail: str | None = None) -> None:
+        super().__init__(message)
+        self.public_detail = public_detail
+
 
 def _object_schema(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
@@ -88,7 +92,7 @@ def _schema_contract_name(schema: Mapping[str, Any]) -> str | None:
     return None
 
 
-def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> bool:
+def profile_has_complete_qualification_evidence(value: Mapping[str, Any], *, allow_active: bool = False) -> bool:
     """Return whether a profile carries the complete, immutable qualification set.
 
     ``active`` profiles intentionally remain dispatchable while their public
@@ -97,6 +101,10 @@ def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> boo
     and every required digest is a real lowercase SHA-256 value.
     """
 
+    # Active onboarding is explicitly unqualified. Only the two receipts that
+    # require public execution may be absent; immutable runtime/H100 evidence
+    # and the same execution/scheduler admission gates remain mandatory.
+    active = allow_active and value.get("state") == "active"
     qualification = value.get("qualification")
     semantic = value.get("semantic_validation")
     identity = value.get("execution_identity")
@@ -120,12 +128,13 @@ def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> boo
     except ValueError:
         qualified_time = None
     return (
-        value.get("state") == "qualified"
-        and semantic.get("state") == "qualified"
-        and source.get("kind") in {"git", "huggingface"}
+        (value.get("state") == "qualified" or active)
+        and (semantic.get("state") == "qualified" or (active and semantic.get("state") == "active"))
+        and source.get("kind") in {"git", "huggingface", "oci"}
         and isinstance(source.get("repository"), str)
         and isinstance(source.get("revision"), str)
-        and re.fullmatch(r"[a-f0-9]{40}", source["revision"]) is not None
+        and re.fullmatch(r"[a-f0-9]{64}" if source.get("kind") == "oci" else r"[a-f0-9]{40}", source["revision"])
+        is not None
         and identity.get("model_revision") == source.get("revision")
         and isinstance(identity.get("runtime_image_digest"), str)
         and re.fullmatch(r"sha256:[a-f0-9]{64}", identity["runtime_image_digest"]) is not None
@@ -142,7 +151,14 @@ def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> boo
         and qualified_time.tzinfo is not None
         and qualified_time.utcoffset() is not None
         and all(
-            isinstance(qualification.get(field), str) and _RAW_SHA256_RE.fullmatch(qualification[field]) is not None
+            (
+                active
+                and field in {"public_completion_receipt_sha256", "scheduler_eligibility_receipt_sha256"}
+                and qualification.get(field) is None
+            )
+            or (
+                isinstance(qualification.get(field), str) and _RAW_SHA256_RE.fullmatch(qualification[field]) is not None
+            )
             for field in _REQUIRED_QUALIFICATION_DIGESTS
         )
     )
@@ -382,6 +398,14 @@ class ScientificProfileCatalog:
         except ValidationError as error:
             raise ScientificProfileError("scientific result violates its canonical schema") from error
 
+    def artifact_manifest_schema(self) -> dict[str, Any]:
+        """Publish the same catalog-owned schema used for admission, by value."""
+
+        validator = self._validators.get(SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA)
+        if validator is None:
+            raise ScientificProfileError("canonical scientific artifact manifest schema is absent")
+        return cast(dict[str, Any], json.loads(json.dumps(validator.schema)))
+
     def validate_artifact_manifest(self, value: object) -> Mapping[str, Any]:
         """Validate and return the existing catalog-owned manifest contract."""
 
@@ -391,7 +415,14 @@ class ScientificProfileCatalog:
                 raise ScientificProfileError("canonical scientific artifact manifest schema is absent")
             validator.validate(value)
         except ValidationError as error:
-            raise ScientificRequestError("input manifest violates the canonical artifact schema") from error
+            raise ScientificRequestError(
+                "input manifest violates the canonical artifact schema",
+                public_detail="The verified input manifest violates the scientific artifact schema. "
+                "Read artifact_manifest_schema from get_model_schema, and the App's "
+                "input_artifact_contract when provided. Entry names are logical IDs, not filenames; "
+                "semantic_type requires a version suffix such as /v1. Upload a corrected manifest; "
+                "already verified source artifacts can be reused.",
+            ) from error
         if not isinstance(value, Mapping):  # implied by schema; narrows the return type
             raise ScientificRequestError("input manifest is not an object")
         return cast(Mapping[str, Any], value)

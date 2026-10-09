@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any, Protocol, cast
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
 
+from ..lifecycle import LifecycleRepository
 from ..scientific_artifacts import (
     ArtifactAccess,
     ArtifactAccessProfile,
+    ArtifactDirection,
     ArtifactNotFoundError,
+    ArtifactRecord,
     ArtifactRepository,
+    BeginArtifactUpload,
     CloseStageAttempt,
     CommitStageResult,
+    FinalizeArtifactUpload,
     KueueAdmission,
     ManifestEntryDraft,
     OpenStageAttempt,
@@ -27,6 +35,7 @@ from ..scientific_artifacts import (
 from ..scientific_artifacts import (
     AttemptStatus as ArtifactAttemptStatus,
 )
+from ..scientific_cpu import run_scientific_cpu
 from ..store import ConflictError, Store
 from .models import (
     ArtifactAccessContext,
@@ -43,10 +52,16 @@ from .models import (
     WorkloadResource,
     accelerator_admission_projection,
 )
-from .profile_catalog import ScientificProfileCatalog, ScientificProfileError
+from .profile_catalog import ScientificProfileCatalog, ScientificProfileError, ScientificRequestError
+from .worker_errors import worker_error_detail
 
 _ERROR = re.compile(r"[^A-Z0-9_]+")
-_MAX_MANIFEST_BYTES = 8 * 1024 * 1024
+_MAX_MANIFEST_BYTES = 32 * 1024 * 1024
+LOGGER = logging.getLogger(__name__)
+
+
+class FailedDiagnosticValidationError(ScientificProfileError):
+    """Immutable failed-attempt evidence is invalid, not a service outage."""
 
 
 def _raw_digest(value: str | None) -> str | None:
@@ -65,6 +80,49 @@ def _pointer_matches(record: Any, pointer: Mapping[str, Any]) -> bool:
     if actual.get("compression") == "none" and "compression" not in expected:
         actual.pop("compression")
     return actual == expected
+
+
+def _verified_input_admission(
+    artifact: ArtifactRecord,
+    manifest: Mapping[str, Any],
+    records: Mapping[UUID, ArtifactRecord],
+    tenant_id: str,
+) -> ScientificInputAdmission:
+    """Validate already-read immutable records without blocking shared API I/O."""
+    entries = []
+    for raw_entry in cast(list[Mapping[str, Any]], manifest["entries"]):
+        ref = cast(Mapping[str, Any], raw_entry["artifact"])
+        try:
+            entry_id = UUID(str(ref["artifact_id"]))
+        except ValueError:
+            raise ArtifactNotFoundError("input manifest entry artifact ID is not canonical") from None
+        entry = records[entry_id]
+        if not _pointer_matches(entry, ref) or entry.access != artifact.access:
+            raise ArtifactNotFoundError("input manifest entry metadata or access admission differs")
+        entries.append(
+            ScientificInputArtifact(
+                logical_artifact_id=str(raw_entry["name"]),
+                semantic_type=str(raw_entry["semantic_type"]),
+                artifact_id=entry.artifact_id,
+                digest=entry.digest,
+                size_bytes=entry.size_bytes,
+                media_type=entry.media_type,
+                compression=None if entry.compression is None else entry.compression.value,
+            )
+        )
+    return ScientificInputAdmission(
+        manifest=VerifiedInputManifest(
+            manifest_id=str(manifest["manifest_id"]),
+            manifest_artifact_id=artifact.artifact_id,
+            manifest_digest=artifact.digest,
+            entries=tuple(entries),
+        ),
+        access_context=ArtifactAccessContext(
+            profile=artifact.access.profile.value,
+            receipt_digest=artifact.access.receipt_digest,
+            tenant_id=tenant_id,
+        ),
+    )
 
 
 class ScientificBatchResultRepository(Protocol):
@@ -112,7 +170,10 @@ class SignedArtifactContentReader:
             follow_redirects=False,
         ) as response:
             response.raise_for_status()
-            async for chunk in response.aiter_bytes():
+            # Compression is part of the artifact identity. S3 may advertise
+            # Content-Encoding:gzip for a stored .tar.gz; aiter_bytes silently
+            # expands it, breaking the verified size/hash and archive reader.
+            async for chunk in response.aiter_raw():
                 content.extend(chunk)
                 if len(content) > maximum_bytes:
                     raise ArtifactNotFoundError("input artifact exceeds the controller manifest bound")
@@ -134,6 +195,7 @@ class ArtifactServiceBridge:
         store: Store,
         content_reader: ArtifactContentReader | None = None,
         service: ScientificArtifactControllerPort | None = None,
+        lifecycle: LifecycleRepository | None = None,
     ) -> None:
         self.artifacts = artifacts
         self.batches = batches
@@ -141,6 +203,7 @@ class ArtifactServiceBridge:
         self.store = store
         self.content_reader = content_reader
         self.service = service
+        self.lifecycle = lifecycle
 
     async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission:
         try:
@@ -164,44 +227,69 @@ class ArtifactServiceBridge:
                 payload
             ).hexdigest() != artifact.digest.removeprefix("sha256:"):
                 raise ArtifactNotFoundError("input manifest bytes differ from verified metadata")
-            manifest = self.profiles.validate_artifact_manifest(json.loads(payload))
-        except (UnicodeError, ValueError, json.JSONDecodeError) as error:
-            raise ArtifactNotFoundError("input manifest bytes are invalid") from error
-        entries: list[ScientificInputArtifact] = []
-        for raw_entry in cast(list[Mapping[str, Any]], manifest["entries"]):
-            ref = cast(Mapping[str, Any], raw_entry["artifact"])
+            manifest = await run_scientific_cpu(lambda: self.profiles.validate_artifact_manifest(json.loads(payload)))
+        except ScientificRequestError:
+            # The bytes have already been authorized and hash-verified. A bad
+            # manifest is a repairable caller error, not a missing artifact.
+            raise
+        except (UnicodeError, ValueError) as error:
+            raise ScientificRequestError(
+                "input manifest bytes are invalid JSON",
+                public_detail="The verified input manifest is not valid UTF-8 JSON. "
+                "Upload a corrected scientific artifact manifest; the source artifact can be reused.",
+            ) from error
+        raw_entries = cast(list[Mapping[str, Any]], manifest["entries"])
+        records: dict[UUID, ArtifactRecord] = {}
+        for offset in range(0, len(raw_entries), 128):
             try:
-                entry_id = UUID(str(ref["artifact_id"]))
+                ids = tuple(
+                    UUID(str(cast(Mapping[str, Any], entry["artifact"])["artifact_id"]))
+                    for entry in raw_entries[offset : offset + 128]
+                )
             except ValueError:
                 raise ArtifactNotFoundError("input manifest entry artifact ID is not canonical") from None
-            entry = await self.artifacts.get_artifact(entry_id, tenant_id=tenant_id)
-            if not _pointer_matches(entry, ref) or entry.access != artifact.access:
-                raise ArtifactNotFoundError("input manifest entry metadata or access admission differs")
-            entries.append(
-                ScientificInputArtifact(
-                    logical_artifact_id=str(raw_entry["name"]),
-                    semantic_type=str(raw_entry["semantic_type"]),
-                    artifact_id=entry.artifact_id,
-                    digest=entry.digest,
-                    size_bytes=entry.size_bytes,
-                    media_type=entry.media_type,
-                    compression=None if entry.compression is None else entry.compression.value,
-                )
+            records.update(
+                (entry.artifact_id, entry) for entry in await self.artifacts.get_artifacts(ids, tenant_id=tenant_id)
             )
-        access = ArtifactAccessContext(
-            profile=artifact.access.profile.value,
-            receipt_digest=artifact.access.receipt_digest,
-            tenant_id=tenant_id,
-        )
-        return ScientificInputAdmission(
-            manifest=VerifiedInputManifest(
-                manifest_id=str(manifest["manifest_id"]),
-                manifest_artifact_id=artifact.artifact_id,
-                manifest_digest=artifact.digest,
-                entries=tuple(entries),
-            ),
-            access_context=access,
-        )
+        return await run_scientific_cpu(_verified_input_admission, artifact, manifest, records, tenant_id)
+
+    async def validate_model_input(
+        self,
+        model_id: str,
+        parameters: Mapping[str, Any],
+        admission: ScientificInputAdmission,
+        *,
+        tenant_id: str,
+    ) -> None:
+        """CPU-only model content checks after pointer authorization and plan parsing."""
+        if model_id != "proteina-complexa":
+            return
+        from .adapters.primitives import ScientificParameterError
+        from .adapters.proteina_complexa import MAX_INPUT_BYTES, TARGET_BUNDLE_ID
+        from .adapters.proteina_targets import validate_target_bundle
+
+        if self.content_reader is None:
+            raise ScientificProfileError("scientific input content reader is unavailable")
+        bundle = next(entry for entry in admission.manifest.entries if entry.logical_artifact_id == TARGET_BUNDLE_ID)
+        # The prior admission proved ownership and exact metadata. Reuse its
+        # authorized reader; transport/authorization failures keep their own
+        # exception class rather than becoming a scientific-input rejection.
+        payload = await self.content_reader.read(bundle.artifact_id, tenant_id=tenant_id, maximum_bytes=MAX_INPUT_BYTES)
+        if len(payload) != bundle.size_bytes or hashlib.sha256(payload).hexdigest() != _raw_digest(bundle.digest):
+            raise ArtifactNotFoundError("target bundle bytes differ from verified metadata")
+        try:
+            await asyncio.to_thread(
+                validate_target_bundle,
+                payload,
+                variant=str(parameters["variant"]),
+                target_id=str(parameters["target_id"]),
+                compression=bundle.compression,
+                maximum_bytes=MAX_INPUT_BYTES,
+            )
+        except ScientificParameterError as error:
+            raise ScientificRequestError(
+                "scientific target bundle is invalid", public_detail=error.public_detail
+            ) from error
 
     async def artifact_response(self, artifact_id: UUID, *, tenant_id: str) -> Mapping[str, Any]:
         artifact = await self.artifacts.get_artifact(artifact_id, tenant_id=tenant_id)
@@ -232,6 +320,7 @@ class ArtifactServiceBridge:
         if attempt.outcome is AttemptOutcome.ACTIVE or attempt.completed_at is None:
             raise ScientificProfileError("only a durable terminal attempt can close artifact publication")
         admission = attempt.scheduling_admission
+        node_uids, gpu_uuids = await self._runtime_identities(state, attempt)
         await self._require_service().close_attempt(
             CloseStageAttempt(
                 attempt_id=attempt.attempt_id,
@@ -247,7 +336,44 @@ class ArtifactServiceBridge:
                 kueue_workload_uid=attempt.kueue_workload_uid,
                 k8s_job_uid=attempt.workload.uid,
                 pod_uids=attempt.pod_uids,
+                node_uids=node_uids,
+                gpu_uuids=gpu_uuids,
             )
+        )
+
+    async def _runtime_identities(
+        self, state: ScientificBatchState, attempt: ScientificAttemptState
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Publish already observed allocation facts before workload cleanup.
+
+        A batch can cross Pods, nodes and devices. Keep the existing per-attempt
+        result arrays rather than inventing one top-level serving identity.
+        Missing observer facts remain empty; placement preference is not proof.
+        """
+        if self.lifecycle is None:
+            return (), ()
+        detail = await self.lifecycle.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+        if detail is None:
+            return (), ()
+        subject = detail.subject
+        if (
+            subject.subject_id != attempt.attempt_id
+            or subject.attempt_id != attempt.attempt_id
+            or subject.operation_id != state.operation_id
+            or subject.tenant_id != state.tenant_id
+        ):
+            raise ScientificProfileError("attempt lifecycle identity differs from the frozen batch")
+        known_pods = set(attempt.pod_uids)
+        correlations = [
+            item
+            for item in detail.correlations
+            if item.subject_id == attempt.attempt_id
+            and item.pod_uid in known_pods
+            and item.job_uid in {None, attempt.workload.uid}
+        ]
+        return (
+            tuple(sorted({item.node_uid for item in correlations if item.node_uid is not None})),
+            tuple(sorted({item.gpu_uuid for item in correlations if item.gpu_uuid is not None})),
         )
 
     async def _attempt_output(
@@ -458,6 +584,216 @@ class ArtifactServiceBridge:
             raise ScientificProfileError("scientific batch terminal event is absent or ambiguous")
         return terminal[0]
 
+    async def _terminal_manifest(self, state: ScientificBatchState, commits: tuple[AttemptArtifactCommit, ...]) -> UUID:
+        """Flatten validated terminal shards without copying native result bytes.
+
+        The metadata-only publication attempt uses the existing artifact
+        lifecycle. It runs in the controller, requests no Pod/GPU, and cannot
+        reopen a closed scientific attempt. Single-shard results stay identical.
+        """
+        return await self._combine_terminal_manifests(state, tuple(item.manifest_artifact_id for item in commits))
+
+    async def _combine_terminal_manifests(self, state: ScientificBatchState, manifests: tuple[UUID, ...]) -> UUID:
+        if not manifests:
+            raise ScientificProfileError("terminal stage has no canonical output manifest")
+        if len(manifests) == 1:
+            return manifests[0]
+        if self.content_reader is None:
+            raise ScientificProfileError("terminal manifest reader is unavailable")
+        entries = []
+        for index, manifest_id in enumerate(manifests):
+            manifest = self.profiles.validate_artifact_manifest(
+                json.loads(
+                    await self.content_reader.read(
+                        manifest_id,
+                        tenant_id=state.tenant_id,
+                        maximum_bytes=_MAX_MANIFEST_BYTES,
+                    )
+                )
+            )
+            for entry in cast(list[dict[str, Any]], manifest["entries"]):
+                # Index prefixes keep repeated native names distinct and stable;
+                # each GROMACS result document retains its original job/file IDs.
+                name = f"shard-{index:04d}.{entry['name']}"
+                if len(name) > 128:
+                    name = f"shard-{index:04d}." + hashlib.sha256(entry["name"].encode()).hexdigest()
+                entries.append({**entry, "name": name})
+        document = {
+            "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+            "manifest_id": f"result-{state.operation_id.hex}",
+            "entries": entries,
+        }
+        self.profiles.validate_artifact_manifest(document)
+        payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+        if len(payload) > _MAX_MANIFEST_BYTES:
+            raise ScientificProfileError("aggregate output manifest exceeds the published bound")
+        digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+        stage = "result-publication"
+        attempt_id = uuid5(NAMESPACE_URL, f"fs2-result-publication:{state.operation_id}")
+        service = self._require_service()
+        try:
+            attempt = await self.artifacts.get_attempt(attempt_id, tenant_id=state.tenant_id)
+        except ArtifactNotFoundError:
+            attempt = await service.open_attempt(
+                OpenStageAttempt(
+                    attempt_id=attempt_id,
+                    operation_id=state.operation_id,
+                    tenant_id=state.tenant_id,
+                    stage_id=stage,
+                    attempt_number=1,
+                    started_at=datetime.now(UTC),
+                )
+            )
+        existing = await service.list_artifacts(
+            state.operation_id, tenant_id=state.tenant_id, stage_id=stage, attempt_id=attempt_id
+        )
+        if len(existing) > 1 or existing and existing[0].digest != digest:
+            raise ScientificProfileError("terminal publication identity changed")
+        if existing:
+            artifact = existing[0]
+        else:
+            upload_id = uuid5(NAMESPACE_URL, f"fs2-result-publication:{state.operation_id}:{digest}")
+            await service.begin_upload(
+                BeginArtifactUpload(
+                    upload_id=upload_id,
+                    attempt_id=attempt_id,
+                    operation_id=state.operation_id,
+                    tenant_id=state.tenant_id,
+                    direction=ArtifactDirection.OUTPUT,
+                    expected_digest=digest,
+                    expected_size_bytes=len(payload),
+                    media_type="application/vnd.fs2.scientific-manifest+json",
+                    access=ArtifactAccess(
+                        profile=ArtifactAccessProfile(state.access_context.profile),
+                        receipt_digest=state.access_context.receipt_digest,
+                    ),
+                )
+            )
+            request = FinalizeArtifactUpload(
+                upload_id=upload_id, operation_id=state.operation_id, tenant_id=state.tenant_id
+            )
+            await service.store_trusted_upload_content(request, content=payload)
+            artifact = await service.finalize_upload(request)
+        if not attempt.status.terminal:
+            await service.close_attempt(
+                CloseStageAttempt(
+                    attempt_id=attempt_id,
+                    operation_id=state.operation_id,
+                    tenant_id=state.tenant_id,
+                    status=ArtifactAttemptStatus.SUCCEEDED,
+                    completed_at=datetime.now(UTC),
+                    admission=KueueAdmission(accelerator_count=0, admitted_at=attempt.started_at),
+                )
+            )
+        elif attempt.status is not ArtifactAttemptStatus.SUCCEEDED:
+            raise ScientificProfileError("terminal publication attempt did not succeed")
+        return artifact.artifact_id
+
+    async def _failed_diagnostic_manifest(self, state: ScientificBatchState) -> UUID | None:
+        """Expose only completed, owner-bound diagnostic uploads from failed attempts.
+
+        These are ordinary artifacts, not stage commits or checkpoints. A
+        partially uploaded set remains unadvertised; no successful validation
+        or controller retry is manufactured from the presence of native logs.
+        """
+        from .native_workflows import workflow_for_binding
+
+        if state.execution_plan is None or self.content_reader is None:
+            return None
+        manifests = []
+        for stage in state.stages:
+            for attempt in stage.attempts:
+                if attempt.outcome is not AttemptOutcome.FAILED:
+                    continue
+                invocation = state.execution_plan.invocation(attempt.stage_id, attempt.shard_id)
+                workflow = workflow_for_binding(state.model_id, attempt.stage_id, invocation.collector_id)
+                if workflow is None:
+                    continue
+                records = await self._require_service().list_artifacts(
+                    state.operation_id,
+                    tenant_id=state.tenant_id,
+                    stage_id=attempt.stage_id,
+                    attempt_id=attempt.attempt_id,
+                )
+                documents = [
+                    item for item in records if item.media_type == "application/vnd.fs2.scientific-manifest+json"
+                ]
+                validations = [
+                    item for item in records if item.media_type == "application/vnd.fs2.scientific-validation+json"
+                ]
+                if len(documents) != 1 or len(validations) != 1:
+                    continue
+                document, validation_record = documents[0], validations[0]
+                validation_bytes = await self.content_reader.read(
+                    validation_record.artifact_id,
+                    tenant_id=state.tenant_id,
+                    maximum_bytes=_MAX_MANIFEST_BYTES,
+                )
+                try:
+                    validation = json.loads(validation_bytes)
+                except (ValueError, UnicodeError) as exc:
+                    raise FailedDiagnosticValidationError("failed diagnostic receipt is not valid JSON") from exc
+                if not isinstance(validation, dict) or validation.get("artifact_role") != "failed-attempt-diagnostics":
+                    # A gang can fail after its head published a successful
+                    # local result. That is not a failed-diagnostic manifest.
+                    continue
+                expected = {
+                    "status": "failed",
+                    "artifact_role": "failed-attempt-diagnostics",
+                    "collector_id": invocation.collector_id,
+                    "validator_id": invocation.validator_id,
+                    "stage_id": invocation.stage_id,
+                    "shard_id": invocation.shard_id,
+                    "logical_output_id": invocation.produces,
+                    "operation_id": str(state.operation_id),
+                    "job_id": invocation.shard_id,
+                    "scientific_validation_passed": False,
+                    "checkpoint_generation_created": False,
+                    "diagnostic_manifest_sha256": document.digest.removeprefix("sha256:"),
+                }
+                if any(validation.get(key) != value for key, value in expected.items()):
+                    raise FailedDiagnosticValidationError("failed diagnostic receipt differs from its frozen attempt")
+                manifest_bytes = await self.content_reader.read(
+                    document.artifact_id,
+                    tenant_id=state.tenant_id,
+                    maximum_bytes=_MAX_MANIFEST_BYTES,
+                )
+                try:
+                    manifest = self.profiles.validate_artifact_manifest(json.loads(manifest_bytes))
+                except (ValueError, UnicodeError) as exc:
+                    raise FailedDiagnosticValidationError("failed diagnostic manifest is invalid") from exc
+                if manifest["manifest_id"] != invocation.produces:
+                    raise FailedDiagnosticValidationError("failed diagnostic manifest differs from its frozen attempt")
+                allowed = {
+                    f"{workflow.engine}-failed-result/v1",
+                    f"{workflow.engine}-failed-log/v1",
+                    "native-failed-diagnostics/v1",
+                }
+                by_id = {str(item.artifact_id): item for item in records if item.direction is ArtifactDirection.OUTPUT}
+                entries = manifest["entries"]
+                for entry in entries:
+                    record = by_id.get(entry["artifact"]["artifact_id"])
+                    if (
+                        entry["semantic_type"] not in allowed
+                        or record is None
+                        or not _pointer_matches(record, entry["artifact"])
+                    ):
+                        raise FailedDiagnosticValidationError(
+                            "failed diagnostic manifest references another or changed artifact"
+                        )
+                results = [
+                    entry for entry in entries if entry["semantic_type"] == f"{workflow.engine}-failed-result/v1"
+                ]
+                receipts = [entry for entry in entries if entry["semantic_type"] == "native-failed-diagnostics/v1"]
+                if (
+                    len(results) != 1
+                    or len(receipts) != 1
+                    or results[0]["artifact"]["sha256"] != validation.get("result_sha256")
+                ):
+                    raise FailedDiagnosticValidationError("failed diagnostic result inventory is incomplete")
+                manifests.append(document.artifact_id)
+        return await self._combine_terminal_manifests(state, tuple(manifests)) if manifests else None
+
     async def publish_terminal(self, state: ScientificBatchState) -> None:
         """Idempotently publish the artifact-service-owned terminal result."""
 
@@ -473,6 +809,7 @@ class ArtifactServiceBridge:
         output_manifest_id: UUID | None = None
         validator_id = semantic.get("validator_id")
         validation_receipt: str | None = None
+        diagnostic_error: str | None = None
         if not isinstance(validator_id, str):
             raise ScientificProfileError("scientific profile validator identity is invalid")
         if state.status is BatchStatus.SUCCEEDED:
@@ -481,11 +818,19 @@ class ArtifactServiceBridge:
             if len(sinks) != 1:
                 raise ScientificProfileError("successful scientific batch has no unique terminal stage")
             commits = await self.artifact_commits(state, stage_id=sinks[0])
-            if len(commits) != 1:
-                raise ScientificProfileError("terminal stage has no unique canonical output manifest")
-            output_manifest_id = commits[0].manifest_artifact_id
+            if len({item.validator_id for item in commits}) != 1:
+                raise ScientificProfileError("terminal stage validators disagree")
+            output_manifest_id = await self._terminal_manifest(state, commits)
             validator_id = commits[0].validator_id
-            validation_receipt = commits[0].validation_digest
+            validation_receipt = self._validation_digest(commits)
+        elif state.status is BatchStatus.FAILED:
+            try:
+                output_manifest_id = await self._failed_diagnostic_manifest(state)
+            except FailedDiagnosticValidationError as exc:
+                # Publish an honest terminal failure without endorsing invalid
+                # diagnostics. Immutable evidence cannot heal through retries.
+                # Storage/database/HTTP failures still propagate to readiness.
+                diagnostic_error = str(exc)
         access = ArtifactAccess(
             profile=ArtifactAccessProfile(state.access_context.profile),
             receipt_digest=state.access_context.receipt_digest,
@@ -493,6 +838,17 @@ class ArtifactServiceBridge:
         error_code = None
         if state.status is BatchStatus.FAILED:
             error_code = _ERROR.sub("_", (state.failure_code or "SCIENTIFIC_RUN_FAILED").upper()).strip("_")
+        error_message = (
+            (worker_error_detail(state.model_id, error_code) or "scientific run did not succeed")
+            if error_code
+            else None
+        )
+        if diagnostic_error is not None:
+            error_message = (
+                f"Scientific run failed ({error_code}). Failure diagnostics were rejected: {diagnostic_error}. "
+                "Original artifacts are retained; contact platform support with the operation ID."
+            )
+            error_code = "SCIENTIFIC_DIAGNOSTICS_INVALID"
         await self._require_service().commit_run_result(
             RunResultDraft(
                 operation_id=state.operation_id,
@@ -524,10 +880,15 @@ class ArtifactServiceBridge:
                 ),
                 validation_receipt_digest=validation_receipt,
                 error_code=error_code,
-                error_message="scientific run did not succeed" if error_code is not None else None,
+                error_message=error_message,
                 error_retryable=False if error_code is not None else None,
             )
         )
+        if diagnostic_error is not None:
+            LOGGER.warning(
+                "published failed scientific result without invalid diagnostics",
+                extra={"operation_id": str(state.operation_id), "diagnostic_error": diagnostic_error},
+            )
 
     async def result_response(self, operation_id: UUID, *, tenant_id: str) -> Mapping[str, Any]:
         state = await self.batches.get(operation_id, tenant_id=tenant_id)

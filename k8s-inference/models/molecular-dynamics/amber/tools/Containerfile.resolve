@@ -1,0 +1,11 @@
+# Resolve the upstream-supported open-source AmberTools preparation/analysis
+# suite separately from the private licensed PMEMD engine. Export the complete
+# explicit package lock from this image before building a release layer.
+FROM mambaorg/micromamba@sha256:e0a99b0f17a759e14c2f967dc0ca2d3a3c1ca3c62955f4d20bba770eaaf0184d
+USER root
+RUN micromamba create --yes --no-rc --override-channels --strict-channel-priority \
+      --channel conda-forge --prefix /opt/ambertools ambertools=26.0 python=3.12 \
+    && micromamba env export --prefix /opt/ambertools --explicit > /opt/ambertools-explicit.lock \
+    && micromamba list --prefix /opt/ambertools --json > /opt/ambertools-packages.json
+ENV AMBERHOME=/opt/ambertools
+WORKDIR /tmp

@@ -25,6 +25,12 @@ field to a named chat tool. Use the generic `invoke_model` or
 `submit_scientific_run` only for a deliberately model-agnostic workflow.
 Current tool schema wins over examples, vendor docs and cached skill text.
 
+When a generic `invoke_model` fallback is necessary, keep `idempotency_key` and
+`wait_seconds` beside `payload`; put only model fields inside `payload`. Do not
+copy a named tool's full argument object into that inner payload. A
+`gateway_control_validation` error means no operation was admitted: correct the
+reported control or duplicate conflict before submitting again.
+
 Create one stable 8–200 character idempotency key per logical submission. Save
 the returned operation ID. A submission is durable acceptance, not the final
 model output: poll `get_operation` and then `get_operation_result`. For

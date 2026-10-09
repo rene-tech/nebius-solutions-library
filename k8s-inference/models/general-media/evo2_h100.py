@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import importlib.metadata
 import functools
+import gc
 import time
 from pathlib import Path
 
 from evo2_deep.runtime import Evo2Backend, RuntimeFailure, _driver_version, _tool_identity
+from evo2_prefill import DEFAULT_CHANNEL_TILE, ModelMemoryExhausted, install_modal_fft_tiling
 
 
 def validate_devices(devices):
@@ -61,6 +63,7 @@ class H100Backend(Evo2Backend):
         self._model_wrapper = Evo2("evo2_40b", local_path=str(model_path), use_kernels=use_kernels)
         for block_idx, block in enumerate(self._model_wrapper.model.blocks):
             guard_block_device(torch, block, self._model_wrapper.model.block_idx_to_device[block_idx])
+        self._modal_fft_bindings = install_modal_fft_tiling(self._model_wrapper.model)
         for i in range(2):
             torch.cuda.synchronize(i)
         self._torch, self._Generator, self._prepare_batch = torch, Generator, prepare_batch
@@ -85,6 +88,8 @@ class H100Backend(Evo2Backend):
             "parameter_bytes_by_device": placement,
             "parallelism": "upstream-vortex-layer-model-parallel",
             "per_block_cuda_device_guard": True,
+            "modal_fft_channel_tile": DEFAULT_CHANNEL_TILE,
+            "modal_fft_algorithm": "upstream-equivalent-channel-tiled-fp32-complex64",
             "native_precision": "bf16-with-transformer-engine-fp8-input-projections",
         }
         self._ready = True
@@ -94,7 +99,18 @@ class H100Backend(Evo2Backend):
         # also fence both visible devices around each complete request.
         for i in range(2):
             self._torch.cuda.synchronize(i)
-        result = super().generate(request)
+        try:
+            result = super().generate(request)
+        except self._torch.OutOfMemoryError:
+            # Leave the exception scope before collecting, so the traceback no
+            # longer retains the failed request's tensors. Keep weights live.
+            result = None
+        if result is None:
+            gc.collect()
+            for i in range(2):
+                with self._torch.cuda.device(i):
+                    self._torch.cuda.empty_cache()
+            raise ModelMemoryExhausted(len(request.sequence), request.num_tokens)
         for i in range(2):
             self._torch.cuda.synchronize(i)
         return result

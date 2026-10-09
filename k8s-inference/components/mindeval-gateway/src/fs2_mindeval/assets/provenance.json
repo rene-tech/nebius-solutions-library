@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/SWORDHealth/mind-eval",
+  "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+  "sha256": {
+    "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+    "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+    "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+    "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+  },
+  "template_sha256": {
+    "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+    "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+    "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+  },
+  "paper": "https://arxiv.org/abs/2511.18491",
+  "patient_template_version": "v0_2",
+  "clinician_template_version": "v0_1",
+  "judge_template_version": "v0_1"
+}

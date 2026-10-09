@@ -102,6 +102,8 @@ async def test_admin_replica_refreshes_clone_inventory_before_policy_startup_pro
     assert known == {"protenix-v2", *(record.public_model_id for record in records)}
     for record in records:
         assert execution.startup_policy_options(record.public_model_id) == source.startup_policy_options("protenix-v2")
+        assert execution.qualification_matches(record.public_model_id, source.execution_map_sha256)
+        assert not execution.qualification_matches(record.public_model_id, "sha256:" + "f" * 64)
     again = await models.list_models()
     assert len(again.data.items) == len(known)  # Refresh cannot duplicate aliases.
 

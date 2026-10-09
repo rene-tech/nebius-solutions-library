@@ -1,0 +1,623 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "annotations": {
+                    "telemetry.fs2.nebius.ai/gpu-allocation-observed-at": "2026-09-19T14:25:41.453724Z",
+                    "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds": "1.0",
+                    "telemetry.fs2.nebius.ai/gpu-uuids": "[\"GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8\"]"
+                },
+                "creationTimestamp": "2026-09-19T14:25:41Z",
+                "generateName": "cellpose-cpsam-v2-59cdd9b5b-",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/name": "cellpose-cpsam-v2",
+                    "fs2-serve.nebius.ai/model-id": "cellpose-cpsam-v2",
+                    "pod-template-hash": "59cdd9b5b",
+                    "topology.kubernetes.io/region": "eu-north1"
+                },
+                "name": "cellpose-cpsam-v2-59cdd9b5b-2hz9b",
+                "namespace": "fs2-models",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "ReplicaSet",
+                        "name": "cellpose-cpsam-v2-59cdd9b5b",
+                        "uid": "e3c1a752-e6f4-4a66-8f49-8fef844e3fcb"
+                    }
+                ],
+                "resourceVersion": "56242747",
+                "uid": "38de57ec-37ae-466a-97a2-5dcc79607c59"
+            },
+            "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                    {
+                        "env": [
+                            {
+                                "name": "HOME",
+                                "value": "/tmp"
+                            },
+                            {
+                                "name": "XDG_CACHE_HOME",
+                                "value": "/tmp/cache"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/cellpose-cpsam-v2@sha256:d3048aca99d4c278002fa88e42417dd42d1a40fb2689af1688d239799fc59a5e",
+                        "imagePullPolicy": "IfNotPresent",
+                        "livenessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/v1/health/live",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 20,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "name": "runtime",
+                        "ports": [
+                            {
+                                "containerPort": 8000,
+                                "name": "http",
+                                "protocol": "TCP"
+                            }
+                        ],
+                        "readinessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/v1/health/ready",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 5,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "resources": {
+                            "limits": {
+                                "cpu": "8",
+                                "ephemeral-storage": "12Gi",
+                                "memory": "24Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "4",
+                                "ephemeral-storage": "4Gi",
+                                "memory": "12Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                                "drop": [
+                                    "ALL"
+                                ]
+                            },
+                            "readOnlyRootFilesystem": true
+                        },
+                        "startupProbe": {
+                            "failureThreshold": 180,
+                            "httpGet": {
+                                "path": "/v1/health/ready",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 5,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "nodeName": "computeinstance-e00p2817cbemf7w6q5",
+                "nodeSelector": {
+                    "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                    "kubernetes.io/arch": "amd64"
+                },
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {
+                    "fsGroup": 10001,
+                    "runAsGroup": 10001,
+                    "runAsNonRoot": true,
+                    "runAsUser": 10001,
+                    "seccompProfile": {
+                        "type": "RuntimeDefault"
+                    }
+                },
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 30,
+                "tolerations": [
+                    {
+                        "effect": "NoSchedule",
+                        "key": "dedicated",
+                        "operator": "Equal",
+                        "value": "fs2-inference"
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoSchedule",
+                        "key": "nvidia.com/gpu",
+                        "operator": "Exists"
+                    }
+                ],
+                "volumes": [
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "4Gi"
+                        },
+                        "name": "tmp"
+                    },
+                    {
+                        "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "2Gi"
+                        },
+                        "name": "shm"
+                    }
+                ]
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:25:42Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:25:41Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:25:51Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:25:51Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:25:41Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "4",
+                            "ephemeral-storage": "4Gi",
+                            "memory": "12Gi",
+                            "nvidia.com/gpu": "1"
+                        },
+                        "containerID": "containerd://dce129ba27c31f3857b365f30698121181a4c026b8ebeef89800d417bc521b52",
+                        "image": "sha256:080cfabcd8ffbbd9c7fcfcac51695b4e9259902ffa25216b8eda70d021fb9c80",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/cellpose-cpsam-v2@sha256:d3048aca99d4c278002fa88e42417dd42d1a40fb2689af1688d239799fc59a5e",
+                        "lastState": {},
+                        "name": "runtime",
+                        "ready": true,
+                        "resources": {
+                            "limits": {
+                                "cpu": "8",
+                                "ephemeral-storage": "12Gi",
+                                "memory": "24Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "4",
+                                "ephemeral-storage": "4Gi",
+                                "memory": "12Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": true,
+                        "state": {
+                            "running": {
+                                "startedAt": "2026-09-19T14:25:42Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 10001,
+                                "supplementalGroups": [
+                                    10001
+                                ],
+                                "uid": 10001
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "10.6.118.156",
+                "hostIPs": [
+                    {
+                        "ip": "10.6.118.156"
+                    }
+                ],
+                "observedGeneration": 1,
+                "phase": "Running",
+                "podIP": "10.6.46.202",
+                "podIPs": [
+                    {
+                        "ip": "10.6.46.202"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "startTime": "2026-09-19T14:25:41Z"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "annotations": {
+                    "telemetry.fs2.nebius.ai/gpu-allocation-observed-at": "2026-09-19T14:25:42.441288Z",
+                    "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds": "1.0",
+                    "telemetry.fs2.nebius.ai/gpu-uuids": "[\"GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d\"]"
+                },
+                "creationTimestamp": "2026-09-19T14:25:41Z",
+                "generateName": "scvi-scanvi-5877888fb8-",
+                "generation": 1,
+                "labels": {
+                    "app.kubernetes.io/name": "scvi-scanvi",
+                    "fs2-serve.nebius.ai/model-id": "scvi-scanvi",
+                    "pod-template-hash": "5877888fb8",
+                    "topology.kubernetes.io/region": "eu-north1"
+                },
+                "name": "scvi-scanvi-5877888fb8-ch4pj",
+                "namespace": "fs2-models",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "apps/v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "ReplicaSet",
+                        "name": "scvi-scanvi-5877888fb8",
+                        "uid": "643b706e-1fb2-443d-bce8-02a06ae66e9c"
+                    }
+                ],
+                "resourceVersion": "56243243",
+                "uid": "8413b43d-f492-49d5-aaba-c286364ce2c5"
+            },
+            "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                    {
+                        "env": [
+                            {
+                                "name": "HOME",
+                                "value": "/tmp"
+                            },
+                            {
+                                "name": "XDG_CACHE_HOME",
+                                "value": "/tmp/cache"
+                            },
+                            {
+                                "name": "MPLCONFIGDIR",
+                                "value": "/tmp/matplotlib"
+                            },
+                            {
+                                "name": "NUMBA_CACHE_DIR",
+                                "value": "/tmp/numba"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:cd22562eb59d067f734b65af1669c483f971dacb5e58462ca7f4d43afc940396",
+                        "imagePullPolicy": "IfNotPresent",
+                        "livenessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/v1/health/live",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 20,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "name": "runtime",
+                        "ports": [
+                            {
+                                "containerPort": 8000,
+                                "name": "http",
+                                "protocol": "TCP"
+                            }
+                        ],
+                        "readinessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/v1/health/ready",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 5,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "resources": {
+                            "limits": {
+                                "cpu": "12",
+                                "ephemeral-storage": "128Gi",
+                                "memory": "96Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "6",
+                                "ephemeral-storage": "64Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                                "drop": [
+                                    "ALL"
+                                ]
+                            },
+                            "readOnlyRootFilesystem": true
+                        },
+                        "startupProbe": {
+                            "failureThreshold": 180,
+                            "httpGet": {
+                                "path": "/v1/health/ready",
+                                "port": "http",
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 5,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 3
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "nodeName": "computeinstance-e00m0hsph76ajt9sdb",
+                "nodeSelector": {
+                    "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                    "kubernetes.io/arch": "amd64"
+                },
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {
+                    "fsGroup": 10001,
+                    "runAsGroup": 10001,
+                    "runAsNonRoot": true,
+                    "runAsUser": 10001,
+                    "seccompProfile": {
+                        "type": "RuntimeDefault"
+                    }
+                },
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 30,
+                "tolerations": [
+                    {
+                        "effect": "NoSchedule",
+                        "key": "dedicated",
+                        "operator": "Equal",
+                        "value": "fs2-inference"
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoSchedule",
+                        "key": "nvidia.com/gpu",
+                        "operator": "Exists"
+                    }
+                ],
+                "volumes": [
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "128Gi"
+                        },
+                        "name": "tmp"
+                    },
+                    {
+                        "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "8Gi"
+                        },
+                        "name": "shm"
+                    }
+                ]
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:25:44Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:25:41Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:26:02Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:26:02Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-19T14:25:41Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "6",
+                            "ephemeral-storage": "64Gi",
+                            "memory": "32Gi",
+                            "nvidia.com/gpu": "1"
+                        },
+                        "containerID": "containerd://c4842e61a157b4305358269b02817897a7b2f5ac67ec96849c8bfacf8ee1b485",
+                        "image": "sha256:8e4ac9c8184ef51a0503a37f9cf5dc0aef08295e944c0a76b689fcfa4ab73cbe",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:cd22562eb59d067f734b65af1669c483f971dacb5e58462ca7f4d43afc940396",
+                        "lastState": {},
+                        "name": "runtime",
+                        "ready": true,
+                        "resources": {
+                            "limits": {
+                                "cpu": "12",
+                                "ephemeral-storage": "128Gi",
+                                "memory": "96Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "6",
+                                "ephemeral-storage": "64Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": true,
+                        "state": {
+                            "running": {
+                                "startedAt": "2026-09-19T14:25:43Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 10001,
+                                "supplementalGroups": [
+                                    10001
+                                ],
+                                "uid": 10001
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/tmp",
+                                "name": "tmp"
+                            },
+                            {
+                                "mountPath": "/dev/shm",
+                                "name": "shm"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "10.0.0.17",
+                "hostIPs": [
+                    {
+                        "ip": "10.0.0.17"
+                    }
+                ],
+                "observedGeneration": 1,
+                "phase": "Running",
+                "podIP": "10.6.82.135",
+                "podIPs": [
+                    {
+                        "ip": "10.6.82.135"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "startTime": "2026-09-19T14:25:41Z"
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

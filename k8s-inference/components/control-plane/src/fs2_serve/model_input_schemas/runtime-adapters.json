@@ -1,4 +1,29 @@
 {
+  "qwen3-6-27b-fp8": {
+    "variant_id": "paidf-qwen36-vllm019-fp8-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/models/general-media/paidf-chat/reference-archive/catalog/deployment-runtimes/qwen3-6-27b-fp8.json"
+  },
+  "qwen2-5-14b-instruct": {
+    "variant_id": "paidf-qwen25-vllm019-bf16-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/models/general-media/paidf-chat/reference-archive/catalog/deployment-runtimes/qwen2-5-14b-instruct.json"
+  },
+  "cosmos-transfer2-5-2b": {
+    "variant_id": "cosmos-transfer25-nim-v1",
+    "runtime_kind": "nim",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/cosmos-transfer2-5-2b.json"
+  },
+  "nemotron-speech-en-0-6b": {
+    "variant_id": "nemotron-speech-en-0-6b-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/nemotron-speech-en-0-6b.json"
+  },
+  "nemotron-speech-multilingual-0-6b": {
+    "variant_id": "nemotron-speech-multilingual-0-6b-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/nemotron-speech-multilingual-0-6b.json"
+  },
   "altumage": {
     "variant_id": "altumage-cuda-v1",
     "runtime_kind": "custom",
@@ -53,5 +78,50 @@
     "variant_id": "proteinmpnn-upstream-portable",
     "runtime_kind": "custom",
     "source": "k8s-inference/catalog/runtime/deployment-runtimes/proteinmpnn-portable-h100.json"
+  },
+  "parakeet-realtime-eou-120m-v1": {
+    "variant_id": "parakeet-realtime-eou-120m-v1-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/parakeet-realtime-eou-120m-v1.json"
+  },
+  "magpie-tts-multilingual-357m": {
+    "variant_id": "magpie-tts-multilingual-357m-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/magpie-tts-multilingual-357m.json"
+  },
+  "diar-streaming-sortformer-4spk-v2-1": {
+    "variant_id": "diar-streaming-sortformer-4spk-v2-1-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/diar-streaming-sortformer-4spk-v2-1.json"
+  },
+  "cellpose-cpsam-v2": {
+    "variant_id": "cellpose-cpsam-v2-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/cellpose-cpsam-v2.json"
+  },
+  "scvi-scanvi": {
+    "variant_id": "scvi-scanvi-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/scvi-scanvi.json"
+  },
+  "sam2-1-hiera-large": {
+    "variant_id": "sam2-1-hiera-large-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/sam2-1-hiera-large.json"
+  },
+  "wan2-2-t2v-nim": {
+    "variant_id": "wan2-2-t2v-nim-h200-bf16-v1",
+    "runtime_kind": "nim",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/wan2-2-t2v-nim.json"
+  },
+  "wan2-2-i2v-nim": {
+    "variant_id": "wan2-2-i2v-nim-h200-bf16-v1",
+    "runtime_kind": "nim",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/wan2-2-i2v-nim.json"
+  },
+  "ace-step-1-5": {
+    "variant_id": "ace-step-1-5-l40s-4b-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/ace-step-1-5.json"
   }
 }

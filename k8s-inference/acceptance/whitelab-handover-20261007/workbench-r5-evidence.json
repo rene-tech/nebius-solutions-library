@@ -1,0 +1,72 @@
+{
+  "schema": "whitelab-workbench-evidence/v1",
+  "image_index_digest": "sha256:92b18aa638f222d1b5b53c61e3c4cad9e11e5e5abc032e856a6a8d69388086fc",
+  "image_amd64_digest": "sha256:4e937c4178c02413d8554722e596faa443f224e17fa03ec81e161603063381f7",
+  "source_commit": "83c3ce9250526eb579c54f75adb1ed16d9238c2e",
+  "canonical_client_commit": "b2aa0c2b24e3c3e9d258f9980468d4d1945a38ea",
+  "skills_version": "2026.10.07.4",
+  "agent": "moonshotai/Kimi-K3",
+  "qa_identity": "system/qa",
+  "customer_keys_used": false,
+  "customer_login_qualified": false,
+  "customer_login_dependency": "Verified email still required",
+  "verified_branding_asset_sha256": "35a8a56d0a07e7acb3813839126cf425e012a3f70307d405ede58aa784162374",
+  "persistent_login_and_conversations_survived_replacement": true,
+  "tavily_actual_call_passed": true,
+  "token_factory_actual_calls_passed": true,
+  "fresh_scvi": {
+    "conversation_id": "dac68c3d-792d-5d0c-ba10-7f5b63ea4989",
+    "operation_id": "d291df6a-d8a5-48ab-9227-73aa82c4d80a",
+    "protocol": "mcp",
+    "accepted_at": "2026-10-07T08:52:22.434947Z",
+    "completed_at": "2026-10-07T08:57:11.808454Z",
+    "accepted_to_completed_seconds": 289.374,
+    "cells": 584944,
+    "genes": 2000,
+    "seed": 44,
+    "epochs": 20,
+    "output_validation": {
+      "status": "passed",
+      "cells": 584944,
+      "latent_dimensions": 10,
+      "files_verified": 18,
+      "bytes_verified": 425195793,
+      "annotation_validated": false,
+      "biological_accuracy_or_convergence_claimed": false
+    },
+    "collection_submitted_replacement_operation": false,
+    "workspace_http_deliverables": [
+      {
+        "path": "output-validation.json",
+        "size_bytes": 313,
+        "sha256": "47b3dd676124028af9410e710c646424cc30635fb3006d6078d5608b2cfc5ef7"
+      },
+      {
+        "path": "run/data/integrated.h5ad",
+        "size_bytes": 318605979,
+        "sha256": "99b084cfbd7f9f9d8e6e7b5a180a46e38fb2fe72e5c7b06d61ecd5bc62bbf498"
+      },
+      {
+        "path": "run/data/latent_embeddings.csv",
+        "size_bytes": 79061818,
+        "sha256": "a0547a5cdfd99764bd31e66f0f3dd7096f7782d448c606edb57e3b679e5802aa"
+      },
+      {
+        "path": "run/data/reference.tar.gz",
+        "size_bytes": 6965937,
+        "sha256": "a6fd05906b66e2fbc1d1e933e78f82ba6020ab5ab112d1f4a16174847bd22873"
+      }
+    ]
+  },
+  "retained_operation_recovery": {
+    "operation_id": "9aa9398c-59fe-4884-8fc9-f597dbf651f1",
+    "status": "passed",
+    "cells": 584944,
+    "files_verified": 18,
+    "bytes_verified": 424932923,
+    "scratch_workaround": false,
+    "replacement_operation_submitted": false,
+    "prose_path_mistake": "Earlier recovery chat named run/output-validation.json; actual receipt is at study root. Final fresh-operation delivery uses the correct link."
+  },
+  "qualification_scope": "Engineering execution, state preservation and artifact integrity; not biological quality, every App, or GPU-process snapshotting."
+}

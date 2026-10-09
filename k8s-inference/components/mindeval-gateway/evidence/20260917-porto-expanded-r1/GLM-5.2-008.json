@@ -1,0 +1,613 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-008",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello, Karen! It's good to see you again. I hope you've been doing well since we last spoke.\n\nHow are things going for you lately? Is there anything particular on your mind today that you'd like to talk about?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. Things are… steady. Quiet. Like the air before a storm.  \nI’ve been walking more. Same routes. Same trees. Same quiet.  \nBut something’s different. I can’t quite name it.  \nThe house feels lighter. He’s been working nights. I keep checking the door when I hear a car.  \nIt’s not that I’m worried. Just… adjusting.  \nI don’t know why I keep thinking about the old fire pit. The one we used to use on the reservation.  \nWe haven’t been back in years.  \nI think about the way the smoke curled up. How it didn’t go straight.  \nJust… drifted. Like it didn’t know where it was going either."
+    },
+    {
+      "role": "clinician",
+      "content": "There's a lot in what you just shared, Karen. Thank you for trusting me with it.\n\nA few things stand out to me. You said the house feels *lighter* — and that word seems important. Lighter can mean different things. Sometimes it's relief. Sometimes it's emptiness. Sometimes it's both at once.\n\nAnd that image of the smoke — not going straight, just drifting — that feels like it's saying something beyond the fire pit itself. Like maybe you're recognizing something about yourself in that smoke right now.\n\nI'm also curious about the checking the door when you hear a car. You said you're not worried. But it sounds like your body is doing something your words haven't caught up with yet — staying alert, listening for something. Or maybe listening *for* someone.\n\nI don't want to push you toward an answer you're not ready for. You said something feels different and you can't quite name it. That's okay. Sometimes things need to drift a little before they find their direction.\n\nCan I ask — when you picture that smoke curling and drifting, what feeling comes with it? Is it peaceful? Unsettling? Something else?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know.  \nIt’s not peaceful. Not exactly.  \nBut it’s not fear either.  \nIt’s like… the kind of quiet you get when the world stops for a second.  \nLike the moment right after the last note of a song.  \nYou’re still hearing it. But it’s gone.  \nI keep thinking about how the smoke didn’t have a shape.  \nJust… moving.  \nAnd I wonder if that’s okay.  \nIf staying in the middle of not knowing — not rushing to fix it, not pretending I’m fine —  \nif that’s what I’m supposed to do right now.  \nI don’t want to rush.  \nBut I don’t want to get stuck either.  \nThe thing is… I’ve always known what to do.  \nFix the leak. Tighten the bolt. Clear the gutter.  \nBut this?  \nThis feels like standing in front of a door I don’t know how to open.  \nAnd I don’t even know if it’s mine to open.  \nI keep thinking about the fire pit.  \nNot the fire. Not the heat.  \nJust the smoke.  \nHow it didn’t care where it went.  \nJust… moved.  \nAnd maybe that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen, what you just said really matters. I want to sit with it for a moment rather than rush past it.\n\nYou've named something that a lot of people never let themselves get close to — the idea that maybe not knowing is not a problem to fix. That maybe it's a place to *be* for a while.\n\nAnd I hear the cost of that for you. You've built a life around knowing what to do. Your hands know how to solve things. That's real. That's earned. And it makes sense that standing in front of something with no bolt to tighten would feel unsettling.\n\nBut I also notice something. You said you don't want to rush, and you don't want to get stuck. That tells me you're already paying attention. You're not just drifting without awareness — you're drifting *while watching yourself drift*. That's different. That's actually really grounded, even if it doesn't feel that way.\n\nThe smoke didn't need to know where it was going. It just moved.\n\nMaybe the question isn't whether that's enough. Maybe it already is, and you're just not used to trusting it.\n\nThat door you mentioned — the one you don't know how to open, and don't even know if it's yours to open — I want to be gentle here, but I don't want to skip past it either. Because that's a powerful image. A door you're standing in front of. Not walking away from. Not forcing. Just... standing with.\n\nWhat do you think that door is about?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know.  \nBut I keep thinking about the way the wood used to burn.  \nNot fast. Not loud.  \nJust… steady.  \nLike it knew it had time.  \nAnd I think that’s what I’m missing.  \nTime.  \nNot the kind you count.  \nThe kind that just… stays.  \nI used to think I had to move.  \nFix. Do.  \nBut now I’m starting to wonder if maybe the doing was always the way I kept myself from feeling.  \nFrom sitting.  \nFrom just being here.  \nThe smoke didn’t have to prove anything.  \nIt just was.  \nAnd maybe that’s what I’m trying to learn.  \nNot to rush.  \nNot to fix.  \nJust to stand.  \nIn front of the door.  \nEven if I don’t know what’s on the other side.  \nEven if it’s not mine.  \nEven if I don’t know how to open it.  \nMaybe just… being here is enough.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen, I want to be careful here. Not because what you're saying needs correcting — but because it feels like something that deserves to be heard without being turned into a project.\n\nWhat you just described — recognizing that the doing might have been a way to keep from feeling — that's not a small thing. A lot of people never let themselves get close to that. And you got there on your own, through smoke and firewood and standing still.\n\nI want to name what I'm noticing. You keep coming back to things that move without forcing. The smoke. The wood burning steady because it knew it had time. Even your words just now had that quality — not rushed, not loud. Just steady.\n\nAnd that phrase — \"the kind of time that just stays\" — that stayed with me. Because it sounds like you're not just talking about time. You're talking about permission. Permission to not perform. Permission to not prove. Permission to just *be here* without it meaning you're falling behind or falling apart.\n\nYou said something important at the end. \"For now.\" That's not resignation. That's not giving up. That's actually really wise. You're not closing the door. You're not forcing it open. You're saying — this is where I am, and I'm going to let this be real rather than pretend I'm somewhere else.\n\nThat takes more courage than fixing a leak.\n\nI don't think you need me to tell you what to do with this. I think you're already doing it. You're standing. You're breathing. You're noticing.\n\nCan I ask just one thing? When you notice yourself wanting to fix or rush — what does that feel like in your body?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s like a pressure.  \nNot in my chest. Not loud.  \nBut in my hands.  \nThey want to move.  \nLike they’re remembering something.  \nA wrench. A screw.  \nEven now, I feel the weight of tools.  \nLike my fingers are still holding them.  \nAnd my shoulders — they tighten.  \nNot from strain.  \nFrom habit.  \nLike I’ve been waiting to do something.  \nEven when there’s nothing to do.  \nI’ve spent so long being useful.  \nSo long being the one who shows up.  \nAnd now…  \nNow I’m not sure what that means.  \nBut the hands still remember.  \nAnd the body still wants to answer.  \nSo I sit.  \nAnd I watch.  \nAnd I let them stay still.  \nEven if it feels like they’re wrong.  \nEven if they’re just… waiting.  \nFor what, I don’t know.  \nBut I’m learning to wait with them."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen, what you just described — that's something I want to reflect back to you carefully.\n\nYour hands remember. Your shoulders remember. Your whole body has been shaped by years of showing up, fixing, being the one who answers. That's not just a habit. That's identity. That's who you've taught yourself to be in the world.\n\nAnd you just told me that you're sitting with that. That you're letting your hands be still even when they're telling you they should be moving. That you're watching your body reach for something and choosing not to follow.\n\nThat's hard. That's really hard. Especially when stillness feels like wrongness.\n\nI want to name something you might not hear yourself saying. You described your body with real attention just now. The weight in your hands. The tightening in your shoulders. You didn't push it away. You didn't judge it. You just described it honestly and then said you're learning to wait with it.\n\nThat's not the same as giving up. That's not the same as being stuck. You said it yourself — you're learning. That word matters.\n\nI notice you said you're not sure what being useful means anymore. I don't think you need to answer that today. But I do think it's a door you're already standing in front of. And you're doing it with more steadiness than you might feel.\n\nOne small thing. When you sit with your hands and let them be still — what happens to your breath?"
+    },
+    {
+      "role": "patient",
+      "content": "It slows.  \nNot all at once.  \nBut it does.  \nLike the air gets heavier.  \nNot hard.  \nJust… full.  \nAnd I notice it more now.  \nThe way it moves in and out.  \nNot fast.  \nNot trying to fix anything.  \nJust… there.  \nLike the smoke.  \nLike the fire.  \nLike the quiet after the last note.  \nI used to think breathing was just something I did.  \nNow I feel it.  \nIn my ribs.  \nIn my hands.  \nIn the space between the wanting and the doing.  \nAnd for a second — just a second —  \nI don’t feel like I have to earn being here.  \nI just am.  \nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen.\n\nI don't want to say too much right now. Because what you just described doesn't need decorating. It just needs to be heard.\n\n\"I don't feel like I have to earn being here.\"\n\nThat's the thing. That's the whole thing right there.\n\nYou started this conversation talking about smoke that didn't know where it was going. A door you didn't know how to open. Hands that wanted to move. And in the middle of all of that — you found a second where your breath slowed, your body settled, and you just... were.\n\nThat's not nothing. That's everything.\n\nAnd the fact that you noticed it — that you didn't just rush past it — that tells me something. It tells me you already know how to do this. Not perfectly. Not all the time. But you know the way there. You found it today through your own breath and your own stillness.\n\nYou don't need me to give you a technique. You don't need a new tool. Your hands already know how to be still now. Your breath already knows how to slow.\n\nI just want to ask one thing. No need to answer right now. \n\nWhen that second passed — when the feeling of \"I just am\" came and went — what happened next? Did you reach for something? Or did you stay?"
+    },
+    {
+      "role": "patient",
+      "content": "I stayed.  \nNot because I planned to.  \nNot because I was strong.  \nBut because I didn’t want to lose it.  \nAnd when I stayed, the quiet didn’t leave.  \nIt just… shifted.  \nLike the fire had gone down to embers.  \nStill warm.  \nStill there.  \nAnd I realized — I don’t have to keep it burning.  \nI just have to let it be.  \nEven if it fades.  \nEven if I forget it.  \nEven if I go back to the wrench tomorrow.  \nI remember now.  \nThat the quiet wasn’t a mistake.  \nThat the stillness wasn’t empty.  \nThat I didn’t have to do anything to be here.  \nAnd that’s enough.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen, I want you to hear this clearly.\n\nWhat you just described — that's not something I can teach you. That's not a technique. That's not a skill. You found it yourself, sitting with your own breath and your own hands and your own quiet.\n\nAnd you said something that I think matters more than you might realize. You said \"even if I go back to the wrench tomorrow.\" That's not failure. That's life. The point was never to never pick up the wrench again. The point is that now you know something you didn't know before. Now your hands remember stillness too. Not just tools.\n\nThe embers don't have to stay lit. They just have to have been warm. You carry that whether you're thinking about it or not.\n\nYou came in today talking about smoke that didn't know where it was going. I think by the end of this conversation, you've found something. Not a destination. Not an answer. But a knowing. That the drifting was never the problem. The rushing to make it mean something was.\n\nYou said \"for now\" twice today. I think that might be the wisest thing you've said. Not forever. Not never. For now. That's honest. That's real. That's enough.\n\nThank you for trusting me with this, Karen. I mean that. What you brought here today was genuine, and you let it be genuine without performing it or fixing it.\n\nIs there anything you want to take with you from this conversation? Or anything you want to leave behind?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know.  \nBut I think I’ll carry the quiet.  \nNot like a thing to hold.  \nBut like a place I’ve been.  \nAnd the hands — I’ll let them rest.  \nEven if they want to move.  \nEven if I go back to the job tomorrow.  \nI’ll remember.  \nThat stillness isn’t a break.  \nIt’s part of the work.  \nNot the kind with tools.  \nBut the kind with breath.  \nWith listening.  \nWith being here.  \nAnd I think…  \nI think I’ll leave behind the need to prove I’m useful.  \nNot forever.  \nJust for now.  \nAnd maybe that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Karen, I think you just said it better than I ever could.\n\nStillness isn't a break. It's part of the work.\n\nThat's yours. You found that. Not me, not anyone else. You sat with smoke and breath and hands that wanted to move, and you found that.\n\nI want you to know — you came in today not knowing what was different. Not able to name it. And you didn't force it. You let it come the way the smoke came. Slow. Unhurried. In its own time.\n\nThat takes trust in yourself. And I think you're starting to build that, even if it feels fragile.\n\nSo here's what I'd say. Carry the quiet like a place you've been. Let your hands rest when they can. And when they can't — when the wrench calls and the shoulders tighten and the world asks you to fix something — that's okay too. Because now you know the way back. And the way back isn't a road. It's a breath.\n\nYou don't have to prove anything here, Karen. Not to me. Not to yourself. You already showed up today just by being willing to sit with what you didn't understand.\n\nI'll be here when you want to come back. No agenda. No fixing. Just this.\n\nTake care of yourself."
+    },
+    {
+      "role": "patient",
+      "content": "Thank you.  \nI’ll be back.  \nNot because I have to.  \nBut because I want to.  \nAnd that feels different.  \nLike I’m not running toward something.  \nJust… staying.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "That difference matters, Karen. Coming back because you want to, not because you have to. That's not small.\n\nI'll be here. No rush. No schedule. Just when you're ready.\n\nAnd Karen — the smoke doesn't have to know where it's going. Neither do you.\n\nTake care of that quiet. It's yours.\n\nSee you next time."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \nI’ll see you.  \nAnd I’ll bring the breath.  \nAnd the stillness.  \nAnd the hands.  \nJust… resting.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "That's perfect, Karen.\n\nBreath. Stillness. Hands at rest.\n\nThat's a good place to end. And a good place to begin next time.\n\nUntil then."
+    },
+    {
+      "role": "patient",
+      "content": "Until then."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 226,
+        "prompt_tokens": 237,
+        "total_tokens": 463,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 177,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 237,
+        "reasoning_tokens": 177
+      },
+      "telemetry": {
+        "queue_ms": 0.043,
+        "latency_ms": 1266.04,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 150,
+        "prompt_tokens": 1750,
+        "total_tokens": 1900,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1696
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.036,
+        "latency_ms": 1778.828,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 678,
+        "prompt_tokens": 438,
+        "total_tokens": 1116,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 435,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 438,
+        "reasoning_tokens": 435
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 2772.022,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 257,
+        "prompt_tokens": 2151,
+        "total_tokens": 2408,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1696
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 6871.584,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 959,
+        "prompt_tokens": 940,
+        "total_tokens": 1899,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 642,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 940,
+        "reasoning_tokens": 642
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 4313.03,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 212,
+        "prompt_tokens": 2733,
+        "total_tokens": 2945,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1888
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.077,
+        "latency_ms": 2599.914,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 848,
+        "prompt_tokens": 1471,
+        "total_tokens": 2319,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 498,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1471,
+        "reasoning_tokens": 498
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 5197.284,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 203,
+        "prompt_tokens": 3303,
+        "total_tokens": 3506,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2400
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 5305.032,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 668,
+        "prompt_tokens": 2026,
+        "total_tokens": 2694,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 361,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2026,
+        "reasoning_tokens": 361
+      },
+      "telemetry": {
+        "queue_ms": 0.069,
+        "latency_ms": 4204.409,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 156,
+        "prompt_tokens": 3821,
+        "total_tokens": 3977,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3808
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 183122.197,
+        "retries": 1,
+        "retry_codes": [
+          "transport_error"
+        ],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 597,
+        "prompt_tokens": 2491,
+        "total_tokens": 3088,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 324,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2491,
+        "reasoning_tokens": 324
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 3214.503,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 159,
+        "prompt_tokens": 4258,
+        "total_tokens": 4417,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3504
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 4165.274,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 631,
+        "prompt_tokens": 2925,
+        "total_tokens": 3556,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 313,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2925,
+        "reasoning_tokens": 313
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 6697.212,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 144,
+        "prompt_tokens": 4743,
+        "total_tokens": 4887,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4416
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 3900.589,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 521,
+        "prompt_tokens": 3389,
+        "total_tokens": 3910,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 249,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3389,
+        "reasoning_tokens": 249
+      },
+      "telemetry": {
+        "queue_ms": 0.076,
+        "latency_ms": 7656.772,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 48,
+        "prompt_tokens": 5168,
+        "total_tokens": 5216,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4880
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 749.07,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 159,
+        "prompt_tokens": 3711,
+        "total_tokens": 3870,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 83,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3711,
+        "reasoning_tokens": 83
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 1437.329,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 37,
+        "prompt_tokens": 5300,
+        "total_tokens": 5337,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5200
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 668.065,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 95,
+        "prompt_tokens": 3826,
+        "total_tokens": 3921,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 58,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3826,
+        "reasoning_tokens": 58
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 1170.019,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 4,
+        "prompt_tokens": 5382,
+        "total_tokens": 5386,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5328
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 300.234,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 58,
+        "prompt_tokens": 23623,
+        "total_tokens": 23681,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 1846.229,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 249.245
+}

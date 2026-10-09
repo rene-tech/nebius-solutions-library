@@ -172,3 +172,47 @@ def test_startup_query_rejects_invalid_identity_and_bounds(updates: dict) -> Non
     args = {"namespace": "models", "deployment": "model-burst", "timeout_seconds": 900, "target_queue_depth": 1}
     with pytest.raises(ValueError):
         startup_retention_promql(**(args | updates))
+
+
+def test_idle_hpa_bootstrap_is_not_customer_demand(tmp_path: Path) -> None:
+    promtool = shutil.which("promtool")
+    if promtool is None:
+        pytest.skip("promtool required")
+    expression = startup_retention_promql(
+        namespace="models",
+        deployment="model-burst",
+        timeout_seconds=900,
+        target_queue_depth=1,
+        model_ref="diffdock",
+    )
+    rows = fixture(desired="1+0x104", created="0+0x104")
+    tests = []
+    for name, demand, expected in (
+        ("idle default-one must drain", [], 0),
+        (
+            "real cold request retains startup",
+            [series("fs2_serve_operations", "1+0x104", model="diffdock", state="activating")],
+            1,
+        ),
+        (
+            "sibling model does not create demand",
+            [series("fs2_serve_operations", "1+0x104", model="other", state="activating")],
+            0,
+        ),
+    ):
+        tests.append(
+            {
+                "name": name,
+                "interval": "15s",
+                "input_series": rows + demand,
+                "promql_expr_test": [
+                    {"expr": expression, "eval_time": "3m", "exp_samples": [{"labels": "{}", "value": expected}]}
+                ],
+            }
+        )
+    path = tmp_path / "real-demand.test.yaml"
+    path.write_text(yaml.safe_dump({"rule_files": [], "evaluation_interval": "15s", "tests": tests}))
+    result = subprocess.run(  # noqa: S603 - installed binary, generated local fixture, no shell
+        [promtool, "test", "rules", str(path)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

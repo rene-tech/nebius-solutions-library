@@ -1,0 +1,40 @@
+{
+  "accelerator": {
+    "class": "nvidia-h100-sxm5-80gb",
+    "driver_version": "580.159.04-1ubuntu1",
+    "provider_instance_type": "gpu-h100-sxm"
+  },
+  "authority": "reviewed-live-runtime-qualification",
+  "models": [
+    {
+      "artifact_manifest_digest": "sha256:09aab654299a9b9a97ae8daeadbc7a2353a74cf673134fcf6689e4306b40c5f0",
+      "gpu_count": 1,
+      "http_mcp_qualified": true,
+      "model_id": "sdxl",
+      "qualified_requests": 35,
+      "revision": "462165984030d82259a11f4367a4eed129e94a7b",
+      "runtime_image_digest": "sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "topology": "single-gpu"
+    },
+    {
+      "artifact_manifest_digest": "sha256:8570bdfe2269b6a28fcfdf9973d4876589757a6af55e991f6000e3e8f0827057",
+      "gpu_count": 1,
+      "http_mcp_qualified": true,
+      "model_id": "nv-reason-cxr-3b",
+      "qualified_requests": 18,
+      "revision": "056bd0383b35226554da9dc5866e095df174ae19",
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "topology": "single-gpu"
+    }
+  ],
+  "observed_at": "2026-09-18T23:04:52.589003Z",
+  "schema": "fs2-serve.nebius.ai/h100-runtime-qualification-receipt/v1",
+  "scope": "Exact-image one-H100 runtime and public semantic compatibility only; not clinical efficacy, image prompt fidelity, cold latency, scale-out or snapshots.",
+  "source_evidence": {
+    "retained_public_placement_sha256": "18e6ffd4aea6e3676d6c2c0998c92004d00eae8a651b9deec8b7796fe2482b1b"
+  }
+}

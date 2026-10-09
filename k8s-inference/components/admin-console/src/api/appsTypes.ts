@@ -31,6 +31,26 @@ export interface AppSummary {
   };
   logical_run_count: number | null;
   last_used_at: string | null;
+  customer_readiness: {
+    verdict: "customer-ready" | "not-ready";
+    ready: boolean;
+    evaluated_at: string;
+    valid_until: string;
+    source_revision: string;
+    capabilities: Array<{
+      capability_id: string;
+      advertised: boolean;
+      requested: boolean;
+      state: "untested" | "partial" | "failed" | "qualified" | "stale";
+      required: boolean;
+      scenarios: Array<{
+        scenario_id: string;
+        state: "untested" | "partial" | "failed" | "qualified" | "stale";
+        evidence_id: string | null;
+        reasons: string[];
+      }>;
+    }>;
+  } | null;
 }
 export interface AppList {
   items: AppSummary[];
@@ -65,6 +85,22 @@ export interface ObservedTransport {
   operation_id: string | null;
   mcp_tool: string | null;
   mcp_is_error: boolean | null;
+  semantic_outcome:
+    | "succeeded"
+    | "accepted"
+    | "failed"
+    | "cancelled"
+    | "timed_out"
+    | "unknown"
+    | null;
+  jsonrpc_error_code: number | null;
+  semantic_error_type: string | null;
+  admission_stage:
+    | "pre_admission"
+    | "admitted"
+    | "not_applicable"
+    | "unknown"
+    | null;
 }
 export interface ObservedTransportUsage {
   request_count: number;
@@ -73,6 +109,13 @@ export interface ObservedTransportUsage {
   successful_http_count: number;
   failed_http_count: number;
   mcp_tool_error_count: number;
+  semantic_success_count: number;
+  semantic_accepted_count: number;
+  semantic_failed_count: number;
+  semantic_cancelled_count: number;
+  semantic_timed_out_count: number;
+  semantic_unknown_count: number;
+  pre_admission_failure_count: number;
   request_bytes: number | null;
   response_bytes: number | null;
   request_bytes_known_count: number;
@@ -86,6 +129,7 @@ export interface ObservedTransportUsage {
     timestamp: string;
     request_count: number | null;
     status_classes: Record<string, number> | null;
+    semantic_outcomes: Record<string, number> | null;
   }>;
   time_bucket_seconds: number;
 }
@@ -133,6 +177,11 @@ export interface AppUsage {
     occupied_seconds: number | null;
     active_compute_seconds: number | null;
     occupied_idle_seconds: number | null;
+    startup_seconds?: number | null;
+    other_seconds?: number | null;
+    unknown_seconds?: number | null;
+    phases_complete?: boolean;
+    quality?: string;
   } | null;
   notes: string[];
   unique_users: number;

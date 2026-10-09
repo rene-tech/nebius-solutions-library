@@ -1,0 +1,8 @@
+**
+!models/
+!models/general-media/
+!models/general-media/cosmos-transfer25/
+!models/general-media/cosmos-transfer25/adapter/
+!models/general-media/cosmos-transfer25/adapter/app.py
+!models/general-media/cosmos-transfer25/adapter/transfer_media.py
+!models/general-media/cosmos-transfer25/adapter/requirements.lock

@@ -119,6 +119,9 @@ class ArtifactRecords:
             raise KeyError(artifact_id)
         return record
 
+    async def get_artifacts(self, artifact_ids: tuple[UUID, ...], *, tenant_id: str) -> list[ArtifactRecord]:
+        return [await self.get_artifact(artifact_id, tenant_id=tenant_id) for artifact_id in artifact_ids]
+
 
 class BytesReader:
     def __init__(self, values: dict[UUID, bytes]) -> None:
@@ -439,6 +442,7 @@ def runtime_execution_map(
         profiles=catalog,
         tools_image="registry.test/control@sha256:" + "9" * 64,
         internal_api_url="http://control.fs2.svc:8080",
+        internal_fallback_api_url="http://artifacts.fs2.svc:8080",
         capability_authority=ScientificWorkloadCapabilityAuthority(
             KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
         ),
@@ -717,6 +721,8 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     collector = next(item for item in pod["containers"] if item["name"] == "artifact-collector")
     collector_environment = {item["name"]: item["value"] for item in collector["env"]}
     assert collector_environment["FS2_CATALOG_DIR"] == "/opt/fs2/catalog"
+    assert collector_environment["FS2_SCIENTIFIC_INTERNAL_API_URL"] == "http://control.fs2.svc:8080"
+    assert collector_environment["FS2_SCIENTIFIC_INTERNAL_FALLBACK_API_URL"] == "http://artifacts.fs2.svc:8080"
     # This is a CPU stage, so its scheduling admission correctly has no
     # accelerator digest.  The collector receives the independently verified
     # execution-map image identity used by the model container.
@@ -764,6 +770,8 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
         initializers = [item for item in materializer_pod["initContainers"] if item["name"].startswith("materialize-")]
         assert len(initializers) == 1
         initializer = initializers[0]
+        initializer_environment = {item["name"]: item["value"] for item in initializer["env"]}
+        assert initializer_environment["FS2_SCIENTIFIC_INTERNAL_FALLBACK_API_URL"] == "http://artifacts.fs2.svc:8080"
         assert initializer["resources"] == {
             "requests": {"cpu": "100m", "memory": "256Mi"},
             "limits": {"cpu": "1", "memory": "1Gi"},
@@ -2101,6 +2109,10 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
             assert expected_size_bytes == len(input_bytes)
             assert expected_media_type == "text/plain"
             return input_bytes
+
+        def download_file(self, artifact_id, *, destination, **expected):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(self.download(artifact_id, **expected))
 
         def upload(self, *, identity, content, media_type, compression):
             digest = hashlib.sha256(content).hexdigest()

@@ -1,0 +1,27 @@
+{
+  "started_at": "2026-09-16T11:24:31.186523+00:00",
+  "scope": "files",
+  "complete_customer_acceptance": false,
+  "measurements": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "case": "en-01",
+      "input_sha256": "bed0455e336172d5e8c8eaa56bf54efa69cce5f115fba17cfb7d92d482953af5",
+      "transport_sha256": "a4bf68687801610eb4af999a9633f088c3fbf5dd6dc890af23f188a13e5d31df",
+      "transport_bytes": 6748717,
+      "submit_status": 403,
+      "operation_id": null,
+      "wall_seconds": 1.0967436488717794,
+      "final_status": 403,
+      "result": {
+        "error": {
+          "type": "permission_denied",
+          "message": "request is outside token policy"
+        }
+      }
+    }
+  ],
+  "temporary_key_id": "f5ab76b0-8f60-4f2d-8c3c-cb7b9872891f",
+  "temporary_key_revoked": true,
+  "finished_at": "2026-09-16T11:24:33.258899+00:00"
+}

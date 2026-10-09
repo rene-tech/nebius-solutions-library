@@ -1,0 +1,49 @@
+{
+  "magpie-tts-multilingual-357m": {
+    "type": "object", "additionalProperties": false, "required": ["text"],
+    "description": "Generate complete WAV audio using one of five named Magpie v2607 voices. Large output is returned through a tenant-owned artifact handle. Use /v1/voice/synthesize for incremental audio.",
+    "properties": {
+      "model": {"const": "magpie-tts-multilingual-357m", "default": "magpie-tts-multilingual-357m"},
+      "text": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "Text to speak; all accepted text is synthesized."},
+      "language": {"type": "string", "enum": ["ar", "de", "en", "es", "fr", "hi", "it", "ja", "ko", "pt", "vi", "zh"], "default": "en", "description": "Arabic defaults to Modern Standard Arabic."},
+      "voice": {"type": "string", "enum": ["Aria", "Jason", "John", "Leo", "Sofia"], "default": "Sofia", "description": "Pinned v2607 named speaker, consistent across languages."},
+      "apply_text_normalization": {"type": "boolean", "default": false, "description": "Apply upstream language-specific text normalization before synthesis."}
+    }
+  },
+  "parakeet-realtime-eou-120m-v1": {
+    "type": "object", "additionalProperties": false, "required": ["audio"],
+    "description": "Transcribe a complete uploaded English recording with actual model EOU markers. For partials during recording use /v1/voice/stream.",
+    "properties": {"audio": {"$ref": "#/$defs/audio"}},
+    "$defs": {"audio": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "sha256", "size_bytes", "media_type", "compression"],
+      "properties": {
+        "artifact_id": {"type": "string", "format": "uuid"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 1, "maximum": 536870912},
+        "media_type": {"type": "string", "enum": ["audio/wav", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/webm", "audio/flac"]},
+        "compression": {"const": "none"}
+      },
+      "x-fs2-artifact-materialization": "download-url", "x-fs2-artifact-max-bytes": 536870912,
+      "x-fs2-artifact-media-types": ["audio/wav", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/webm", "audio/flac"]
+    }}
+  },
+  "diar-streaming-sortformer-4spk-v2-1": {
+    "type": "object", "additionalProperties": false, "required": ["audio"],
+    "description": "Attribute up to four speakers in a complete uploaded recording. Labels are arrival order, not identified people. This optional model is not required for bot-to-bot sessions.",
+    "properties": {"audio": {"$ref": "#/$defs/audio"}},
+    "$defs": {"audio": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "sha256", "size_bytes", "media_type", "compression"],
+      "properties": {
+        "artifact_id": {"type": "string", "format": "uuid"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 1, "maximum": 536870912},
+        "media_type": {"type": "string", "enum": ["audio/wav", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/webm", "audio/flac"]},
+        "compression": {"const": "none"}
+      },
+      "x-fs2-artifact-materialization": "download-url", "x-fs2-artifact-max-bytes": 536870912,
+      "x-fs2-artifact-media-types": ["audio/wav", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/webm", "audio/flac"]
+    }}
+  }
+}

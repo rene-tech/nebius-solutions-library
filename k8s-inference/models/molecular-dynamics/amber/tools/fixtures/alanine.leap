@@ -1,0 +1,11 @@
+source leaprc.protein.ff19SB
+source leaprc.water.opc
+peptide = sequence { ACE ALA NME }
+check peptide
+saveamberparm peptide alanine-vacuum.prmtop alanine-vacuum.inpcrd
+savepdb peptide alanine-vacuum.pdb
+solvatebox peptide OPCBOX 10.0
+check peptide
+saveamberparm peptide alanine-opc.prmtop alanine-opc.inpcrd
+savepdb peptide alanine-opc.pdb
+quit

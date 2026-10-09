@@ -25,7 +25,8 @@ INVENTORIES = (
 DOMAINS = {
     "structure", "protein-design", "protein-language", "genomics", "small-molecule",
     "single-cell", "imaging", "sequence-search", "age-prediction",
-    "generative-media", "physical-ai-robotics", "speech", "general-ai",
+    "generative-media", "physical-ai-robotics", "speech", "general-ai", "molecular-dynamics",
+    "toxicology",
 }
 
 
@@ -92,7 +93,7 @@ def metadata_issues(model_ids: set[str], payload: dict) -> list[str]:
         credit = row.get("attribution")
         if credit is not None:
             pair = (credit.get("label"), credit.get("relationship"))
-            if pair not in {("NVIDIA", "publisher"), ("NVIDIA BioNeMo", "ecosystem")} or not https_url(credit.get("source")):
+            if pair not in {("NVIDIA", "publisher"), ("NVIDIA", "distribution"), ("NVIDIA BioNeMo", "ecosystem")} or not https_url(credit.get("source")):
                 issues.append(f"{model_id}: invalid NVIDIA attribution")
         homepage = urlparse(row.get("homepage", ""))
         if homepage.hostname == "huggingface.co" and homepage.path.startswith("/nvidia/") and not credit:

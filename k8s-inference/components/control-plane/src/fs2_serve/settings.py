@@ -59,19 +59,39 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"  # noqa: S104
     port: int = Field(default=8080, ge=1, le=65535)
     database_url: str = "postgresql://fs2_serve@postgres/fs2_serve"
+    readiness_dependency_timeout_seconds: float = Field(default=0.75, ge=0.01, le=10)
     catalog_dir: Path = Path("/etc/fs2-serve/catalog")
     bindings_file: Path = Path("/etc/fs2-serve/serving-bindings.json")
     variant_promotions_file: Path = Path("/etc/fs2-serve/bindings/model-variant-promotions.json")
     lean_routes_file: Path | None = None
     deployment_runtime_records_file: Path | None = None
+    native_serverless_deployments_file: Path | None = None
     evidence_root: Path = Path("/etc/fs2-serve/evidence")
+    customer_readiness_verdicts_file: Path | None = None
     federation_routes_file: Path = Path("/var/run/secrets/fs2-serve/federation/routes.json")
     federation_secret_dir: Path = Path("/var/run/secrets/fs2-serve/federation")
+    stt_scheduling_group_key_file: Path | None = None
+    stt_gateway_token_file: Path | None = None
     repo_root: Path | None = None
     migrations_dir: Path = _default_migrations_dir()
     token_pepper_file: Path = Path("/var/run/secrets/fs2-serve/token-pepper")
     payload_keyring_file: Path = Path("/var/run/secrets/fs2-serve/payload-keyring.json")
     ledger_hmac_keyring_file: Path = Path("/var/run/secrets/fs2-serve/ledger-hmac-keyring.json")
+    user_storage_enabled: bool = False
+    user_storage_project_id: str = ""
+    user_storage_cloud_tenant_id: str = ""
+    user_storage_region: str = ""
+    user_storage_credentials_file: Path | None = None
+    workbench_releases: dict[str, str] = Field(default_factory=dict)
+    workbench_protected_endpoints: set[str] = Field(default_factory=set)
+    workbench_executor_enabled: bool = False
+    user_storage_default_mode: Literal["tenant", "user"] = "tenant"
+    user_storage_quota_bytes: int = Field(default=5_000_000_000, gt=0)
+    user_storage_excluded_tenants: tuple[str, ...] = ()
+    user_storage_poll_seconds: float = Field(default=60, ge=5)
+    user_storage_starter_pack_dir: Path | None = None
+    user_storage_starter_pack_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    user_storage_starter_pack_tenants: tuple[str, ...] = ()
     route_attestors_file: Path | None = Path("/var/run/secrets/fs2-serve/attestors/route-attestors.json")
     admin_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-token")
     bootstrap_access_token_file: Path = Path("/var/run/secrets/fs2-serve/bootstrap-access-token")
@@ -238,11 +258,18 @@ class Settings(BaseSettings):
     scientific_batch_internal_api_url: str = Field(
         default="http://fs2-serve-control-plane.default.svc:8080", min_length=1, max_length=2048
     )
+    scientific_batch_internal_fallback_api_url: str | None = Field(default=None, min_length=1, max_length=2048)
     scientific_batch_workers: int = Field(default=2, ge=1, le=32)
     scientific_batch_poll_seconds: float = Field(default=0.25, ge=0.05, le=60)
     scientific_batch_lease_seconds: float = Field(default=30, ge=5, le=300)
     scientific_batch_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
+    scientific_pool_failure_confirmation_seconds: int = Field(default=120, ge=30, le=1800)
+    scientific_admitted_unscheduled_timeout_seconds: int = Field(default=7200, ge=30, le=86400)
+    scientific_pool_recovery_backoff_base_seconds: int = Field(default=15, ge=1, le=1800)
+    scientific_pool_recovery_backoff_max_seconds: int = Field(default=300, ge=1, le=1800)
     public_base_url: str = Field(default="https://inference.example.invalid", min_length=1, max_length=2048)
+    mindguard_4b_endpoint: str | None = None
+    mindguard_8b_endpoint: str | None = None
     public_authority_mode: Literal["dns", "ip"] = "dns"
     authorization_server_url: str = "https://identity.example.invalid"
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
@@ -276,11 +303,16 @@ class Settings(BaseSettings):
     artifact_retention_seconds: int = Field(default=7776000, ge=86400, le=315360000)
     artifact_media_types: str = Field(
         default=(
-            "application/octet-stream,application/json,application/gzip,"
+            "application/octet-stream,application/json,application/gzip,application/x-tar,"
             "application/x-nifti,image/jpeg,image/png,image/webp,video/mp4,text/x-a3m,"
             "application/vnd.fs2.scientific-manifest+json,"
             "application/vnd.fs2.scientific-validation+json,"
-            "chemical/x-pdb,chemical/x-cif,text/plain"
+            "application/vnd.fs2.gromacs-checkpoint+json,"
+            "application/vnd.fs2.lammps-checkpoint+json,"
+            "application/vnd.fs2.namd-checkpoint+json,"
+            "application/vnd.fs2.amber-checkpoint+json,"
+            "chemical/x-pdb,chemical/x-cif,text/plain,"
+            "audio/wav,audio/x-wav,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/flac,audio/aac,video/webm"
         ),
         min_length=3,
         max_length=2048,
@@ -427,6 +459,19 @@ class Settings(BaseSettings):
             or internal_api.fragment
         ):
             raise ValueError("scientific batch internal API URL must be an in-cluster HTTP origin")
+        if self.scientific_batch_internal_fallback_api_url:
+            fallback_api = urlsplit(self.scientific_batch_internal_fallback_api_url)
+            if (
+                fallback_api.scheme != "http"
+                or fallback_api.hostname is None
+                or (not fallback_api.hostname.endswith(".svc") and not self.allow_non_cluster_urls)
+                or fallback_api.username
+                or fallback_api.password
+                or fallback_api.path not in {"", "/"}
+                or fallback_api.query
+                or fallback_api.fragment
+            ):
+                raise ValueError("scientific batch fallback API URL must be an in-cluster HTTP origin")
         if not self.scientific_batch_kubernetes_api_url.startswith("https://"):
             raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
         if self.scientific_batch_enabled and not self.scientific_artifacts_enabled:

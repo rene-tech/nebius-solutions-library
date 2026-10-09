@@ -1,0 +1,23 @@
+{
+  "scope": "local CPU checkpoint qualification, not production microphone acceptance",
+  "input": "synthetic Magpie Sofia-4.wav, resampled from 22050 to 16000 Hz mono PCM16 with ffmpeg",
+  "wav_sha256": "7cc74a922aab1a1543c1b5fab78bdb1b06ccda65721bd9d7247986b8cc2bc30c",
+  "input_audio_seconds": 4.4581875,
+  "appended_silence_seconds": 2,
+  "silero_revision": "be95df9152c0d7618fa1edfeb296fc3dae32376f",
+  "silero_sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+  "nemo_logic_revision": "a01fa68f0907a52cca1b07115e0e37c68ca580e5",
+  "onnxruntime": "1.30.0",
+  "numpy": "2.3.2",
+  "execution_provider": "CPUExecutionProvider",
+  "model_load_ms": 42.24125295877457,
+  "cpu_inference_ms": 22.29413203895092,
+  "processed_seconds": 5.568,
+  "real_time_factor": 0.004003974863317335,
+  "speech_start_seconds": 0.224,
+  "speech_end_seconds": 5.568,
+  "end_source": "silero_vad_silence",
+  "model_eou": false,
+  "automatic_backchannel_speech": false,
+  "text_suppression": false
+}

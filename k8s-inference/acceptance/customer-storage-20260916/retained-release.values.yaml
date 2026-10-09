@@ -1,0 +1,40 @@
+# Target-specific retained H100 overlay; not reusable chart defaults.
+# Merge with the existing release values, never use as a full fresh-cluster file.
+customerStorage:
+  enabled: true
+  projectId: project-e00rene
+  region: eu-north1
+  defaultMode: tenant
+  quotaBytes: 5000000000
+  excludedTenants: [stockholm]
+  secretName: fs2-customer-storage-provisioner
+image:
+  digest: sha256:da7f5076307476b636283752c41cc2ffd96bdefa951d12231ed13434a4709422
+nodeSelector:
+  capacity.fs2.nebius/pool: null
+  workload.fs2.nebius/system: null
+  capacity.fs2.nebius/type: regular
+tolerations:
+  - key: workload.fs2.nebius/general-cpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+modelController:
+  tolerations:
+    - key: workload.fs2.nebius/general-cpu
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+adminConsole:
+  image:
+    digest: sha256:4320eb8b1dbf9d0fce3122d6418001aac7e00f7f2ec5577c697455ab277949ce
+  provenance:
+    sourceCommit: 8f84183fbf3c46993ae225ba242b5c96fdc0c185
+    sourceTree: 689a6fbe15db4d90fc8410b0e7a428330cb4ee83
+    sbomSha256: bbd9944e0697b546bc6731fc66f2b5a3d3063ac89513c9ffd757995d6fa7f77f
+    sbomFormat: cyclonedx-json
+  tolerations:
+    - key: workload.fs2.nebius/general-cpu
+      operator: Equal
+      value: "true"
+      effect: NoSchedule

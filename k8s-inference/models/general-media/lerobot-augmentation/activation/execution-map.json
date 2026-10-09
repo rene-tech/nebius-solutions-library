@@ -1,0 +1,54 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-execution-map-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-execution-map.json",
+  "model": {
+    "model_id": "cosmos3-lerobot-augmentation",
+    "variant_id": "cosmos3-nano-lerobot-v3",
+    "workload_namespace": "fs2-models",
+    "execution_identity_sha256": "8a92680d991ff52e57de2188575cfc9748acf95f2684eb10f5fc2a561575acb2",
+    "plan_adapter": {
+      "module": "fs2_serve.scientific_batch.adapters",
+      "function": "compile_adapter_run"
+    },
+    "access_profile": "public",
+    "runtime_artifacts": [],
+    "stages": [
+      {
+        "stage_id": "augment-dataset",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:69fe161d370fac4cc9517d24ecfee7b025bb569a935ffadab8eb31e49c783a11",
+        "collector_id": "cosmos3-lerobot-v3-0-6-1",
+        "validator_id": "cosmos3-lerobot-v3-0-6-1",
+        "mounts": [
+          {
+            "name": "artifact-workspace",
+            "kind": "artifact-workspace",
+            "claim_name": null,
+            "host_path": null,
+            "mount_path": "/mnt/fs2-scientific",
+            "sub_path": null,
+            "read_only": false
+          }
+        ],
+        "service_account_name": "cosmos3-nano",
+        "workspace_uid": 10001,
+        "workspace_gid": 10001,
+        "resources": {
+          "requests": {
+            "cpu": "2000m",
+            "memory": "16Gi",
+            "ephemeral_storage": "32Gi"
+          },
+          "limits": {
+            "cpu": "4000m",
+            "memory": "24Gi",
+            "ephemeral_storage": "32Gi"
+          }
+        },
+        "active_deadline_seconds": 43200,
+        "termination_grace_seconds": 60,
+        "environment": {},
+        "required_node_labels": {}
+      }
+    ]
+  }
+}

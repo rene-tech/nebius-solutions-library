@@ -1,0 +1,1188 @@
+{
+  "schema": "fs2.nemotron-en-natural-node-loss-diagnosis.v1",
+  "observed_at": "2026-09-16T18:50:07.250Z",
+  "mode": "read-only production diagnosis; no injected fault, no model/rollout/limit changes, no new inference",
+  "context": "fs2-storage-h100",
+  "namespace": "fs2-models",
+  "region": "eu-north1",
+  "operation_id": "23e7345c-f777-4e02-beb5-6e3a590ff8f4",
+  "workshop_run_id": "0783b3d4-45d7-4e10-9260-9d0a83dea83e",
+  "conclusion": {
+    "hot_floor_zero": false,
+    "configured_min_replicas": 1,
+    "configured_max_replicas": 2,
+    "hot_replica_continuously_ready_since": "2026-09-16T12:01:07Z",
+    "keda_scaled_down_in_stall_window": false,
+    "first_attempt_retry_reason": "runtime_transport_error",
+    "natural_burst_node_loss_observed": true,
+    "successful_retry_hot_pod_confirmed": true,
+    "first_attempt_endpoint_identity": "not recorded in lifecycle correlations; attribution to failed burst endpoint is a temporally supported inference, not proven",
+    "provider_preemption_cause": "not established; Kubernetes observed node unreachability on a node labeled preemptible, plus cloud-provider shutdown taint",
+    "observed_recovery_not_slo": "138.487557 s accepted-to-ready; not a configured timeout, model-load duration, or guaranteed recovery bound"
+  },
+  "model_deployment": {
+    "name": "nemotron-speech-en-0-6b",
+    "generation": 4,
+    "availability": {
+      "cooldownSeconds": 300,
+      "idleSeconds": 300,
+      "maxReplicas": 2,
+      "minReplicas": 1,
+      "pollingIntervalSeconds": 5,
+      "targetQueueDepth": 1,
+      "warmWindows": []
+    },
+    "placement": {
+      "acceleratorsPerReplica": 1,
+      "poolRefs": [
+        "h100-1x",
+        "h100-reserved-8x"
+      ],
+      "topologyPolicy": "SingleNode"
+    },
+    "phase": "Ready",
+    "replicas": {
+      "admitted": 1,
+      "available": 1,
+      "desired": 2,
+      "localizing": 0,
+      "nodePending": 1,
+      "ready": 1,
+      "runtimeStarting": 0,
+      "warming": 0
+    },
+    "placements": [
+      {
+        "available": 0,
+        "deploymentName": "nemotron-speech-en-0-6b-burst-h100-1x",
+        "desired": 1,
+        "poolRef": "h100-1x",
+        "ready": 0,
+        "role": "burst"
+      },
+      {
+        "available": 1,
+        "deploymentName": "nemotron-speech-en-0-6b-hot-h100-reserved-8x",
+        "desired": 1,
+        "poolRef": "h100-reserved-8x",
+        "ready": 1,
+        "role": "hot"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "kind": "Deployment",
+      "name": "nemotron-speech-en-0-6b-burst-h100-1x",
+      "uid": "cdcec28a-cac3-405d-bd29-e5d445ff8ccb",
+      "generation": 8,
+      "created_at": "2026-09-16T12:00:31Z",
+      "deletion_at": null,
+      "desired": 1,
+      "ready": 0,
+      "available": 0,
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-16T12:00:31Z",
+          "lastUpdateTime": "2026-09-16T12:00:31Z",
+          "message": "ReplicaSet \"nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        },
+        {
+          "lastTransitionTime": "2026-09-16T18:36:31Z",
+          "lastUpdateTime": "2026-09-16T18:36:31Z",
+          "message": "Deployment does not have minimum availability.",
+          "reason": "MinimumReplicasUnavailable",
+          "status": "False",
+          "type": "Available"
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "name": "nemotron-speech-en-0-6b-hot-h100-reserved-8x",
+      "uid": "7e97cd67-f1c0-4616-99c2-4556986b6ee5",
+      "generation": 1,
+      "created_at": "2026-09-16T12:00:31Z",
+      "deletion_at": null,
+      "desired": 1,
+      "ready": 1,
+      "available": 1,
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-16T12:01:07Z",
+          "lastUpdateTime": "2026-09-16T12:01:07Z",
+          "message": "Deployment has minimum availability.",
+          "reason": "MinimumReplicasAvailable",
+          "status": "True",
+          "type": "Available"
+        },
+        {
+          "lastTransitionTime": "2026-09-16T12:00:31Z",
+          "lastUpdateTime": "2026-09-16T12:01:07Z",
+          "message": "ReplicaSet \"nemotron-speech-en-0-6b-hot-h100-reserved-8x-5fcb547dc6\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        }
+      ]
+    },
+    {
+      "kind": "Pod",
+      "name": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd",
+      "uid": "4843ed12-68f5-4446-a7c1-b08fed49bdf3",
+      "generation": 2,
+      "created_at": "2026-09-16T18:41:30Z",
+      "deletion_at": null,
+      "node": null,
+      "phase": "Pending",
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T18:41:30Z",
+          "message": "0/19 nodes are available: 12 node(s) didn't match Pod's node affinity/selector, 7 node(s) had untolerated taint(s). no new claims to deallocate, preemption: 0/19 nodes are available: 19 Preemption is not helpful for scheduling.",
+          "observedGeneration": 2,
+          "reason": "Unschedulable",
+          "status": "False",
+          "type": "PodScheduled"
+        }
+      ],
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "nvidia.com/gpu",
+          "operator": "Exists"
+        }
+      ],
+      "containers": []
+    },
+    {
+      "kind": "Pod",
+      "name": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "generation": 3,
+      "created_at": "2026-09-16T18:34:04Z",
+      "deletion_at": "2026-09-16T20:42:00Z",
+      "node": "computeinstance-e00xjaw5jqexvvnpat",
+      "phase": "Running",
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T18:34:06Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T18:34:05Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T18:36:30Z",
+          "observedGeneration": 2,
+          "status": "False",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T18:34:50Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T18:34:05Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "PodScheduled"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T18:41:30Z",
+          "message": "Taint manager: deleting due to NoExecute taint",
+          "observedGeneration": 2,
+          "reason": "DeletionByTaintManager",
+          "status": "True",
+          "type": "DisruptionTarget"
+        }
+      ],
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "nvidia.com/gpu",
+          "operator": "Exists"
+        }
+      ],
+      "containers": [
+        {
+          "name": "runtime",
+          "ready": true,
+          "restarts": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-16T18:34:05Z"
+            }
+          },
+          "last_state": {}
+        }
+      ]
+    },
+    {
+      "kind": "Pod",
+      "name": "nemotron-speech-en-0-6b-hot-h100-reserved-8x-5fcb547dc6-mmtmb",
+      "uid": "c7d2f95b-af74-432d-ab93-8bf2936d1c1a",
+      "generation": 2,
+      "created_at": "2026-09-16T12:00:31Z",
+      "deletion_at": null,
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "phase": "Running",
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T12:00:34Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T12:00:31Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T12:01:07Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T12:01:07Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-16T12:00:31Z",
+          "observedGeneration": 2,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "nvidia.com/gpu",
+          "operator": "Exists"
+        }
+      ],
+      "containers": [
+        {
+          "name": "runtime",
+          "ready": true,
+          "restarts": 0,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-16T12:00:33Z"
+            }
+          },
+          "last_state": {}
+        }
+      ]
+    },
+    {
+      "kind": "ScaledObject",
+      "name": "fs2-model-nemotron-speech-en-0-6b-burst-h100-1x",
+      "uid": "01f82dd7-8634-4533-bb30-b9f9ef0e68e9",
+      "generation": 1,
+      "created_at": "2026-09-16T12:00:31Z",
+      "deletion_at": null,
+      "min": 0,
+      "max": 1,
+      "cooldown_seconds": 300,
+      "polling_seconds": 5,
+      "target": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "nemotron-speech-en-0-6b-burst-h100-1x"
+      },
+      "trigger_names": [
+        "fs2_operation_demand_nemotron_speech_en_0_6b",
+        "fs2_operation_demand_nemotron_speech_en_0_6b_startup"
+      ],
+      "status": {
+        "authenticationsTypes": "",
+        "conditions": [
+          {
+            "message": "ScaledObject is defined correctly and is ready for scaling",
+            "reason": "ScaledObjectReady",
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "message": "Scaling is performed because triggers are active",
+            "reason": "ScalerActive",
+            "status": "True",
+            "type": "Active"
+          },
+          {
+            "message": "No fallbacks are active on this scaled object",
+            "reason": "NoFallbackFound",
+            "status": "False",
+            "type": "Fallback"
+          },
+          {
+            "status": "False",
+            "type": "Paused"
+          },
+          {
+            "message": "HPA is actively scaling",
+            "reason": "HPAActive",
+            "status": "True",
+            "type": "HPAActive"
+          }
+        ],
+        "externalMetricNames": [
+          "s0-prometheus",
+          "s1-prometheus"
+        ],
+        "hpaName": "keda-hpa-fs2-model-nemotron-speech-en-0-6b-burst-h100-1x",
+        "lastActiveTime": "2026-09-16T18:46:19Z",
+        "originalReplicaCount": 0,
+        "scaleTargetGVKR": {
+          "group": "apps",
+          "kind": "Deployment",
+          "resource": "deployments",
+          "version": "v1"
+        },
+        "scaleTargetKind": "apps/v1.Deployment",
+        "triggersActivity": {
+          "s0-prometheus": {
+            "isActive": false
+          },
+          "s1-prometheus": {
+            "isActive": true
+          }
+        },
+        "triggersTypes": "prometheus"
+      }
+    },
+    {
+      "kind": "HorizontalPodAutoscaler",
+      "name": "keda-hpa-fs2-model-nemotron-speech-en-0-6b-burst-h100-1x",
+      "uid": "42b0bebd-d893-49ec-88d7-6c355311efb5",
+      "created_at": "2026-09-16T12:00:31Z",
+      "deletion_at": null,
+      "min": 1,
+      "max": 1,
+      "target": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "nemotron-speech-en-0-6b-burst-h100-1x"
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T12:00:46Z",
+            "message": "recommended size matches current size",
+            "reason": "ReadyForNewScale",
+            "status": "True",
+            "type": "AbleToScale"
+          },
+          {
+            "lastTransitionTime": "2026-09-16T18:34:11Z",
+            "message": "the HPA was able to successfully calculate a replica count from external metric s1-prometheus(&LabelSelector{MatchLabels:map[string]string{scaledobject.keda.sh/name: fs2-model-nemotron-speech-en-0-6b-burst-h100-1x,},MatchExpressions:[]LabelSelectorRequirement{},})",
+            "reason": "ValidMetricFound",
+            "status": "True",
+            "type": "ScalingActive"
+          },
+          {
+            "lastTransitionTime": "2026-09-16T18:34:26Z",
+            "message": "the desired count is within the acceptable range",
+            "reason": "DesiredWithinRange",
+            "status": "False",
+            "type": "ScalingLimited"
+          }
+        ],
+        "currentMetrics": [
+          {
+            "external": {
+              "current": {
+                "averageValue": "0"
+              },
+              "metric": {
+                "name": "s0-prometheus",
+                "selector": {
+                  "matchLabels": {
+                    "scaledobject.keda.sh/name": "fs2-model-nemotron-speech-en-0-6b-burst-h100-1x"
+                  }
+                }
+              }
+            },
+            "type": "External"
+          },
+          {
+            "external": {
+              "current": {
+                "averageValue": "1"
+              },
+              "metric": {
+                "name": "s1-prometheus",
+                "selector": {
+                  "matchLabels": {
+                    "scaledobject.keda.sh/name": "fs2-model-nemotron-speech-en-0-6b-burst-h100-1x"
+                  }
+                }
+              }
+            },
+            "type": "External"
+          }
+        ],
+        "currentReplicas": 1,
+        "desiredReplicas": 1
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "name": "computeinstance-e00xjaw5jqexvvnpat",
+      "uid": "54fff439-0b80-434e-a60f-7edee7051c44",
+      "provider_id": "nebius://computeinstance-e00xjaw5jqexvvnpat",
+      "labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "accelerator.fs2.nebius/pool-id": "h100-1x",
+        "nebius.com/node-group-id": "mk8snodegroup-e00n67290jzpdmffbv",
+        "nebius.com/preemptible": "true",
+        "topology.kubernetes.io/region": "eu-north1"
+      },
+      "taints": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "node.kubernetes.io/unreachable",
+          "timeAdded": "2026-09-16T18:36:30Z"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "timeAdded": "2026-09-16T18:36:30Z"
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "node.cilium.io/agent-not-ready"
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "node.cloudprovider.kubernetes.io/shutdown"
+        }
+      ],
+      "ready": {
+        "lastHeartbeatTime": "2026-09-16T18:31:13Z",
+        "lastTransitionTime": "2026-09-16T18:36:30Z",
+        "message": "Kubelet stopped posting node status.",
+        "reason": "NodeStatusUnknown",
+        "status": "Unknown",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00m0hsph76ajt9sdb",
+      "uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+      "provider_id": "nebius://computeinstance-e00m0hsph76ajt9sdb",
+      "labels": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+        "nebius.com/node-group-id": "mk8snodegroup-e00zswm0km7v78tp2m",
+        "topology.kubernetes.io/region": "eu-north1"
+      },
+      "taints": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "value": "fs2-inference"
+        }
+      ],
+      "ready": {
+        "lastHeartbeatTime": "2026-09-16T18:42:34Z",
+        "lastTransitionTime": "2026-09-02T21:55:21Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    }
+  ],
+  "service": {
+    "name": "nemotron-speech-en-0-6b",
+    "selector": {
+      "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b"
+    },
+    "session_affinity": "None",
+    "internal_traffic_policy": "Cluster",
+    "traffic_distribution": null
+  },
+  "endpoint_slices": [
+    {
+      "name": "nemotron-speech-en-0-6b-rxh4f",
+      "endpoints": [
+        {
+          "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+          "pod": "nemotron-speech-en-0-6b-hot-h100-reserved-8x-5fcb547dc6-mmtmb",
+          "pod_uid": "c7d2f95b-af74-432d-ab93-8bf2936d1c1a",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        },
+        {
+          "node_name": "computeinstance-e00xjaw5jqexvvnpat",
+          "pod": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+          "pod_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+          "conditions": {
+            "ready": false,
+            "serving": false,
+            "terminating": true
+          }
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "object": "fs2-model-nemotron-speech-en-0-6b-burst-h100-1x",
+      "object_uid": "01f82dd7-8634-4533-bb30-b9f9ef0e68e9",
+      "event_time": "2026-09-16T18:06:14.649164Z",
+      "first_time": null,
+      "last_time": null,
+      "count": 1,
+      "reason": "KEDAScaleTargetActivated",
+      "message": "Scaled apps/v1.Deployment fs2-models/nemotron-speech-en-0-6b-burst-h100-1x from 0 to 1, triggered by s0-prometheus"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:06:14Z",
+      "first_time": "2026-09-16T18:06:14Z",
+      "last_time": "2026-09-16T18:06:14Z",
+      "count": 1,
+      "reason": "CreatedWorkload",
+      "message": "Created Workload: fs2-models/pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4-45de2"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:06:14Z",
+      "first_time": "2026-09-16T18:06:14Z",
+      "last_time": "2026-09-16T18:06:14Z",
+      "count": 1,
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:06:14Z",
+      "first_time": "2026-09-16T18:06:14Z",
+      "last_time": "2026-09-16T18:06:14Z",
+      "count": 1,
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4 to computeinstance-e00sthbffvahte9ws5"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb",
+      "object_uid": "0454c2a1-ceee-4fdc-9f05-509e688ecea9",
+      "event_time": "2026-09-16T18:06:14Z",
+      "first_time": "2026-09-16T18:06:14Z",
+      "last_time": "2026-09-16T18:06:14Z",
+      "count": 1,
+      "reason": "SuccessfulCreate",
+      "message": "Created pod: nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4"
+    },
+    {
+      "object": "pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4-45de2",
+      "object_uid": "812423cd-1c41-4154-8a88-f36c0be231a9",
+      "event_time": "2026-09-16T18:06:14Z",
+      "first_time": "2026-09-16T18:06:14Z",
+      "last_time": "2026-09-16T18:06:14Z",
+      "count": 1,
+      "reason": "QuotaReserved",
+      "message": "Quota reserved in ClusterQueue inference-accelerators, wait time since queued was 1s; Flavors considered: main: inference-h100-ondemand-1x(NoFit;flavor inference-h100-ondemand-1x doesn't match node affinity), inference-h100-reserved-8x(NoFit;flavor inference-h100-reserved-8x doesn't match node affinity), inference-l40s-1x(NoFit;flavor inference-l40s-1x doesn't match node affinity)"
+    },
+    {
+      "object": "pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4-45de2",
+      "object_uid": "812423cd-1c41-4154-8a88-f36c0be231a9",
+      "event_time": "2026-09-16T18:06:14Z",
+      "first_time": "2026-09-16T18:06:14Z",
+      "last_time": "2026-09-16T18:06:14Z",
+      "count": 1,
+      "reason": "Admitted",
+      "message": "Admitted by ClusterQueue inference-accelerators, wait time since reservation was 0s"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:06:15Z",
+      "first_time": "2026-09-16T18:06:15Z",
+      "last_time": "2026-09-16T18:06:15Z",
+      "count": 1,
+      "reason": "Pulling",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2\""
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:09:12Z",
+      "first_time": "2026-09-16T18:09:12Z",
+      "last_time": "2026-09-16T18:09:12Z",
+      "count": 1,
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2\" in 2m57.098s (2m57.098s including waiting). Image size: 9718733705 bytes."
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:09:14Z",
+      "first_time": "2026-09-16T18:09:14Z",
+      "last_time": "2026-09-16T18:09:14Z",
+      "count": 1,
+      "reason": "Created",
+      "message": "Container created"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:09:20Z",
+      "first_time": "2026-09-16T18:09:20Z",
+      "last_time": "2026-09-16T18:09:20Z",
+      "count": 1,
+      "reason": "Started",
+      "message": "Container started"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:09:55Z",
+      "first_time": "2026-09-16T18:09:25Z",
+      "last_time": "2026-09-16T18:09:55Z",
+      "count": 7,
+      "reason": "Unhealthy",
+      "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+    },
+    {
+      "object": "fs2-model-nemotron-speech-en-0-6b-burst-h100-1x",
+      "object_uid": "01f82dd7-8634-4533-bb30-b9f9ef0e68e9",
+      "event_time": "2026-09-16T18:15:19.730590Z",
+      "first_time": null,
+      "last_time": null,
+      "count": 1,
+      "reason": "KEDAScaleTargetDeactivated",
+      "message": "Deactivated apps/v1.Deployment fs2-models/nemotron-speech-en-0-6b-burst-h100-1x from 1 to 0"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:15:19Z",
+      "first_time": "2026-09-16T18:15:19Z",
+      "last_time": "2026-09-16T18:15:19Z",
+      "count": 1,
+      "reason": "Killing",
+      "message": "Stopping container runtime"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb",
+      "object_uid": "0454c2a1-ceee-4fdc-9f05-509e688ecea9",
+      "event_time": "2026-09-16T18:15:19Z",
+      "first_time": "2026-09-16T18:15:19Z",
+      "last_time": "2026-09-16T18:15:19Z",
+      "count": 1,
+      "reason": "SuccessfulDelete",
+      "message": "Deleted pod: nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x",
+      "object_uid": "cdcec28a-cac3-405d-bd29-e5d445ff8ccb",
+      "event_time": "2026-09-16T18:15:19Z",
+      "first_time": "2026-09-16T12:17:36Z",
+      "last_time": "2026-09-16T18:15:19Z",
+      "count": 3,
+      "reason": "ScalingReplicaSet",
+      "message": "Scaled down replica set nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb from 1 to 0"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-h44z4",
+      "object_uid": "76dc2778-f0ed-44f7-ade4-a5a2d35f4c4a",
+      "event_time": "2026-09-16T18:15:24Z",
+      "first_time": "2026-09-16T18:15:21Z",
+      "last_time": "2026-09-16T18:15:24Z",
+      "count": 2,
+      "reason": "Unhealthy",
+      "message": "Readiness probe failed: HTTP probe failed with statuscode: 503"
+    },
+    {
+      "object": "fs2-model-nemotron-speech-en-0-6b-burst-h100-1x",
+      "object_uid": "01f82dd7-8634-4533-bb30-b9f9ef0e68e9",
+      "event_time": "2026-09-16T18:34:04.886883Z",
+      "first_time": null,
+      "last_time": null,
+      "count": 1,
+      "reason": "KEDAScaleTargetActivated",
+      "message": "Scaled apps/v1.Deployment fs2-models/nemotron-speech-en-0-6b-burst-h100-1x from 0 to 1, triggered by s0-prometheus"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "object_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "event_time": "2026-09-16T18:34:04Z",
+      "first_time": "2026-09-16T18:34:04Z",
+      "last_time": "2026-09-16T18:34:04Z",
+      "count": 1,
+      "reason": "CreatedWorkload",
+      "message": "Created Workload: fs2-models/pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf-12abf"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb",
+      "object_uid": "0454c2a1-ceee-4fdc-9f05-509e688ecea9",
+      "event_time": "2026-09-16T18:34:04Z",
+      "first_time": "2026-09-16T18:34:04Z",
+      "last_time": "2026-09-16T18:34:04Z",
+      "count": 1,
+      "reason": "SuccessfulCreate",
+      "message": "Created pod: nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x",
+      "object_uid": "cdcec28a-cac3-405d-bd29-e5d445ff8ccb",
+      "event_time": "2026-09-16T18:34:04Z",
+      "first_time": "2026-09-16T12:00:46Z",
+      "last_time": "2026-09-16T18:34:04Z",
+      "count": 4,
+      "reason": "ScalingReplicaSet",
+      "message": "Scaled up replica set nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb from 0 to 1"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "object_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "event_time": "2026-09-16T18:34:05Z",
+      "first_time": "2026-09-16T18:34:05Z",
+      "last_time": "2026-09-16T18:34:05Z",
+      "count": 1,
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "object_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "event_time": "2026-09-16T18:34:05Z",
+      "first_time": "2026-09-16T18:34:05Z",
+      "last_time": "2026-09-16T18:34:05Z",
+      "count": 1,
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf to computeinstance-e00xjaw5jqexvvnpat"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "object_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "event_time": "2026-09-16T18:34:05Z",
+      "first_time": "2026-09-16T18:34:05Z",
+      "last_time": "2026-09-16T18:34:05Z",
+      "count": 1,
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2\" already present on machine and can be accessed by the pod"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "object_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "event_time": "2026-09-16T18:34:05Z",
+      "first_time": "2026-09-16T18:34:05Z",
+      "last_time": "2026-09-16T18:34:05Z",
+      "count": 1,
+      "reason": "Created",
+      "message": "Container created"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "object_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "event_time": "2026-09-16T18:34:05Z",
+      "first_time": "2026-09-16T18:34:05Z",
+      "last_time": "2026-09-16T18:34:05Z",
+      "count": 1,
+      "reason": "Started",
+      "message": "Container started"
+    },
+    {
+      "object": "pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf-12abf",
+      "object_uid": "8f095009-08d5-4693-93a5-9401b681f0d0",
+      "event_time": "2026-09-16T18:34:05Z",
+      "first_time": "2026-09-16T18:34:05Z",
+      "last_time": "2026-09-16T18:34:05Z",
+      "count": 1,
+      "reason": "QuotaReserved",
+      "message": "Quota reserved in ClusterQueue inference-accelerators, wait time since queued was 1s; Flavors considered: main: inference-h100-ondemand-1x(NoFit;flavor inference-h100-ondemand-1x doesn't match node affinity), inference-h100-reserved-8x(NoFit;flavor inference-h100-reserved-8x doesn't match node affinity), inference-l40s-1x(NoFit;flavor inference-l40s-1x doesn't match node affinity)"
+    },
+    {
+      "object": "pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf-12abf",
+      "object_uid": "8f095009-08d5-4693-93a5-9401b681f0d0",
+      "event_time": "2026-09-16T18:34:05Z",
+      "first_time": "2026-09-16T18:34:05Z",
+      "last_time": "2026-09-16T18:34:05Z",
+      "count": 1,
+      "reason": "Admitted",
+      "message": "Admitted by ClusterQueue inference-accelerators, wait time since reservation was 0s"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "object_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "event_time": "2026-09-16T18:34:45Z",
+      "first_time": "2026-09-16T18:34:10Z",
+      "last_time": "2026-09-16T18:34:45Z",
+      "count": 8,
+      "reason": "Unhealthy",
+      "message": "Startup probe failed: HTTP probe failed with statuscode: 503"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "object_uid": "4671d2ac-ac62-4099-b70c-04080b72b217",
+      "event_time": "2026-09-16T18:36:30Z",
+      "first_time": "2026-09-16T18:36:30Z",
+      "last_time": "2026-09-16T18:36:30Z",
+      "count": 1,
+      "reason": "NodeNotReady",
+      "message": "Node is not ready"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf",
+      "event_time": "2026-09-16T18:41:30Z",
+      "first_time": "2026-09-16T18:41:30Z",
+      "last_time": "2026-09-16T18:41:30Z",
+      "count": 1,
+      "reason": "TaintManagerEviction",
+      "message": "Marking for deletion Pod fs2-models/nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-stggf"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb",
+      "object_uid": "0454c2a1-ceee-4fdc-9f05-509e688ecea9",
+      "event_time": "2026-09-16T18:41:30Z",
+      "first_time": "2026-09-16T18:41:30Z",
+      "last_time": "2026-09-16T18:41:30Z",
+      "count": 1,
+      "reason": "SuccessfulCreate",
+      "message": "Created pod: nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd",
+      "object_uid": "4843ed12-68f5-4446-a7c1-b08fed49bdf3",
+      "event_time": "2026-09-16T18:41:31Z",
+      "first_time": "2026-09-16T18:41:31Z",
+      "last_time": "2026-09-16T18:41:31Z",
+      "count": 1,
+      "reason": "CreatedWorkload",
+      "message": "Created Workload: fs2-models/pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd-a5c0d"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd",
+      "object_uid": "4843ed12-68f5-4446-a7c1-b08fed49bdf3",
+      "event_time": "2026-09-16T18:41:31Z",
+      "first_time": "2026-09-16T18:41:31Z",
+      "last_time": "2026-09-16T18:41:31Z",
+      "count": 1,
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd",
+      "object_uid": "4843ed12-68f5-4446-a7c1-b08fed49bdf3",
+      "event_time": "2026-09-16T18:41:31Z",
+      "first_time": "2026-09-16T18:41:31Z",
+      "last_time": "2026-09-16T18:41:31Z",
+      "count": 1,
+      "reason": "FailedScheduling",
+      "message": "0/19 nodes are available: 12 node(s) didn't match Pod's node affinity/selector, 7 node(s) had untolerated taint(s). no new claims to deallocate, preemption: 0/19 nodes are available: 19 Preemption is not helpful for scheduling."
+    },
+    {
+      "object": "pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd-a5c0d",
+      "object_uid": "a533b073-4ff5-4a6f-80bf-78a7e4217973",
+      "event_time": "2026-09-16T18:41:31Z",
+      "first_time": "2026-09-16T18:41:31Z",
+      "last_time": "2026-09-16T18:41:31Z",
+      "count": 1,
+      "reason": "QuotaReserved",
+      "message": "Quota reserved in ClusterQueue inference-accelerators, wait time since queued was 0s; Flavors considered: main: inference-h100-ondemand-1x(NoFit;flavor inference-h100-ondemand-1x doesn't match node affinity), inference-h100-reserved-8x(NoFit;flavor inference-h100-reserved-8x doesn't match node affinity), inference-l40s-1x(NoFit;flavor inference-l40s-1x doesn't match node affinity)"
+    },
+    {
+      "object": "pod-nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd-a5c0d",
+      "object_uid": "a533b073-4ff5-4a6f-80bf-78a7e4217973",
+      "event_time": "2026-09-16T18:41:31Z",
+      "first_time": "2026-09-16T18:41:31Z",
+      "last_time": "2026-09-16T18:41:31Z",
+      "count": 1,
+      "reason": "Admitted",
+      "message": "Admitted by ClusterQueue inference-accelerators, wait time since reservation was 0s"
+    },
+    {
+      "object": "nemotron-speech-en-0-6b-burst-h100-1x-59498dbddb-m6lmd",
+      "object_uid": "4843ed12-68f5-4446-a7c1-b08fed49bdf3",
+      "event_time": "2026-09-16T18:42:01Z",
+      "first_time": "2026-09-16T18:42:01Z",
+      "last_time": "2026-09-16T18:42:01Z",
+      "count": 1,
+      "reason": "NotTriggerScaleUp",
+      "message": "pod didn't trigger scale-up: 1 node(s) had untolerated taint(s), 1 node(s) didn't match Pod's node affinity/selector, 1 max node group size reached, 1 not ready for scale-up"
+    }
+  ],
+  "lifecycle": {
+    "http_status": 200,
+    "operation_id": "23e7345c-f777-4e02-beb5-6e3a590ff8f4",
+    "payloads_exposed": false,
+    "signals": [
+      {
+        "phase": "receive",
+        "edge": "instant",
+        "occurred_at": "2026-09-16T18:36:05.212124Z",
+        "observed_at": "2026-09-16T18:36:05.212124Z",
+        "attempt": 0,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      },
+      {
+        "phase": "enqueue",
+        "edge": "instant",
+        "occurred_at": "2026-09-16T18:36:05.212124Z",
+        "observed_at": "2026-09-16T18:36:05.212124Z",
+        "attempt": 0,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      },
+      {
+        "phase": "admit",
+        "edge": "instant",
+        "occurred_at": "2026-09-16T18:36:05.237747Z",
+        "observed_at": "2026-09-16T18:36:05.237747Z",
+        "attempt": 1,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      },
+      {
+        "phase": "retry",
+        "edge": "instant",
+        "occurred_at": "2026-09-16T18:38:22.220385Z",
+        "observed_at": "2026-09-16T18:38:22.220386Z",
+        "attempt": 1,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {
+          "reason_code": "runtime_transport_error"
+        }
+      },
+      {
+        "phase": "admit",
+        "edge": "instant",
+        "occurred_at": "2026-09-16T18:36:05.237747Z",
+        "observed_at": "2026-09-16T18:36:05.237747Z",
+        "attempt": 2,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      },
+      {
+        "phase": "active_compute",
+        "edge": "start",
+        "occurred_at": "2026-09-16T18:38:23.875337Z",
+        "observed_at": "2026-09-16T18:38:26.474526Z",
+        "attempt": 2,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      },
+      {
+        "phase": "active_compute",
+        "edge": "end",
+        "occurred_at": "2026-09-16T18:38:26.474526Z",
+        "observed_at": "2026-09-16T18:38:26.474526Z",
+        "attempt": 2,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      },
+      {
+        "phase": "gpu_allocation",
+        "edge": "start",
+        "occurred_at": "2026-09-16T18:38:23.875337Z",
+        "observed_at": "2026-09-16T18:38:26.474526Z",
+        "attempt": 2,
+        "source": "kubernetes",
+        "quality": "measured",
+        "detail": {}
+      },
+      {
+        "phase": "gpu_allocation",
+        "edge": "end",
+        "occurred_at": "2026-09-16T18:38:26.474526Z",
+        "observed_at": "2026-09-16T18:38:26.474526Z",
+        "attempt": 2,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      },
+      {
+        "phase": "gpu_allocation",
+        "edge": "start",
+        "occurred_at": "2026-09-16T18:38:23.875337Z",
+        "observed_at": "2026-09-16T18:38:26.474526Z",
+        "attempt": 2,
+        "source": "kubelet",
+        "quality": "measured",
+        "detail": {}
+      },
+      {
+        "phase": "gpu_allocation",
+        "edge": "end",
+        "occurred_at": "2026-09-16T18:38:26.474526Z",
+        "observed_at": "2026-09-16T18:38:26.474526Z",
+        "attempt": 2,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      },
+      {
+        "phase": "release",
+        "edge": "instant",
+        "occurred_at": "2026-09-16T18:38:26.501118Z",
+        "observed_at": "2026-09-16T18:38:26.501118Z",
+        "attempt": 2,
+        "source": "application",
+        "quality": "application_observed",
+        "detail": {}
+      }
+    ],
+    "correlations": [
+      {
+        "attempt": 2,
+        "observed_at": "2026-09-16T18:38:26.474526Z",
+        "source": "kubernetes",
+        "namespace": "fs2-models",
+        "pod_name": "nemotron-speech-en-0-6b-hot-h100-reserved-8x-5fcb547dc6-mmtmb",
+        "pod_uid": "c7d2f95b-af74-432d-ab93-8bf2936d1c1a",
+        "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+        "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+        "gpu_uuid": "GPU-237a8e9f-8ab5-6eff-d4d6-1c02fdcbbc02"
+      }
+    ],
+    "operator_session_logout_status": 204
+  },
+  "timing": {
+    "accepted_at": "2026-09-16T18:36:05.212124Z",
+    "activation_started_at": "2026-09-16T18:36:05.237747Z",
+    "attempt1_retry_at": "2026-09-16T18:38:22.220385Z",
+    "attempt1_admission_to_retry_seconds": 136.982638,
+    "attempt2_ready_at": "2026-09-16T18:38:23.699681Z",
+    "attempt2_started_at": "2026-09-16T18:38:23.703726Z",
+    "completed_at": "2026-09-16T18:38:26.501118Z",
+    "accepted_to_ready_seconds": 138.487557,
+    "accepted_to_completion_seconds": 141.288994,
+    "successful_attempt_running_seconds": 2.797392,
+    "model_processing_seconds": 2.353089,
+    "audio_seconds": 44.535875,
+    "source": "owner operation receipt supplied by MindGuard worker, cross-checked against scoped admin lifecycle receipt"
+  },
+  "failure_bounds": {
+    "live_runtime_timeout_seconds": 3600,
+    "live_activation_timeout_seconds": 7200,
+    "live_worker_lease_seconds": 30,
+    "live_retry_base_seconds": 1,
+    "max_attempts": 3,
+    "operation_deadline_at": "2026-09-16T20:36:05.203711Z",
+    "workshop_async_asr_poll_timeout_seconds": 600,
+    "caveat": "HTTPX scalar runtime timeout applies to individual I/O phases, not a single short interactive recovery deadline. Overall operation deadline bounds CP work; workshop has its own 600-second polling wait after the initial request. This observed transport error surfaced earlier; exact low-level cause is not retained.",
+    "live_settings_source": "Read-only exec importing Settings; only four numeric values printed",
+    "source_paths": [
+      "components/control-plane/src/fs2_serve/runtime.py",
+      "components/control-plane/src/fs2_serve/admission.py",
+      "components/control-plane/src/fs2_serve/fast_start_policy.py",
+      "components/mindeval-workshop/src/fs2_workshop/worker.py"
+    ]
+  },
+  "recommendation": {
+    "changes_applied": false,
+    "first": "Do not change the existing hot floor to solve this: it is already one and stayed Ready.",
+    "scoped_transport": "Consider short native-ASR connect timeout separately from read/compute budget; retain total deadline and fenced retry accounting. Verify connect-vs-read failure attribution before selecting a read timeout.",
+    "hot_first": "Current canonical Service cannot express regular-hot priority. A future controller-owned hot-only Service plus ordinary canonical/burst fallback for interactive ASR can preserve model grants, operation admission, scaling and limits; fallback on explicit pre-admission busy or bounded transport failure. Keep the canonical Service and burst resources.",
+    "validation": "Require deterministic transport-failure and busy-fallback tests plus a scoped controlled-fault live test before claiming a short failover SLO. This observation is natural node-loss recovery evidence, not that controlled test."
+  },
+  "references": [
+    "https://kubernetes.io/docs/concepts/services-networking/service/",
+    "https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/",
+    "https://www.python-httpx.org/advanced/timeouts/"
+  ]
+}

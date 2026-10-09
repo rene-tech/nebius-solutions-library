@@ -1,0 +1,194 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "scvi-scanvi",
+      "display_name": "scVI and scANVI",
+      "family": "single-cell",
+      "tested_lane": true,
+      "source": {
+        "kind": "git",
+        "repository": "github.com/scverse/scvi-tools",
+        "revision": "56520c713eb1d2b245c72a0f60bc393b74198c91",
+        "license": {
+          "id": "BSD-3-Clause",
+          "state": "verified",
+          "notes": "Pinned scvi-tools 1.5.0.post1 source revision under BSD-3-Clause. Result interpretation and input-data rights remain the caller's responsibility."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public source and package dependencies; independent runtime, not NVIDIA NIM."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "scvi-tools-1.5.0.post1-fs2-v1",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:cd22562eb59d067f734b65af1669c483f971dacb5e58462ca7f4d43afc940396",
+        "digest": "sha256:cd22562eb59d067f734b65af1669c483f971dacb5e58462ca7f4d43afc940396",
+        "state": "resolved"
+      },
+      "command": [
+        "uvicorn",
+        "app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 6000,
+      "memory_bytes": 34359738368,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/fit-transform"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "fit-transform"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "allowed"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "Per-request training state is input-specific; no reusable clean GPU snapshot cohort has been qualified."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/scvi-scanvi",
+      "local_path": "/var/lib/fs2-serve/cache/models/scvi-scanvi",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "formula",
+        "manifest_digest": "00da7cb7f69898bb40cf6a2498784fb10fa2c45c8751e0bab0db2f5a364e7bdc",
+        "expanded_bytes": 246,
+        "minimum_bytes": 246,
+        "capacity_bound_bytes": 246,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "scvi-scanvi-two-anndata-replay-and-failure/v1",
+      "source_path": "k8s-inference/acceptance/visual-science-20260919/qualify.py",
+      "source_sha256": "76a25d423c489a70e5ad189a1dd4c8ffdff6041a3816872a87fd9fc5879a2162",
+      "fixture_path": "k8s-inference/models/visual-science/fixtures.py",
+      "fixture_sha256": "25b6ce528007983add7051ef498aa3b7edeb082d88863509394de2646c89494d",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Bounded synchronous research lane: at most 64 MiB, 100,000 cells, 50,000 genes, 200 million matrix entries, and 20 epochs per training stage.",
+        "Inputs must contain nonnegative integer raw counts. scANVI additionally requires a label column and an explicit unlabeled category.",
+        "Latent coordinates and UMAP previews are model outputs, not biological or clinical ground truth. Benchmark claims require labeled evaluation data.",
+        "Only one H100 and the pinned package/image formula are qualified. B300, snapshots, public routing, scaling, and customer authorization are separate gates."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3 / driver 580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "08dba5331df9af750cb85f455e229c23297b516e",
+        "summary": "Distinct scVI and scANVI runs, semantic replay, missing-acknowledgement rejection, ZIP validation, non-root execution and zero restarts passed. acceptance/visual-science-20260919/evidence/scvi-native.json SHA256 48aa19089114bde6c3c3b1f1d7b9037b65353fa2026e6c862d1001388b8968d2. Public route and LibreChat are not covered by this direct-worker evidence."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "08dba5331df9af750cb85f455e229c23297b516e",
+        "tree": "61b17cfa6404ea2978b313d88ac260f4cb640854",
+        "path": "k8s-inference/models/visual-science/scvi-scanvi",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://github.com/scverse/scvi-tools/tree/56520c713eb1d2b245c72a0f60bc393b74198c91",
+        "revision": "56520c713eb1d2b245c72a0f60bc393b74198c91",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "variant_id": "scvi-scanvi-cuda-v1",
+  "runtime_architecture": "cuda",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-json-compact-no-newline/v1",
+    "invocation": {
+      "operation": "fit-transform",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/v1/fit-transform"
+    },
+    "requests": [
+      {
+        "id": "scvi-synthetic-0",
+        "payload_sha256": "537253054c3ff1bddc4c12420ba0cb09015ca1a2abc5f07766f408fdff6bb3ea"
+      },
+      {
+        "id": "scanvi-synthetic-1",
+        "payload_sha256": "a5796f4953fc1b73359415bde823011e853505231c802c7d35b7c7c43acbf95b"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "../deployment-runtimes/artifacts/scvi-scanvi-00da7cb7f69898bb40cf6a2498784fb10fa2c45c8751e0bab0db2f5a364e7bdc.json",
+    "sha256": "00da7cb7f69898bb40cf6a2498784fb10fa2c45c8751e0bab0db2f5a364e7bdc"
+  }
+}

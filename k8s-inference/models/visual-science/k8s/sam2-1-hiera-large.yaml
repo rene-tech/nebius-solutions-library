@@ -1,0 +1,133 @@
+# The platform controller owns replicas. The checkpoint is embedded and digest-verified at startup.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sam2-1-hiera-large
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: sam2-1-hiera-large
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sam2-1-hiera-large
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: sam2-1-hiera-large
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: sam2-1-hiera-large
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sam2-1-hiera-large
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/name: sam2-1-hiera-large
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: sam2-1-hiera-large
+    spec:
+      serviceAccountName: sam2-1-hiera-large
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: runtime
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/sam2@sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+            - name: XDG_CACHE_HOME
+              value: /tmp/cache
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: "4"
+              memory: 24Gi
+              ephemeral-storage: 8Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "12"
+              memory: 64Gi
+              ephemeral-storage: 32Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sam2-1-hiera-large
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: sam2-1-hiera-large
+    fs2-serve.nebius.ai/model-id: sam2-1-hiera-large
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: sam2-1-hiera-large
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

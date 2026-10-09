@@ -1,0 +1,2403 @@
+{
+  "schema": "fs2-toxicology-hosted-qualification/v1",
+  "recorded_at": "2026-10-08T20:31:25.927289+00:00",
+  "origin": "https://89.169.99.188",
+  "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "backend_source": "fb9e21e75bfe9d5b166335cf69800a5b9fc8ef2d",
+  "backend_image_digest": "sha256:71dd5ea5a352c91aabfedd55c4baa6e83f6f31376d9d86c0b53a37cdc2c33756",
+  "model_images": {
+    "admet-ai": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/toxicology/admet-ai@sha256:2a6d0ee5e0f48d761d295eb20c91f25bfbb652ce5223bf9ba80425092dfeefdf",
+    "ctoxpred2": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/toxicology/ctoxpred2@sha256:d7579452d45024fa159a8e25929f112fe4cf5569d6bcd17dec956655cba8aa2c"
+  },
+  "registration_configmaps": [
+    "fs2-toxicology-61252f4c3d097f00",
+    "fs2-toxicology-ec25501c3c235d60",
+    "fs2-toxicology-bc20e3892388faf0"
+  ],
+  "tested_bound": {
+    "concurrent_operations": 2,
+    "max_molecules_per_operation": 1000,
+    "cpu_per_replica": 2,
+    "memory_gib_per_replica": 2,
+    "max_replicas": 2
+  },
+  "cohorts": [
+    {
+      "id": "r3",
+      "passed": true,
+      "raw_receipt_sha256": "948979b73215a82186525f136cd0ec96a5aaa2ec1b220293213f87d154a1bb7e",
+      "cases": [
+        {
+          "model": "admet-ai",
+          "case": "published250-csv",
+          "path": "rest",
+          "operation_id": "e8029812-8d4d-416f-9156-1c8e057e828b",
+          "expected_count": 250,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 24.163761097937822,
+          "status_transitions": [
+            {
+              "status": "activating",
+              "elapsed_seconds": 3.1615987922996283
+            },
+            {
+              "status": "running",
+              "elapsed_seconds": 14.4925784971565
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 23.29349511861801
+            }
+          ],
+          "reference_max_absolute_difference": 0.0,
+          "artifact_output": true,
+          "operation": {
+            "id": "e8029812-8d4d-416f-9156-1c8e057e828b",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:21:54.801682Z",
+            "activation_started_at": "2026-10-08T20:21:54.835190Z",
+            "started_at": "2026-10-08T20:22:08.024444Z",
+            "ready_at": "2026-10-08T20:22:08.017750Z",
+            "completed_at": "2026-10-08T20:22:16.009072Z",
+            "cold_start_seconds": 13.216068,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          },
+          "result_artifact": {
+            "artifact_id": "23586943-b8f9-4812-8341-65877c7eeb4c",
+            "sha256": "c5b89765fae62ca56306ba3861e9b14880fb51c59a399e5e2df68e015ec99baf",
+            "size_bytes": 487107,
+            "media_type": "application/octet-stream"
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "batch1000-json",
+          "path": "mcp",
+          "operation_id": "ab310790-4ae8-4d18-9389-c478bcc2731b",
+          "expected_count": 1000,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 31.11677256785333,
+          "status_transitions": [
+            {
+              "status": "activating",
+              "elapsed_seconds": 5.817559212446213
+            },
+            {
+              "status": "running",
+              "elapsed_seconds": 12.471984911710024
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 28.230569034814835
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": true,
+          "operation": {
+            "id": "ab310790-4ae8-4d18-9389-c478bcc2731b",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:21:57.849020Z",
+            "activation_started_at": "2026-10-08T20:21:57.879443Z",
+            "started_at": "2026-10-08T20:22:06.337304Z",
+            "ready_at": "2026-10-08T20:22:06.283763Z",
+            "completed_at": "2026-10-08T20:22:21.435698Z",
+            "cold_start_seconds": 8.434743,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          },
+          "result_artifact": {
+            "artifact_id": "42f94eb9-a1a3-4926-8c7a-234e033742f8",
+            "sha256": "0b104f4b8c80af0154fb0327b8563719c3325c1a635e49362db87deab8e5496f",
+            "size_bytes": 1879335,
+            "media_type": "application/octet-stream"
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "partial",
+          "path": "rest",
+          "operation_id": "9f29ba2a-2444-4656-a169-1cec5262ebf2",
+          "expected_count": 2,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 4.216360930353403,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 1.7391613982617855
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 3.9624495953321457
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "9f29ba2a-2444-4656-a169-1cec5262ebf2",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:22:26.007174Z",
+            "activation_started_at": "2026-10-08T20:22:26.033255Z",
+            "started_at": "2026-10-08T20:22:26.436681Z",
+            "ready_at": "2026-10-08T20:22:26.433532Z",
+            "completed_at": "2026-10-08T20:22:26.913942Z",
+            "cold_start_seconds": 0.426358,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "single",
+          "path": "mcp",
+          "operation_id": "4a710657-c7d0-4d05-90cf-bd9c6facd4c8",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 5.4226175881922245,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.096657324582338
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "4a710657-c7d0-4d05-90cf-bd9c6facd4c8",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:22:27.212609Z",
+            "activation_started_at": "2026-10-08T20:22:27.234393Z",
+            "started_at": "2026-10-08T20:22:27.691220Z",
+            "ready_at": "2026-10-08T20:22:27.687288Z",
+            "completed_at": "2026-10-08T20:22:28.162314Z",
+            "cold_start_seconds": 0.474679,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "sdf",
+          "path": "mcp",
+          "operation_id": "4ac8b442-c792-402b-82fe-26490977a0e3",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 6.100066024810076,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.4864601790905
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "4ac8b442-c792-402b-82fe-26490977a0e3",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:22:32.426578Z",
+            "activation_started_at": "2026-10-08T20:22:32.452511Z",
+            "started_at": "2026-10-08T20:22:32.824980Z",
+            "ready_at": "2026-10-08T20:22:32.817249Z",
+            "completed_at": "2026-10-08T20:22:34.092866Z",
+            "cold_start_seconds": 0.390671,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "invalid",
+          "path": "rest",
+          "operation_id": "ae685274-2466-40ab-9cb3-ec3b3ada790a",
+          "expected_count": 1,
+          "expected_failure": true,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 4.207741057500243,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 1.9536470174789429
+            },
+            {
+              "status": "failed",
+              "elapsed_seconds": 4.207489723339677
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": null,
+          "operation": {
+            "id": "ae685274-2466-40ab-9cb3-ec3b3ada790a",
+            "status": "failed",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:22:37.142921Z",
+            "activation_started_at": "2026-10-08T20:22:37.167106Z",
+            "started_at": "2026-10-08T20:22:38.165450Z",
+            "ready_at": "2026-10-08T20:22:38.161882Z",
+            "completed_at": "2026-10-08T20:22:38.767943Z",
+            "cold_start_seconds": 1.018961,
+            "error_code": "no_valid_molecules",
+            "error_detail": "No valid molecular structures were supplied. Check the SMILES or SDF structures and resubmit corrected input.",
+            "http_status": 422,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "published250-csv",
+          "path": "rest",
+          "operation_id": "1a15c6cb-69f8-4084-8fd4-7d4213e00369",
+          "expected_count": 250,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 67.60910167731345,
+          "status_transitions": [
+            {
+              "status": "activating",
+              "elapsed_seconds": 1.9349737092852592
+            },
+            {
+              "status": "running",
+              "elapsed_seconds": 15.36265186406672
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 66.56477953493595
+            }
+          ],
+          "reference_max_absolute_difference": 1.1102230246251565e-16,
+          "artifact_output": true,
+          "operation": {
+            "id": "1a15c6cb-69f8-4084-8fd4-7d4213e00369",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:22:48.977347Z",
+            "activation_started_at": "2026-10-08T20:22:49.010868Z",
+            "started_at": "2026-10-08T20:23:01.668768Z",
+            "ready_at": "2026-10-08T20:23:01.664445Z",
+            "completed_at": "2026-10-08T20:23:53.890770Z",
+            "cold_start_seconds": 12.687098,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          },
+          "result_artifact": {
+            "artifact_id": "e779b22f-bf75-4697-a370-dbf89fb0829b",
+            "sha256": "d132bd1a067b653ddae01b01f25f50d0d19d7ea75974242511bfd3d19b3c2886",
+            "size_bytes": 121982,
+            "media_type": "application/octet-stream"
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "batch1000-json",
+          "path": "mcp",
+          "operation_id": "4a55acc6-a253-418c-9ecb-1ab6aaa1246d",
+          "expected_count": 1000,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 119.42343195527792,
+          "status_transitions": [
+            {
+              "status": "activating",
+              "elapsed_seconds": 6.126800492405891
+            },
+            {
+              "status": "running",
+              "elapsed_seconds": 12.750297656282783
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 117.03884081728756
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": true,
+          "operation": {
+            "id": "4a55acc6-a253-418c-9ecb-1ab6aaa1246d",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:22:51.042207Z",
+            "activation_started_at": "2026-10-08T20:22:51.070751Z",
+            "started_at": "2026-10-08T20:23:00.538611Z",
+            "ready_at": "2026-10-08T20:23:00.535713Z",
+            "completed_at": "2026-10-08T20:24:45.075430Z",
+            "cold_start_seconds": 9.493506,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          },
+          "result_artifact": {
+            "artifact_id": "a0f99a0a-2110-45d4-9970-ab02ed7deae0",
+            "sha256": "e8b5bf85d354234ecbcf67a50540df8b7dc0717609717e89c2424785bcfa92f2",
+            "size_bytes": 421741,
+            "media_type": "application/octet-stream"
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "partial",
+          "path": "rest",
+          "operation_id": "40950e7f-42bf-4b39-8770-0d3351bd3dfd",
+          "expected_count": 2,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 4.003573875874281,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 1.5143781919032335
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 3.813018497079611
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "40950e7f-42bf-4b39-8770-0d3351bd3dfd",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:24:48.339081Z",
+            "activation_started_at": "2026-10-08T20:24:48.366147Z",
+            "started_at": "2026-10-08T20:24:48.666762Z",
+            "ready_at": "2026-10-08T20:24:48.661551Z",
+            "completed_at": "2026-10-08T20:24:49.902615Z",
+            "cold_start_seconds": 0.32247,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "single",
+          "path": "mcp",
+          "operation_id": "6909651f-49cf-42d3-b3a4-475bd179b150",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 6.477040251716971,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 5.0514668840914965
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "6909651f-49cf-42d3-b3a4-475bd179b150",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:24:49.719169Z",
+            "activation_started_at": "2026-10-08T20:24:49.746134Z",
+            "started_at": "2026-10-08T20:24:50.130823Z",
+            "ready_at": "2026-10-08T20:24:50.116717Z",
+            "completed_at": "2026-10-08T20:24:51.940196Z",
+            "cold_start_seconds": 0.397548,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "sdf",
+          "path": "mcp",
+          "operation_id": "bb293782-d2f1-4c20-8ec7-1254f5679bd4",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 5.820633457973599,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.539512043818831
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "bb293782-d2f1-4c20-8ec7-1254f5679bd4",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:24:56.532494Z",
+            "activation_started_at": "2026-10-08T20:24:56.565596Z",
+            "started_at": "2026-10-08T20:24:57.160791Z",
+            "ready_at": "2026-10-08T20:24:57.157242Z",
+            "completed_at": "2026-10-08T20:24:57.732010Z",
+            "cold_start_seconds": 0.624748,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "neural",
+          "path": "mcp",
+          "operation_id": "99f33b6f-7eaa-4bc9-b3da-987b1e0edca6",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 5.183264011517167,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 3.9609227515757084
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "99f33b6f-7eaa-4bc9-b3da-987b1e0edca6",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:25:01.969136Z",
+            "activation_started_at": "2026-10-08T20:25:02.024425Z",
+            "started_at": "2026-10-08T20:25:02.635280Z",
+            "ready_at": "2026-10-08T20:25:02.587986Z",
+            "completed_at": "2026-10-08T20:25:03.459169Z",
+            "cold_start_seconds": 0.61885,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "invalid",
+          "path": "rest",
+          "operation_id": "63f6a5dc-248d-45d8-bfa7-9268e1e6faee",
+          "expected_count": 1,
+          "expected_failure": true,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 4.057090578600764,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 1.836699279025197
+            },
+            {
+              "status": "failed",
+              "elapsed_seconds": 4.056827798485756
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": null,
+          "operation": {
+            "id": "63f6a5dc-248d-45d8-bfa7-9268e1e6faee",
+            "status": "failed",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:25:06.043717Z",
+            "activation_started_at": "2026-10-08T20:25:06.072468Z",
+            "started_at": "2026-10-08T20:25:06.414670Z",
+            "ready_at": "2026-10-08T20:25:06.408278Z",
+            "completed_at": "2026-10-08T20:25:07.392944Z",
+            "cold_start_seconds": 0.364561,
+            "error_code": "no_valid_molecules",
+            "error_detail": "No valid molecular structures were supplied. Check the SMILES or SDF structures and resubmit corrected input.",
+            "http_status": 422,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        }
+      ],
+      "invalid_contract_http_status": {
+        "admet-ai": 422,
+        "ctoxpred2": 422
+      }
+    },
+    {
+      "id": "r5",
+      "passed": true,
+      "raw_receipt_sha256": "0a352f864efacabc9031533af8f683955ea3572c2b4dce51a2e8e7084786138a",
+      "cases": [
+        {
+          "model": "admet-ai",
+          "case": "published250-csv",
+          "path": "rest",
+          "operation_id": "66d90aad-a425-4591-8c1f-311e8fac3eff",
+          "expected_count": 250,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 11.494360508397222,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 3.8224103562533855
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 10.619848681613803
+            }
+          ],
+          "reference_max_absolute_difference": 0.0,
+          "artifact_output": true,
+          "operation": {
+            "id": "66d90aad-a425-4591-8c1f-311e8fac3eff",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:27:56.406862Z",
+            "activation_started_at": "2026-10-08T20:27:56.460431Z",
+            "started_at": "2026-10-08T20:27:57.317652Z",
+            "ready_at": "2026-10-08T20:27:57.307270Z",
+            "completed_at": "2026-10-08T20:28:02.696093Z",
+            "cold_start_seconds": 0.900408,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          },
+          "result_artifact": {
+            "artifact_id": "fb9db89c-3ffb-4d50-bb64-cf47813fa667",
+            "sha256": "8346e2fa7d61136f1a4a461e2223a6b4ec5dbe2d7357ffaae5e628fcebf5c473",
+            "size_bytes": 487108,
+            "media_type": "application/octet-stream"
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "batch1000-json",
+          "path": "mcp",
+          "operation_id": "4d0e6ae6-9cb3-44e0-ae3f-863ae94034b6",
+          "expected_count": 1000,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 19.238496800884604,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 8.333012657240033
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 17.147570833563805
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": true,
+          "operation": {
+            "id": "4d0e6ae6-9cb3-44e0-ae3f-863ae94034b6",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:27:58.680460Z",
+            "activation_started_at": "2026-10-08T20:27:58.716832Z",
+            "started_at": "2026-10-08T20:27:59.624461Z",
+            "ready_at": "2026-10-08T20:27:59.608153Z",
+            "completed_at": "2026-10-08T20:28:11.046888Z",
+            "cold_start_seconds": 0.927693,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          },
+          "result_artifact": {
+            "artifact_id": "364b9002-4e44-4734-bd71-ea5c0494ed90",
+            "sha256": "13821d9fdbeda3fc75ef8a3461e582d735d7ce12bd04646b83e854d810f95fcc",
+            "size_bytes": 1879334,
+            "media_type": "application/octet-stream"
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "partial",
+          "path": "rest",
+          "operation_id": "9f79e639-3434-4552-8bec-27c31f0017fe",
+          "expected_count": 2,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 3.008367059752345,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 2.7118409983813763
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "9f79e639-3434-4552-8bec-27c31f0017fe",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:28:14.133555Z",
+            "activation_started_at": "2026-10-08T20:28:14.205250Z",
+            "started_at": "2026-10-08T20:28:14.544615Z",
+            "ready_at": "2026-10-08T20:28:14.535994Z",
+            "completed_at": "2026-10-08T20:28:15.846996Z",
+            "cold_start_seconds": 0.402439,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "single",
+          "path": "mcp",
+          "operation_id": "a69371ea-8966-439f-a641-fd1b62902f72",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 5.949843129143119,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.5330122243613005
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "a69371ea-8966-439f-a641-fd1b62902f72",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:28:15.202467Z",
+            "activation_started_at": "2026-10-08T20:28:15.256931Z",
+            "started_at": "2026-10-08T20:28:16.049202Z",
+            "ready_at": "2026-10-08T20:28:16.045414Z",
+            "completed_at": "2026-10-08T20:28:16.691463Z",
+            "cold_start_seconds": 0.842947,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "sdf",
+          "path": "mcp",
+          "operation_id": "dbcf851e-eed1-4236-840b-b09b9ebd923c",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 6.092665083706379,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.723884889855981
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "dbcf851e-eed1-4236-840b-b09b9ebd923c",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:28:20.918200Z",
+            "activation_started_at": "2026-10-08T20:28:20.946972Z",
+            "started_at": "2026-10-08T20:28:22.040304Z",
+            "ready_at": "2026-10-08T20:28:22.035908Z",
+            "completed_at": "2026-10-08T20:28:23.293255Z",
+            "cold_start_seconds": 1.117708,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "admet-ai",
+          "case": "invalid",
+          "path": "rest",
+          "operation_id": "6f7ff619-58b2-4b6f-bb04-596ea7e567ef",
+          "expected_count": 1,
+          "expected_failure": true,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 4.204256653785706,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 2.0186710506677628
+            },
+            {
+              "status": "failed",
+              "elapsed_seconds": 4.203991239890456
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": null,
+          "operation": {
+            "id": "6f7ff619-58b2-4b6f-bb04-596ea7e567ef",
+            "status": "failed",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:28:26.278608Z",
+            "activation_started_at": "2026-10-08T20:28:26.341780Z",
+            "started_at": "2026-10-08T20:28:26.879834Z",
+            "ready_at": "2026-10-08T20:28:26.873714Z",
+            "completed_at": "2026-10-08T20:28:27.386334Z",
+            "cold_start_seconds": 0.595106,
+            "error_code": "no_valid_molecules",
+            "error_detail": "No valid molecular structures were supplied. Check the SMILES or SDF structures and resubmit corrected input.",
+            "http_status": 422,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "published250-csv",
+          "path": "rest",
+          "operation_id": "43742a2b-754b-46ff-a3ab-89ec2b73fb1c",
+          "expected_count": 250,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 55.8132082875818,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 1.9094753321260214
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 55.10620521195233
+            }
+          ],
+          "reference_max_absolute_difference": 1.1102230246251565e-16,
+          "artifact_output": true,
+          "operation": {
+            "id": "43742a2b-754b-46ff-a3ab-89ec2b73fb1c",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:28:36.618300Z",
+            "activation_started_at": "2026-10-08T20:28:36.635141Z",
+            "started_at": "2026-10-08T20:28:37.291650Z",
+            "ready_at": "2026-10-08T20:28:37.286603Z",
+            "completed_at": "2026-10-08T20:29:30.241210Z",
+            "cold_start_seconds": 0.668303,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          },
+          "result_artifact": {
+            "artifact_id": "545d8a07-578f-4f9e-9d7c-831089eb25d0",
+            "sha256": "7987829b0d77a6e520282f662b9ba77999fff070d2cf7a96127be202cb71fd57",
+            "size_bytes": 121982,
+            "media_type": "application/octet-stream"
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "batch1000-json",
+          "path": "mcp",
+          "operation_id": "1e9e87c6-256c-4e08-947b-437e0e005376",
+          "expected_count": 1000,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 111.92474214360118,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 4.937873570248485
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 109.63285936042666
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": true,
+          "operation": {
+            "id": "1e9e87c6-256c-4e08-947b-437e0e005376",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:28:38.404620Z",
+            "activation_started_at": "2026-10-08T20:28:38.428589Z",
+            "started_at": "2026-10-08T20:28:39.017524Z",
+            "ready_at": "2026-10-08T20:28:39.012946Z",
+            "completed_at": "2026-10-08T20:30:23.596772Z",
+            "cold_start_seconds": 0.608326,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          },
+          "result_artifact": {
+            "artifact_id": "f28f3c80-e6d2-4dc9-a831-f1995e1d6027",
+            "sha256": "3dbc0fd10a5843bbf1387058159b3dcf525b60fbe09c2a1fc84a98168ee5329e",
+            "size_bytes": 421741,
+            "media_type": "application/octet-stream"
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "partial",
+          "path": "rest",
+          "operation_id": "5ce04242-5eda-45b1-aaf4-dff15ad43f40",
+          "expected_count": 2,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 4.335908690467477,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 1.9159401264041662
+            },
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.142475824803114
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "5ce04242-5eda-45b1-aaf4-dff15ad43f40",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:30:28.518273Z",
+            "activation_started_at": "2026-10-08T20:30:28.574721Z",
+            "started_at": "2026-10-08T20:30:29.133018Z",
+            "ready_at": "2026-10-08T20:30:29.119573Z",
+            "completed_at": "2026-10-08T20:30:30.158785Z",
+            "cold_start_seconds": 0.6013,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "single",
+          "path": "mcp",
+          "operation_id": "d3ce5d6d-5e77-4f6e-8d8d-66165eb84147",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 6.470678059384227,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.814781937748194
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "d3ce5d6d-5e77-4f6e-8d8d-66165eb84147",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:30:30.188520Z",
+            "activation_started_at": "2026-10-08T20:30:30.211552Z",
+            "started_at": "2026-10-08T20:30:30.685605Z",
+            "ready_at": "2026-10-08T20:30:30.674766Z",
+            "completed_at": "2026-10-08T20:30:31.590304Z",
+            "cold_start_seconds": 0.486246,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "sdf",
+          "path": "mcp",
+          "operation_id": "451b1fe3-8452-4f41-92e4-16a34a77eb84",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 6.02377556078136,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.727471966296434
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "451b1fe3-8452-4f41-92e4-16a34a77eb84",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:30:36.363334Z",
+            "activation_started_at": "2026-10-08T20:30:36.392493Z",
+            "started_at": "2026-10-08T20:30:37.220389Z",
+            "ready_at": "2026-10-08T20:30:37.192659Z",
+            "completed_at": "2026-10-08T20:30:38.266454Z",
+            "cold_start_seconds": 0.829325,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "neural",
+          "path": "mcp",
+          "operation_id": "e3efd499-c938-4f4f-86aa-3ea5ba7465ff",
+          "expected_count": 1,
+          "expected_failure": false,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 5.890482714399695,
+          "status_transitions": [
+            {
+              "status": "succeeded",
+              "elapsed_seconds": 4.337214840576053
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": false,
+          "operation": {
+            "id": "e3efd499-c938-4f4f-86aa-3ea5ba7465ff",
+            "status": "succeeded",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:30:42.449259Z",
+            "activation_started_at": "2026-10-08T20:30:42.480611Z",
+            "started_at": "2026-10-08T20:30:42.745308Z",
+            "ready_at": "2026-10-08T20:30:42.740442Z",
+            "completed_at": "2026-10-08T20:30:43.574992Z",
+            "cold_start_seconds": 0.291183,
+            "error_code": null,
+            "error_detail": null,
+            "http_status": 200,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        },
+        {
+          "model": "ctoxpred2",
+          "case": "invalid",
+          "path": "rest",
+          "operation_id": "42528e67-8c06-45b3-85fd-16f3b83fe25a",
+          "expected_count": 1,
+          "expected_failure": true,
+          "passed": true,
+          "idempotency_passed": true,
+          "elapsed_seconds": 4.057216987013817,
+          "status_transitions": [
+            {
+              "status": "running",
+              "elapsed_seconds": 1.8330059349536896
+            },
+            {
+              "status": "failed",
+              "elapsed_seconds": 4.056931670755148
+            }
+          ],
+          "reference_max_absolute_difference": null,
+          "artifact_output": null,
+          "operation": {
+            "id": "42528e67-8c06-45b3-85fd-16f3b83fe25a",
+            "status": "failed",
+            "tenant_id": "system",
+            "principal_id": "qa",
+            "protocol": "native",
+            "attempt": 1,
+            "accepted_at": "2026-10-08T20:30:47.008130Z",
+            "activation_started_at": "2026-10-08T20:30:47.043368Z",
+            "started_at": "2026-10-08T20:30:47.346211Z",
+            "ready_at": "2026-10-08T20:30:47.341579Z",
+            "completed_at": "2026-10-08T20:30:48.495685Z",
+            "cold_start_seconds": 0.333449,
+            "error_code": "no_valid_molecules",
+            "error_detail": "No valid molecular structures were supplied. Check the SMILES or SDF structures and resubmit corrected input.",
+            "http_status": 422,
+            "estimated_gpu_seconds": 0.0,
+            "runtime": {
+              "pod_uid": null,
+              "node_uid": null,
+              "gpu_uuids": [],
+              "gpu_count": 0,
+              "preemptible": null
+            }
+          }
+        }
+      ],
+      "invalid_contract_http_status": {
+        "admet-ai": 422,
+        "ctoxpred2": 422
+      }
+    }
+  ],
+  "scaling": {
+    "admet-ai": {
+      "max_ready": 2,
+      "natural_scale_zero": true
+    },
+    "ctoxpred2": {
+      "max_ready": 2,
+      "natural_scale_zero": true
+    }
+  },
+  "replica_observations": [
+    {
+      "at": "2026-10-08T20:08:05.253332+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:08:18.529971+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:08:31.972888+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:08:45.413863+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:08:58.794038+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:09:12.044903+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:09:25.348433+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:09:38.769802+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:09:52.239627+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:10:05.826545+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:10:19.275005+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:10:32.661707+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:10:46.397253+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:11:00.065962+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:11:13.492394+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:11:27.174298+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:11:40.790466+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:11:54.183082+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:12:07.651523+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:12:21.147814+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:12:34.710238+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:12:48.475455+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:13:02.036602+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:13:15.452395+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 1
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:13:29.064563+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:13:42.695467+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:13:56.281773+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:14:09.772369+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:14:23.416420+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:14:36.991904+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:14:50.419782+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:15:03.731794+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:15:17.196246+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:15:30.525714+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:15:43.936724+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:15:57.444524+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:16:10.782218+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:16:24.150692+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:16:37.691359+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:16:51.147103+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:17:04.540058+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:17:18.046608+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:17:31.645518+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:17:45.256324+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:17:58.608594+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:18:12.021891+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:18:25.485977+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:18:38.940668+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:18:52.304713+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 1,
+          "ready": 1
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:19:05.987255+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:19:19.854319+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:19:34.085915+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:19:47.930375+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:20:01.601971+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:20:15.233662+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:20:28.717709+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:20:42.318966+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:20:55.838176+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:21:09.520965+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:21:23.202003+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:21:37.133713+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:21:50.720634+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 0,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:22:04.412122+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 1,
+          "ready": 0
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:22:18.135690+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 1
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:22:31.873295+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:22:45.454286+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:22:59.040063+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 1,
+          "ready": 1
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:23:12.459148+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:23:25.988133+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:23:39.595611+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:23:52.992434+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:24:06.679050+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:24:20.151045+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    },
+    {
+      "at": "2026-10-08T20:24:33.621250+00:00",
+      "models": {
+        "admet-ai": {
+          "desired": 2,
+          "ready": 2
+        },
+        "ctoxpred2": {
+          "desired": 2,
+          "ready": 2
+        }
+      }
+    }
+  ],
+  "operator": {
+    "admet-ai": {
+      "app_id": "57c7d3d2-c67b-523a-b772-1dabf12d1ea1",
+      "usage": {
+        "logical_runs": 34,
+        "succeeded_runs": 25,
+        "failed_runs": 9,
+        "active_runs": 0,
+        "unique_users": 1,
+        "estimated_gpu_seconds": 0.0
+      },
+      "resource_metrics": [
+        {
+          "id": "concurrent_requests",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "cpu",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "memory",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "containers",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "ready_containers",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "gpu_utilization",
+          "state": "unavailable",
+          "reason": "No observed GPU device allocation is available for this app"
+        },
+        {
+          "id": "gpu_memory",
+          "state": "unavailable",
+          "reason": "No observed GPU device allocation is available for this app"
+        }
+      ],
+      "log_lines_returned": 200,
+      "lifecycle_subjects": 34
+    },
+    "ctoxpred2": {
+      "app_id": "70e1dae3-f61e-5f07-8c89-17716761620b",
+      "usage": {
+        "logical_runs": 32,
+        "succeeded_runs": 24,
+        "failed_runs": 8,
+        "active_runs": 0,
+        "unique_users": 1,
+        "estimated_gpu_seconds": 0.0
+      },
+      "resource_metrics": [
+        {
+          "id": "concurrent_requests",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "cpu",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "memory",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "containers",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "ready_containers",
+          "state": "available",
+          "reason": null
+        },
+        {
+          "id": "gpu_utilization",
+          "state": "unavailable",
+          "reason": "No observed GPU device allocation is available for this app"
+        },
+        {
+          "id": "gpu_memory",
+          "state": "unavailable",
+          "reason": "No observed GPU device allocation is available for this app"
+        }
+      ],
+      "log_lines_returned": 200,
+      "lifecycle_subjects": 32
+    }
+  },
+  "timing_note": "Operation cold_start_seconds is accepted-to-ready, including queue/activation; not pure model load. Harness elapsed includes submit/replay/poll/result verification.",
+  "untested": [
+    "LibreChat/LLM integration",
+    "independent cross-tenant load test",
+    "preemption",
+    "new-node provisioning",
+    "GPU execution/snapshots",
+    "clinical/regulatory validation"
+  ],
+  "verdict": "public-rest-and-typed-mcp-qualified-at-recorded-bound",
+  "unrestricted_customer_ready": false
+}

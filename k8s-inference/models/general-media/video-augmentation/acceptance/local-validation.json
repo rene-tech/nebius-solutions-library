@@ -1,0 +1,113 @@
+{
+  "schema": "fs2-serve.nebius.ai/video-augmentation-local-evidence/v1",
+  "date": "2026-09-19",
+  "state": "candidate-unqualified",
+  "customer_ready": false,
+  "live_gpu_generation_tested": false,
+  "live_bucket_batch_tested": false,
+  "deployment_changed": false,
+  "registry_images_published": false,
+  "source": {
+    "backend_branch": "agent/fs2-video-augmentation-20260919",
+    "backend_implementation_commit": "22e8273b0",
+    "backend_integrated_commit": "ab081d696f66386d8e499a66a7cbea2e1f41f228",
+    "integrated_mainline_through": "27d4d688b7d40f447d7aa028369c4fcedec3f937",
+    "workbench_branch": "agent/scientific-video-augmentation-20260919",
+    "workbench_commit": "6e9e198",
+    "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5"
+  },
+  "local_images": {
+    "warning": "Docker image IDs below are local build evidence, not registry manifest publication receipts.",
+    "worker": {
+      "tag": "fs2-video-augmentation:local-20260919-r3",
+      "image_id": "sha256:d92758550385b3fb82514ac4ec125fece5085fda5bf61d330413bf372108ce55"
+    },
+    "client": {
+      "tag": "scientific-video-client:local-20260919-r3",
+      "image_id": "sha256:1b9d990914b19533ae53e3a0e06ea3f8f3c783ad3013d7bbf5460eebbb12cdfc"
+    },
+    "workbench": {
+      "tag": "scientific-video-workbench:local-20260919-r5",
+      "image_id": "sha256:fdb9a9e35322b9cdc2810ba7e06508661705523fda7c8dbf80657c779438089e"
+    }
+  },
+  "automated_tests": {
+    "platform": {
+      "passed": 172,
+      "seconds": 35.34,
+      "database": "isolated local PostgreSQL 16 test container; no shared database writes",
+      "files": [
+        "test_video_augmentation_adapter.py",
+        "test_scientific_child_delegation.py",
+        "test_model_input_contracts.py",
+        "test_scientific_batch_execution_handoff.py",
+        "test_scientific_admin_fit.py",
+        "test_scientific_input_roles.py",
+        "test_scientific_mcp_aliases.py"
+      ],
+      "warnings": ["Existing Starlette HTTP_422_UNPROCESSABLE_ENTITY deprecation"]
+    },
+    "pipeline_runtime": {
+      "passed": 13,
+      "seconds": 3.17,
+      "scope": "Real MP4 decoding/remux, checkpoints, identity/quality gates, actual pinned NVIDIA pipeline and evaluators with fixture generation/provider responses. No GPU inference."
+    },
+    "workbench_python": {
+      "passed": 21,
+      "seconds": 0.15,
+      "scope": "Inventory/approval, immutable upload replay, receipt-journal recovery, source tamper, owner isolation, interrupted admission, reconnection and cancellation confirmation."
+    },
+    "workbench_node": {
+      "passed": 3,
+      "scope": "Failed job remains readable status, failed helper remains rejected, dedicated-user credential boundary."
+    },
+    "frontend_production_build": "passed",
+    "frontend_typescript_no_emit": "passed",
+    "ruff_new_python_sources": "passed",
+    "git_diff_check": "passed"
+  },
+  "browser": {
+    "image": "scientific-video-workbench:local-20260919-r5",
+    "environment": "Local dedicated test login, local disk workspace and intentionally unavailable platform endpoint; no GPU or real S3 mount.",
+    "source": {
+      "origin": "FFmpeg testsrc2 synthetic pattern",
+      "sha256": "31da46727567fbff1a4c198ffd4036526038a12284055d6fef85834db1ee4e90",
+      "size_bytes": 171629,
+      "width": 640,
+      "height": 480,
+      "frames": 32,
+      "fps": 16,
+      "duration_seconds": 2
+    },
+    "workflow_id": "195603b9-61ef-57a4-b8aa-68d7ed28e848",
+    "observations": {
+      "mp4_multipart_upload": "passed",
+      "preview_submission_to_durable_local_queue": "passed",
+      "authenticated_original_playback": "readyState=4, 640x480, 2 seconds, no media error",
+      "unavailable_platform": "Displayed preview: failed; no result fabricated",
+      "approval_and_batch_confirm_on_failed_preview": "Both absent",
+      "reload_saved_workflow": "Same workflow; exactly one job; original still playable",
+      "unauthenticated_media_request": "HTTP 401",
+      "chat_robotics_card_upload": "Uploaded path and cloudy instruction placed in chat composer; message not sent",
+      "console": "Initial unauthenticated session refresh returned 403 before login; no claim of an entirely error-free console"
+    },
+    "not_tested": [
+      "LLM-driven chat tool selection and returned inline result marker",
+      "Real Cosmos-generated modified-video playback",
+      "Human-approved real GPU bucket batch",
+      "Durability on the actual customer object-storage mount"
+    ]
+  },
+  "live_provider_evidence": {
+    "files": ["caption-provider.json", "caption-verification-provider.json"],
+    "scope": "Actual Token Factory caption/prompt and weather-verification capability probes. The unchanged sunny NVIDIA sample was overcast=false, clear=true. These probes predate the final adapter identity and are not final release qualification."
+  },
+  "release_gaps": [
+    "Coordinated canary activation on the current release, immutable image publication and completed catalog/execution-map onboarding",
+    "Namespace-local approved provider Secret, normal canary user/key grants and dedicated bucket prefix",
+    "Real chat preview followed by reviewed, approved multi-video GPU batch",
+    "Live cancellation, restart/reconnect, cold/warm capacity and artifact expiry/ownership checks",
+    "Provider usage billing integration and measured GPU cost/latency",
+    "Two unchanged clean customer-client qualification cohorts"
+  ]
+}

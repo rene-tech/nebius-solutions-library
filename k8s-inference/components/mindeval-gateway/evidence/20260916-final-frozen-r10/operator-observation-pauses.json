@@ -1,0 +1,16 @@
+{
+  "schema": "fs2-mindeval-observer-pauses/v1",
+  "pauses": [
+    {
+      "started_at": "2026-09-16T18:31:50Z",
+      "finished_at": "2026-09-16T18:32:42Z",
+      "duration_seconds": 52,
+      "coordinator_spoken_run_id": "0783b3d4-45d7-4e10-9260-9d0a83dea83e",
+      "process": "local read-only observer and next-cohort submitter",
+      "reason": "Coordinator requested a protected creation slot for the spoken browser run before repetition 2.",
+      "durable_jobs_paused": false,
+      "production_configuration_changed": false,
+      "latency_caveat": "Observer elapsed time includes this coordination pause; do not interpret it as provider latency. Per-call gateway telemetry is unaffected."
+    }
+  ]
+}

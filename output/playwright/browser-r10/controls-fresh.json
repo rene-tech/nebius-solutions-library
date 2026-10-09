@@ -1,0 +1,121 @@
+{
+  "kind": "browser-controls",
+  "checks": [
+    "/v1/workshop/runs accepted",
+    "/v1/workshop/runs/2b91ef88-b83e-4543-829a-0372f88c72e6/interventions accepted",
+    "pause persisted",
+    "/v1/workshop/runs/2b91ef88-b83e-4543-829a-0372f88c72e6/interventions accepted",
+    "/v1/workshop/runs/2b91ef88-b83e-4543-829a-0372f88c72e6/interventions accepted",
+    "patient takeover persisted",
+    "patient selected and ready for typed takeover",
+    "/v1/workshop/runs/2b91ef88-b83e-4543-829a-0372f88c72e6/interventions accepted",
+    "patient typed message retained",
+    "/v1/workshop/runs/2b91ef88-b83e-4543-829a-0372f88c72e6/interventions accepted",
+    "clinician takeover persisted",
+    "clinician selected and ready for typed takeover",
+    "/v1/workshop/runs/2b91ef88-b83e-4543-829a-0372f88c72e6/interventions accepted",
+    "clinician typed message retained",
+    "/v1/workshop/runs/2b91ef88-b83e-4543-829a-0372f88c72e6/interventions accepted",
+    "resume returns role to model",
+    "/v1/workshop/runs/2b91ef88-b83e-4543-829a-0372f88c72e6/interventions accepted",
+    "abort and intervention label persisted",
+    "intervened run excluded from comparison"
+  ],
+  "started_at": "2026-09-16T18:39:16.453Z",
+  "takeover_readiness_timeout_ms": 300000,
+  "waits": [
+    {
+      "kind": "http_response",
+      "action": "Start evaluation",
+      "elapsed_ms": 336
+    },
+    {
+      "kind": "http_response",
+      "action": "Pause",
+      "elapsed_ms": 298
+    },
+    {
+      "kind": "http_response",
+      "action": "Send nudge",
+      "elapsed_ms": 292
+    },
+    {
+      "kind": "http_response",
+      "action": "Take over",
+      "elapsed_ms": 366
+    },
+    {
+      "kind": "takeover_ready",
+      "role": "patient",
+      "initial_status": "takeover",
+      "started_at": "2026-09-16T18:39:21.357Z",
+      "outcome": "ready",
+      "elapsed_ms": 191
+    },
+    {
+      "kind": "http_response",
+      "action": "Speak as selected role",
+      "elapsed_ms": 228
+    },
+    {
+      "kind": "http_response",
+      "action": "Take over",
+      "elapsed_ms": 244
+    },
+    {
+      "kind": "takeover_ready",
+      "role": "clinician",
+      "initial_status": "queued",
+      "started_at": "2026-09-16T18:39:23.269Z",
+      "outcome": "ready",
+      "elapsed_ms": 4963
+    },
+    {
+      "kind": "http_response",
+      "action": "Speak as selected role",
+      "elapsed_ms": 282
+    },
+    {
+      "kind": "http_response",
+      "action": "Resume model",
+      "elapsed_ms": 807
+    },
+    {
+      "kind": "http_response",
+      "action": "Abort",
+      "elapsed_ms": 2067
+    }
+  ],
+  "diagnostic_context": "Prior r10 90-second queue timeout remains in browser-r10/controls-resumed.json; this is a fresh run with a test-only 300-second deadline, not changed platform limits.",
+  "run_id": "2b91ef88-b83e-4543-829a-0372f88c72e6",
+  "passed": true,
+  "final_status": "aborted",
+  "completed_at": "2026-09-16T18:39:33.031Z",
+  "browser_app": {
+    "path": "/workshop/static/app.js",
+    "http_status": 200,
+    "sha256": "e08ff154068642b02d1bc077f714743c9911ff43a2ee8fc8e4671808df6a49d6",
+    "matches_root_r10_source": true,
+    "source_last_change_commit": "762e7c5ea"
+  },
+  "browser_disconnected": true,
+  "named_browser_session_closed": true,
+  "browser_session": "mindeval-controls-r10-final",
+  "console_diagnostics": [
+    {
+      "kind": "resource",
+      "path": "/favicon.ico",
+      "status": 404,
+      "impact": "Incidental; no control assertion failed"
+    },
+    {
+      "kind": "background_run_list",
+      "path": "/v1/workshop/runs",
+      "error": "net::ERR_NETWORK_CHANGED",
+      "count": 2,
+      "impact": "Observed during polling; all control mutations and final state assertions passed"
+    }
+  ],
+  "release_label": "r10 (manager-declared frozen release; browser asset hash recorded above)",
+  "elapsed_ms": 16578
+}

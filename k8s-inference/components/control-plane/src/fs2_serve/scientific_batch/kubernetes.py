@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,7 @@ from uuid import UUID
 
 import httpx
 
+from ..runtime_kubernetes import _image_pull_observations
 from .models import (
     COLLECTION_GRACE_SECONDS,
     COLLECTOR_CONTAINER_NAME,
@@ -45,6 +47,7 @@ from .podset_envelope import (
 )
 from .protocols import BatchRepositoryConflictError
 from .startup_telemetry import MAX_LOG_BYTES, snapshot_request_started, uses_snapshot_supervisor
+from .worker_errors import LEROBOT_MODEL_ID, worker_error_code
 
 ATTEMPT_LABEL = "fs2.nebius.ai/attempt-id"
 OPERATION_LABEL = "fs2.nebius.ai/operation-id"
@@ -97,6 +100,19 @@ _KUEUE_REQUEUING_LIMIT_REASONS = frozenset(
         "EvictedDueToDeactivatedDueToRequeuingLimitExceeded",
     }
 )
+
+# Keep a controller-owned disruption receipt on the Job after the Pod is gone.
+# FailJob does NOT create extra Kubernetes retries: every replacement is still
+# a separately accounted attempt under the existing frozen stage budget.
+# The first rule preserves application/OOM exits, including ambiguous SIGKILL
+# (137). Only SIGTERM (143), successful containers, or not-yet-started Pods can
+# reach the disruption rule. Do not replace these rules with Ignore.
+_JOB_FAILURE_POLICY = {
+    "rules": [
+        {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [143]}},
+        {"action": "FailJob", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]},
+    ]
+}
 
 
 class ScientificManifestRenderer(Protocol):
@@ -153,6 +169,22 @@ def _pending_code(status: Mapping[str, Any], accelerator_resource: str | None) -
         if text in message:
             return code
     return "NodeProvisioning"
+
+
+def _pods_unstarted(pods: object) -> bool:
+    """Positive evidence for every Pod, including every member of a gang."""
+    return isinstance(pods, list) and bool(pods) and all(
+        isinstance(pod, Mapping)
+        and isinstance(pod.get("spec"), Mapping)
+        and not pod["spec"].get("nodeName")
+        and isinstance(pod.get("status"), Mapping)
+        and pod["status"].get("phase") == "Pending"
+        and _condition(pod["status"], "PodScheduled", "False") is not None
+        and not any(pod["status"].get(key) for key in (
+            "containerStatuses", "initContainerStatuses", "ephemeralContainerStatuses",
+        ))
+        for pod in pods
+    )
 
 
 def _timestamp(condition: Mapping[str, Any], label: str) -> datetime:
@@ -225,6 +257,151 @@ def _kueue_eviction(reason: str) -> tuple[WorkloadState, FailureKind, str]:
     }:
         return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, reason
     return WorkloadState.FAILED, FailureKind.APPLICATION, reason
+
+
+def _reported_failure(
+    reasons: list[str], pod_statuses: list[Mapping[str, Any]], *, model_id: str,
+    job: Mapping[str, Any] | None = None,
+) -> tuple[WorkloadState, FailureKind, str]:
+    fallback = _failure(reasons)
+    # scVI's worker reserves EX_TEMPFAIL for a caught interruption, after
+    # publishing its last full training state. Treat that exact known exit as
+    # bounded recovery, not a generic Python/application failure. Never turn
+    # OOM, deadlines, other Apps, or an ambiguous multi-Pod failure into retry.
+    stage_exits = [
+        stage.get("exitCode")
+        for status in pod_statuses
+        if (stage := _container_termination(status, STAGE_CONTAINER_NAME)) is not None
+    ]
+    if (
+        model_id == "scvi-scanvi"
+        and stage_exits == [75]
+        and fallback[1] is FailureKind.APPLICATION
+        and fallback[2] != "EXECUTION_TIMEOUT"
+        and not any(reason.casefold() in {"oomkilled", "deadlineexceeded"} for reason in reasons)
+    ):
+        return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, "SCVI_WORKER_INTERRUPTED"
+    # The Job controller can count a taint-evicted Pending Pod as failed before
+    # kubelet reports a container termination. The exact disruption condition
+    # is then the only reason available (observed after real H100 node loss).
+    # Keep execution timeouts and OOMs/application evidence non-retryable; only
+    # explicit controller-owned disruption reasons select bounded retry.
+    if (
+        fallback[1] is FailureKind.APPLICATION
+        and fallback[2] != "EXECUTION_TIMEOUT"
+        and not any(reason.casefold() == "oomkilled" for reason in reasons)
+        and not any(
+            (stage := _container_termination(pod_status, STAGE_CONTAINER_NAME)) is not None
+            and type(stage.get("exitCode")) is int
+            and stage["exitCode"] not in {0, 137, 143}
+            for pod_status in pod_statuses
+        )
+    ):
+        disruptions = {
+            str(condition.get("reason"))
+            for pod_status in pod_statuses
+            if (condition := _condition(pod_status, "DisruptionTarget")) is not None
+        }
+        if "DeletionByTaintManager" in disruptions:
+            return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "DeletionByTaintManager"
+        if "EvictionByEvictionAPI" in disruptions:
+            return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "EvictionByEvictionAPI"
+        if "PreemptionByScheduler" in disruptions:
+            return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, "PreemptionByScheduler"
+        if job is not None and _retained_job_disruption(job):
+            return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "JobDisruptionTarget"
+    if (
+        model_id not in {LEROBOT_MODEL_ID, "gromacs", "gromacs-mpi"}
+        or fallback[1] is not FailureKind.APPLICATION
+        or fallback[2] == "EXECUTION_TIMEOUT"
+        or any(reason.casefold() == "oomkilled" for reason in reasons)
+    ):
+        return fallback
+    codes: set[str] = set()
+    for pod_status in pod_statuses:
+        stage = _container_termination(pod_status, STAGE_CONTAINER_NAME)
+        if stage is None or type(stage.get("exitCode")) is not int or stage["exitCode"] == 0:
+            continue
+        if (code := worker_error_code(stage.get("message"), model_id=model_id)) is not None:
+            codes.add(code)
+    # Ambiguous multi-Pod reports retain the existing generic failure. Reporting
+    # enriches public diagnostics, not the established failure/retry taxonomy.
+    return (fallback[0], fallback[1], next(iter(codes))) if len(codes) == 1 else fallback
+
+
+def _gromacs_gang_disruption(
+    reasons: list[str], pod_statuses: list[Mapping[str, Any]],
+) -> tuple[WorkloadState, FailureKind, str] | None:
+    """An evicted MPI rank interrupts the whole gang, including a healthy leader.
+
+    MPI aborts surviving ranks with an ordinary nonzero exit. Classifying that
+    secondary exit alone loses the peer's disruption and prevents checkpoint
+    recovery. Observe the complete attempt before the collector-failure path;
+    an earlier application exit, OOM, or deadline still must not become retryable.
+    """
+    if any(reason.casefold() in {"oomkilled", "deadlineexceeded"} for reason in reasons):
+        return None
+    if _failure(reasons)[2] == "EXECUTION_TIMEOUT":
+        return None
+    disruptions = []
+    for status in pod_statuses:
+        condition = _condition(status, "DisruptionTarget")
+        if condition is None or condition.get("reason") not in {
+            "DeletionByTaintManager", "EvictionByEvictionAPI", "PreemptionByScheduler",
+        }:
+            continue
+        at = _optional_time(condition.get("lastTransitionTime"), "gang disruption")
+        if at is not None:
+            disruptions.append((at, str(condition["reason"])))
+    if not disruptions:
+        return None
+    disrupted_at, reason = min(disruptions)
+    for status in pod_statuses:
+        stage = _container_termination(status, STAGE_CONTAINER_NAME)
+        if stage is None or stage.get("exitCode") == 0:
+            continue
+        finished_at = _finished_at(stage)
+        if finished_at is None or finished_at < disrupted_at:
+            return None
+    if reason == "PreemptionByScheduler":
+        return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, reason
+    return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, reason
+
+
+def _retained_job_disruption(job: Mapping[str, Any]) -> bool:
+    """Recognize only our exact Job policy's terminal disruption receipt.
+
+    Kubernetes retains the matched FailJob rule on the Job, unlike the removed
+    Pod's conditions. UID and attempt ownership are checked by observe() first.
+    Generic BackoffLimitExceeded, exit-code rules, other policies, and nonterminal
+    FailureTarget conditions are deliberately insufficient.
+    """
+    spec = job.get("spec")
+    metadata = job.get("metadata")
+    status = job.get("status")
+    if (
+        not isinstance(spec, Mapping)
+        or spec.get("backoffLimit") != 0
+        or spec.get("podFailurePolicy") != _JOB_FAILURE_POLICY
+        or not isinstance(metadata, Mapping)
+        or not isinstance(status, Mapping)
+    ):
+        return False
+    condition = _condition(status, "Failed")
+    namespace, name = metadata.get("namespace"), metadata.get("name")
+    if (
+        condition is None or condition.get("reason") != "PodFailurePolicy"
+        or not isinstance(namespace, str) or not namespace
+        or not isinstance(name, str) or not name
+    ):
+        return False
+    # Kubernetes v1.31+ controller message; fail conservatively if its format
+    # changes rather than guessing that an application failure was disruption.
+    pattern = (
+        rf"Pod {re.escape(namespace)}/{re.escape(name)}-[a-z0-9]+ "
+        r"has condition DisruptionTarget matching FailJob rule at index 1"
+    )
+    return re.fullmatch(pattern, str(condition.get("message", ""))) is not None
 
 
 def _utcnow() -> datetime:
@@ -341,9 +518,9 @@ def _canonical_phase_intervals(
     independently for every immutable Pod UID, so retries remain distinct.
     """
 
-    canonical: dict[tuple[LifecyclePhase, datetime], PodPhaseInterval] = {}
+    canonical: dict[tuple[LifecyclePhase, datetime, tuple[str, ...]], PodPhaseInterval] = {}
     for interval in intervals:
-        identity = (interval.phase, interval.started_at)
+        identity = (interval.phase, interval.started_at, interval.source_event_uids)
         existing = canonical.get(identity)
         if existing is None:
             canonical[identity] = interval
@@ -357,6 +534,7 @@ def _canonical_phase_intervals(
             phase=interval.phase,
             started_at=interval.started_at,
             ended_at=ended_at,
+            source_event_uids=interval.source_event_uids,
         )
     return tuple(canonical.values())
 
@@ -632,8 +810,9 @@ def _stalled_collection(
     pod_statuses: list[Mapping[str, Any]],
     *,
     now: datetime,
+    model_id: str = "",
 ) -> tuple[WorkloadState, FailureKind, str] | None:
-    """Settle a staged Pod whose model is finished but whose collector is not.
+    """Settle a staged Pod when a required peer has failed or stopped progressing.
 
     A staged Pod runs the model and the artifact collector side by side under
     ``restartPolicy: Never``, so Kubernetes only settles the Pod once *both*
@@ -650,7 +829,19 @@ def _stalled_collection(
 
     for pod_status in pod_statuses:
         stage = _container_termination(pod_status, STAGE_CONTAINER_NAME)
-        if stage is None or _container_termination(pod_status, COLLECTOR_CONTAINER_NAME) is not None:
+        collector = _container_termination(pod_status, COLLECTOR_CONTAINER_NAME)
+        if stage is None and collector is not None:
+            exit_code = collector.get("exitCode")
+            if isinstance(exit_code, int) and exit_code != 0:
+                # The native worker may be waiting for a checkpoint/upload ACK
+                # which a dead collector can never send. Do not hold its GPU
+                # until the workflow's multi-hour execution deadline.
+                reasons = [value for value in (collector.get("reason"), pod_status.get("reason"))
+                           if isinstance(value, str) and value]
+                state, kind, code = _reported_failure(reasons or ["artifact_collector_failed"],
+                                                      [pod_status], model_id=model_id)
+                return state, kind, "artifact_collector_failed" if code in {"Error", "workload_failed"} else code
+        if stage is None or collector is not None:
             # The model still runs, or both containers are done and the Job
             # status settles this attempt through the existing failure path.
             continue
@@ -663,7 +854,7 @@ def _stalled_collection(
             ]
             # Reuse the exact taxonomy the Job-failure path applies, so an
             # OOM-killed or preempted stage keeps its established retry class.
-            return _failure(reasons or ["workload_failed"])
+            return _reported_failure(reasons or ["workload_failed"], [pod_status], model_id=model_id)
         finished_at = _finished_at(stage)
         if finished_at is not None and now - finished_at >= timedelta(seconds=COLLECTION_GRACE_SECONDS):
             # The model published nothing collectable. This is the stage's own
@@ -794,6 +985,51 @@ class HttpScientificBatchCluster:
         if self._owns_client:
             await self.client.aclose()
 
+    async def _pull_events(self, namespace: str) -> list[dict[str, Any]]:
+        """Use the existing observer reconcile, not a second telemetry poller.
+
+        Missing/expired/aggregated events leave startup unclassified. Event
+        messages and image names are neither parsed nor retained.
+        """
+        try:
+            response = await self._request(
+                "GET", f"/api/v1/namespaces/{quote(namespace, safe='')}/events"
+                "?fieldSelector=involvedObject.kind=Pod&limit=1000"
+            )
+            if response.status_code != 200:
+                return []
+            document = response.json()
+            if not isinstance(document, dict) or not isinstance(document.get("items"), list):
+                return []
+            metadata = document.get("metadata", {})
+            if not isinstance(metadata, dict) or metadata.get("continue"):
+                return []
+            events = [event for event in document.get("items", []) if isinstance(event, dict)
+                      and event.get("count", 1) == 1 and not event.get("series")]
+        except (ScientificKubernetesError, ValueError, TypeError):
+            return []
+        return events
+
+    @staticmethod
+    def _image_pull_intervals(
+        events: list[dict[str, Any]], pod: PodLifecycleObservation,
+    ) -> tuple[PodPhaseInterval, ...]:
+        # A Pod can pull init/stage/collector images concurrently. Missing
+        # container coordinates must not pair another container's boundaries.
+        scoped = [event for event in events
+                  if isinstance(event.get("involvedObject"), Mapping)
+                  and isinstance(event["involvedObject"].get("fieldPath"), str)
+                  and event["involvedObject"]["fieldPath"]]
+        return tuple(
+            PodPhaseInterval(
+                phase=LifecyclePhase.IMAGE_LOADING, started_at=value.started_at, ended_at=value.completed_at,
+                source_event_uids=(value.start_event_uid, value.end_event_uid),
+            )
+            for value in _image_pull_observations(scoped, pod.pod_uid)
+            if value.start_event_uid and value.end_event_uid and pod.scheduled_at is not None
+            and pod.scheduled_at <= value.started_at <= value.completed_at <= pod.observed_at
+        )
+
     def _headers(self) -> dict[str, str]:
         try:
             token = self.token_file.read_text().strip()
@@ -889,6 +1125,7 @@ class HttpScientificBatchCluster:
                 _bind_pool_affinity(pod, pools)
         if resource.kind is WorkloadKind.JOB:
             spec["backoffLimit"] = 0
+            spec["podFailurePolicy"] = copy.deepcopy(_JOB_FAILURE_POLICY)
         if resource.scheduling.max_execution_seconds is not None:
             _set_active_deadline(manifest, resource.kind, resource.scheduling.max_execution_seconds)
         envelope = self._frozen_envelope(manifest, resource)
@@ -1118,6 +1355,12 @@ class HttpScientificBatchCluster:
         pending_codes: list[str] = []
         scheduled = False
         observed_at = self.clock()
+        # One bounded event read for this reconcile, not one per gang Pod.
+        pull_events = await self._pull_events(ref.namespace) if any(
+            isinstance(pod, Mapping) and isinstance(pod.get("status"), Mapping)
+            and _condition(pod["status"], "PodScheduled") is not None
+            for pod in (pods if isinstance(pods, list) else [])
+        ) else []
         for raw_pod in pods if isinstance(pods, list) else []:
             if not isinstance(raw_pod, Mapping):
                 continue
@@ -1132,6 +1375,10 @@ class HttpScientificBatchCluster:
                 snapshot_request_at=await self._snapshot_request_at(raw_pod, ref.namespace),
             )
             if lifecycle is not None:
+                lifecycle = replace(
+                    lifecycle,
+                    phases=(*lifecycle.phases, *self._image_pull_intervals(pull_events, lifecycle)),
+                )
                 pod_lifecycle.append(lifecycle)
             pod_status = raw_pod.get("status")
             if not isinstance(pod_status, Mapping):
@@ -1177,7 +1424,22 @@ class HttpScientificBatchCluster:
 
         succeeded = int(status.get("succeeded", 0) or 0) > 0 or _condition(status, "Completed") is not None
         failed_condition = _condition(status, "Failed")
-        failed = int(status.get("failed", 0) or 0) > 0 or failed_condition is not None
+        gang_disruption = (
+            _gromacs_gang_disruption(
+                [str((failed_condition or {}).get("reason", "")), *failure_reasons], pod_statuses,
+            )
+            if ref.kind is WorkloadKind.JOB_SET and labels.get(MODEL_LABEL) == "gromacs-mpi"
+            else None
+        )
+        policy_pending = (
+            ref.kind is WorkloadKind.JOB
+            and value.get("spec", {}).get("podFailurePolicy") == _JOB_FAILURE_POLICY
+            and failed_condition is None
+            and _condition(status, "FailureTarget") is not None
+        )
+        # FailureTarget precedes terminal Failed while other containers stop.
+        # Do not settle a counted Pod failure before its durable rule receipt.
+        failed = not policy_pending and (int(status.get("failed", 0) or 0) > 0 or failed_condition is not None)
         if (
             not admitted
             and eviction_reason is None
@@ -1202,9 +1464,12 @@ class HttpScientificBatchCluster:
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
-        elif failed:
+        elif failed or gang_disruption is not None:
             reason = str((failed_condition or {}).get("reason", "workload_failed"))
-            workload_state, failure_kind, failure_code = _failure([reason, *failure_reasons])
+            workload_state, failure_kind, failure_code = gang_disruption or _reported_failure(
+                [reason, *failure_reasons], pod_statuses, model_id=str(labels.get(MODEL_LABEL, "")),
+                job=value if ref.kind is WorkloadKind.JOB else None,
+            )
             return WorkloadObservation(
                 ref=ref,
                 attempt_id=attempt_id,
@@ -1217,7 +1482,11 @@ class HttpScientificBatchCluster:
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
-        elif (stalled := _stalled_collection(pod_statuses, now=self.clock())) is not None:
+        elif not policy_pending and (
+            stalled := _stalled_collection(
+                pod_statuses, now=self.clock(), model_id=str(labels.get(MODEL_LABEL, ""))
+            )
+        ) is not None:
             workload_state, failure_kind, failure_code = stalled
             if workload_state is WorkloadState.PREEMPTED:
                 phases.append(LifecyclePhase.PREEMPTED)
@@ -1246,6 +1515,7 @@ class HttpScientificBatchCluster:
             kueue_workload_uid=kueue_workload_uid,
             pod_uids=tuple(dict.fromkeys(pod_uids)),
             pod_lifecycle=tuple(pod_lifecycle),
+            pods_unstarted=_pods_unstarted(pods),
             pending_code=(
                 next((code for code in pending_codes if code != "NodeProvisioning"), "NodeProvisioning")
                 if LifecyclePhase.NODE_PENDING in phases else None

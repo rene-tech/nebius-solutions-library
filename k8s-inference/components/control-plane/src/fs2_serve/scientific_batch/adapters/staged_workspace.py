@@ -46,17 +46,23 @@ class SnapshotEntry:
     content: bytes = b""
 
 
-def wrap_stage_argv(workspace: str, command: tuple[str, ...]) -> tuple[str, ...]:
+def wrap_stage_argv(workspace: str, command: tuple[str, ...], *, interpreter: str = "python") -> tuple[str, ...]:
     """Place an exec-form model command behind the trusted completion runner."""
 
     if not command or any(not value or "\x00" in value for value in command):
         raise ScientificAdapterError("stage command contains an invalid argument")
-    return ("python", f"{workspace}/{STAGE_RUNNER_RELATIVE_PATH}", "--", *command)
+    if interpreter not in {"python", "python3"}:
+        raise ScientificAdapterError("stage runner requires an explicit supported Python executable")
+    return (interpreter, f"{workspace}/{STAGE_RUNNER_RELATIVE_PATH}", "--", *command)
 
 
 def unwrapped_stage_argv(invocation: StageInvocation, *, label: str) -> tuple[str, ...]:
     expected = f"{invocation.working_directory}/{STAGE_RUNNER_RELATIVE_PATH}"
-    if invocation.argv[:3] != ("python", expected, "--") or len(invocation.argv) < 4:
+    if (
+        len(invocation.argv) < 4
+        or invocation.argv[0] not in {"python", "python3"}
+        or invocation.argv[1:3] != (expected, "--")
+    ):
         raise ScientificAdapterError(f"{label} stage does not use the trusted completion runner")
     return invocation.argv[3:]
 

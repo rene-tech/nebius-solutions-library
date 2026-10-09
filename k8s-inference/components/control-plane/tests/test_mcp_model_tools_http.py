@@ -3,6 +3,7 @@
 import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from types import SimpleNamespace
 from uuid import UUID
 
 import httpx2
@@ -13,13 +14,15 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 from test_api_mcp import bound_model_registry, build_runtime
-from test_scientific_batch_production import scientific_runtime
+from test_scientific_batch_production import profile_catalog_for, scientific_runtime
 
 from fs2_serve.api import _model_view, create_app
 from fs2_serve.mcp_server import CLIENT_ONLY_TOOLS, CORE_TOOLS, MCP_HTTP_PATH, mount_mcp
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.registry import Registry
 from fs2_serve.request_debug import InMemoryDebugStore
+from fs2_serve.scientific_batch.models import BatchStatus
+from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificRequestError
 
 
 async def _key(runtime, *, tenant="tenant-a", models=("qwen3-8b",), catalog=True, max_concurrency=4):
@@ -219,6 +222,112 @@ async def test_large_native_examples_publish_small_server_fixture_references(reg
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["text-to-image", "video-to-video"])
+async def test_cosmos_typed_tools_preserve_mode_specific_runtime_defaults(registry, cipher, hasher, mode):
+    native = bound_model_registry(registry, "cosmos3-nano")
+    model = native.get("cosmos3-nano")
+    native = Registry(
+        native.catalog,
+        {
+            "cosmos3-nano": replace(
+                model,
+                gateway=replace(model.gateway, mcp_discoverable=True, mcp_invocable=True),
+            )
+        },
+    )
+    runtime = build_runtime(native, cipher, hasher)
+    app = _app(runtime)
+    key = await _key(runtime, models=("cosmos3-nano",))
+    expected = {
+        "cosmos3_nano_text_to_image",
+        "cosmos3_nano_text_to_video",
+        "cosmos3_nano_image_to_video",
+        "cosmos3_nano_video_to_video",
+        "cosmos3_nano_transfer_video",
+    }
+    customer_request = {
+        "prompt": "Preserve the robot motion while changing the lighting.",
+        "vision_path": "https://media.example.test/robot_pouring.mp4",
+        "condition_frame_indexes_vision": [0, 1],
+        "condition_video_keep": "first",
+        "idempotency_key": "timothy-robot-pouring-v2v-0001",
+    }
+    if mode == "text-to-image":
+        customer_request = {"prompt": "A red cube on a white table", "idempotency_key": "cosmos-t2i-legacy-json-0001"}
+    tool_name = "cosmos3_nano_" + mode.replace("-", "_")
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        tools = {item.name: item for item in (await client.list_tools()).tools}
+        assert expected <= tools.keys()
+        assert "cosmos3_nano_forward_dynamics" not in tools
+        assert "cosmos3_nano_inverse_dynamics" not in tools
+        v2v = tools["cosmos3_nano_video_to_video"]
+        assert "vision_path" in v2v.input_schema["properties"]
+        assert "mode" not in v2v.input_schema["properties"]
+        assert "payload" not in v2v.input_schema["properties"]
+        discovered = _data(await client.call_tool("get_model_schema", {"model_id": "cosmos3-nano"}))
+        assert expected <= {contract["tool_name"] for contract in discovered["contracts"]}
+
+        admitted = _data(await client.call_tool(tool_name, customer_request))
+        assert admitted["status"] == "queued"
+        claimed = await runtime.store.claim_operation("cosmos-contract-test", lease_seconds=30)
+        assert claimed is not None and str(claimed.id) == admitted["id"]
+        payload = json.loads(
+            await runtime.store.read_request_payload(
+                claimed.id,
+                worker_id="cosmos-contract-test",
+                fencing_token=claimed.fencing_token,
+            )
+        )
+        assert payload == {
+            **{key: value for key, value in customer_request.items() if key != "idempotency_key"},
+            "mode": mode,
+            **({} if mode == "text-to-image" else {"output_delivery": "artifact"}),
+            "output_format": "png" if mode == "text-to-image" else "mp4",
+        }
+
+        if mode == "text-to-image":
+            for delivery in ("inline-base64", "artifact"):
+                with pytest.raises(MCPError) as rejected_delivery:
+                    await client.call_tool(
+                        model.binding.mcp_tool_name + "_native",
+                        {
+                            **payload,
+                            "output_delivery": delivery,
+                            "idempotency_key": "cosmos-t2i-reject-delivery-" + delivery,
+                        },
+                    )
+                assert rejected_delivery.value.code == -32602
+                assert rejected_delivery.value.data["type"] == "model_input_validation"
+                assert len(runtime.store.operations) == 1
+
+            # The legacy opaque route remains compatible with the same valid T2I request.
+            generic = _data(
+                await client.call_tool(
+                    "invoke_model",
+                    {
+                        "model_id": "cosmos3-nano",
+                        "protocol": "native",
+                        "payload": payload,
+                        "idempotency_key": "cosmos-t2i-generic-valid-0001",
+                    },
+                )
+            )
+            assert generic["status"] == "queued"
+
+        with pytest.raises(MCPError) as missing_reference:
+            await client.call_tool(
+                "cosmos3_nano_video_to_video",
+                {
+                    "prompt": "This must fail before GPU admission.",
+                    "idempotency_key": "timothy-robot-pouring-invalid-0001",
+                },
+            )
+        assert missing_reference.value.code == -32602
+        assert missing_reference.value.data["type"] == "model_input_validation"
+        assert len(runtime.store.operations) == (2 if mode == "text-to-image" else 1)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "model_id,tool_name,invalid,field",
     [
@@ -299,6 +408,20 @@ async def test_http_native_validation_has_field_issues_no_run_and_debug_owner(
     detail = await debug.get(calls[0].id, "tenant-a")
     assert detail.request_body.complete and "ACDEFGHIKLMNPQRSTVWY" in detail.request_body.data
     assert key.token not in detail.model_dump_json()
+    semantic = [
+        row
+        for row in app.state.request_telemetry.observations
+        if row.model_id == model_id and row.mcp_tool == tool_name and row.jsonrpc_error_code == -32602
+    ]
+    assert len(semantic) == 1
+    # The current SDK maps validation to HTTP 400; historical/live SDK builds
+    # have transported the same JSON-RPC -32602 in HTTP 200. Semantic truth is
+    # deliberately independent of that transport choice.
+    assert semantic[0].http_status == 400 and semantic[0].semantic_outcome == "failed"
+    assert semantic[0].semantic_error_type == "model_input_validation"
+    assert semantic[0].admission_stage == "pre_admission" and semantic[0].operation_id is None
+    assert detail.semantic_outcome == "failed" and detail.jsonrpc_error_code == -32602
+    assert detail.semantic_error_type == "model_input_validation" and detail.admission_stage == "pre_admission"
 
 
 @pytest.mark.asyncio
@@ -341,6 +464,7 @@ async def test_http_scientific_flat_manifest_and_legacy_wrapper_share_one_run(re
     async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
         schema = _data(await client.call_tool("get_model_schema", {"model_id": "protein-design"}))
         (contract,) = schema["contracts"]
+        assert schema["artifact_manifest_schema"] == runtime.scientific_batches.profiles.artifact_manifest_schema()
         assert contract["protocol"] == "scientific-batch-v1"
         assert contract["tool_name"] == "submit_protein_design"
         fields = contract["input_schema"]["properties"]
@@ -368,3 +492,135 @@ async def test_http_scientific_flat_manifest_and_legacy_wrapper_share_one_run(re
         assert len(repository.records) == 1
         status = _data(await client.call_tool("get_scientific_status", {"operation_id": submitted["operation"]["id"]}))
         assert status["batch"]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_generic_mcp_poll_reports_scientific_result_publication(registry, cipher, hasher):
+    runtime, _, repository, _, pointer = scientific_runtime(registry, cipher, hasher)
+    app = _app(runtime)
+    key = await _key(runtime, models=("protein-design",))
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        submitted = _data(await client.call_tool("submit_protein_design", {
+            "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+            "operation": "design", "service_class": "customer-batch",
+            "input_manifest": pointer, "parameters": {},
+            "idempotency_key": "generic-scientific-result-poll-20261006",
+        }))
+        operation_id = submitted["operation"]["id"]
+        arguments = {"operation_id": operation_id}
+        assert _data(await client.call_tool("get_operation", arguments))["result_available"] is False
+        # Scientific outputs are published in the durable batch repository,
+        # not the serving-result column of the generic operation record.
+        state = repository.records[UUID(operation_id)]
+        repository.records[UUID(operation_id)] = replace(state, status=BatchStatus.SUCCEEDED, result_published=True)
+        assert _data(await client.call_tool("get_operation", arguments))["result_available"] is True
+
+
+@pytest.mark.asyncio
+async def test_proteina_target_catalog_is_explicit_caller_scoped_discovery_not_tool_bloat(
+    registry,
+    cipher,
+    hasher,
+    monkeypatch,
+):
+    runtime, *_ = scientific_runtime(registry, cipher, hasher)
+    runtime.scientific_batches.profiles = profile_catalog_for("proteina-complexa")
+    # Reuse the synthetic profile fixture's qualified discovery seam. Production
+    # target catalog publication remains behind the same authorized model loop.
+    monkeypatch.setattr(
+        "fs2_serve.mcp_server._scientific_tool_profiles",
+        lambda _runtime, principal: (
+            (SimpleNamespace(model_id="proteina-complexa", mcp_tool_name="submit_protein_design"),)
+            if "proteina-complexa" in principal.models
+            else ()
+        ),
+    )
+    app = _app(runtime)
+    key = await _key(runtime, models=("proteina-complexa",))
+    restricted = await _key(runtime, tenant="other", models=("qwen3-8b",))
+    async with app.router.lifespan_context(app):
+        async with _connection(runtime, app, key) as client:
+            tools = await client.list_tools()
+            assert "M0024_1nzy_og" not in json.dumps([tool.model_dump() for tool in tools.tools])
+            found = _data(await client.call_tool("get_model_schema", {"model_id": "proteina-complexa"}))
+            targets = found["target_catalog"]["variants"]["protein-target"]["targets"]
+            assert targets["02_PDL1"]["bundle_path"] == targets["03_PDL1_AAV"]["bundle_path"]
+            assert targets["02_PDL1"]["description"] != targets["03_PDL1_AAV"]["description"]
+        async with _connection(runtime, app, restricted) as client:
+            with pytest.raises(MCPError, match="outside token policy"):
+                await client.call_tool("get_model_schema", {"model_id": "proteina-complexa"})
+
+
+@pytest.mark.asyncio
+async def test_scientific_mcp_exposes_only_explicit_public_parameter_detail(registry, cipher, hasher, monkeypatch):
+    runtime, _, repository, _, pointer = scientific_runtime(registry, cipher, hasher)
+    public_detail = "Choose 02_PDL1 or 03_PDL1_AAV from target_catalog; these have different hotspots."
+
+    async def reject(**kwargs):
+        raise ScientificRequestError("INTERNAL_PATH_MUST_NOT_LEAK", public_detail=public_detail)
+
+    monkeypatch.setattr(runtime.scientific_batches, "submit", reject)
+    app = _app(runtime)
+    key = await _key(runtime, models=("protein-design",))
+    request = {
+        "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "operation": "design",
+        "service_class": "customer-batch",
+        "input_manifest": pointer,
+        "parameters": {},
+    }
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        for tool, args in (
+            ("submit_scientific_run", {"model_id": "protein-design", "request": request}),
+            ("submit_protein_design", request),
+        ):
+            with pytest.raises(MCPError) as caught:
+                await client.call_tool(tool, args)
+            assert caught.value.error.code == -32602
+            assert public_detail in str(caught.value)
+            assert "INTERNAL_PATH_MUST_NOT_LEAK" not in str(caught.value)
+        assert repository.records == {}
+
+
+@pytest.mark.asyncio
+async def test_lerobot_input_roles_are_discoverable_without_bloating_tool_list(registry, cipher, hasher, monkeypatch):
+    from fs2_serve.scientific_batch.adapters.cosmos_lerobot import MODEL_ID, public_input_contract
+
+    runtime, *_ = scientific_runtime(registry, cipher, hasher)
+    runtime.scientific_batches.profiles = profile_catalog_for(MODEL_ID)
+    # This test exercises LeRobot's actual named fields, not the generic
+    # empty protein-design parameter fixture used by unrelated batch tests.
+    catalog = runtime.scientific_batches.profiles
+    runtime.scientific_batches.profiles = ScientificProfileCatalog(
+        profiles={MODEL_ID: catalog.get(MODEL_ID)},
+        validators={
+            **catalog._validators,
+            catalog.get(MODEL_ID).parameter_schema: Draft202012Validator(json.loads(
+                (CATALOG_ROOT / "schema" / "cosmos3-lerobot-augmentation-request.schema.json").read_text(),
+            )),
+        },
+    )
+    monkeypatch.setattr(
+        "fs2_serve.mcp_server._scientific_tool_profiles",
+        lambda _runtime, principal: (
+            (SimpleNamespace(model_id=MODEL_ID, mcp_tool_name="submit_protein_design"),)
+            if MODEL_ID in principal.models else ()
+        ),
+    )
+    app = _app(runtime)
+    key = await _key(runtime, models=(MODEL_ID,))
+    restricted = await _key(runtime, models=("qwen3-8b",))
+    async with app.router.lifespan_context(app):
+        async with _connection(runtime, app, key) as client:
+            schema = _data(await client.call_tool("get_model_schema", {"model_id": MODEL_ID}))
+            assert schema["input_artifact_contract"] == public_input_contract()
+            assert schema["artifact_manifest_schema"] == runtime.scientific_batches.profiles.artifact_manifest_schema()
+            selected = _data(await client.call_tool("get_model_schema", {
+                "model_id": MODEL_ID, "tool_name": "submit_protein_design",
+            }))
+            assert selected == schema
+            schema["input_artifact_contract"]["source_kinds"].clear()
+            assert public_input_contract()["source_kinds"]
+        async with _connection(runtime, app, restricted) as client:
+            with pytest.raises(MCPError, match="outside token policy"):
+                await client.call_tool("get_model_schema", {"model_id": MODEL_ID})

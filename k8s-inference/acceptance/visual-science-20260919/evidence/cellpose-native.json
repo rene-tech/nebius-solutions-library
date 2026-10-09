@@ -1,0 +1,93 @@
+{
+  "schema": "fs2-visual-science-native-qualification/v1",
+  "started_at": "2026-09-19T14:26:34.837340+00:00",
+  "model": "cellpose",
+  "boundary": "direct worker HTTP; excludes public App admission and MCP",
+  "health": {
+    "status": 200,
+    "elapsed_seconds": 0.29868828505277634,
+    "request_bytes": 0,
+    "request_sha256": null,
+    "response_bytes": 142,
+    "response_sha256": "ca104186b99debdb88e6695e3e6485e67c071bdc0e6d3c3e84ff5af74502033f",
+    "content_type": "application/json",
+    "semantic": {
+      "status": "ready",
+      "model": "mouseland/cellpose-sam/cpsam_v2",
+      "model_sha256": "0f1cc3f7ecdd8a037a57c6c48d9d8921391be4cbce3fa9f13c3e3a2e1253c667"
+    }
+  },
+  "results": [
+    {
+      "status": 200,
+      "elapsed_seconds": 1.445403908379376,
+      "request_bytes": 157713,
+      "request_sha256": "e3a0ebb4e7ea2ae33a72e80b4020c4c0244ac2594621d517267c07e2ffa672d3",
+      "response_bytes": 280415,
+      "response_sha256": "c5d2b9a94b48b26f68af12d07ad47ba80731f94cff1ada41b6395bf2074455a3",
+      "content_type": "application/json",
+      "semantic": {
+        "input_sha256": "d904a0f57c803e176d637fb3785b0d1092c6839c293ebe6f12267cb58f15dfaa",
+        "model_sha256": "0f1cc3f7ecdd8a037a57c6c48d9d8921391be4cbce3fa9f13c3e3a2e1253c667",
+        "object_count": 36,
+        "overlay_sha256": "90ab1a7048f9c5ba65c04f2b162d1b43e19f85b45a74ebd0452a683e9c712330"
+      }
+    },
+    {
+      "status": 200,
+      "elapsed_seconds": 0.8025468727573752,
+      "request_bytes": 158357,
+      "request_sha256": "4f0e7ff0a304dabaf11a32a0f66ee4ad8decf171b91e7ecec25f1296c8f1515c",
+      "response_bytes": 283594,
+      "response_sha256": "a1483e8782cb7480f8c4456493f17dbdbb5585588b7bdb0129e870949f1cfe72",
+      "content_type": "application/json",
+      "semantic": {
+        "input_sha256": "cce9901ad06d081dd8ec1bbca861e282991f98ce1dfdb2da0f7246a0259e8b9c",
+        "model_sha256": "0f1cc3f7ecdd8a037a57c6c48d9d8921391be4cbce3fa9f13c3e3a2e1253c667",
+        "object_count": 43,
+        "overlay_sha256": "bc84da04f40c1314887d20b0dd7c00f99eae921b73abcc8f902c456e002f2e86"
+      }
+    }
+  ],
+  "replay": {
+    "status": 200,
+    "elapsed_seconds": 0.7034148145467043,
+    "request_bytes": 157713,
+    "request_sha256": "e3a0ebb4e7ea2ae33a72e80b4020c4c0244ac2594621d517267c07e2ffa672d3",
+    "response_bytes": 280415,
+    "response_sha256": "c5d2b9a94b48b26f68af12d07ad47ba80731f94cff1ada41b6395bf2074455a3",
+    "content_type": "application/json",
+    "semantic": {
+      "input_sha256": "d904a0f57c803e176d637fb3785b0d1092c6839c293ebe6f12267cb58f15dfaa",
+      "model_sha256": "0f1cc3f7ecdd8a037a57c6c48d9d8921391be4cbce3fa9f13c3e3a2e1253c667",
+      "object_count": 36
+    }
+  },
+  "negative": {
+    "status": 422,
+    "elapsed_seconds": 0.2762639280408621,
+    "request_bytes": 68,
+    "request_sha256": "9edc4473d0e2149013a0a6c676d4b59352106d5581bbdfe1a94a52e73739556a",
+    "response_bytes": 156,
+    "response_sha256": "7ca06aeaa690deb1e6f83944d20efc9205ab3dcb5388413e94ca214acfc12371",
+    "content_type": "application/json",
+    "semantic": {
+      "detail": [
+        {
+          "type": "string_too_short",
+          "loc": [
+            "body",
+            "image_base64"
+          ],
+          "msg": "String should have at least 4 characters",
+          "input": "!!!",
+          "ctx": {
+            "min_length": 4
+          }
+        }
+      ]
+    }
+  },
+  "completed_at": "2026-09-19T14:26:34.837360+00:00",
+  "outcome": "passed"
+}

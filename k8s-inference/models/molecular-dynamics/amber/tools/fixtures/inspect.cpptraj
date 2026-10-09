@@ -1,0 +1,6 @@
+parm alanine-opc.prmtop
+trajin alanine-opc.inpcrd
+check reportfile coordinate-check.dat
+trajout prepared.nc netcdf
+run
+quit

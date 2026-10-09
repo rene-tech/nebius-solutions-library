@@ -37,6 +37,7 @@ from fs2_serve.api import AppRuntime, create_app
 from fs2_serve.mcp_server import CLIENT_ONLY_TOOLS, CORE_TOOLS, PATTokenVerifier, build_mcp_server
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.scientific_artifacts import (
+    FinalizeArtifactUpload,
     MemoryArtifactRepository,
     ScientificArtifactService,
 )
@@ -335,6 +336,44 @@ async def test_a_store_that_rewrites_the_body_is_rejected(registry, cipher, hash
         rewritten = await _put(client, reservation, PAYLOAD)
         assert rewritten.status_code == 422
         assert rewritten.json()["error"]["type"] == "artifact_verification_failed"
+
+
+@pytest.mark.asyncio
+async def test_bad_persisted_upload_releases_concurrency_and_cannot_become_success(registry, cipher, hasher) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    object_store, repository = _artifact_plane(runtime)
+    issued = await runtime.tokens.issue(
+        TokenCreate(
+            principal_id="scientist-a", tenant_id="tenant-a",
+            scopes={Scope.INFERENCE_INVOKE, Scope.OPERATIONS_READ},
+            models={"protein-design"}, max_concurrency=1,
+        ), created_by="test",
+    )
+    app = create_app(runtime)
+    async with app.router.lifespan_context(app), _client(app, str(issued.token)) as client:
+        reservation = await _begin(client, key="invalid-stored-bytes-0001", request=_upload_request())
+        intent = await repository.get_upload(FinalizeArtifactUpload(
+            upload_id=UUID(reservation["upload_id"]), operation_id=UUID(reservation["operation_id"]),
+            tenant_id="tenant-a",
+        ))
+        # Direct signed uploads cannot check the digest before writing. The
+        # finalizer must release the slot when those persisted bytes disagree.
+        object_store.put(intent.storage_key, PAYLOAD + b"X", MEDIA_TYPE)
+        url = f"/v1/scientific-artifacts/uploads/{reservation['upload_id']}:finalize"
+        for _ in range(2):
+            failed = await client.post(url, json={"operation_id": reservation["operation_id"]})
+            assert failed.status_code == 422, failed.text
+        operation = (await client.get(f"/v1/operations/{reservation['operation_id']}")).json()
+        assert operation["status"] == "failed"
+        assert operation["error_code"] == "artifact_verification_failed"
+        assert operation["reserved_gpu_seconds"] == 0
+        accepted = await _begin(client, key="after-invalid-stored-bytes-0001", request=_upload_request())
+        assert accepted["operation_id"] != reservation["operation_id"]
+        assert (await _put(client, accepted, PAYLOAD)).status_code == 200
+        assert (await client.post(
+            f"/v1/scientific-artifacts/uploads/{accepted['upload_id']}:finalize",
+            json={"operation_id": accepted["operation_id"]},
+        )).status_code == 200
 
 
 @pytest.mark.asyncio

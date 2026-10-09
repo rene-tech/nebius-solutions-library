@@ -26,10 +26,17 @@ def test_many_materializations_preserve_order_verification_and_stop_on_error(
 
     calls = []
     closed = []
+    client_options = []
     client = SimpleNamespace(client=SimpleNamespace(close=lambda: closed.append(True)))
-    monkeypatch.setattr(cli, "WorkloadArtifactHttpClient", lambda **kwargs: client)
+
+    def make_client(**kwargs):
+        client_options.append(kwargs)
+        return client
+
+    monkeypatch.setattr(cli, "WorkloadArtifactHttpClient", make_client)
     monkeypatch.setattr(cli.signal, "signal", lambda *args: None)
     monkeypatch.setenv("FS2_SCIENTIFIC_INTERNAL_API_URL", "http://unit.test")
+    monkeypatch.setenv("FS2_SCIENTIFIC_INTERNAL_FALLBACK_API_URL", "http://fallback.unit.test")
     monkeypatch.setenv("FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "test-only")
 
     def materialize(**kwargs):
@@ -68,6 +75,13 @@ def test_many_materializations_preserve_order_verification_and_stop_on_error(
     else:
         cli.main()
     assert closed == [True]
+    assert client_options == [
+        {
+            "base_url": "http://unit.test",
+            "fallback_base_url": "http://fallback.unit.test",
+            "capability": "test-only",
+        }
+    ]
     assert [call["expected_size_bytes"] for call in calls] == ([1] if fail_first else [1, 2])
     assert all(call["client"] is client for call in calls)
     assert calls[0]["expected_digest"] == "sha256:" + "1" * 64

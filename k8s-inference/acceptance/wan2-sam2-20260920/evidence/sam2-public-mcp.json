@@ -1,0 +1,50 @@
+{
+  "artifact": {
+    "artifact_id": "36e4de6a-411f-4fe3-b3bf-56d541476884",
+    "media_type": "application/octet-stream",
+    "sha256": "6395447e4e900d264051cb60bbd3ef1c81f2795fd208f4c8007bac9dda1ea71b",
+    "size_bytes": 6243
+  },
+  "elapsed_seconds": 10.911,
+  "model_id": "sam2-1-hiera-large",
+  "observed_at": "2026-09-20T03:44:13Z",
+  "operation_id": "f0c41c72-1499-4a1a-b626-31467665d5eb",
+  "outcome": "passed",
+  "release": {
+    "control_plane_image": "sha256:ac0563cfc216f688ba6841ab7fb3f52e045da2c0c053398d8def358bde73b18f",
+    "helm_revision": 192
+  },
+  "schema": "fs2.nebius.ai/public-sam2-mcp-qualification/v1",
+  "statuses": [
+    {
+      "at": "2026-09-20T03:44:10Z",
+      "status": "succeeded"
+    }
+  ],
+  "tool": "segment_track_media_native",
+  "validation": {
+    "files": [
+      "manifest.json",
+      "mask.png",
+      "overlay.png"
+    ],
+    "manifest": {
+      "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+      "height": 240,
+      "input_sha256": "0bf8917246161d17d39c084dd6301b5e68171d993b59191f68ad96175b0f60f3",
+      "mode": "prompted-image",
+      "model": "facebook/sam2.1-hiera-large",
+      "objects": [
+        {
+          "area_px": 4320,
+          "object_id": 1,
+          "score": 0.9773170948028564
+        }
+      ],
+      "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+      "schema": "fs2.nebius.ai/sam2-result/v1",
+      "width": 320
+    },
+    "overlay_probe": null
+  }
+}

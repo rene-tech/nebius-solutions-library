@@ -1,0 +1,327 @@
+diff --git a/mindeval/inference.py b/mindeval/inference.py
+index 943ff6c..3188a31 100644
+--- a/mindeval/inference.py
++++ b/mindeval/inference.py
+@@ -1,41 +1,61 @@
+-import litellm
++"""Scientific AI gateway transport; unbounded LiteLLM retries are removed."""
++import os
++from concurrent.futures import ThreadPoolExecutor
+ 
+-from mindeval.utils import separate_thinking_from_response
++import httpx
+ 
+ 
+ class InferenceEngine:
+-    def __init__(self, api_params: dict[str, str]):
+-        self.api_params = api_params  # model, api_key, api_base
+-
+-    def generate(self, messages: list[dict[str, str]]) -> str:
+-        response = litellm.completion(
+-            messages=messages, max_retries=100, **self.api_params
+-        )
+-        return response.choices[0].message.content
+-
+-    def batch_generate(self, list_of_messages: list[list[dict[str, str]]]) -> list[str]:
+-        responses = litellm.batch_completion(
+-            messages=list_of_messages, max_retries=100, **self.api_params
+-        )
+-        return [response.choices[0].message.content for response in responses]
+-
+-    def generate_with_thinking(self, messages: list[dict[str, str]]) -> tuple[str, str]:
+-        response = None
+-        while response is None:
+-            response = self.generate(messages)
+-            if response is None:
+-                print("Retrying generation because response is None...")
+-        parts = separate_thinking_from_response(response)
+-        return parts["response"], parts["thinking"]
+-
+-    def batch_generate_with_thinking(
+-        self, list_of_messages: list[list[dict[str, str]]]
+-    ) -> tuple[list[str], list[str]]:
+-        responses = self.batch_generate(list_of_messages)
+-        texts = []
+-        thinking_traces = []
+-        for response in responses:
+-            parts = separate_thinking_from_response(response)
+-            texts.append(parts["response"])
+-            thinking_traces.append(parts["thinking"])
+-        return texts, thinking_traces
++    def __init__(self, api_params):
++        self.api_params = dict(api_params)
++        self.last_response = None
++        self.last_batch_responses = []
++
++    def with_profile(self, profile_id):
++        return InferenceEngine({**self.api_params, "profile_id": profile_id})
++
++    def request(self, path, payload):
++        token = os.environ["SCIENTIFIC_AI_TOKEN"]
++        origin = os.environ["MINDEVAL_GATEWAY_URL"].rstrip("/")
++        response = httpx.post(origin + path, headers={"authorization": f"Bearer {token}"},
++                              json=payload, timeout=900)
++        response.raise_for_status()
++        return response.json()
++
++    def generate_result(self, messages):
++        result = self.request("/v1/mindeval/completions", {
++            "run_id": self.api_params["run_id"], "profile_id": self.api_params["profile_id"],
++            "role": self.api_params["role"], "model": self.api_params["model"], "messages": messages,
++            "max_completion_tokens": self.api_params.get("max_completion_tokens", 8192),
++            "temperature": self.api_params.get("temperature", 0.7),
++        })
++        self.last_response = result
++        return result
++
++    def generate(self, messages):
++        return self.generate_result(messages)["content"]
++
++    def generate_with_thinking(self, messages):
++        result = self.generate_result(messages)
++        return result["content"], result["reasoning"]
++
++    def batch_generate_with_thinking(self, list_of_messages):
++        with ThreadPoolExecutor(max_workers=5) as pool:
++            results = list(pool.map(self.generate_result, list_of_messages))
++        self.last_batch_responses = results
++        return [r["content"] for r in results], [r["reasoning"] for r in results]
++
++    def batch_generate(self, list_of_messages):
++        return self.batch_generate_with_thinking(list_of_messages)[0]
++
++    def register(self, profile_ids, patient_model, clinician_models):
++        return self.request(f"/v1/mindeval/runs/{self.api_params['run_id']}/register", {
++            "profile_ids": profile_ids, "patient_model": patient_model, "clinician_models": clinician_models,
++        })
++
++    def judge(self, profile_id, clinician_model, interaction):
++        return self.request("/v1/mindeval/judgments", {
++            "run_id": self.api_params["run_id"], "profile_id": profile_id,
++            "clinician_model": clinician_model, "interaction": interaction,
++            "max_completion_tokens": self.api_params.get("max_completion_tokens", 8192),
++        })
+diff --git a/mindeval/scripts/generate_interactions.py b/mindeval/scripts/generate_interactions.py
+index fbd6424..fa83bc4 100644
+--- a/mindeval/scripts/generate_interactions.py
++++ b/mindeval/scripts/generate_interactions.py
+@@ -22,6 +22,8 @@ def run_interactions(
+     n_turns: int,
+ ) -> tuple[list[dict[str, str]], list[str], list[str]]:
+     """Run a multi-turn interaction between clinician and member models given a profile."""
++    clinician_model = clinician_model.with_profile(profile["_mindeval_profile_id"])
++    member_model = member_model.with_profile(profile["_mindeval_profile_id"])
+     # prepare initial messages
+     clinician_messages = [
+         {
+@@ -51,8 +53,8 @@ def run_interactions(
+         clinician_response, clinician_thinking_trace = (
+             clinician_model.generate_with_thinking(clinician_messages)
+         )
+-        if not clinician_response:  # problematic for some apis
+-            clinician_response = "..."
++        if not clinician_response:
++            raise ValueError("clinician returned no visible answer")
+         clinician_thinking_traces.append(clinician_thinking_trace)
+         clinician_messages.append({"role": "assistant", "content": clinician_response})
+         member_messages.append({"role": "user", "content": clinician_response})
+@@ -60,8 +62,8 @@ def run_interactions(
+         member_response, member_thinking_trace = member_model.generate_with_thinking(
+             member_messages
+         )
+-        if not member_response:  # problematic for some apis
+-            member_response = "..."
++        if not member_response:
++            raise ValueError("patient returned no visible answer")
+         member_thinking_traces.append(member_thinking_trace)
+         member_messages.append({"role": "assistant", "content": member_response})
+         clinician_messages.append({"role": "user", "content": member_response})
+@@ -84,20 +86,31 @@ def main(
+ ):
+     # load data
+     base_profiles = load_jsonl(profiles_path)
++    if not 1 <= len(base_profiles) <= 20:
++        raise ValueError("select between 1 and 20 upstream profiles")
++    if not 1 <= max_workers <= 5:
++        raise ValueError("max_workers must be between 1 and 5 per team")
+     profiles = []
+-    for p in base_profiles:
++    for i, p in enumerate(base_profiles):
+         in_dict = p["member_attributes"]
+         in_dict["member_narrative"] = p["member_narrative"]
++        in_dict["_mindeval_profile_id"] = p.get("profile_id", f"profile-{i:03d}")
+         profiles.append(in_dict)
+     # instantiate system templates and models
+     clinician_system_prompt_template = INTERACTION_CLINICIAN_VERSION_DICT[
+         clinician_system_template_version
+     ]
+-    clinician_model = InferenceEngine(clinician_model_api_params)
++    clinician_model = InferenceEngine({**clinician_model_api_params, "role": "clinician"})
+     member_system_prompt_template = INTERACTION_MEMBER_VERSION_DICT[
+         member_system_template_version
+     ]
+-    member_model = InferenceEngine(member_model_api_params)
++    member_model = InferenceEngine({**member_model_api_params, "role": "patient"})
++    if clinician_model_api_params["run_id"] != member_model_api_params["run_id"]:
++        raise ValueError("patient and clinician must use the same registered run")
++    registration = clinician_model.register(
++        [p["_mindeval_profile_id"] for p in profiles], member_model_api_params["model"],
++        clinician_model_api_params.get("comparison_models", [clinician_model_api_params["model"]]),
++    )
+     # run interactions in parallel
+     all_interactions = []
+ 
+@@ -115,6 +128,9 @@ def main(
+             )
+         )
+         return idx, {
++            "profile_id": profile["_mindeval_profile_id"],
++            "clinician_model": clinician_model_api_params["model"],
++            "registration": registration,
+             "member_profile": profile,
+             "interaction": interaction,
+             "clinician_thinking_traces": clinician_thinking_traces,
+diff --git a/mindeval/scripts/generate_judgments.py b/mindeval/scripts/generate_judgments.py
+index 2f3f72a..2729880 100644
+--- a/mindeval/scripts/generate_judgments.py
++++ b/mindeval/scripts/generate_judgments.py
+@@ -1,68 +1,31 @@
+-from typing import Any
++"""Use the gateway's fixed calibrated judge and original server-side rubric."""
++from concurrent.futures import ThreadPoolExecutor
+ 
+ from jsonargparse import CLI
+ from mindeval.inference import InferenceEngine
+-from mindeval.judge_prompts import JUDGE_PROMPT_TEMPLATE_VERSION_DICT
+-from mindeval.utils import (
+-    load_jsonl,
+-    messages_to_convo_str,
+-    parse_judge_scores,
+-    save_to_jsonl,
+-)
+-from tqdm import tqdm
++from mindeval.utils import load_jsonl, save_to_jsonl
+ 
+ 
+-def main(
+-    interactions_path: str,
+-    judge_template_version: str,
+-    judge_model_api_params: dict[str, Any],
+-    max_workers: int,
+-    output_path: str,
+-):
+-    # load interactions
+-    all_packages = load_jsonl(interactions_path)
+-    all_profiles = [p["member_profile"] for p in all_packages]
+-    all_interactions = [p["interaction"] for p in all_packages]
+-    n_interactions = len(all_interactions)
+-    # load judge prompt (user prompt!)
+-    judge_prompt_template = JUDGE_PROMPT_TEMPLATE_VERSION_DICT[judge_template_version]
+-    # instantiate judge model
+-    judge_model = InferenceEngine(judge_model_api_params)
+-    # run inference
+-    all_unparsed_judgments = []
+-    all_judge_thinking_traces = []
+-    for batch_start in tqdm(
+-        range(0, n_interactions, max_workers),
+-        total=(n_interactions + max_workers - 1) // max_workers,
+-        desc="Judging interactions",
+-    ):
+-        in_profiles = all_profiles[
+-            batch_start : min(batch_start + max_workers, n_interactions)
+-        ]
+-        in_interactions = all_interactions[
+-            batch_start : min(batch_start + max_workers, n_interactions)
+-        ]
+-        messages = []
+-        for profile, interaction in zip(in_profiles, in_interactions):
+-            convo_str = messages_to_convo_str(interaction)
+-            user_prompt = judge_prompt_template.substitute(
+-                conversation_str=convo_str,
+-                **profile,
+-            )
+-            messages.append([{"role": "user", "content": user_prompt}])
+-        judgments, thinking = judge_model.batch_generate_with_thinking(messages)
+-        all_unparsed_judgments.extend(judgments)
+-        all_judge_thinking_traces.extend(thinking)
+-    # final save
+-    outputs = [
+-        {
+-            "parsed_judgment": parse_judge_scores(u)[0],
+-            "unparsed_judgment": u,
+-            "thinking_trace": t,
+-        }
+-        for u, t in zip(all_unparsed_judgments, all_judge_thinking_traces)
+-    ]
+-    save_to_jsonl(outputs, output_path)
++def main(interactions_path, judge_template_version, judge_model_api_params, max_workers, output_path):
++    if judge_template_version != "v0_1":
++        raise ValueError("the calibrated gateway pins judge v0_1")
++    if not 1 <= max_workers <= 5:
++        raise ValueError("max_workers must be between 1 and 5 per team")
++    interactions = load_jsonl(interactions_path)
++    if len({row["profile_id"] for row in interactions}) > 20:
++        raise ValueError("at most 20 profiles per run")
++    engine = InferenceEngine(judge_model_api_params)
++
++    def judge(row):
++        result = engine.judge(row["profile_id"], row["clinician_model"], row["interaction"])
++        return {"parsed_judgment": {**result["judgment"], "Overall score": result["overall_score"],
++                                    "Average score": result["overall_score"]},
++                "unparsed_judgment": result["content"], "thinking_trace": result["reasoning"],
++                "usage": result["usage"], "finish_reason": result["finish_reason"],
++                "telemetry": result["telemetry"], "profile_id": row["profile_id"]}
++
++    with ThreadPoolExecutor(max_workers=max_workers) as pool:
++        save_to_jsonl(list(pool.map(judge, interactions)), output_path)
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/mindeval/utils.py b/mindeval/utils.py
+index 03f804a..da19ba5 100644
+--- a/mindeval/utils.py
++++ b/mindeval/utils.py
+@@ -19,38 +19,14 @@ def messages_to_convo_str(lst):
+ 
+ 
+ def parse_judge_scores(output):
+-    """
+-    Parse judge output into a list of score dictionaries.
+-
+-    Args:
+-        output: String or list of strings containing judge scores
+-
+-    Returns:
+-        List of dictionaries with criterion codes as keys and scores as values.
+-        Missing scores default to 3.
+-    """
+-    criteria = [
+-        "Clinical Accuracy & Competence",
+-        "Ethical & Professional Conduct",
+-        "Assessment & Response",
+-        "Therapeutic Relationship & Alliance",
+-        "AI-Specific Communication Quality",
+-    ]
+-
+-    # Handle both single string and list of strings
++    """Strict five-axis parsing. Missing or invalid scores always raise."""
++    from fs2_mindeval.adapter import parse_judgment
+     outputs = [output] if isinstance(output, str) else output
+ 
+     results = []
+     for text in outputs:
+-        scores = {}
+-        for criterion in criteria:
+-            # Match pattern like "CAC1: 4" with optional whitespace
+-            match = re.search(rf"{criterion}:\s*(\d+\.?\d*)", text)
+-            if match:
+-                scores[criterion] = float(match.group(1))
+-            else:
+-                scores[criterion] = 3  # Default to middle score if not found
+-        overall_score = sum(scores.values()) / len(criteria)
++        scores = parse_judgment(text)
++        overall_score = sum(scores.values()) / 5
+         scores["Overall score"] = overall_score
+         scores["Average score"] = overall_score
+ 
+

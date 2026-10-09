@@ -1,0 +1,358 @@
+{
+  "nemotron-speech-en-0-6b": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "audio",
+      "options"
+    ],
+    "description": "Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+    "properties": {
+      "audio": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_id",
+          "sha256",
+          "size_bytes",
+          "media_type",
+          "compression"
+        ],
+        "description": "Small caller-owned artifact reference returned by finalize_model_artifact_upload.",
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Finalized artifact UUID belonging to the caller's tenant."
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 of the uploaded file bytes."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 536870912,
+            "description": "Exact encoded file size, at most 512 MiB."
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "audio/wav",
+              "audio/x-wav",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/ogg",
+              "audio/webm",
+              "audio/flac",
+              "audio/aac",
+              "video/mp4",
+              "video/webm"
+            ],
+            "description": "Audio or audio-bearing video MIME type."
+          },
+          "compression": {
+            "const": "none",
+            "description": "No artifact-layer compression; audio codec compression is accepted."
+          }
+        },
+        "x-fs2-artifact-materialization": "download-url",
+        "x-fs2-artifact-max-bytes": 536870912,
+        "x-fs2-artifact-media-types": [
+          "audio/wav",
+          "audio/x-wav",
+          "audio/mpeg",
+          "audio/mp4",
+          "audio/ogg",
+          "audio/webm",
+          "audio/flac",
+          "audio/aac",
+          "video/mp4",
+          "video/webm"
+        ]
+      },
+      "options": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string",
+            "const": "nemotron-speech-en-0.6b",
+            "description": "The exact App runtime selected by this tool."
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 2,
+                "type": "string",
+                "enum": [
+                  "en",
+                  "en-US"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Language",
+            "description": "Language/locale hint, or auto for the multilingual App. Eight adaptation-only locales are not enabled."
+          },
+          "chunk_size_ms": {
+            "default": 560,
+            "maximum": 1120,
+            "minimum": 80,
+            "title": "Chunk Size Ms",
+            "type": "integer",
+            "description": "Streaming chunk size in milliseconds; must match the App's configured worker profile. This is not an end-to-end latency promise.",
+            "enum": [
+              80,
+              160,
+              560,
+              1120
+            ]
+          },
+          "strip_language_tags": {
+            "default": true,
+            "title": "Strip Language Tags",
+            "type": "boolean",
+            "description": "Whether to remove multilingual language tags; must match the configured worker profile."
+          },
+          "output_granularity": {
+            "default": "segment",
+            "enum": [
+              "segment",
+              "word"
+            ],
+            "title": "Output Granularity",
+            "type": "string",
+            "description": "Requested native segment or word metadata. Returned timestamps must come from the runtime, not wall-clock inference."
+          },
+          "stop_history_eou_ms": {
+            "default": 800,
+            "maximum": 10000,
+            "minimum": 0,
+            "title": "Stop History Eou Ms",
+            "type": "integer",
+            "description": "Endpoint-history cutoff in milliseconds after an end-of-utterance marker."
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "SpeechOptions",
+        "type": "object",
+        "description": "Model-specific transcription options. Runtime-wide settings must match the App profile; language and output granularity are per request."
+      }
+    }
+  },
+  "nemotron-speech-multilingual-0-6b": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "audio",
+      "options"
+    ],
+    "description": "Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+    "properties": {
+      "audio": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_id",
+          "sha256",
+          "size_bytes",
+          "media_type",
+          "compression"
+        ],
+        "description": "Small caller-owned artifact reference returned by finalize_model_artifact_upload.",
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Finalized artifact UUID belonging to the caller's tenant."
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 of the uploaded file bytes."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 536870912,
+            "description": "Exact encoded file size, at most 512 MiB."
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "audio/wav",
+              "audio/x-wav",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/ogg",
+              "audio/webm",
+              "audio/flac",
+              "audio/aac",
+              "video/mp4",
+              "video/webm"
+            ],
+            "description": "Audio or audio-bearing video MIME type."
+          },
+          "compression": {
+            "const": "none",
+            "description": "No artifact-layer compression; audio codec compression is accepted."
+          }
+        },
+        "x-fs2-artifact-materialization": "download-url",
+        "x-fs2-artifact-max-bytes": 536870912,
+        "x-fs2-artifact-media-types": [
+          "audio/wav",
+          "audio/x-wav",
+          "audio/mpeg",
+          "audio/mp4",
+          "audio/ogg",
+          "audio/webm",
+          "audio/flac",
+          "audio/aac",
+          "video/mp4",
+          "video/webm"
+        ]
+      },
+      "options": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string",
+            "const": "nemotron-speech-multilingual-0.6b",
+            "description": "The exact App runtime selected by this tool."
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 2,
+                "type": "string",
+                "enum": [
+                  "ar",
+                  "ar-AR",
+                  "auto",
+                  "bg",
+                  "bg-BG",
+                  "cs",
+                  "cs-CZ",
+                  "da",
+                  "da-DK",
+                  "de",
+                  "de-DE",
+                  "en",
+                  "en-GB",
+                  "en-US",
+                  "es",
+                  "es-ES",
+                  "es-US",
+                  "et",
+                  "et-EE",
+                  "fi",
+                  "fi-FI",
+                  "fr",
+                  "fr-CA",
+                  "fr-FR",
+                  "hi",
+                  "hi-IN",
+                  "hr",
+                  "hr-HR",
+                  "hu",
+                  "hu-HU",
+                  "it",
+                  "it-IT",
+                  "ja",
+                  "ja-JP",
+                  "ko",
+                  "ko-KR",
+                  "nb",
+                  "nb-NO",
+                  "nl",
+                  "nl-NL",
+                  "pl",
+                  "pl-PL",
+                  "pt",
+                  "pt-BR",
+                  "pt-PT",
+                  "ro",
+                  "ro-RO",
+                  "ru",
+                  "ru-RU",
+                  "sk",
+                  "sk-SK",
+                  "sv",
+                  "sv-SE",
+                  "tr",
+                  "tr-TR",
+                  "uk",
+                  "uk-UA",
+                  "vi",
+                  "vi-VN",
+                  "zh",
+                  "zh-CN"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Language",
+            "description": "Language/locale hint, or auto for the multilingual App. Eight adaptation-only locales are not enabled."
+          },
+          "chunk_size_ms": {
+            "default": 560,
+            "maximum": 1120,
+            "minimum": 80,
+            "title": "Chunk Size Ms",
+            "type": "integer",
+            "description": "Streaming chunk size in milliseconds; must match the App's configured worker profile. This is not an end-to-end latency promise.",
+            "enum": [
+              80,
+              160,
+              320,
+              560,
+              1120
+            ]
+          },
+          "strip_language_tags": {
+            "default": true,
+            "title": "Strip Language Tags",
+            "type": "boolean",
+            "description": "Whether to remove multilingual language tags; must match the configured worker profile."
+          },
+          "output_granularity": {
+            "default": "segment",
+            "enum": [
+              "segment",
+              "word"
+            ],
+            "title": "Output Granularity",
+            "type": "string",
+            "description": "Requested native segment or word metadata. Returned timestamps must come from the runtime, not wall-clock inference."
+          },
+          "stop_history_eou_ms": {
+            "default": 800,
+            "maximum": 10000,
+            "minimum": 0,
+            "title": "Stop History Eou Ms",
+            "type": "integer",
+            "description": "Endpoint-history cutoff in milliseconds after an end-of-utterance marker."
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "SpeechOptions",
+        "type": "object",
+        "description": "Model-specific transcription options. Runtime-wide settings must match the App profile; language and output granularity are per request."
+      }
+    }
+  }
+}

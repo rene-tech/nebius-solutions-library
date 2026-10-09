@@ -1,5 +1,6 @@
 {{- if .Values.runtimeAttribution.enabled }}
 {{- $name := printf "%s-gpu-observer" (include "fs2-serve.fullname" .) }}
+{{- $image := default (include "fs2-serve.image" .) .Values.runtimeAttribution.image }}
 {{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "gpu-observer") }}
 {{- $namespaces := .Values.runtimeAttribution.namespaces }}
 {{- if eq (len $namespaces) 0 }}
@@ -56,7 +57,7 @@ spec:
         {{- include "fs2-serve.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: gpu-allocation-observer
       annotations:
-        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+        fs2.nebius.ai/image-digest: {{ regexFind "sha256:[a-f0-9]{64}$" $image | quote }}
     spec:
       serviceAccountName: {{ $serviceAccount }}
       automountServiceAccountToken: false
@@ -70,7 +71,7 @@ spec:
       {{- end }}
       containers:
         - name: observer
-          image: {{ include "fs2-serve.image" . }}
+          image: {{ $image }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["gpu-allocation-observer"]
           env:

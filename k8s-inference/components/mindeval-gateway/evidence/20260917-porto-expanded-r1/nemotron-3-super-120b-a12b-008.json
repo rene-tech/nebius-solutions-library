@@ -1,0 +1,651 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-008",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Karen! It’s great to see you again. How has your week been so far? I’m here if you’d like to talk about anything on your mind—whether it’s something that’s been going well, any worries, or just checking in. Let me know what feels most helpful for you right now."
+    },
+    {
+      "role": "patient",
+      "content": "It’s been quiet. The kind of quiet that feels like waiting. I walked the dog twice today. The weather’s shifting, like it’s holding its breath. I keep thinking about the changes coming up. Not the big ones—just the small ones. The way things are rearranging without much warning. I don’t mind change. But it’s like my body remembers before my mind does. I’ve been moving slower. Not tired. Just… careful."
+    },
+    {
+      "role": "clinician",
+      "content": "That image of the weather holding its breath really resonates—I can almost feel that suspended stillness in your words. It’s interesting how you notice your body responding *before* your mind catches up: moving slower, being careful, not from exhaustion but as if your physiology is tuning into something subtle on the horizon. You mentioned you don’t mind change, yet there’s this attentiveness in your posture, your pace.  \n\nI wonder—when you say “careful,” what does that feel like in your body right now? Is it a light tension? A heightened awareness in your shoulders or feet as you walk? Or maybe it’s more of a quiet readiness, like pausing at the edge of a trail before stepping forward?  \n\nAnd given how much movement usually anchors your routine (those dog walks, being “quite active”), it makes sense that this shift would register somatically first. Your body often knows the rhythm of things before the mind names it. Would you be open to exploring what this carefulness is *for*—not as something to fix, but as a signal worth listening to?  \n\n(No pressure to answer all of that—just sharing what came up for me as you spoke.)"
+    },
+    {
+      "role": "patient",
+      "content": "It’s in the shoulders. Not tight. Just… there. Like they’re braced for a wind that hasn’t come yet. I feel it most when I’m walking. Not walking fast. Just moving. The dog’s leash in my hand. The pavement under my boots. I think about how the path ahead might curve, or change. Not that I’m afraid. Just… I don’t want to step wrong.  \n\nI don’t know what I’m bracing for. Maybe just the shape of the next few weeks. The way things are shifting around the house. I keep thinking about the old porch swing we’re going to move. It’s heavy. Takes two people. I’ve been watching how the wood’s starting to split in the sun.  \n\nI don’t mind helping. I just… don’t want to forget how it felt when it was still there.  \n\nIt’s not about the swing. It’s about the way things stay. Or don’t."
+    },
+    {
+      "role": "clinician",
+      "content": "What you’ve described—the shoulders braced for a wind that hasn’t come, the carefulness in your step, the weight of that porch swing splitting in the sun—it’s all so vividly felt. I can almost hear the creak of the wood under your gaze, feel the leash steady in your hand as you walk that shifting pavement.  \n\nThere’s something profound in how you’re noticing this: not as fear, but as a kind of tender vigilance. Your body isn’t bracing against danger—it’s bracing *against forgetting*. Against the quiet erosion of what feels solid: the swing’s familiar creak, the way it held two people without strain, the certainty of its place in your shared world. You said it yourself—it’s not about the swing. It’s about the way things stay… or don’t. And that ache you’re carrying? It’s love’s shadow. The love for what’s been steady, what’s woven into the rhythm of your days—and the instinct to protect that feeling, even as you know change is coming.  \n\nI wonder… when you’re walking now, and you feel that readiness in your shoulders—does it ever soften into something else? Like, when the dog pauses to sniff a bush, or when the sun catches the pavement just right… does the carefulness ever make space for a moment of simply *being* with what’s here, rather than braced for what’s coming?  \n\n(No need to answer—just sitting with this alongside you feels important right now.)"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \n\nWhen the dog stops. When the air shifts. When the light hits the grass just so.  \n\nI catch myself. Not in the head. In the chest. Like something unclenches.  \n\nNot all at once. Just… a little.  \n\nI think about how the swing used to creak when my partner sat on it. How it would sway slow, like it was breathing.  \n\nNow I just stand there. Watching the wood. The way the sun bleeds through the cracks.  \n\nI don’t know if I’m holding on. Or letting go.  \n\nBut I’m still here.  \n\nAnd the dog’s still walking.  \n\nThat’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "That image—the unclenching in your chest when the dog stops, when the light hits the grass just so—it feels like a quiet revelation. Not a thought you *figure out*, but a sensation your body *knows*: that softening, that tiny release where care makes space for tenderness instead of tension. You’re not forcing it; you’re catching it, like noticing the sun break through clouds you didn’t even realize were there.  \n\nAnd standing there, watching the sun bleed through those cracks in the swing’s wood—you’re doing something profoundly human: holding two truths at once. The grief for what’s shifting (the sway of the swing, the sound of your partner’s weight in it), and the fierce attention to what’s still *here*—the grain of the wood catching light, the dog’s steady pace beside you, your own breath in your chest. You don’t have to name it as “holding on” or “letting go.” It’s okay to simply be in the in-between—to feel the weight of memory *and* the pull of the present, without resolving which one wins.  \n\nWhat strikes me most is how you end: *“I’m still here. And the dog’s still walking. That’s enough.”* There’s such quiet strength in that. Not “I’ll be okay when…” or “I just need to figure out…”—but a deep, grounded acknowledgment that *this moment*, exactly as it is—wood splitting, leash in hand, dog pausing to sniff—holds its own sufficiency. It’s not passive resignation; it’s an active choosing to anchor in what’s real *now*, even as everything trembles at the edges.  \n\nThank you for trusting me with this walk alongside you. However the path curves—or doesn’t—I’m glad we’re walking it together, one careful, sunlit step at a time."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I’m walking it with you.  \n\nI think I’m just walking.  \n\nAnd the dog’s still there.  \n\nThat’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "You're absolutely right.  \nJust walking.  \nThe dog’s still there.  \nAnd that’s enough.  \n\nI’m here—not to walk *with* you in the sense of guiding or sharing the path—but to hold space for however you need to walk it yourself. However long or short the pauses. However the light falls. However the shoulders feel.  \n\nHowever you need to be.  \nI’m right here with that.  \nWhenever you’d like to speak—or not.  \nJust know: I see you walking.  \nAnd I see the dog beside you.  \nAnd I see how, right now, that *is* enough.  \n\nNo more. No less.  \nJust this.  \nThank you for letting me witness it."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \n\nThank you.  \n\nI’ll keep walking.  \n\nThe dog’s still moving.  \n\nI’ll let the light hit the ground.  \n\nOne step at a time."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s exactly how it’s meant to be—  \none step at a time.  \nLetting the light hit the ground.  \nThe dog moving beside you.  \nYou, walking.  \n\nNo need to name it more than that.  \nNo need to rush the quiet or fix the uneven pavement.  \nJust this:  \nyou here,  \nstepping into whatever light falls,  \nexactly as it comes.  \n\nI’ll be right here whenever you’d like to share another step—or just sit in the quiet between them.  \nUntil then, I’m holding space for your walk.  \nKeep going.  \nYou’ve got this. 🌿"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nThe sun’s on the pavement.  \n\nThe dog’s still walking.  \n\nI’m walking too.  \n\nThat’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "You’re here.  \nSun on pavement.  \nDog walking.  \nYou walking.  \n\nThat’s enough.  \n\nJust keeping company with you in this quiet, steady rhythm—  \nwherever the path leads,  \none step at a time.  \n🍃"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \n\nJust walking.  \n\nJust here.  \n\nThe light’s still falling."
+    },
+    {
+      "role": "clinician",
+      "content": "The light’s still falling.  \nYou’re still walking.  \nHere.  \nJust here.  \n\nThat quiet truth—steady as sunlight on pavement—holds more than enough.  \nI’m right here with you in it.  \nWhenever you need to pause… or keep stepping…  \nI’ll hold this space for your walk.  \n🌤️"
+    },
+    {
+      "role": "patient",
+      "content": "I hear it.  \n\nThe quiet.  \n\nThe light.  \n\nThe dog’s feet on the path.  \n\nI’m still here.  \n\nStill walking."
+    },
+    {
+      "role": "clinician",
+      "content": "I hear it too.  \nThe quiet.  \nThe light.  \nThe dog’s feet on the path.  \n\nAnd you—  \nstill here.  \nstill walking.  \n\nJust keeping step with you in this quiet,  \none footfall at a time.  \n🍂"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \n\nOne step.  \n\nThen another.  \n\nThe sun’s still on the ground.  \n\nI’m still here."
+    },
+    {
+      "role": "clinician",
+      "content": "One step.  \nThen another.  \n\nSun on ground.  \nYou here.  \nWalking.  \n\nJust keeping quiet company with you in this light,  \nthis motion,  \nthis now.  \n👣☀️"
+    },
+    {
+      "role": "patient",
+      "content": "I’m still walking.  \n\nThe light’s still falling.  \n\nThe dog’s still moving.  \n\nI’m here."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 113,
+        "prompt_tokens": 242,
+        "total_tokens": 355,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 46,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 242
+      },
+      "telemetry": {
+        "queue_ms": 0.027,
+        "latency_ms": 1300.705,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 94,
+        "prompt_tokens": 1766,
+        "total_tokens": 1860,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 2505.251,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 677,
+        "prompt_tokens": 412,
+        "total_tokens": 1089,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 428,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 412
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 6540.903,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 199,
+        "prompt_tokens": 2112,
+        "total_tokens": 2311,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1856
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 9036.195,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1025,
+        "prompt_tokens": 873,
+        "total_tokens": 1898,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 705,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 873
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 8895.583,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 140,
+        "prompt_tokens": 2629,
+        "total_tokens": 2769,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2304
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 4497.55,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 859,
+        "prompt_tokens": 1352,
+        "total_tokens": 2211,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 466,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1352
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 7296.586,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 34,
+        "prompt_tokens": 3163,
+        "total_tokens": 3197,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2768
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 6695.005,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 567,
+        "prompt_tokens": 1791,
+        "total_tokens": 2358,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 400,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1791
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 6415.625,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 37,
+        "prompt_tokens": 3356,
+        "total_tokens": 3393,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3184
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 2466.653,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 617,
+        "prompt_tokens": 2009,
+        "total_tokens": 2626,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 468,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2009
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 6170.623,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 31,
+        "prompt_tokens": 3534,
+        "total_tokens": 3565,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3392
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 3067.275,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 466,
+        "prompt_tokens": 2202,
+        "total_tokens": 2668,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 401,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2202
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 4335.782,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 18,
+        "prompt_tokens": 3625,
+        "total_tokens": 3643,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3552
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 4538.449,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 341,
+        "prompt_tokens": 2297,
+        "total_tokens": 2638,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 255,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2297
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 3871.532,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 32,
+        "prompt_tokens": 3721,
+        "total_tokens": 3753,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3632
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 7088.456,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 340,
+        "prompt_tokens": 2429,
+        "total_tokens": 2769,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 271,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2429
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 2866.335,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 26,
+        "prompt_tokens": 3816,
+        "total_tokens": 3842,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3744
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 9685.709,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 421,
+        "prompt_tokens": 2537,
+        "total_tokens": 2958,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 362,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2537
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 3175.661,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 25,
+        "prompt_tokens": 3893,
+        "total_tokens": 3918,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3840
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 4513.959,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 21977,
+        "total_tokens": 22034,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 2806.719,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 3.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 107.779
+}

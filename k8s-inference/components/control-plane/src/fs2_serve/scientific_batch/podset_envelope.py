@@ -763,7 +763,7 @@ def compare_kueue_usage(
         for resource, quantity in item.usage:
             expected = pod_set.aggregate_requests.resource(resource)
             if expected is None:
-                if resource in CORE_RESOURCES or resource == accelerator_resource:
+                if resource in CORE_RESOURCES or resource == accelerator_resource or resource.startswith("rdma."):
                     raise PodSetEnvelopeError(
                         f"Kueue charged PodSet {item.name!r} for {resource} that its Pods do not request"
                     )
@@ -777,7 +777,7 @@ def compare_kueue_usage(
                 )
             matched.append(resource)
         for resource in pod_set.per_replica_requests.resources:
-            if resource == accelerator_resource and item.quantity(resource) is None:
+            if (resource == accelerator_resource or resource.startswith("rdma.")) and item.quantity(resource) is None:
                 raise PodSetEnvelopeError(
                     f"Kueue admitted PodSet {item.name!r} without the frozen accelerator {resource}"
                 )

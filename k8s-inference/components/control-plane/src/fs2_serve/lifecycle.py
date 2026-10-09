@@ -26,6 +26,7 @@ from uuid import UUID, uuid4
 import asyncpg
 from pydantic import AwareDatetime, Field, JsonValue, field_validator, model_validator
 
+from .metrics_accounting import historical_reporting_connection
 from .models import StrictModel
 
 _SHA256_RE = r"^(?:sha256:)?[a-f0-9]{64}$"
@@ -88,6 +89,10 @@ _SAFE_DETAIL_KEYS = frozenset(
         "resource_version",
         "service_class",
         "source_event_uid",
+        "dcgm_sample_count", "dcgm_zero_samples", "dcgm_positive_samples",
+        "dcgm_first_sample_at", "dcgm_last_sample_at", "dcgm_allocation_start", "dcgm_allocation_end",
+        "dcgm_max_gap_seconds", "dcgm_min_percent", "dcgm_max_percent", "dcgm_samples_sha256",
+        "dcgm_phase_samples", "dcgm_phase_zero_samples", "dcgm_phase_positive_samples", "dcgm_rejected_groups",
     }
 )
 
@@ -1350,7 +1355,7 @@ class PostgresLifecycleRepository:
         )
 
     async def metric_rows(self) -> list[LifecycleMetricRow]:
-        async with self.pool.acquire() as connection:
+        async with historical_reporting_connection(self.pool) as connection:
             rows = await connection.fetch(
                 """
                 SELECT tenant_id,model_id,phase,quality,sum(gpu_seconds)::double precision AS seconds
@@ -1362,7 +1367,7 @@ class PostgresLifecycleRepository:
         return [LifecycleMetricRow.model_validate(dict(row)) for row in rows]
 
     async def rollup_metric_rows(self) -> list[LifecycleRollupMetricRow]:
-        async with self.pool.acquire() as connection:
+        async with historical_reporting_connection(self.pool) as connection:
             rows = await connection.fetch(
                 """
                 SELECT subject.tenant_id,subject.model_id,rollup.quality,rollup.reconciled,

@@ -61,8 +61,81 @@ export function AppDetailPage() {
             <div>
               <span className="mini-chip">{data.status}</span>
               <p>{data.status_reason}</p>
+              <p>Last qualification</p>
+              <span className="mini-chip">
+                {data.customer_readiness
+                  ? `Recorded verdict: ${data.customer_readiness.verdict}`
+                  : "No recorded qualification"}
+              </span>
+              {data.customer_readiness && <p>
+                Tested source: <code title={data.customer_readiness.source_revision}>
+                  {data.customer_readiness.source_revision.slice(0, 12)}
+                </code>
+                {" · "}Evidence evaluated {data.customer_readiness.evaluated_at}
+              </p>}
+              <p>
+                {data.customer_readiness
+                  ? `Evidence valid until ${data.customer_readiness.valid_until}`
+                  : "No acceptance evidence is attached to this App."}
+              </p>
+              <p>
+                Recorded acceptance evidence, not a fresh live health or
+                current-release verification.
+              </p>
             </div>
           </div>
+          {data.customer_readiness ? (
+            <details className="panel">
+              <summary>Recorded capability evidence</summary>
+              <p>
+                Tested source revision {data.customer_readiness.source_revision}.
+                These recorded scenario results are aged for expiry but are not
+                compared with the live release identity.
+              </p>
+              <div className="table-frame">
+                <table className="resource-table">
+                  <thead>
+                    <tr>
+                      <th>Capability</th>
+                      <th>Claim</th>
+                      <th>Required</th>
+                      <th>Recorded state</th>
+                      <th>Recorded scenario evidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.customer_readiness.capabilities.map((capability) => (
+                      <tr key={capability.capability_id}>
+                        <td>
+                          <code>{capability.capability_id}</code>
+                        </td>
+                        <td>
+                          {capability.advertised
+                            ? "Advertised"
+                            : capability.requested
+                              ? "Requested"
+                              : "Withdrawn / unsupported"}
+                        </td>
+                        <td>{capability.required ? "Yes" : "No"}</td>
+                        <td>{capability.state}</td>
+                        <td>
+                          {capability.scenarios.map((scenario) => (
+                            <span className="secondary-line" key={scenario.scenario_id}>
+                              {scenario.scenario_id}: {scenario.state}
+                              {scenario.evidence_id ? ` · ${scenario.evidence_id}` : ""}
+                              {scenario.reasons.length
+                                ? ` · ${scenario.reasons.join("; ")}`
+                                : ""}
+                            </span>
+                          ))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ) : null}
           <nav className="app-tabs" aria-label="App sections">
             {tabs.map(([key, label]) => (
               <NavLink

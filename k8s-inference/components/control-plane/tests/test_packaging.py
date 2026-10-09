@@ -16,6 +16,7 @@ from pathlib import Path
 from conftest import CONTROL_ROOT
 
 from fs2_serve import cli
+from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.settings import Settings
 
 
@@ -88,12 +89,12 @@ def test_container_imports_installed_packages_without_pythonpath_or_source_shado
     from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM ") and "scratch" not in line]
     assert from_lines and all(re.search(r"@sha256:[a-f0-9]{64}(?: AS [a-z]+)?$", line) for line in from_lines)
     fixed_python_base = (
-        "python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1"
+        "python:3.13.15-alpine3.23@sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3"
     )
     assert dockerfile.count(f"FROM {fixed_python_base}") == 2
     assert 'org.opencontainers.image.base.name="docker.io/library/python:3.13.15-alpine3.23"' in dockerfile
     assert (
-        'org.opencontainers.image.base.digest="sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1"'
+        'org.opencontainers.image.base.digest="sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3"'
     ) in dockerfile
     for label in (
         "org.opencontainers.image.revision",
@@ -272,6 +273,13 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "0027_inference_users.sql",
         "0028_request_telemetry.sql",
         "0029_request_debug.sql",
+        "0030_mcp_semantic_outcomes.sql",
+        "0031_user_storage.sql",
+        "0032_scientific_child_delegation.sql",
+        "0033_customer_starter_packs.sql",
+        "0034_retired_event_tenants.sql",
+        "0035_benchmark_campaigns.sql",
+        "0036_model_retirement.sql",
     ]
     assert hashlib.sha256((migration_dir / "0005_terminal_accounting.sql").read_bytes()).hexdigest() == (
         "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197"
@@ -316,7 +324,11 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
     assert dockerfile.count("WORKDIR /workspace/k8s-inference/components/control-plane") == 2
     assert "COPY k8s-inference/components/control-plane/migrations ./migrations" in dockerfile
     assert "Settings.model_fields['migrations_dir'].default" in dockerfile
-    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 29" in dockerfile
+    assert "from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS" in dockerfile
+    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == len(EXPECTED_MIGRATIONS)" in dockerfile
+    assert migration_names == [name for name, _ in EXPECTED_MIGRATIONS]
+    for name, expected_digest in EXPECTED_MIGRATIONS:
+        assert hashlib.sha256((migration_dir / name).read_bytes()).hexdigest() == expected_digest
     assert "store.migrate" not in inspect.getsource(cli.build_runtime)
     assert "store.migrate" not in inspect.getsource(cli.maintain)
     assert "PostgresStore.migrate_database" in inspect.getsource(cli.migrate)
@@ -344,6 +356,12 @@ def test_isolated_uv_run_installs_the_cli_and_catalog_package() -> None:
     assert '"activation-controller"' not in inspect.getsource(cli.main)
     assert '"wait-schema"' in inspect.getsource(cli.main)
     assert '"postgresql-release-contract"' in inspect.getsource(cli.main)
+
+
+def test_container_migration_gate_tracks_the_release_contract() -> None:
+    dockerfile = (CONTROL_ROOT / "Dockerfile").read_text()
+    assert "from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS" in dockerfile
+    assert "== len(EXPECTED_MIGRATIONS)" in dockerfile
 
 
 def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Path) -> None:
@@ -404,6 +422,13 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             "fs2_serve/migrations/0027_inference_users.sql",
             "fs2_serve/migrations/0028_request_telemetry.sql",
             "fs2_serve/migrations/0029_request_debug.sql",
+            "fs2_serve/migrations/0030_mcp_semantic_outcomes.sql",
+            "fs2_serve/migrations/0031_user_storage.sql",
+            "fs2_serve/migrations/0032_scientific_child_delegation.sql",
+            "fs2_serve/migrations/0033_customer_starter_packs.sql",
+            "fs2_serve/migrations/0034_retired_event_tenants.sql",
+            "fs2_serve/migrations/0035_benchmark_campaigns.sql",
+            "fs2_serve/migrations/0036_model_retirement.sql",
         ]
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1
@@ -471,7 +496,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
                 "assert pathlib.Path(fs2_serve_catalog.__file__).resolve().is_relative_to(root);"
                 "migration_dir=Settings.model_fields['migrations_dir'].default;"
                 "assert migration_dir.parent == pathlib.Path(fs2_serve.__file__).resolve().parent;"
-                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 29;"
+                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 36;"
                 "assert Registry and load_gateway_catalog"
             ),
         ],

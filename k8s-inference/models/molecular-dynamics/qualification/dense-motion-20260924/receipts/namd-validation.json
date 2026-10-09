@@ -1,0 +1,280 @@
+{
+  "schema": "fs2-dense-native-validation/v1",
+  "status": "passed",
+  "recorded_at": "2026-09-24T02:17:20.144245+00:00",
+  "engine": "namd",
+  "operation_id": "f88b4e14-9ae0-4930-b314-23e59f8591a1",
+  "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:30df40215f7df047463cf8e37f1fb80457b73fbb7ae8f681b9cb40d980e5f14e",
+  "engine_id": "nvcr.io/nvidia/namd@sha256:e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+  "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+  "native_command": {
+    "atoms": 6598,
+    "checkpoint_step": 615000,
+    "colvars_restore_verified": null,
+    "command": [
+      "/usr/local/namd/bin/namd3",
+      "+p4",
+      "+devices",
+      "0",
+      "fs2-dense-part000001.namd"
+    ],
+    "configured_first_step": 605000,
+    "cpu_system_seconds": 0.505883,
+    "cpu_user_seconds": 19.367496,
+    "directory": "alanine",
+    "energy_records": 1001,
+    "engine": "Info: NAMD 3.0.2 for Linux-x86_64-multicore-CUDA",
+    "exit_code": 0,
+    "first_energy_log_observed_seconds": 0.5010903830116149,
+    "first_energy_step": 605000,
+    "gpu_mode": "resident",
+    "last_energy": {
+      "ANGLE": 12.41911062,
+      "BOND": 4.60762815,
+      "BOUNDARY": 0,
+      "DIHED": 10.03816807,
+      "ELECT": -24204.72586977,
+      "GPRESSAVG": -5.48344179,
+      "GPRESSURE": 158.9789763,
+      "IMPRP": 0,
+      "KINETIC": 3909.25400183,
+      "MISC": 0,
+      "POTENTIAL": -21017.62956889,
+      "PRESSAVG": 6.51969005,
+      "PRESSURE": 194.56284376,
+      "TEMP": 297.92913834,
+      "TEMPAVG": 294.94446937,
+      "TOTAL": -17108.37556706,
+      "TOTALAVG": -17114.41471324,
+      "TS": 615000,
+      "VDW": 3160.03139404,
+      "VOLUME": 66526.91109776
+    },
+    "log": "alanine/fs2-dense-part000001.log",
+    "native_seconds_per_step": 0.0004479025,
+    "observables": {
+      "PRESSURE": {
+        "max": 1040.98754481,
+        "mean": 20.276292120309687,
+        "min": -761.79153853
+      },
+      "TEMP": {
+        "max": 312.60894272,
+        "mean": 299.9093454812088,
+        "min": 289.05945682
+      },
+      "TOTAL": {
+        "max": -16785.84088119,
+        "mean": -17032.541980548544,
+        "min": -17282.24949901
+      },
+      "VOLUME": {
+        "max": 68255.66698219,
+        "mean": 66968.54780410399,
+        "min": 65787.94608556
+      }
+    },
+    "performance_ns_per_day": 385.7982485027434,
+    "random_seed": 20260925,
+    "segment": 1,
+    "step_id": "dense",
+    "timestep_fs": 2,
+    "wall_seconds": 5.105528965999838
+  },
+  "inventory": {
+    "recipe_sha256": "0525f5da54130b20b59a4900f0961a467cc86777da5cff09f32259ca94bbb35b",
+    "verified_files": 29,
+    "verified_bytes": 84057775,
+    "immutable_input_files": 10
+  },
+  "input_sha256": "9bf79ff5bbb7539ac58b797866cfee8823a3acfc2bcbbb6581ba6646da528a35",
+  "request_sha256": "dda66262f4c79337d1f8582e6d355a7146d0acba7b1b87e5d93b4cd1a18911b8",
+  "result": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/result.json",
+    "sha256": "8389372e7aefd18cd8c07b455154912e4ec73546e5789489d616d0b5e78733ed",
+    "bytes": 6020
+  },
+  "trajectory": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/dense.part000001.dcd",
+    "sha256": "6fe584612b38871b57f8a6a767e223f0d36dff6b63c746d6a937a15c86308203",
+    "bytes": 79256276
+  },
+  "topology": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/system.prmtop",
+    "sha256": "805a5f22bd3d3b0045b1ed02652f4272a8e6df8a143fe98278f924d77ad4b61a",
+    "bytes": 1062490
+  },
+  "native_log": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/fs2-dense-part000001.log",
+    "sha256": "7ffd22031b57c893b9243e195697279a2f9a82747a4780aabe4feb65e5127de7",
+    "bytes": 897002
+  },
+  "restart_files": [
+    {
+      "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/origin.coor",
+      "sha256": "68b4a7df45fc0e195cef090cdd59fdce36feb4767c31b04170b662e45342056b",
+      "bytes": 158356
+    },
+    {
+      "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/origin.vel",
+      "sha256": "5ec7105ec68258ea6fe5e25cbb15b3f29a7a708bba54b0d4d60f816ce0fb86e3",
+      "bytes": 158356
+    },
+    {
+      "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/origin.xsc",
+      "sha256": "f8b039fe744d3e6acb76c773cd596b5734cafb8712f707c34f70b3a8467d968c",
+      "bytes": 285
+    },
+    {
+      "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/dense.coor",
+      "sha256": "f9129545f8c67ef9646cead7965a28550ccd46e53311f8ced2c67832cd0235a7",
+      "bytes": 158356
+    },
+    {
+      "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/dense.vel",
+      "sha256": "faf50f0451ef0190a8d1976a40ab55448db8974964796bc0e895b6df57cff91a",
+      "bytes": 158356
+    },
+    {
+      "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/materialized/dense-motion/data/alanine/dense.xsc",
+      "sha256": "b99c669407ebc962b12a5d3d932872dd67b8fbd1f0621a4bc838a51a04704df2",
+      "bytes": 288
+    }
+  ],
+  "master_topology_sha256": "805a5f22bd3d3b0045b1ed02652f4272a8e6df8a143fe98278f924d77ad4b61a",
+  "timeline": {
+    "native_frames": 1000,
+    "positive_frames": 1000,
+    "initial_frame": false,
+    "first_step": 605010,
+    "last_step": 615000,
+    "origin_step": 605000,
+    "origin_time_ps": 1210,
+    "duration_ps": 20,
+    "cadence_ps": 0.02,
+    "maximum_native_time_roundoff_ps": 0.000003667129021778237
+  },
+  "atoms": 6598,
+  "constraints": 6588,
+  "max_constraint_distance_error_A": 0.000014917025881078239,
+  "constraint_tolerance_A": 0.0001,
+  "finite_coordinates_cells_and_thermodynamics": true,
+  "identical_consecutive_frames": 0,
+  "thermodynamic_samples": 1001,
+  "boundary": {
+    "final_DCD_checkpoint_max_component_difference_A": 0.0000073782683784884284,
+    "native_COM_velocity_removal_log": [
+      "Info: REMOVING COM VELOCITY 0.0261056 -0.0229095 0.0551967"
+    ],
+    "note": "Native restart coordinates/velocities/XSC restored; native COM-velocity setup is retained, not a bitwise RNG continuation claim."
+  },
+  "native_performance": {
+    "native_ns_per_day": 385.366,
+    "native_loop_seconds": null,
+    "scope": "final native NAMD accumulated PERFORMANCE estimate; not worker/process duration",
+    "native_seconds_per_step": 0.000448405,
+    "native_final_timing_step": 615000
+  },
+  "restart_semantics": "Coordinates, velocities and XSC cell/piston state restored together at step 605000. Original seed 20260925 retained, but restart files do not clone Langevin RNG; no bitwise stochastic continuation claim. No temperature initialization or equilibration is repeated.",
+  "warnings": [
+    "Warning: Keeping outputEnergies at user-specified value 10",
+    "Warning: Performance might be improved by increasing outputEnergies to >= 100",
+    "Warning: Disabling lonepair support due to incompatability with GPU-resident.",
+    "Warning: Always using force tables for GPU nonbonded kernel due to unsupported config parameters.",
+    "Warning: Found 2192 H-H bonds.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance.",
+    "Warning: Energy evaluation is expensive, increase computeEnergies to improve performance.",
+    "Warning: If computeEnergies is not defined, its value defaults to the same as outputEnergies, and increasing outputEnergies would be helpful to improve the performance."
+  ],
+  "customer_artifact_count": 30,
+  "customer_receipt": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/customer-01/receipt.json",
+    "sha256": "31625732864b97d9fc72f72456c7372db9e7b5c4aa65ef61c3efcb90f9241c76",
+    "bytes": 14951
+  },
+  "released_attempt": {
+    "attempt_id": "2bb04f77-a244-5798-961d-27a3376c5dc0",
+    "shard_id": "dense-motion",
+    "attempt_number": 1,
+    "workload_kind": "Job",
+    "workload_name": "fs2-workflow-dense-motion-a1-599364eb14e2",
+    "workload_uid": "ac8692e4-ce14-4996-a834-8be6e87b9a71",
+    "workload_namespace": "fs2-models",
+    "route_namespace": "fs2-models",
+    "outcome": "succeeded",
+    "last_phase": "teardown",
+    "resource_released": true,
+    "scheduling_admission": {
+      "resolved_pool_id": "h100-ondemand-1x",
+      "admitted_resource_flavor": "inference-h100-ondemand-1x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-24T02:08:44Z"
+    },
+    "failure_kind": null,
+    "failure_code": null
+  },
+  "pod_evidence": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/pods-01.json",
+    "sha256": "716b7307c2d1b46ea29e991f9c636a150fc8020a94a020e810ad05374cc6fdc8",
+    "bytes": 5979
+  },
+  "pod_captures": [
+    {
+      "pod": "fs2-workflow-dense-motion-a1-599364eb14e2-l7296",
+      "uid": "03897d8f-093c-444a-bc92-99963c4733a1",
+      "node": "computeinstance-e00wet1bnnk38nbxms",
+      "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:30df40215f7df047463cf8e37f1fb80457b73fbb7ae8f681b9cb40d980e5f14e",
+      "gpu": {
+        "exit_code": 0,
+        "stdout": "NVIDIA H100 80GB HBM3, GPU-d144da30-c688-aed8-5999-f9d44cee79d0, 580.173.02",
+        "stderr": ""
+      }
+    }
+  ],
+  "identity_limitations": [],
+  "analysis_source": {
+    "comparison/analysis/native.py": "3495dfe95380660e9c7c7572574136a15d6a4f88fcce4f635fec51578cb7d1cf",
+    "comparison/analysis/geometry.py": "bcd188ec173affcb9223ba49bee3b45cdd6375148bccab2e7c986d0379399027",
+    "comparison/analysis/thermo.py": "a08099008541f2c3e56e1fc81db04c957010aa31a8b7a64b9405a22eb0bbf376",
+    "comparison/analysis/shake_boundary.py": "a71ae7fe3939216db2bcb4b95a4d4f6faa54e8b9a0bf1fca2e70646125aba03b"
+  },
+  "validator_source_sha256": "8af11dd05ba6977d52e37ec51e5cb710f8734bac49ed0a91819190c26ed633c6",
+  "scientific_convergence_claimed": false,
+  "interpolation_or_coordinate_averaging": false
+}

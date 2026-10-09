@@ -1,0 +1,9 @@
+**
+!k8s-inference
+!k8s-inference/components
+!k8s-inference/components/control-plane
+!k8s-inference/components/control-plane/migrations
+!k8s-inference/components/control-plane/migrations/0037_customer_workbenches.sql
+!k8s-inference/components/control-plane/src
+!k8s-inference/components/control-plane/src/fs2_serve
+!k8s-inference/components/control-plane/src/fs2_serve/postgresql_release.py

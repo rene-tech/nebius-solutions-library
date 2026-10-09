@@ -1,0 +1,14 @@
+{
+  "runs": 40,
+  "completed": 38,
+  "failed": 2,
+  "models": [
+    "nvidia/nemotron-3-super-120b-a12b",
+    "zai-org/GLM-5.2"
+  ],
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "rounds": 10,
+  "clinical_validation": false,
+  "librechat_acceptance": false
+}

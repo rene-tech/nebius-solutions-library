@@ -1,0 +1,194 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "cellpose-cpsam-v2",
+      "display_name": "Cellpose CPSAM v2",
+      "family": "microscopy",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "mouseland/cellpose-sam",
+        "revision": "7c61431b5fbb078f3296754bd15d9f51b320f837",
+        "license": {
+          "id": "BSD-3-Clause",
+          "state": "verified",
+          "notes": "Checkpoint card and Cellpose code identify BSD-3-Clause. The upstream training-data provenance includes non-commercial material, so this platform App remains research-only and prohibits commercial use."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public ungated Hugging Face checkpoint; independent Cellpose runtime, not NVIDIA NIM."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "cellpose-4.2.1-cpsam-v2-fs2-v1",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/cellpose-cpsam-v2@sha256:d3048aca99d4c278002fa88e42417dd42d1a40fb2689af1688d239799fc59a5e",
+        "digest": "sha256:d3048aca99d4c278002fa88e42417dd42d1a40fb2689af1688d239799fc59a5e",
+        "state": "resolved"
+      },
+      "command": [
+        "uvicorn",
+        "app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 4000,
+      "memory_bytes": 12884901888,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/segment"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "segment-cells"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "prohibited"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "No clean H100 GPU snapshot capture and restore cohort has been qualified for this image."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/cellpose-cpsam-v2",
+      "local_path": "/var/lib/fs2-serve/cache/models/cellpose-cpsam-v2",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "fee386ce63e19044399a7c15792b4ba643c8fe61cfd4d268cc72894e9c028df7",
+        "expanded_bytes": 1233586851,
+        "minimum_bytes": 1233586851,
+        "capacity_bound_bytes": 1233586851,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "cellpose-cpsam-v2-two-images-replay-and-failure/v1",
+      "source_path": "k8s-inference/acceptance/visual-science-20260919/qualify.py",
+      "source_sha256": "76a25d423c489a70e5ad189a1dd4c8ffdff6041a3816872a87fd9fc5879a2162",
+      "fixture_path": "k8s-inference/models/visual-science/fixtures.py",
+      "fixture_sha256": "25b6ce528007983add7051ef498aa3b7edeb082d88863509394de2646c89494d",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Research-only 2D microscopy segmentation. The runtime rejects images above 16 MiB or 4 megapixels and serializes inference per replica.",
+        "Masks and object counts are model output, not biological ground truth or clinical interpretation.",
+        "Commercial use is prohibited because upstream training-data provenance includes non-commercial material even though the code and checkpoint card identify BSD-3-Clause.",
+        "Only one H100, the pinned image, and the exact CPSAM v2 weight digest are qualified. B300, snapshots, public routing, scaling, and customer authorization are separate gates."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3 / driver 580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "08dba5331df9af750cb85f455e229c23297b516e",
+        "summary": "Two distinct synthetic images, exact deterministic replay, malformed-input rejection, pinned weight digest, non-root execution and zero restarts passed. acceptance/visual-science-20260919/evidence/cellpose-native.json SHA256 bf9ec667478f47aa2dfb7a7d0c9da3b3309d4c39c8842d9adcaa3010be532139. Public route and LibreChat are not covered by this direct-worker evidence."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "08dba5331df9af750cb85f455e229c23297b516e",
+        "tree": "61b17cfa6404ea2978b313d88ac260f4cb640854",
+        "path": "k8s-inference/models/visual-science/cellpose-cpsam-v2",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://huggingface.co/mouseland/cellpose-sam/tree/7c61431b5fbb078f3296754bd15d9f51b320f837",
+        "revision": "7c61431b5fbb078f3296754bd15d9f51b320f837",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "variant_id": "cellpose-cpsam-v2-cuda-v1",
+  "runtime_architecture": "cuda",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-json-compact-no-newline/v1",
+    "invocation": {
+      "operation": "segment-cells",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/v1/segment"
+    },
+    "requests": [
+      {
+        "id": "cellpose-microscopy-0",
+        "payload_sha256": "e3a0ebb4e7ea2ae33a72e80b4020c4c0244ac2594621d517267c07e2ffa672d3"
+      },
+      {
+        "id": "cellpose-microscopy-1",
+        "payload_sha256": "4f0e7ff0a304dabaf11a32a0f66ee4ad8decf171b91e7ecec25f1296c8f1515c"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "../deployment-runtimes/artifacts/cellpose-cpsam-v2-fee386ce63e19044399a7c15792b4ba643c8fe61cfd4d268cc72894e9c028df7.json",
+    "sha256": "fee386ce63e19044399a7c15792b4ba643c8fe61cfd4d268cc72894e9c028df7"
+  }
+}

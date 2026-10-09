@@ -43,7 +43,7 @@ export interface ModalityUsage {
 
 export interface AdminApiKeyUsage {
   terminal_operations: number;
-  estimated_gpu_seconds: AccessMeasurement;
+  conservative_attempted_gpu_seconds: AccessMeasurement;
   input_tokens: AccessMeasurement;
   output_tokens: AccessMeasurement;
   token_reported_operations: number;
@@ -68,8 +68,8 @@ export interface AdminApiKey {
   request_budget: number | null;
   requests_used: number;
   gpu_seconds_budget: number | null;
-  gpu_seconds_used: number;
-  gpu_seconds_reserved: number;
+  admission_budget_consumed_gpu_seconds: number;
+  admission_budget_reserved_gpu_seconds: number;
   max_concurrency: number;
   rate_limit_requests: number | null;
   rate_window_seconds: number | null;

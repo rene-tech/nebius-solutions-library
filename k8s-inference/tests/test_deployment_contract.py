@@ -310,6 +310,7 @@ class DeploymentContractTests(unittest.TestCase):
                     "adopt_existing": False,
                 },
                 "fast_start_evidence_file": None,
+                "retained_registration_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
                 "fast_start_mechanisms_file": None,
@@ -404,6 +405,9 @@ class DeploymentContractTests(unittest.TestCase):
             "max_unavailable": 1,
             "max_surge": 0,
         }
+        applications["control_plane"]["gpu_observer_image"] = (
+            "registry.example.invalid/inference/observer@sha256:" + "a" * 64
+        )
         deployment = {
             "schema_version": 1,
             "name": "fs2-control-plane-hpa",
@@ -426,6 +430,8 @@ class DeploymentContractTests(unittest.TestCase):
             ],
             applications["control_plane"]["rollout"],
         )
+        self.assertEqual(outputs["deployment_contract"]["stages"]["workloads"]["gpu_observer_image"],
+                         applications["control_plane"]["gpu_observer_image"])
 
         control_plane_source = (
             DEPLOY_ROOT / "stages/workloads/control_plane.tf"
@@ -1102,10 +1108,17 @@ class DeploymentContractTests(unittest.TestCase):
         )["profiles"]
         profiles_by_id = {profile["model_id"]: profile for profile in profiles}
         for model in committed_map["models"]:
-            self.assertEqual(
-                profiles_by_id[model["model_id"]]["qualification"]["execution_map_sha256"],
-                effective["execution_map_sha256"],
-            )
+            qualified_digest = profiles_by_id[model["model_id"]]["qualification"]["execution_map_sha256"]
+            baseline_ids = committed_map.get("qualification_baselines", {}).get(qualified_digest)
+            if baseline_ids is not None:
+                self.assertIn(model["model_id"], baseline_ids)
+                rows = {row["model_id"]: row for row in committed_map["models"]}
+                measured = {"schema": committed_map["schema"], "models": [rows[key] for key in baseline_ids]}
+            else:
+                measured = {key: value for key, value in committed_map.items() if key != "qualification_baselines"}
+            self.assertEqual(qualified_digest, hashlib.sha256(
+                json.dumps(measured, separators=(",", ":"), sort_keys=True).encode()
+            ).hexdigest())
 
         for relative in ("locals.tf", "outputs.tf"):
             with self.subTest(source=relative):
@@ -1824,6 +1837,7 @@ class DeploymentContractTests(unittest.TestCase):
                     "adopt_existing": False,
                 },
                 "fast_start_evidence_file": None,
+                "retained_registration_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
                 "fast_start_mechanisms_file": None,
@@ -2076,6 +2090,7 @@ class DeploymentContractTests(unittest.TestCase):
     def test_fast_start_inputs_propagate_to_the_workload_stage(self) -> None:
         evidence_file = self.run_root / "fast-start-evidence.json"
         evidence_file.write_text("{}\n", encoding="utf-8")
+        retained_file = DEPLOY_ROOT / "acceptance/idle-scale-zero-20261005/managed-runtime-adoptions.json"
         snapshot = json.loads((DEPLOY_ROOT / "acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json").read_text())
         deployment = {
             "schema_version": 1,
@@ -2094,6 +2109,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_model_ids": ["qwen3-8b"],
                 "fresh_install": True,
                 "fast_start_evidence_file": str(evidence_file),
+                "retained_registration_file": str(retained_file),
                 "gpu_snapshots": {
                     "bundle_files": ["acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json"],
                     "cache": {"claim_name": snapshot["pvc"], "manage_claim": False},
@@ -2116,6 +2132,7 @@ class DeploymentContractTests(unittest.TestCase):
         ]
 
         self.assertEqual(dynamic["fast_start_evidence_file"], str(evidence_file))
+        self.assertEqual(dynamic["retained_registration_file"], str(retained_file))
         self.assertEqual(dynamic["gpu_snapshots"]["bundles"], {snapshot["bundle_id"]: snapshot})
         self.assertFalse(dynamic["gpu_snapshots"]["cache"]["manage_claim"])
         self.assertTrue(dynamic["gpu_snapshots"]["adopt_existing"])
@@ -2186,7 +2203,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('"compatibilityTupleComplete"', controller_source)
         self.assertNotIn("sha256(jsonencode({ source = model.model.source", controller_source)
         self.assertIn(
-            "!contains(local.model_controller_dynamic_model_ids, model_id)",
+            "!contains(local.model_controller_registered_ids, model_id)",
             workload_locals,
         )
         self.assertIn(
@@ -2200,7 +2217,7 @@ class DeploymentContractTests(unittest.TestCase):
             controller_source,
         )
         self.assertIn(
-            '!contains(local.model_controller_dynamic_model_ids, document.model_id)',
+            '!contains(local.model_controller_registered_ids, document.model_id)',
             controller_source,
         )
         self.assertIn(

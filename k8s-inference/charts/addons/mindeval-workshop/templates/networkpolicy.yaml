@@ -1,0 +1,27 @@
+{{- if .Values.networkPolicy.controlPlaneAccess }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-to-control-plane
+  namespace: {{ .Values.networkPolicy.controlPlaneNamespace }}
+  labels:
+    {{- include "mindeval.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.networkPolicy.controlPlaneName }}
+      app.kubernetes.io/component: gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [{{ .Values.gateway.name }}, {{ .Values.workshop.name }}]
+      ports:
+        - {protocol: TCP, port: 8080}
+{{- end }}

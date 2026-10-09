@@ -31,6 +31,13 @@ the App already selects it. The generic `invoke_model` and
 `submit_scientific_run` envelopes are compatibility routes for model-agnostic
 clients, not the default for a skill-directed call.
 
+For a necessary `invoke_model` fallback, extract `idempotency_key` and
+`wait_seconds` from the named tool arguments and place them beside `payload`.
+Only model fields belong inside `payload`. If the server returns
+`gateway_control_validation`, no operation was admitted; correct its reported
+control or duplicate conflict before resubmitting. Do not depend on legacy
+nested-control compatibility when constructing new calls.
+
 If this skill disagrees with the tool's current schema, the tool schema wins.
 Do not silently omit unsupported scientific inputs or switch models. Explain the
 specific incompatibility and ask the user to choose a supported workflow.

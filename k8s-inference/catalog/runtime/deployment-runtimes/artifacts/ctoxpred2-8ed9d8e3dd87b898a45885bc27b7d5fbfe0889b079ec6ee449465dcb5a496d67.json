@@ -1,0 +1,97 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "ctoxpred2",
+  "kind": "weights",
+  "source": {
+    "revision": "2a31aa119e27b6b69a5588d18a01f2a27fef4524",
+    "uri": "https://github.com/issararab/CToxPred2/tree/2a31aa119e27b6b69a5588d18a01f2a27fef4524"
+  },
+  "content": {
+    "digest": "828d1ba604948cb495d36a6051efa092066a9450746fa748b67ec9a280b0c7d2",
+    "expanded_bytes": 171636219,
+    "files": [
+      {
+        "bytes": 90375,
+        "path": "models/decriptors_preprocessing/Cav1.2/cav_descriptors_preprocessing_pipeline.sav",
+        "sha256": "ca39a6606a9f266cc1ccc597f19a85a8d1f8f6f6281516f55323c0ea9a17d4f5"
+      },
+      {
+        "bytes": 90475,
+        "path": "models/decriptors_preprocessing/Cav1.2/cav_descriptors_preprocessing_pipeline_2.sav",
+        "sha256": "b9c0bbf45714b40f314c956a0f98bb0219e21eeea459a5eff39b56ced65d4485"
+      },
+      {
+        "bytes": 90495,
+        "path": "models/decriptors_preprocessing/Nav1.5/nav_descriptors_preprocessing_pipeline.sav",
+        "sha256": "19fe8e009b402f269b5291d77c00229e00c6b78fa4c84c5e9e0eb56aa8526cba"
+      },
+      {
+        "bytes": 90595,
+        "path": "models/decriptors_preprocessing/Nav1.5/nav_descriptors_preprocessing_pipeline_2.sav",
+        "sha256": "e9db2020262a4f42a27512db4874b90f2c7ab4a050e8bc1d35f86fbe6982be57"
+      },
+      {
+        "bytes": 92317,
+        "path": "models/decriptors_preprocessing/global_preprocessing_pipeline.sav",
+        "sha256": "58ca80d195ca2f261aa50e68e88a82aebdccdc106149f89d5bb9d10d54e7f301"
+      },
+      {
+        "bytes": 91509,
+        "path": "models/decriptors_preprocessing/hERG/herg_descriptors_preprocessing_pipeline.sav",
+        "sha256": "7e40cbade5b562808e9dfc3f6522b92e1f5fc5272a5104727a18427c4f22c859"
+      },
+      {
+        "bytes": 2234007,
+        "path": "models/model_weights/Cav1.2/_cav12_checkpoint.model",
+        "sha256": "5d87dc23b0b949f41803e4551c840fd5f11b4f2f372df4421cdeb00d32c25081"
+      },
+      {
+        "bytes": 2243685,
+        "path": "models/model_weights/Cav1.2/_cav12_checkpoint_2.model",
+        "sha256": "ffad40c70c7fdd50db11e0e59e18f4849e0d72de11bb68e71888c2fb9ef096e4"
+      },
+      {
+        "bytes": 2127639,
+        "path": "models/model_weights/Nav1.5/_nav15_checkpoint.model",
+        "sha256": "8c2db5743f41a7c22874ccef119adc42bb9ed56bdc9c4c432aacd2624beff12a"
+      },
+      {
+        "bytes": 2138549,
+        "path": "models/model_weights/Nav1.5/_nav15_checkpoint_2.model",
+        "sha256": "609c61db54ade32fad000c5615270a063b1b782f4cccb3a078e857a6d69aae25"
+      },
+      {
+        "bytes": 1689239,
+        "path": "models/model_weights/hERG/_herg_checkpoint.model",
+        "sha256": "c28e8bb8ffb5daebbf0caf1c0ae8efdcd8336740c959f61fafe3d74fc6567e8b"
+      },
+      {
+        "bytes": 1698907,
+        "path": "models/model_weights/hERG/_herg_checkpoint_old.model",
+        "sha256": "35c0b29f5008b0513c66d462c8cb5d94c48936f2a437f24b8cfb825336308f78"
+      },
+      {
+        "bytes": 4486313,
+        "path": "models/random_forest/Cav1.2/_ssl_cav_model.joblib",
+        "sha256": "d7be3bcb59890058208a18167246c395d5ac4ad5b9d762ff07b0b0643ac375e9"
+      },
+      {
+        "bytes": 11434377,
+        "path": "models/random_forest/Nav1.5/_ssl_nav_model.joblib",
+        "sha256": "0b57bc75c80518c1ec01a597f0fde3cbeb5a6a55f8f48d7afc26ea5b8ff30b8b"
+      },
+      {
+        "bytes": 143037737,
+        "path": "models/random_forest/hERG/_ssl_herg_model.joblib",
+        "sha256": "1060d8afee2df325410e11fe5b1a6457656f158f63dc4baab0dc1ccc9a0a98c6"
+      }
+    ]
+  },
+  "license": {
+    "id": "MIT",
+    "state": "verified"
+  },
+  "entitlement_state": "not-required",
+  "owner": "runtime-image",
+  "retention": "retained-platform"
+}

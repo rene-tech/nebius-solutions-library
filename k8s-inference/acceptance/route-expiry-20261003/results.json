@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-03",
+  "scope": "Route-expiry incident repair and public REST GROMACS workflow regression",
+  "runtime_source_commit": "e275c94918d9400e2f6809f4cf06cfe21e4e8e27",
+  "api_image_index": "sha256:6a2876b380f43717ea37cb21dd4504af5884c9a305c486562a42ef103420f946",
+  "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "project_id": "project-e00rene",
+  "region": "eu-north1",
+  "ready_api_replicas": 3,
+  "active_api_keys": 15,
+  "active_api_keys_with_expiry": 0,
+  "customer_keys_rotated": 0,
+  "offline_regressions_passed": 138,
+  "live_registry_clock_advance_days": [0, 3650],
+  "public_routing_checks_before": {"passed": 9, "total": 9},
+  "public_routing_checks_after": {"passed": 9, "total": 9},
+  "input_sha256": "8d2d7f61ddb7d329387fc64b2b36b27511f8575cfcaffdf2bc0763ed579f008e",
+  "scientific_protocol": "Seeded ff14SB/TIP3P alanine; minimization, 20 ps NVT, 20 ps NPT, 20 ps production, energy extraction and trajectory validation",
+  "caller": "Existing system/qa key, not Lynx customer usage",
+  "cohorts": [
+    {
+      "id": 1,
+      "operation_id": "f89068a8-9e7e-4c30-bfe9-01f564be6286",
+      "status": "succeeded",
+      "semantic_validation": "passed",
+      "native_steps_completed": 13,
+      "idempotency_verified": true,
+      "admission_to_terminal_seconds": 81.742,
+      "observed_seconds_including_upload_and_verified_download": 96.503,
+      "verified_artifacts": 56,
+      "verified_artifact_bytes": 10888538,
+      "gpu_pool": "h100-ondemand-1x",
+      "gpu_count": 1,
+      "resource_released": true,
+      "gpu_snapshot_used": false
+    },
+    {
+      "id": 2,
+      "operation_id": "4976b074-059a-4562-8ff5-277a425e970a",
+      "status": "succeeded",
+      "semantic_validation": "passed",
+      "native_steps_completed": 13,
+      "idempotency_verified": true,
+      "admission_to_terminal_seconds": 80.708,
+      "observed_seconds_including_upload_and_verified_download": 97.335,
+      "verified_artifacts": 56,
+      "verified_artifact_bytes": 10830904,
+      "gpu_pool": "h100-ondemand-1x",
+      "gpu_count": 1,
+      "resource_released": true,
+      "gpu_snapshot_used": false
+    }
+  ],
+  "limitations": [
+    "Short complete workflow acceptance, not converged molecular simulation evidence",
+    "No all-model requalification or new GPU snapshot claim",
+    "No additional infrastructure provisioned; normal scheduling chose existing on-demand H100 capacity",
+    "Controller leases, signed transfer URLs and explicitly time-bound archival evidence retain their separate operational semantics"
+  ]
+}

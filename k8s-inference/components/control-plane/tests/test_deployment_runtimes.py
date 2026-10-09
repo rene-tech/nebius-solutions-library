@@ -129,6 +129,21 @@ def test_gpu_runtime_cannot_claim_embedded_reference_database_contract(inputs):
         project(inputs, entries)
 
 
+@pytest.mark.parametrize("owner", ["nim-operator-nimcache"])
+def test_independent_gpu_runtime_cannot_claim_nim_owned_cache(inputs, owner):
+    entries = copy.deepcopy(inputs[3])
+    entries["molmim"]["record"]["cache"]["owner"] = owner
+    with pytest.raises(DeploymentRuntimeError, match="resource-matched artifact"):
+        project(inputs, entries)
+
+
+def test_independent_gpu_runtime_accepts_explicit_platform_pvc_custody(inputs):
+    entries = copy.deepcopy(inputs[3])
+    entries["molmim"]["record"]["cache"]["owner"] = "platform-pvc"
+    projected = project(inputs, entries)
+    assert not projected.model("molmim").routable
+
+
 def test_retained_service_suffix_is_not_hardware_or_model_alias(inputs):
     entries = copy.deepcopy(inputs[3])
     entries["molmim"]["qualification"]["active_runtime"]["service"]["name"] = "molmim-b300"
@@ -386,3 +401,63 @@ def test_registry_binds_terraform_cpu_route_after_the_selected_runtime(tmp_path:
     assert model.binding.backend_gpu_class == "CPU"
     assert model.binding.artifact_manifest_digest == value["cache"]["artifact"]["manifest_digest"]
     assert model.binding.service_origin == "http://msa-search-pdb70.fs2-models.svc.cluster.local:8000"
+
+
+def test_registry_binds_canonical_uppercase_gpu_class_for_native_runtime(tmp_path: Path):
+    catalog = load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
+    entry = json.loads((CATALOG_ROOT / "deployment-runtimes/cellpose-cpsam-v2.json").read_text())
+    runtime_set = tmp_path / "deployment-runtimes.json"
+    runtime_set.write_text(json.dumps({"schema": SET_SCHEMA, "models": {entry["model_id"]: entry}}))
+    bindings = tmp_path / "bindings.json"
+    bindings.write_text(
+        json.dumps({"schema": SERVING_BINDINGS_SCHEMA, "catalog_digest": catalog.digest, "bindings": {}})
+    )
+    value = entry["record"]
+    routes = tmp_path / "lean-routes.json"
+    routes.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/lean-routes/v4",
+                "routes": [
+                    {
+                        "model_id": entry["model_id"],
+                        "variant_id": entry["variant_id"],
+                        "model_revision": value["model"]["source"]["revision"],
+                        "runtime_image_digest": value["runtime"]["image"]["digest"],
+                        "service": entry["qualification"]["active_runtime"]["service"],
+                        "storage_mode": "ephemeral-emptydir",
+                        "protocols": value["interface"]["endpoints"],
+                        "operations": value["interface"]["policy"]["operations"],
+                        "mcp": {
+                            "enabled": True,
+                            "tool_name": "segment_cells",
+                            "description": "Segment a bounded microscopy image with Cellpose CPSAM v2.",
+                        },
+                        "placement": {
+                            "region": "eu-north1",
+                            "accelerator_class": "NVIDIA-H100-SXM5-80GB",
+                            "pool_id": "h100-sxm",
+                        },
+                    }
+                ],
+            }
+        )
+    )
+
+    registry = Registry.load(
+        CATALOG_ROOT,
+        bindings,
+        repo_root=REPO_ROOT,
+        evidence_root=None,
+        lean_routes_file=routes,
+        deployment_runtime_records_file=runtime_set,
+        max_attempts=2,
+        max_gpu_seconds_per_attempt=10,
+        retry_base_seconds=1,
+    )
+    model = registry.get("cellpose-cpsam-v2")
+
+    assert model.lean_static
+    assert model.gateway.gpu_class == "NVIDIA-H100-SXM5-80GB"
+    assert model.binding.backend_gpu_class == "NVIDIA-H100-SXM5-80GB"
+    assert model.binding.service_origin == "http://cellpose-cpsam-v2.fs2-models.svc.cluster.local:8000"

@@ -14,12 +14,13 @@ import pytest
 import pytest_asyncio
 
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
-from fs2_serve.lifecycle import LifecycleSignal, LifecycleSubject, PostgresLifecycleRepository
+from fs2_serve.lifecycle import LifecycleCorrelation, LifecycleSignal, LifecycleSubject, PostgresLifecycleRepository
 from fs2_serve.models import AdmissionRequest, Principal, Scope, TokenCreate
 from fs2_serve.postgres import PostgresStore
 from fs2_serve.scientific_admin import ScientificModelSnapshot, ScientificRunQuery
 from fs2_serve.scientific_admin_models import ScientificModelReadiness, ScientificModelReadinessList
 from fs2_serve.scientific_admin_postgres import (
+    _SCIENTIFIC_GPU_ACCOUNTING_QUERY,
     PostgresScientificArtifactAdminAdapter,
     PostgresScientificRunAdminAdapter,
     PostgresScientificRunControlAdapter,
@@ -348,11 +349,15 @@ async def test_postgres_list_and_detail_join_durable_gpu_rollups_once_per_page()
 
     class AccountingConnection(FakeConnection):
         async def fetch(self, query: str, *args: object) -> list[dict[str, Any]]:
+            if "fs2_telemetry_correlations" in query:
+                self.queries.append(query)
+                assert args == (OPERATION_ID, state.tenant_id)
+                return []
             if "fs2_lifecycle_signals" in query:
                 self.queries.append(query)
                 assert args == (OPERATION_ID, state.tenant_id)
                 return []
-            if "fs2_reporting_lifecycle_latest" not in query:
+            if "fs2_lifecycle_rollups" not in query:
                 return await super().fetch(query, *args)
             self.queries.append(query)
             assert args == ([OPERATION_ID],)
@@ -381,7 +386,10 @@ async def test_postgres_list_and_detail_join_durable_gpu_rollups_once_per_page()
     )
     listed = await adapter.list_runs(ScientificRunQuery(from_at=NOW - timedelta(hours=1), to_at=NOW))
     detail = await adapter.get_run(OPERATION_ID, tenant_id="tenant-oncology")
-    assert sum("fs2_reporting_lifecycle_latest" in query for query in connection.queries) == 2
+    assert sum("fs2_lifecycle_rollups" in query for query in connection.queries) == 2
+    assert "LEFT JOIN LATERAL" in _SCIENTIFIC_GPU_ACCOUNTING_QUERY
+    assert "WHERE subject_id=subject.subject_id" in _SCIENTIFIC_GPU_ACCOUNTING_QUERY
+    assert "event_watermark DESC,generated_at DESC,rollup_id DESC LIMIT 1" in _SCIENTIFIC_GPU_ACCOUNTING_QUERY
     for accounting in (listed.data.items[0].gpu_accounting, detail.data.run.gpu_accounting):
         assert accounting.allocated.value == 25
         assert accounting.active.value == 15
@@ -567,6 +575,63 @@ async def postgres_admin_store() -> PostgresStore:
 
 
 @pytest.mark.postgres
+async def test_scoped_latest_rollups_equal_global_view_with_ties_missing_and_foreign_subjects(
+    postgres_admin_store: PostgresStore,
+) -> None:
+    repository = PostgresLifecycleRepository(postgres_admin_store.pool)
+    operation_id, other_operation = uuid4(), uuid4()
+    subjects = [uuid4() for _ in range(4)]
+    for index, subject_id in enumerate(subjects):
+        await repository.register_subject(LifecycleSubject.model_validate({
+            "subject_id": subject_id, "workload_kind": "online" if index == 3 else "scientific_batch",
+            "operation_id": other_operation if index == 2 else operation_id,
+            "request_id": operation_id, "batch_id": None if index == 3 else uuid4(), "workload_id": uuid4(),
+            "attempt_id": None if index == 3 else subject_id, "tenant_id": "tenant-oncology",
+            "principal_id": "test-scientific-controller", "model_id": "rfdiffusion",
+            "model_revision": "test-scoped-accounting", "protocol": "scientific-batch",
+            "trace_id": "1" * 32, "parent_span_id": "2" * 16, "accepted_at": NOW,
+        }))
+    insert = """INSERT INTO fs2_lifecycle_rollups(
+        rollup_id,subject_id,generated_at,event_watermark,events_sha256,terminal,outcome,
+        quota_reserved_gpu_seconds,scheduler_occupied_gpu_seconds,device_allocated_gpu_seconds,
+        active_gpu_seconds,occupied_idle_gpu_seconds,phase_gpu_seconds,reconciliation_delta_seconds,
+        device_scheduler_delta_seconds,tolerance_seconds,reconciled,quality,data_gaps,output_shape)
+        VALUES($1,$2,$3,$4,$5,true,'succeeded',100,$6,0,$6,0,'{}',0,0,1,true,'application_observed','{}','{}')"""
+    rollup_ids = sorted(uuid4() for _ in range(4))
+    winner = rollup_ids[-1]
+    async with postgres_admin_store.pool.acquire() as connection:
+        # Watermark outranks wall time; generated_at and UUID deterministically
+        # resolve ties. The second selected subject has no rollup at all.
+        for number, watermark, offset in [(1, 1, 100), (2, 2, 0), (3, 2, 1), (4, 2, 1)]:
+            await connection.execute(insert, rollup_ids[number - 1], subjects[0], NOW + timedelta(seconds=offset),
+                                     watermark, f"{number:064x}", float(number))
+        for index in (2, 3):
+            await connection.execute(insert, uuid4(), subjects[index], NOW, 99, f"{index+10:064x}", 999.0)
+        # Unrelated history must neither contaminate totals nor be scanned for
+        # every selected attempt. No wall-clock timing assertion in unit tests.
+        await connection.executemany(insert, [
+            (uuid4(), subjects[2], NOW, i + 100, f"{i+100:064x}", float(i)) for i in range(1000)
+        ])
+        old = await connection.fetch("""SELECT subject.operation_id,subject.attempt_id,rollup.*
+            FROM fs2_telemetry_subjects subject
+            LEFT JOIN fs2_reporting_lifecycle_latest rollup USING(subject_id)
+            WHERE subject.operation_id=ANY($1::uuid[]) AND subject.workload_kind='scientific_batch'""", [operation_id])
+        new = await connection.fetch(_SCIENTIFIC_GPU_ACCOUNTING_QUERY, [operation_id])
+        def order(rows: Any) -> list[dict[str, Any]]:
+            return sorted((dict(row) for row in rows), key=lambda row: str(row["attempt_id"]))
+        assert order(new) == order(old)
+        assert len(new) == 2
+        assert {row["rollup_id"] for row in new} == {winner, None}
+        assert await connection.fetch(_SCIENTIFIC_GPU_ACCOUNTING_QUERY, []) == []
+        plan = json.loads(await connection.fetchval(
+            "EXPLAIN (FORMAT JSON) " + _SCIENTIFIC_GPU_ACCOUNTING_QUERY, [operation_id]
+        ))
+        def nodes(value: dict[str, Any]) -> list[dict[str, Any]]:
+            return [value, *(node for child in value.get("Plans", []) for node in nodes(child))]
+        assert any(node.get("Index Name") == "fs2_lifecycle_rollups_latest_idx" for node in nodes(plan[0]["Plan"]))
+
+
+@pytest.mark.postgres
 async def test_real_postgres_phase_projection_uses_actual_restore_clocks_and_tenant_scope(
     postgres_admin_store: PostgresStore,
 ) -> None:
@@ -606,6 +671,11 @@ async def test_real_postgres_phase_projection_uses_actual_restore_clocks_and_ten
         for row in fixture["signals"]
     ]
     await repository.append_signals(signals)
+    await repository.append_correlations([LifecycleCorrelation.model_validate({
+        "correlation_key": f"test:{attempt.attempt_id}:device", "subject_id": attempt.attempt_id,
+        "observed_at": NOW, "source": "kubernetes", "pod_uid": "observed-pod-uid",
+        "node_uid": "observed-node-uid", "gpu_uuid": "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "gpu_rank": 0,
+    })])
     adapter = PostgresScientificRunAdminAdapter(
         pool=postgres_admin_store.pool,
         batches=PostgresScientificBatchRepository(postgres_admin_store.pool),
@@ -616,6 +686,13 @@ async def test_real_postgres_phase_projection_uses_actual_restore_clocks_and_ten
     restore = next(item.duration for item in phases if item.phase == "restore")
     assert restore.value == pytest.approx(3.946846)
     assert restore.evidence.value == "estimated"
+    identities = await adapter._lifecycle_correlations(state)
+    assert len(identities) == 1
+    assert identities[0]["attempt_id"] == attempt.attempt_id
+    assert identities[0]["pod_uid"] == "observed-pod-uid"
+    assert identities[0]["node_uid"] == "observed-node-uid"
+    assert identities[0]["gpu_uuid"] == "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert await adapter._lifecycle_correlations(replace(state, tenant_id="other-tenant")) == ()
     foreign = await adapter._phase_times(replace(state, tenant_id="other-tenant"))
     assert all(item.duration.value is None for item in foreign)
 

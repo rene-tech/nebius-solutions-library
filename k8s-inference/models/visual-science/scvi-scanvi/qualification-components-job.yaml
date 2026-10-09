@@ -1,0 +1,58 @@
+# Internal synthetic restart and query checks. No customer data or new PVC.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scvi-whitelab-components-20261006-r7
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: computeinstance-e00k0hdq51xykanvqs
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: qualify
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:063877787f8c1c1aef28887242389449b871e1d48c74edc07c267bccee340246
+          command: [bash, -ec]
+          args:
+            - python -m unittest discover -s /tests -v; python -u /opt/fs2/qualify_runtime.py --root /work/r7 --components-only
+          env:
+            - name: OMP_NUM_THREADS
+              value: "8"
+            - name: MPLCONFIGDIR
+              value: /work/cache/matplotlib
+            - name: NUMBA_CACHE_DIR
+              value: /work/cache/numba
+            - name: PYTORCH_KERNEL_CACHE_PATH
+              value: /work/cache/torch-kernels
+          resources:
+            requests: {cpu: "8", memory: 128Gi, nvidia.com/gpu: "1"}
+            limits: {cpu: "8", memory: 128Gi, nvidia.com/gpu: "1"}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: tests, mountPath: /tests, readOnly: true}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: work
+          persistentVolumeClaim: {claimName: scvi-whitelab-qualification-20261006}
+        - name: tests
+          configMap: {name: scvi-whitelab-tests-20261006-r7}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 8Gi}

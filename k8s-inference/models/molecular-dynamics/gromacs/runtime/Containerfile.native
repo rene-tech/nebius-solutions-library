@@ -1,0 +1,55 @@
+# Pinned upstream single-GPU engine; the original NGC engine remains available.
+# The architecture control uses the same recipe with only CUDA_ARCHITECTURES
+# changed to 75;80;86;90. It is a benchmark control, never a release default.
+ARG NVIDIA_GROMACS_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs-ngc@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59
+ARG ENHANCED_GROMACS_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643
+ARG CUDA_BUILD_IMAGE=nvidia/cuda:13.0.2-devel-ubuntu22.04@sha256:1c517d4fb96528c8999e14e6e6b16d7e2ff9ae8d194fd788d60fdc88e693e982
+FROM ${NVIDIA_GROMACS_IMAGE} AS fftw
+FROM ${CUDA_BUILD_IMAGE} AS native-build
+ARG GROMACS_REVISION=da9e013175bae98b31b34384f6b4864ff29f65a5
+ARG BUILD_JOBS=16
+RUN apt-get update && apt-get install --yes --no-install-recommends \
+      build-essential gcc-12 g++-12 git ca-certificates python3 python3-pip \
+    && python3 -m pip install --no-cache-dir cmake==3.31.6 ninja==1.11.1.4 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=fftw /usr/local/fftw /usr/local/fftw
+RUN git init /src/gromacs && cd /src/gromacs \
+    && git remote add origin https://gitlab.com/gromacs/gromacs.git \
+    && git fetch --depth 1 origin "${GROMACS_REVISION}" && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "${GROMACS_REVISION}"
+# Keep existing 75/80/86/90 coverage and their PTX, adding native Ada (SM89).
+# GROMACS 2026.2 uses CMAKE_CUDA_ARCHITECTURES; do not use a GPU-host autodetect.
+ARG CUDA_ARCHITECTURES=75;80;86;89;90
+COPY fs2_gromacs/native_architecture.py /opt/fs2/native_architecture.py
+RUN cmake -S /src/gromacs -B /build/gromacs -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/gromacs-native \
+      -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 \
+      -DCMAKE_C_FLAGS_RELEASE="-march=x86-64-v3 -mtune=generic -O2 -fomit-frame-pointer -pipe -DNDEBUG" \
+      -DCMAKE_CXX_FLAGS_RELEASE="-march=x86-64-v3 -mtune=generic -O2 -fomit-frame-pointer -pipe -DNDEBUG" \
+      -DCMAKE_PREFIX_PATH=/usr/local/fftw \
+      -DGMX_MPI=OFF -DGMX_THREAD_MPI=ON -DGMX_GPU=CUDA -DGMX_SIMD=AVX2_256 \
+      -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
+      -DGMX_USE_COLVARS=internal -DGMX_USE_PLUMED=ON \
+      -DGMXAPI=OFF -DGMX_INSTALL_NBLIB_API=OFF \
+    && cmake --build /build/gromacs -j "${BUILD_JOBS}" \
+    && cmake --install /build/gromacs \
+    && mkdir -p /opt/gromacs-native/share/fs2-provenance \
+    && cp /src/gromacs/COPYING* /build/gromacs/CMakeCache.txt /opt/gromacs-native/share/fs2-provenance/ \
+    && git -C /src/gromacs rev-parse HEAD > /opt/gromacs-native/share/fs2-provenance/source-revision \
+    && LD_LIBRARY_PATH=/usr/local/fftw/lib /opt/gromacs-native/bin/gmx --version > /opt/gromacs-native/share/fs2-provenance/version.txt 2>&1 \
+    && python3 /opt/fs2/native_architecture.py \
+         --cuobjdump /usr/local/cuda/bin/cuobjdump \
+         --binary /opt/gromacs-native/lib/libgromacs.so.11 \
+         --required "${CUDA_ARCHITECTURES}" \
+         --output /opt/gromacs-native/share/fs2-provenance/native-cubins.json
+
+FROM ${ENHANCED_GROMACS_IMAGE}
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.title="Scientific AI upstream GROMACS native CUDA worker" \
+      org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
+      org.opencontainers.image.revision=${SOURCE_REVISION}
+COPY --from=native-build /opt/gromacs-native /opt/gromacs-native
+ENV FS2_GROMACS_BINARY=/opt/gromacs-native/bin/gmx \
+    FS2_GROMACS_ENGINE_ID=gromacs/2026.2@da9e013175bae98b31b34384f6b4864ff29f65a5 \
+    PATH=/opt/gromacs-native/bin:${PATH}
+COPY fs2_gromacs /opt/fs2/gromacs/fs2_gromacs

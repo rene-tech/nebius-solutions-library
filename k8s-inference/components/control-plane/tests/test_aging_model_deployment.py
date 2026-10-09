@@ -39,7 +39,9 @@ from fs2_serve.native_catalog import augment_native_catalog
 from fs2_serve.scientific_batch.podset_envelope import effective_pod_requests
 
 
-@pytest.mark.parametrize("model_id,variant", [("phenoage", "cpu"), ("altumage", "cuda")])
+@pytest.mark.parametrize(
+    "model_id,variant", [("phenoage", "cpu"), ("altumage", "cuda"), ("admet-ai", "cpu"), ("ctoxpred2", "cpu")]
+)
 def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_elasticity(tmp_path, model_id, variant):
     archive = load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
     catalog = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
@@ -59,7 +61,8 @@ def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_el
     assert not effective.qualification["states"]["http_mcp_qualified"]
     assert catalog.digest == archive.digest and len(archive.records) == 16
 
-    resources = list(yaml.safe_load_all((SOLUTION_ROOT / "models/aging/k8s" / f"{model_id}.yaml").read_text()))
+    family = "toxicology" if model_id in {"admet-ai", "ctoxpred2"} else "aging"
+    resources = list(yaml.safe_load_all((SOLUTION_ROOT / f"models/{family}/k8s" / f"{model_id}.yaml").read_text()))
     template_digest = canonical_digest(resources)
     record = entry["record"]
     gpu_count = record["resources"]["gpu"]["count"]
@@ -95,7 +98,7 @@ def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_el
     }
     value["cache"].update(tier=cache_tier)
     value["queue"]["localQueue"] = local_queue
-    value["exposure"].update(openAI=False, openAIAliases=[], mcpToolName=model_id)
+    value["exposure"].update(openAI=False, openAIAliases=[], mcpToolName=model_id.replace("-", "_"))
     spec = ModelDeploymentSpec.model_validate(value)
     qualification = ModelQualification.model_validate(
         {
@@ -110,7 +113,7 @@ def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_el
             "templateRefs": {f"{model_id}.legacy-v1": template_digest},
             "templateCacheTiers": {template_digest: cache_tier},
             "openAIQualified": False,
-            "mcpToolName": model_id,
+            "mcpToolName": model_id.replace("-", "_"),
             "scaleToZeroQualified": False,
             **({**placement_resources, "localQueue": local_queue} if gpu_count == 0 else {}),
         }

@@ -33,7 +33,11 @@ _DNS_LABEL = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 _MODEL_REVISION = re.compile(r"[a-f0-9]{40}|[a-f0-9]{64}|sha256:[a-f0-9]{64}")
 _TOOL_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _REGION = re.compile(r"[a-z][a-z0-9-]{1,31}[a-z0-9]")
-_GPU_CLASS = re.compile(r"[a-z0-9][a-z0-9-]{1,126}[a-z0-9]")
+# Deployment-runtime records preserve the platform's canonical accelerator
+# class (for example ``NVIDIA-H100-SXM5-80GB``).  Keep the route projection
+# byte-for-byte equal to that identity instead of forcing a lossy lowercase
+# alias at the last hop.
+_GPU_CLASS = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{1,126}[A-Za-z0-9]")
 _POOL_ID = re.compile(r"[a-z0-9][a-z0-9-]{1,126}[a-z0-9]")
 _STORAGE_MODES = {"provider-block-pvc", "sfs-pvc", "local-nvme", "ephemeral-emptydir"}
 _MAX_BYTES = 64 * 1024
@@ -218,7 +222,18 @@ def bind_lean_routes(
         if not isinstance(runtime_digest, str) or _DIGEST.fullmatch(runtime_digest) is None:
             raise LeanRouteError("lean route runtime image is not digest-pinned")
         variant_id = route["variant_id"]
-        if variant_id is None:
+        deployment_runtime = (
+            base.qualification.get("deployment_runtime") if isinstance(base.qualification, Mapping) else None
+        )
+        if deployment_runtime is not None:
+            if (
+                not isinstance(deployment_runtime, Mapping)
+                or variant_id != base.qualification.get("variant_id")
+                or deployment_runtime.get("model_revision") != revision
+                or deployment_runtime.get("runtime_image_digest") != runtime_digest
+            ):
+                raise LeanRouteError("lean route differs from its selected deployment runtime")
+        elif variant_id is None:
             if revision != base.model_revision:
                 raise LeanRouteError("lean route model revision differs from the canonical catalog")
             if runtime_digest != base.runtime_image_digest:
@@ -249,18 +264,6 @@ def bind_lean_routes(
                 or promotion["route_exposed"] is not False
             ):
                 raise LeanRouteError("lean route differs from its exact qualified variant")
-
-        deployment_runtime = (
-            base.qualification.get("deployment_runtime") if isinstance(base.qualification, Mapping) else None
-        )
-        if deployment_runtime is not None:
-            if (
-                not isinstance(deployment_runtime, Mapping)
-                or route["variant_id"] != base.qualification.get("variant_id")
-                or deployment_runtime.get("model_revision") != revision
-                or deployment_runtime.get("runtime_image_digest") != runtime_digest
-            ):
-                raise LeanRouteError("lean route differs from its selected deployment runtime")
 
         service = _exact(route["service"], {"namespace", "name", "port"}, "lean route service")
         namespace = service["namespace"]

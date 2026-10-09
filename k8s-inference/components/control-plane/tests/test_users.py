@@ -200,7 +200,19 @@ def test_lifecycle_coverage_never_fabricates_shared_idle():
     missing = usage_from_counts({"requests": 2, "lifecycle_subjects": 1, "lifecycle_complete": False, "occupied": 20})
     assert missing.scheduler_occupied_gpu_seconds.value is None
     complete = usage_from_counts(
-        {"requests": 2, "lifecycle_subjects": 2, "lifecycle_complete": True, "occupied": 20, "active": 12, "idle": 8}
+        {
+            "requests": 2,
+            "scientific_requests": 2,
+            "lifecycle_subjects": 2,
+            "lifecycle_operations": 2,
+            "lifecycle_complete": True,
+            "lifecycle_quality": "measured",
+            "phases_complete": True,
+            "occupied": 20,
+            "active": 12,
+            "classified_idle": 8,
+            "unknown": 0,
+        }
     )
     assert complete.scheduler_occupied_gpu_seconds.value == 20
     assert complete.occupied_idle_gpu_seconds.value == 8

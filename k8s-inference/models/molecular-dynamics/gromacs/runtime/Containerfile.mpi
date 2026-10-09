@@ -1,0 +1,86 @@
+# Separate upstream CUDA-aware MPI build. This is not NVIDIA's NGC binary.
+ARG CUDA_BUILD_IMAGE=nvidia/cuda:13.0.2-devel-ubuntu22.04@sha256:1c517d4fb96528c8999e14e6e6b16d7e2ff9ae8d194fd788d60fdc88e693e982
+ARG MPI_ENGINE_IMAGE=build
+FROM ${CUDA_BUILD_IMAGE} AS build
+ARG BUILD_JOBS=16
+ARG GROMACS_REVISION=da9e013175bae98b31b34384f6b4864ff29f65a5
+ARG UCX_REVISION=e4636149592d5a435c2c911fe7727444a13bfa2e
+ARG OPENMPI_VERSION=5.0.8
+RUN apt-get update && apt-get install --yes --no-install-recommends \
+      build-essential gcc-12 g++-12 gfortran-12 git ca-certificates curl \
+      autoconf automake libtool pkg-config libnuma-dev libibverbs-dev librdmacm-dev \
+      libhwloc-dev libevent-dev libfftw3-dev python3 python3-pip \
+    && python3 -m pip install --no-cache-dir cmake==3.31.6 ninja==1.11.1.4 \
+    && rm -rf /var/lib/apt/lists/*
+RUN git init /src/ucx && cd /src/ucx \
+    && git remote add origin https://github.com/openucx/ucx.git \
+    && git fetch --depth 1 origin "${UCX_REVISION}" && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "${UCX_REVISION}" \
+    && ./autogen.sh \
+    && ./configure --prefix=/opt/ucx --with-cuda=/usr/local/cuda \
+         --enable-mt --disable-java --disable-go --without-rocm CC=gcc-12 CXX=g++-12 \
+    && make -j"${BUILD_JOBS}" && make install
+# Open MPI's release archive includes its pinned PMIx/PRRTE dependencies.
+# The download is verified against the versioned upstream published checksum.
+ARG OPENMPI_SHA256=f891ddf2dab3b604f2521d0569615bc1c07a1ac86a295ac543e059aecb303621
+RUN test -n "${OPENMPI_SHA256}" \
+    && curl -fsSL "https://download.open-mpi.org/release/open-mpi/v5.0/openmpi-${OPENMPI_VERSION}.tar.gz" -o /src/openmpi.tar.gz \
+    && echo "${OPENMPI_SHA256}  /src/openmpi.tar.gz" | sha256sum -c - \
+    && tar -xzf /src/openmpi.tar.gz -C /src \
+    && cd "/src/openmpi-${OPENMPI_VERSION}" \
+    && ./configure --prefix=/opt/ompi --with-cuda=/usr/local/cuda --with-ucx=/opt/ucx \
+         --with-pmix=internal --with-prrte=internal --disable-mpi-fortran \
+         CC=gcc-12 CXX=g++-12 \
+    && make -j"${BUILD_JOBS}" && make install
+ENV PATH=/opt/ompi/bin:/opt/ucx/bin:${PATH} \
+    LD_LIBRARY_PATH=/opt/ompi/lib:/opt/ucx/lib:${LD_LIBRARY_PATH}
+RUN git init /src/gromacs && cd /src/gromacs \
+    && git remote add origin https://gitlab.com/gromacs/gromacs.git \
+    && git fetch --depth 1 origin "${GROMACS_REVISION}" && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "${GROMACS_REVISION}" \
+    && cmake -S . -B /build/gromacs -G Ninja \
+         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/gromacs-mpi \
+         -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 \
+         -DGMX_MPI=ON -DGMX_GPU=CUDA -DGMX_SIMD=AVX2_256 \
+         -DGMX_CUDA_TARGET_SM="80;86;89;90;100;120" -DGMX_CUDA_TARGET_COMPUTE="90;100;120" \
+         -DGMX_USE_COLVARS=internal -DGMX_USE_PLUMED=ON \
+         -DGMX_BUILD_UNITTESTS=ON -DGMXAPI=OFF -DGMX_INSTALL_NBLIB_API=OFF \
+    && cmake --build /build/gromacs -j "${BUILD_JOBS}" \
+    && cmake --install /build/gromacs \
+    && mkdir -p /opt/gromacs-mpi/share/fs2-provenance \
+    && cp COPYING* /opt/gromacs-mpi/share/fs2-provenance/ \
+    && git rev-parse HEAD > /opt/gromacs-mpi/share/fs2-provenance/source-revision
+
+# CI can reuse an immutable image produced by --target build. Default builds
+# remain self-contained; never pass a mutable engine tag for a release.
+FROM ${MPI_ENGINE_IMAGE} AS engine
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs-ngc@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.title="Scientific AI GROMACS 2026.2 external-MPI CUDA worker" \
+      org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
+      org.opencontainers.image.revision=${SOURCE_REVISION}
+COPY --from=engine /opt/ucx /opt/ucx
+COPY --from=engine /opt/ompi /opt/ompi
+COPY --from=engine /opt/gromacs-mpi /opt/gromacs-mpi
+ENV PATH=/opt/gromacs-mpi/bin:/opt/ompi/bin:/opt/ucx/bin:${PATH} \
+    LD_LIBRARY_PATH=/opt/gromacs-mpi/lib:/opt/ompi/lib:/opt/ucx/lib:${LD_LIBRARY_PATH} \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/opt/fs2/gromacs \
+    FS2_GROMACS_BINARY=/opt/gromacs-mpi/bin/gmx_mpi \
+    FS2_GROMACS_ENGINE_ID=gromacs/2026.2@da9e013175bae98b31b34384f6b4864ff29f65a5 \
+    OMP_NUM_THREADS=8
+COPY requirements-mpi.lock /opt/fs2/requirements.lock
+RUN apt-get update && apt-get install --yes --no-install-recommends \
+      python3 python3-pip python-is-python3 openssh-server openssh-client \
+      libfftw3-single3 libhwloc15 libevent-2.1-7 libevent-core-2.1-7 libevent-pthreads-2.1-7 \
+      libnuma1 libibverbs1 librdmacm1 \
+    && python3 -m pip install --no-cache-dir --require-hashes -r /opt/fs2/requirements.lock \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/fs2 fs2 \
+    && usermod --password '*' fs2 \
+    && mkdir -p /mnt/fs2-scientific /run/sshd \
+    && chown 10001:10001 /mnt/fs2-scientific
+COPY fs2_gromacs /opt/fs2/gromacs/fs2_gromacs
+USER 10001:10001
+WORKDIR /mnt/fs2-scientific
+ENTRYPOINT ["python3", "-m", "fs2_gromacs.worker"]

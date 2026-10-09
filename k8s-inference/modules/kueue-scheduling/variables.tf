@@ -372,6 +372,8 @@ variable "accelerator_node_capacity" {
     memory_mib            = number
     accelerator_count     = number
     ephemeral_storage_mib = optional(number)
+    extended_resources    = optional(map(number), {})
+    node_labels           = optional(map(string), {})
   }))
   default  = {}
   nullable = false
@@ -388,6 +390,23 @@ variable "accelerator_node_capacity" {
       ))
     ])
     error_message = "Accelerator node capacity must name a declared pool and contain positive whole per-node CPU, memory and accelerator units; optional ephemeral storage is nonnegative whole MiB."
+  }
+}
+
+variable "coupled_resource_capacity" {
+  description = "Operator-qualified RDMA bundle capacity per pool. These resources share the accelerator flavor, never a separate resource group. Empty preserves accelerator-only deployments."
+  type        = map(map(number))
+  default     = {}
+  validation {
+    condition = alltrue([
+      for pool_id, resources in var.coupled_resource_capacity :
+      contains(keys(var.pools), pool_id) && alltrue([
+        for name, capacity in resources :
+        can(regex("^rdma[.][a-z0-9.-]+/[a-zA-Z0-9_.-]+$", name)) &&
+        floor(capacity) == capacity && capacity >= 1
+      ])
+    ])
+    error_message = "Coupled capacity must name declared pools and positive whole qualified RDMA resource units."
   }
 }
 

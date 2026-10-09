@@ -1,0 +1,15 @@
+{
+  "schema": "fs2-mindeval-readonly-receipt-collection/v1",
+  "source_summary": "evidence/20260916-final-frozen-r8/summary.json",
+  "source_label": "fs2-final-r8-20260916",
+  "started_at": "2026-09-16T17:55:48.427305+00:00",
+  "finished_at": "2026-09-16T17:56:27.283306+00:00",
+  "jobs": 60,
+  "strict_existing_run_validation_passed": true,
+  "release_acceptance": false,
+  "limitation": "Interrupted observer; this recovers evidence, not frozen-release or complete latency acceptance.",
+  "http_methods": [
+    "GET"
+  ],
+  "failures": []
+}

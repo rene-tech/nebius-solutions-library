@@ -1,0 +1,2030 @@
+{
+  "schema": "fs2-large-artifact-readonly-acceptance/v1",
+  "status": "two-readonly-concurrent-download-cohorts-passed",
+  "started_at": "2026-09-23T19:41:06.908148+00:00",
+  "origin": "https://89.169.99.188",
+  "expected_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+  "source_sha256": "cb2c3849e9c1a0ecb2aa7557ed9b52f69ee523bbb6da46b6cd17c6c3eca54711",
+  "artifacts": [
+    {
+      "id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+      "size": 465681353,
+      "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a"
+    },
+    {
+      "id": "ae654dd5-eaf4-45ba-9c6c-f1207ab46575",
+      "size": 321192501,
+      "sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491"
+    }
+  ],
+  "operation_id": "46ea947b-fecc-4036-9c87-42df6886f1a6",
+  "credentials_or_scientific_bytes_persisted": false,
+  "cohorts": [
+    {
+      "cohort": 1,
+      "started_at": "2026-09-23T19:30:23.529534+00:00",
+      "before": {
+        "at": "2026-09-23T19:30:24.794883+00:00",
+        "pods": [
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+            "uid": "bf697b20-1b08-41e7-80cf-06b5396f75ab",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:22:54Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          },
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+            "uid": "ccd6b4ca-bb65-473f-b68c-41f67817dcca",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:22:22Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          },
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+            "uid": "ac95d905-e51a-470b-845e-92a46bd21463",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:23:24Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        ]
+      },
+      "http_polls": [
+        {
+          "at": "2026-09-23T19:30:24.845342+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.31092639081180096
+        },
+        {
+          "at": "2026-09-23T19:30:25.156286+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.6715501490980387
+        },
+        {
+          "at": "2026-09-23T19:30:27.828037+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.11981731094419956
+        },
+        {
+          "at": "2026-09-23T19:30:27.947884+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.5627579223364592
+        },
+        {
+          "at": "2026-09-23T19:30:30.510817+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.10380987636744976
+        },
+        {
+          "at": "2026-09-23T19:30:30.614653+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.30783548951148987
+        },
+        {
+          "at": "2026-09-23T19:30:32.922633+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.18802477046847343
+        },
+        {
+          "at": "2026-09-23T19:30:33.110686+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.6491419747471809
+        },
+        {
+          "at": "2026-09-23T19:30:35.759978+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.18973906710743904
+        },
+        {
+          "at": "2026-09-23T19:30:35.949742+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.6114815156906843
+        },
+        {
+          "at": "2026-09-23T19:30:38.561356+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.10019235126674175
+        },
+        {
+          "at": "2026-09-23T19:30:38.661574+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.44456026516854763
+        },
+        {
+          "at": "2026-09-23T19:30:41.106339+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.10051227919757366
+        },
+        {
+          "at": "2026-09-23T19:30:41.206881+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.39687432162463665
+        },
+        {
+          "at": "2026-09-23T19:30:43.603909+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.20481122843921185
+        },
+        {
+          "at": "2026-09-23T19:30:43.808799+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.3507068585604429
+        },
+        {
+          "at": "2026-09-23T19:30:46.159668+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.1465954352170229
+        },
+        {
+          "at": "2026-09-23T19:30:46.306290+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.5435383580625057
+        },
+        {
+          "at": "2026-09-23T19:30:48.849987+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.10499302670359612
+        },
+        {
+          "at": "2026-09-23T19:30:48.955011+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.44788306951522827
+        }
+      ],
+      "memory_samples": [
+        {
+          "at": "2026-09-23T19:30:25.641385+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:30:01Z",
+              "window": "10.108s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "240076Ki",
+                  "memory_bytes": 245837824,
+                  "cpu": "153320142n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:30:03Z",
+              "window": "16.165s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "236560Ki",
+                  "memory_bytes": 242237440,
+                  "cpu": "165129353n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:30:09Z",
+              "window": "13.676s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "235800Ki",
+                  "memory_bytes": 241459200,
+                  "cpu": "112737642n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:30:31.489292+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:30:01Z",
+              "window": "10.108s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "240076Ki",
+                  "memory_bytes": 245837824,
+                  "cpu": "153320142n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:30:03Z",
+              "window": "16.165s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "236560Ki",
+                  "memory_bytes": 242237440,
+                  "cpu": "165129353n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:30:09Z",
+              "window": "13.676s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "235800Ki",
+                  "memory_bytes": 241459200,
+                  "cpu": "112737642n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:30:37.331576+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:30:20Z",
+              "window": "18.959s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "240928Ki",
+                  "memory_bytes": 246710272,
+                  "cpu": "162314257n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:30:15Z",
+              "window": "12.636s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "239692Ki",
+                  "memory_bytes": 245444608,
+                  "cpu": "165418961n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:30:22Z",
+              "window": "13.494s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "236748Ki",
+                  "memory_bytes": 242429952,
+                  "cpu": "200328812n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:30:43.163722+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:30:20Z",
+              "window": "18.959s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "240928Ki",
+                  "memory_bytes": 246710272,
+                  "cpu": "162314257n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:30:15Z",
+              "window": "12.636s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "239692Ki",
+                  "memory_bytes": 245444608,
+                  "cpu": "165418961n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:30:22Z",
+              "window": "13.494s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "236748Ki",
+                  "memory_bytes": 242429952,
+                  "cpu": "200328812n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:30:48.980079+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:30:20Z",
+              "window": "18.959s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "240928Ki",
+                  "memory_bytes": 246710272,
+                  "cpu": "162314257n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:30:15Z",
+              "window": "12.636s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "239692Ki",
+                  "memory_bytes": 245444608,
+                  "cpu": "165418961n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:30:22Z",
+              "window": "13.494s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "236748Ki",
+                  "memory_bytes": 242429952,
+                  "cpu": "200328812n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:41:11.366897+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:40:53Z",
+              "window": "19.226s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242800Ki",
+                  "memory_bytes": 248627200,
+                  "cpu": "189685217n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:40:45Z",
+              "window": "10.9s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242368Ki",
+                  "memory_bytes": 248184832,
+                  "cpu": "151881192n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:40:48Z",
+              "window": "10.05s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242576Ki",
+                  "memory_bytes": 248397824,
+                  "cpu": "139598805n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        }
+      ],
+      "partial": {
+        "artifact": {
+          "id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+          "size": 465681353,
+          "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a"
+        },
+        "request_id": "9a78525c-1c2b-4aa0-a411-4df1c94ca766",
+        "mode": "intentional-partial-close",
+        "started_at": "2026-09-23T19:30:24.795847+00:00",
+        "received_bytes": 1048576,
+        "verified": false,
+        "scientific_bytes_retained": false,
+        "http_status": 200,
+        "first_byte_at": "2026-09-23T19:30:26.069465+00:00",
+        "intentional_close": true,
+        "observed_sha256": "08bb99f3c8ffc68432a037bbf5a6ee9fa4aa85d30aaf64e57b895286a8ceb9f9",
+        "finished_at": "2026-09-23T19:30:26.543389+00:00",
+        "wall_seconds": 1.7475312259048223
+      },
+      "full_downloads": [
+        {
+          "artifact": {
+            "id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+            "size": 465681353,
+            "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a"
+          },
+          "request_id": "3f15ccab-aacf-42ec-afb8-d2a86dc19647",
+          "mode": "full-stream-retry",
+          "started_at": "2026-09-23T19:30:26.544233+00:00",
+          "received_bytes": 465681353,
+          "verified": true,
+          "scientific_bytes_retained": false,
+          "http_status": 200,
+          "first_byte_at": "2026-09-23T19:30:27.512197+00:00",
+          "observed_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+          "finished_at": "2026-09-23T19:30:40.324131+00:00",
+          "wall_seconds": 13.779867921024561
+        },
+        {
+          "artifact": {
+            "id": "ae654dd5-eaf4-45ba-9c6c-f1207ab46575",
+            "size": 321192501,
+            "sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491"
+          },
+          "request_id": "0237f8a3-e574-45b9-8086-c8c59627a7da",
+          "mode": "full-stream-retry",
+          "started_at": "2026-09-23T19:30:26.544571+00:00",
+          "received_bytes": 321192501,
+          "verified": true,
+          "scientific_bytes_retained": false,
+          "http_status": 200,
+          "first_byte_at": "2026-09-23T19:30:27.402709+00:00",
+          "observed_sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+          "finished_at": "2026-09-23T19:30:36.396251+00:00",
+          "wall_seconds": 9.8516690377146
+        }
+      ],
+      "after": {
+        "at": "2026-09-23T19:30:51.464667+00:00",
+        "pods": [
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+            "uid": "bf697b20-1b08-41e7-80cf-06b5396f75ab",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:22:54Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          },
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+            "uid": "ccd6b4ca-bb65-473f-b68c-41f67817dcca",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:22:22Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          },
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+            "uid": "ac95d905-e51a-470b-845e-92a46bd21463",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:23:24Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        ]
+      },
+      "restart_check": {
+        "same_pod_container_identities": true,
+        "deltas": [
+          {
+            "pod_uid": "bf697b20-1b08-41e7-80cf-06b5396f75ab",
+            "container": "control-plane",
+            "restart_delta": 0
+          },
+          {
+            "pod_uid": "ccd6b4ca-bb65-473f-b68c-41f67817dcca",
+            "container": "control-plane",
+            "restart_delta": 0
+          },
+          {
+            "pod_uid": "ac95d905-e51a-470b-845e-92a46bd21463",
+            "container": "control-plane",
+            "restart_delta": 0
+          }
+        ]
+      },
+      "debug": {
+        "requested_rows": 3,
+        "found_rows": 3,
+        "owned_target_rows_in_window": 3,
+        "rows": [
+          {
+            "id": "ca265c7f-b080-4393-b91c-e8c59d5edea0",
+            "request_id": "8c26e496-a167-498c-9a98-824111c55549",
+            "tenant_id": "md-qualification-20260923",
+            "principal_id": "md-test",
+            "endpoint": "/v1/artifacts/86972296-08dc-4c1c-bba1-343af36b14c6/content",
+            "http_status": 200,
+            "started_at": "2026-09-23T19:30:25.163911Z",
+            "completed_at": "2026-09-23T19:30:26.668191Z",
+            "disconnected": true,
+            "client_request_id": "9a78525c-1c2b-4aa0-a411-4df1c94ca766",
+            "correlation": {
+              "method": "legacy-unique-owner-artifact-server-start-within-client-interval",
+              "unique_owned_target_candidates": 1,
+              "client_started_at": "2026-09-23T19:30:24.795847+00:00",
+              "client_finished_at": "2026-09-23T19:30:26.543389+00:00",
+              "client_qualification_id": null
+            },
+            "response_body_metadata": {
+              "capture_mode": "artifact_reference",
+              "observed_bytes": 25165824,
+              "complete": false,
+              "artifact_reference": {
+                "artifact_id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+                "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+                "size_bytes": 465681353,
+                "observed_sha256": "653a818814d6c7a07b73fd33a5bfd83cacf0b2569e40d19b43c7734b67c43747",
+                "delivered_bytes": 25165824,
+                "verified": false
+              }
+            },
+            "body_data_character_count": 163,
+            "headers_query_body_and_error_text_exported": false
+          },
+          {
+            "id": "a3578ebc-7d67-4a4e-a90e-4894d80c3b69",
+            "request_id": "c37fb1c8-1a26-4999-94e9-00cc36589e70",
+            "tenant_id": "md-qualification-20260923",
+            "principal_id": "md-test",
+            "endpoint": "/v1/artifacts/86972296-08dc-4c1c-bba1-343af36b14c6/content",
+            "http_status": 200,
+            "started_at": "2026-09-23T19:30:26.815975Z",
+            "completed_at": "2026-09-23T19:30:40.054955Z",
+            "disconnected": true,
+            "client_request_id": "3f15ccab-aacf-42ec-afb8-d2a86dc19647",
+            "correlation": {
+              "method": "legacy-unique-owner-artifact-server-start-within-client-interval",
+              "unique_owned_target_candidates": 1,
+              "client_started_at": "2026-09-23T19:30:26.544233+00:00",
+              "client_finished_at": "2026-09-23T19:30:40.324131+00:00",
+              "client_qualification_id": null
+            },
+            "response_body_metadata": {
+              "capture_mode": "artifact_reference",
+              "observed_bytes": 465681353,
+              "complete": true,
+              "artifact_reference": {
+                "artifact_id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+                "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+                "size_bytes": 465681353,
+                "observed_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+                "delivered_bytes": 465681353,
+                "verified": true
+              }
+            },
+            "body_data_character_count": 163,
+            "headers_query_body_and_error_text_exported": false
+          },
+          {
+            "id": "a168f09f-d806-427e-a250-a16bf3e69463",
+            "request_id": "e2ef9f31-a4af-4bb6-a726-ea69409dda91",
+            "tenant_id": "md-qualification-20260923",
+            "principal_id": "md-test",
+            "endpoint": "/v1/artifacts/ae654dd5-eaf4-45ba-9c6c-f1207ab46575/content",
+            "http_status": 200,
+            "started_at": "2026-09-23T19:30:26.804211Z",
+            "completed_at": "2026-09-23T19:30:36.129791Z",
+            "disconnected": true,
+            "client_request_id": "0237f8a3-e574-45b9-8086-c8c59627a7da",
+            "correlation": {
+              "method": "legacy-unique-owner-artifact-server-start-within-client-interval",
+              "unique_owned_target_candidates": 1,
+              "client_started_at": "2026-09-23T19:30:26.544571+00:00",
+              "client_finished_at": "2026-09-23T19:30:36.396251+00:00",
+              "client_qualification_id": null
+            },
+            "response_body_metadata": {
+              "capture_mode": "artifact_reference",
+              "observed_bytes": 321192501,
+              "complete": true,
+              "artifact_reference": {
+                "artifact_id": "ae654dd5-eaf4-45ba-9c6c-f1207ab46575",
+                "sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+                "size_bytes": 321192501,
+                "observed_sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+                "delivered_bytes": 321192501,
+                "verified": true
+              }
+            },
+            "body_data_character_count": 163,
+            "headers_query_body_and_error_text_exported": false
+          }
+        ],
+        "list_pages_inspected": 1,
+        "request_start_window": {
+          "from": "2026-09-23T19:30:23.529534+00:00",
+          "to": "2026-09-23T19:30:41.324131+00:00"
+        }
+      },
+      "debug_passed": true,
+      "passed": true,
+      "prior_debug_lookup": {
+        "requested_rows": 3,
+        "found_rows": 0,
+        "rows": []
+      },
+      "metadata_rechecked_at": "2026-09-23T19:41:10.530318+00:00",
+      "memory_recheck_scope": "Fresh after-sample is a later metadata reconciliation, not contemporaneous transfer peak memory. Original sampled timestamps are retained.",
+      "memory_after": {
+        "at": "2026-09-23T19:41:11.366897+00:00",
+        "metrics": [
+          {
+            "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+            "timestamp": "2026-09-23T19:40:53Z",
+            "window": "19.226s",
+            "containers": [
+              {
+                "name": "control-plane",
+                "memory": "242800Ki",
+                "memory_bytes": 248627200,
+                "cpu": "189685217n"
+              }
+            ]
+          },
+          {
+            "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+            "timestamp": "2026-09-23T19:40:45Z",
+            "window": "10.9s",
+            "containers": [
+              {
+                "name": "control-plane",
+                "memory": "242368Ki",
+                "memory_bytes": 248184832,
+                "cpu": "151881192n"
+              }
+            ]
+          },
+          {
+            "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+            "timestamp": "2026-09-23T19:40:48Z",
+            "window": "10.05s",
+            "containers": [
+              {
+                "name": "control-plane",
+                "memory": "242576Ki",
+                "memory_bytes": 248397824,
+                "cpu": "139598805n"
+              }
+            ]
+          }
+        ],
+        "scope": "metrics-server sampled container memory; not a continuously measured peak"
+      },
+      "memory_after_fresh": true
+    },
+    {
+      "cohort": 2,
+      "started_at": "2026-09-23T19:41:11.368074+00:00",
+      "before": {
+        "at": "2026-09-23T19:41:12.487674+00:00",
+        "pods": [
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+            "uid": "bf697b20-1b08-41e7-80cf-06b5396f75ab",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:22:54Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          },
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+            "uid": "ccd6b4ca-bb65-473f-b68c-41f67817dcca",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:22:22Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          },
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+            "uid": "ac95d905-e51a-470b-845e-92a46bd21463",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:23:24Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        ]
+      },
+      "http_polls": [
+        {
+          "at": "2026-09-23T19:41:12.521886+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.3864682912826538
+        },
+        {
+          "at": "2026-09-23T19:41:12.908374+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.5382005609571934
+        },
+        {
+          "at": "2026-09-23T19:41:15.446734+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.15237382613122463
+        },
+        {
+          "at": "2026-09-23T19:41:15.599138+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.6140436958521605
+        },
+        {
+          "at": "2026-09-23T19:41:18.213314+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.1036315243691206
+        },
+        {
+          "at": "2026-09-23T19:41:18.316960+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.4000315871089697
+        },
+        {
+          "at": "2026-09-23T19:41:20.717262+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.1852587591856718
+        },
+        {
+          "at": "2026-09-23T19:41:20.902552+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.4102203790098429
+        },
+        {
+          "at": "2026-09-23T19:41:23.313032+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.10303264483809471
+        },
+        {
+          "at": "2026-09-23T19:41:23.416092+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.41025929898023605
+        },
+        {
+          "at": "2026-09-23T19:41:25.826554+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.12665004841983318
+        },
+        {
+          "at": "2026-09-23T19:41:25.953236+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.3622837644070387
+        },
+        {
+          "at": "2026-09-23T19:41:28.315720+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.1250853557139635
+        },
+        {
+          "at": "2026-09-23T19:41:28.440836+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.6165327839553356
+        },
+        {
+          "at": "2026-09-23T19:41:31.057573+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.24363652244210243
+        },
+        {
+          "at": "2026-09-23T19:41:31.301240+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.5022084098309278
+        },
+        {
+          "at": "2026-09-23T19:41:33.803611+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.09474479407072067
+        },
+        {
+          "at": "2026-09-23T19:41:33.898381+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.31510901637375355
+        },
+        {
+          "at": "2026-09-23T19:41:36.213636+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.13173956982791424
+        },
+        {
+          "at": "2026-09-23T19:41:36.345400+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.38190830312669277
+        },
+        {
+          "at": "2026-09-23T19:41:38.727465+00:00",
+          "endpoint": "/readyz",
+          "http_status": 200,
+          "observed_status": "ready",
+          "passed": true,
+          "latency_seconds": 0.17569290660321712
+        },
+        {
+          "at": "2026-09-23T19:41:38.903180+00:00",
+          "endpoint": "/v1/operations/46ea947b-fecc-4036-9c87-42df6886f1a6",
+          "http_status": 200,
+          "observed_status": "succeeded",
+          "passed": true,
+          "latency_seconds": 0.3472695183008909
+        }
+      ],
+      "memory_samples": [
+        {
+          "at": "2026-09-23T19:41:13.332432+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:40:53Z",
+              "window": "19.226s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242800Ki",
+                  "memory_bytes": 248627200,
+                  "cpu": "189685217n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:40:45Z",
+              "window": "10.9s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242368Ki",
+                  "memory_bytes": 248184832,
+                  "cpu": "151881192n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:40:48Z",
+              "window": "10.05s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242576Ki",
+                  "memory_bytes": 248397824,
+                  "cpu": "139598805n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:41:19.266148+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:40:53Z",
+              "window": "19.226s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242800Ki",
+                  "memory_bytes": 248627200,
+                  "cpu": "189685217n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:40:45Z",
+              "window": "10.9s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242368Ki",
+                  "memory_bytes": 248184832,
+                  "cpu": "151881192n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:40:48Z",
+              "window": "10.05s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242576Ki",
+                  "memory_bytes": 248397824,
+                  "cpu": "139598805n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:41:25.110230+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:40:53Z",
+              "window": "19.226s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242800Ki",
+                  "memory_bytes": 248627200,
+                  "cpu": "189685217n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:41:02Z",
+              "window": "16.307s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242576Ki",
+                  "memory_bytes": 248397824,
+                  "cpu": "170466118n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:41:08Z",
+              "window": "19.911s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "243152Ki",
+                  "memory_bytes": 248987648,
+                  "cpu": "162810958n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:41:31.064851+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:40:53Z",
+              "window": "19.226s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242800Ki",
+                  "memory_bytes": 248627200,
+                  "cpu": "189685217n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:41:02Z",
+              "window": "16.307s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242576Ki",
+                  "memory_bytes": 248397824,
+                  "cpu": "170466118n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:41:08Z",
+              "window": "19.911s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "243152Ki",
+                  "memory_bytes": 248987648,
+                  "cpu": "162810958n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:41:36.919659+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:41:24Z",
+              "window": "31.058s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "270444Ki",
+                  "memory_bytes": 276934656,
+                  "cpu": "191192864n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:41:19Z",
+              "window": "17.618s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242880Ki",
+                  "memory_bytes": 248709120,
+                  "cpu": "140572425n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:41:18Z",
+              "window": "10.028s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "269212Ki",
+                  "memory_bytes": 275673088,
+                  "cpu": "206764359n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:41:44.659017+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:41:24Z",
+              "window": "31.058s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "270444Ki",
+                  "memory_bytes": 276934656,
+                  "cpu": "191192864n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:41:19Z",
+              "window": "17.618s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242880Ki",
+                  "memory_bytes": 248709120,
+                  "cpu": "140572425n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:41:18Z",
+              "window": "10.028s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "269212Ki",
+                  "memory_bytes": 275673088,
+                  "cpu": "206764359n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:41:50.568630+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:41:39Z",
+              "window": "15.243s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242748Ki",
+                  "memory_bytes": 248573952,
+                  "cpu": "250517811n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:41:30Z",
+              "window": "10.94s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242588Ki",
+                  "memory_bytes": 248410112,
+                  "cpu": "245898811n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:41:35Z",
+              "window": "16.752s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "243112Ki",
+                  "memory_bytes": 248946688,
+                  "cpu": "210779429n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:41:56.461454+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:41:39Z",
+              "window": "15.243s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242748Ki",
+                  "memory_bytes": 248573952,
+                  "cpu": "250517811n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:41:30Z",
+              "window": "10.94s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242588Ki",
+                  "memory_bytes": 248410112,
+                  "cpu": "245898811n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:41:35Z",
+              "window": "16.752s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "243112Ki",
+                  "memory_bytes": 248946688,
+                  "cpu": "210779429n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:42:02.359722+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:41:39Z",
+              "window": "15.243s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242748Ki",
+                  "memory_bytes": 248573952,
+                  "cpu": "250517811n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:41:30Z",
+              "window": "10.94s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242588Ki",
+                  "memory_bytes": 248410112,
+                  "cpu": "245898811n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:41:35Z",
+              "window": "16.752s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "243112Ki",
+                  "memory_bytes": 248946688,
+                  "cpu": "210779429n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        },
+        {
+          "at": "2026-09-23T19:42:08.213229+00:00",
+          "metrics": [
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+              "timestamp": "2026-09-23T19:41:56Z",
+              "window": "16.831s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242948Ki",
+                  "memory_bytes": 248778752,
+                  "cpu": "126035351n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+              "timestamp": "2026-09-23T19:41:49Z",
+              "window": "19.023s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "242148Ki",
+                  "memory_bytes": 247959552,
+                  "cpu": "185523208n"
+                }
+              ]
+            },
+            {
+              "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+              "timestamp": "2026-09-23T19:41:50Z",
+              "window": "15.276s",
+              "containers": [
+                {
+                  "name": "control-plane",
+                  "memory": "243232Ki",
+                  "memory_bytes": 249069568,
+                  "cpu": "181454896n"
+                }
+              ]
+            }
+          ],
+          "scope": "metrics-server sampled container memory; not a continuously measured peak"
+        }
+      ],
+      "partial": {
+        "artifact": {
+          "id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+          "size": 465681353,
+          "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a"
+        },
+        "request_id": "1605fe39-5440-4a8f-9d6d-f315820029a9",
+        "qualification_id": "1605fe39-5440-4a8f-9d6d-f315820029a9",
+        "mode": "intentional-partial-close",
+        "started_at": "2026-09-23T19:41:12.488530+00:00",
+        "received_bytes": 1048576,
+        "verified": false,
+        "scientific_bytes_retained": false,
+        "http_status": 200,
+        "first_byte_at": "2026-09-23T19:41:13.662013+00:00",
+        "intentional_close": true,
+        "observed_sha256": "08bb99f3c8ffc68432a037bbf5a6ee9fa4aa85d30aaf64e57b895286a8ceb9f9",
+        "finished_at": "2026-09-23T19:41:14.031606+00:00",
+        "wall_seconds": 1.543065931648016
+      },
+      "full_downloads": [
+        {
+          "artifact": {
+            "id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+            "size": 465681353,
+            "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a"
+          },
+          "request_id": "cb3b2caa-f4cb-4a76-a34d-96cd06922eb1",
+          "qualification_id": "cb3b2caa-f4cb-4a76-a34d-96cd06922eb1",
+          "mode": "full-stream-retry",
+          "started_at": "2026-09-23T19:41:14.032075+00:00",
+          "received_bytes": 465681353,
+          "verified": true,
+          "scientific_bytes_retained": false,
+          "http_status": 200,
+          "first_byte_at": "2026-09-23T19:41:14.872134+00:00",
+          "observed_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+          "finished_at": "2026-09-23T19:41:30.333113+00:00",
+          "wall_seconds": 16.301010977476835
+        },
+        {
+          "artifact": {
+            "id": "ae654dd5-eaf4-45ba-9c6c-f1207ab46575",
+            "size": 321192501,
+            "sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491"
+          },
+          "request_id": "cfc71bae-7cbc-4f89-9348-ca202dc95382",
+          "qualification_id": "cfc71bae-7cbc-4f89-9348-ca202dc95382",
+          "mode": "full-stream-retry",
+          "started_at": "2026-09-23T19:41:14.032691+00:00",
+          "received_bytes": 321192501,
+          "verified": true,
+          "scientific_bytes_retained": false,
+          "http_status": 200,
+          "first_byte_at": "2026-09-23T19:41:15.290653+00:00",
+          "observed_sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+          "finished_at": "2026-09-23T19:41:23.807302+00:00",
+          "wall_seconds": 9.774587910622358
+        }
+      ],
+      "after": {
+        "at": "2026-09-23T19:41:41.519175+00:00",
+        "pods": [
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+            "uid": "bf697b20-1b08-41e7-80cf-06b5396f75ab",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:22:54Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          },
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+            "uid": "ccd6b4ca-bb65-473f-b68c-41f67817dcca",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:22:22Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          },
+          {
+            "name": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+            "uid": "ac95d905-e51a-470b-845e-92a46bd21463",
+            "deleting": null,
+            "containers": [
+              {
+                "name": "control-plane",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "resources": {
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "name": "control-plane",
+                "ready": true,
+                "restartCount": 0,
+                "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+                "state": {
+                  "running": {
+                    "startedAt": "2026-09-23T19:23:24Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        ]
+      },
+      "restart_check": {
+        "same_pod_container_identities": true,
+        "deltas": [
+          {
+            "pod_uid": "bf697b20-1b08-41e7-80cf-06b5396f75ab",
+            "container": "control-plane",
+            "restart_delta": 0
+          },
+          {
+            "pod_uid": "ccd6b4ca-bb65-473f-b68c-41f67817dcca",
+            "container": "control-plane",
+            "restart_delta": 0
+          },
+          {
+            "pod_uid": "ac95d905-e51a-470b-845e-92a46bd21463",
+            "container": "control-plane",
+            "restart_delta": 0
+          }
+        ]
+      },
+      "debug": {
+        "requested_rows": 3,
+        "found_rows": 3,
+        "owned_target_rows_in_window": 3,
+        "rows": [
+          {
+            "id": "75bed081-8cfd-4f39-9c54-cdcfadfe9b48",
+            "request_id": "e9a1fc3e-8e89-4d61-b0a0-fc1334ded532",
+            "tenant_id": "md-qualification-20260923",
+            "principal_id": "md-test",
+            "endpoint": "/v1/artifacts/86972296-08dc-4c1c-bba1-343af36b14c6/content",
+            "http_status": 200,
+            "started_at": "2026-09-23T19:41:12.761790Z",
+            "completed_at": "2026-09-23T19:41:14.172090Z",
+            "disconnected": true,
+            "client_request_id": "1605fe39-5440-4a8f-9d6d-f315820029a9",
+            "correlation": {
+              "method": "unique-owner-artifact-start-window-and-x-fs2-qualification-id",
+              "unique_owned_target_candidates": 1,
+              "client_started_at": "2026-09-23T19:41:12.488530+00:00",
+              "client_finished_at": "2026-09-23T19:41:14.031606+00:00",
+              "client_qualification_id": "1605fe39-5440-4a8f-9d6d-f315820029a9"
+            },
+            "response_body_metadata": {
+              "capture_mode": "artifact_reference",
+              "observed_bytes": 25165824,
+              "complete": false,
+              "artifact_reference": {
+                "artifact_id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+                "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+                "size_bytes": 465681353,
+                "observed_sha256": "653a818814d6c7a07b73fd33a5bfd83cacf0b2569e40d19b43c7734b67c43747",
+                "delivered_bytes": 25165824,
+                "verified": false
+              }
+            },
+            "body_data_character_count": 163,
+            "headers_query_body_and_error_text_exported": false
+          },
+          {
+            "id": "e67a0262-622d-455e-a070-628394e63174",
+            "request_id": "3e526819-e3bb-469b-a249-a59bab55c1cc",
+            "tenant_id": "md-qualification-20260923",
+            "principal_id": "md-test",
+            "endpoint": "/v1/artifacts/86972296-08dc-4c1c-bba1-343af36b14c6/content",
+            "http_status": 200,
+            "started_at": "2026-09-23T19:41:14.318090Z",
+            "completed_at": "2026-09-23T19:41:29.974012Z",
+            "disconnected": true,
+            "client_request_id": "cb3b2caa-f4cb-4a76-a34d-96cd06922eb1",
+            "correlation": {
+              "method": "unique-owner-artifact-start-window-and-x-fs2-qualification-id",
+              "unique_owned_target_candidates": 1,
+              "client_started_at": "2026-09-23T19:41:14.032075+00:00",
+              "client_finished_at": "2026-09-23T19:41:30.333113+00:00",
+              "client_qualification_id": "cb3b2caa-f4cb-4a76-a34d-96cd06922eb1"
+            },
+            "response_body_metadata": {
+              "capture_mode": "artifact_reference",
+              "observed_bytes": 465681353,
+              "complete": true,
+              "artifact_reference": {
+                "artifact_id": "86972296-08dc-4c1c-bba1-343af36b14c6",
+                "sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+                "size_bytes": 465681353,
+                "observed_sha256": "1534e59c6fca58f4a43e1d80f47823029df30890b2cafdff574339634b42bf2a",
+                "delivered_bytes": 465681353,
+                "verified": true
+              }
+            },
+            "body_data_character_count": 163,
+            "headers_query_body_and_error_text_exported": false
+          },
+          {
+            "id": "c41ab567-d9c6-49b5-bef2-b1ba59a1a26f",
+            "request_id": "58dfcab0-840e-4e73-9d44-b31e338899fb",
+            "tenant_id": "md-qualification-20260923",
+            "principal_id": "md-test",
+            "endpoint": "/v1/artifacts/ae654dd5-eaf4-45ba-9c6c-f1207ab46575/content",
+            "http_status": 200,
+            "started_at": "2026-09-23T19:41:14.296097Z",
+            "completed_at": "2026-09-23T19:41:23.579691Z",
+            "disconnected": true,
+            "client_request_id": "cfc71bae-7cbc-4f89-9348-ca202dc95382",
+            "correlation": {
+              "method": "unique-owner-artifact-start-window-and-x-fs2-qualification-id",
+              "unique_owned_target_candidates": 1,
+              "client_started_at": "2026-09-23T19:41:14.032691+00:00",
+              "client_finished_at": "2026-09-23T19:41:23.807302+00:00",
+              "client_qualification_id": "cfc71bae-7cbc-4f89-9348-ca202dc95382"
+            },
+            "response_body_metadata": {
+              "capture_mode": "artifact_reference",
+              "observed_bytes": 321192501,
+              "complete": true,
+              "artifact_reference": {
+                "artifact_id": "ae654dd5-eaf4-45ba-9c6c-f1207ab46575",
+                "sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+                "size_bytes": 321192501,
+                "observed_sha256": "322c5ccec16e62bd5e130f510bcde29d61e58a7b04ea8be64e6239af81baa491",
+                "delivered_bytes": 321192501,
+                "verified": true
+              }
+            },
+            "body_data_character_count": 163,
+            "headers_query_body_and_error_text_exported": false
+          }
+        ],
+        "list_pages_inspected": 1,
+        "request_start_window": {
+          "from": "2026-09-23T19:41:11.368074+00:00",
+          "to": "2026-09-23T19:41:31.333113+00:00"
+        }
+      },
+      "debug_passed": true,
+      "memory_after": {
+        "at": "2026-09-23T19:42:08.213229+00:00",
+        "metrics": [
+          {
+            "pod": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+            "timestamp": "2026-09-23T19:41:56Z",
+            "window": "16.831s",
+            "containers": [
+              {
+                "name": "control-plane",
+                "memory": "242948Ki",
+                "memory_bytes": 248778752,
+                "cpu": "126035351n"
+              }
+            ]
+          },
+          {
+            "pod": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+            "timestamp": "2026-09-23T19:41:49Z",
+            "window": "19.023s",
+            "containers": [
+              {
+                "name": "control-plane",
+                "memory": "242148Ki",
+                "memory_bytes": 247959552,
+                "cpu": "185523208n"
+              }
+            ]
+          },
+          {
+            "pod": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+            "timestamp": "2026-09-23T19:41:50Z",
+            "window": "15.276s",
+            "containers": [
+              {
+                "name": "control-plane",
+                "memory": "243232Ki",
+                "memory_bytes": 249069568,
+                "cpu": "181454896n"
+              }
+            ]
+          }
+        ],
+        "scope": "metrics-server sampled container memory; not a continuously measured peak"
+      },
+      "memory_after_fresh": true,
+      "passed": true
+    }
+  ],
+  "resumed_from": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/large-artifact-release-01/receipt.json",
+    "sha256": "a67421a39d303c095d677a7340ad587d0780c6c71ad4e1de5005c1d4afc7126c",
+    "scope": "new metadata correlation only; original failed receipt retained; completed downloads are not repeated"
+  },
+  "finished_at": "2026-09-23T19:42:08.214473+00:00"
+}

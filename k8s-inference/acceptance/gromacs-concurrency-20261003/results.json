@@ -1,0 +1,1718 @@
+{
+  "schema": "fs2-internal-gromacs-concurrency-evidence/v1",
+  "tenant": "system",
+  "principal": "qa",
+  "requested_concurrency": 16,
+  "cohorts": {
+    "cohort-1": 16,
+    "cohort-2": 16
+  },
+  "validated_requests": 32,
+  "validation_failures": [],
+  "peak_running_gpu_claims": 13,
+  "peak_observed_gromacs_devices": 13,
+  "api_probes": 208,
+  "api_probe_errors": [],
+  "api_probe_p50_seconds": 0.3477381765842438,
+  "api_probe_max_seconds": 2.3906800523400307,
+  "observed_pool_scale": {
+    "l40s-1x": {
+      "first_seen_ready_nodes": 8,
+      "max_ready_nodes": 14
+    },
+    "h100-ondemand-1x": {
+      "first_seen_ready_nodes": 8,
+      "max_ready_nodes": 8
+    },
+    "h100-1x": {
+      "first_seen_ready_nodes": 0,
+      "max_ready_nodes": 0
+    },
+    "wan2-h200-1x": {
+      "first_seen_ready_nodes": 2,
+      "max_ready_nodes": 2
+    },
+    "h100-reserved-8x": {
+      "first_seen_ready_nodes": 2,
+      "max_ready_nodes": 2
+    },
+    "l40s-4x": {
+      "first_seen_ready_nodes": 1,
+      "max_ready_nodes": 1
+    }
+  },
+  "internal_key_policy_restored": true,
+  "fixture_notes": [
+    "NVT energy extraction asks for Density but the native fixed-volume NVT energy record has no Density column; the diagnostic is retained and NVT density is not invented.",
+    "The 20 ps equilibration + 1 ns production fixture qualifies execution and artifact integrity, not scientific ensemble convergence.",
+    "Container start, GPU process overlap, API acceptance and completed MD throughput are different measurements."
+  ],
+  "results": [
+    {
+      "run": "cohort-1/request-01",
+      "operation_id": "bc3521bd-bb5c-44f6-91e2-138e57fffae2",
+      "workload_id": "173bc7d4-6f36-5562-a396-a3274b6f6cdb",
+      "accepted_at": "2026-10-03T10:06:30.374878Z",
+      "completed_at": "2026-10-03T10:13:07.127156Z",
+      "admission_to_terminal_seconds": 396.752278,
+      "submit_seconds": 1.9303846824914217,
+      "submit_http_status": 202,
+      "input_sha256": "fe560530a001e833fc7a9a284f10a9e2aa93ff8516386b05d17135f65a4bc2b7",
+      "production_seed": 20261108,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 748.528,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "21df3462f550b0e3f12d3c372b41cadf5345b443ceb785129c8664f93daa24fd",
+      "artifact_count": 57,
+      "artifact_bytes": 20327930,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85865.32254466666,
+          "total_energy_kj_mol": -69549.81175585714,
+          "temperature_K": 297.18384157142856,
+          "pressure_bar": -529.4571753333333
+        },
+        "npt": {
+          "potential_kj_mol": -85860.53794642857,
+          "total_energy_kj_mol": -69399.63318457143,
+          "temperature_K": 299.8321692857143,
+          "pressure_bar": -456.88012885714284,
+          "density_kg_m3": 813.4870692857143
+        },
+        "production": {
+          "potential_kj_mol": -87822.61233296004,
+          "total_energy_kj_mol": -71348.10359172427,
+          "temperature_K": 300.07995784215785,
+          "pressure_bar": 5.028839273726273,
+          "density_kg_m3": 984.441655993007
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-09bb853399e5-llsmc",
+      "node": "computeinstance-e00wet1bnnk38nbxms",
+      "gpu_container_started_at": "2026-10-03T10:09:47Z",
+      "admission_to_gpu_container_seconds": 196.625122
+    },
+    {
+      "run": "cohort-1/request-02",
+      "operation_id": "b7c2811a-bc99-4619-a75c-5ad407d21fd6",
+      "workload_id": "f75aa688-29f1-5740-9d03-aeda07f1784c",
+      "accepted_at": "2026-10-03T10:06:31.286711Z",
+      "completed_at": "2026-10-03T10:12:37.613763Z",
+      "admission_to_terminal_seconds": 366.327052,
+      "submit_seconds": 2.82172142341733,
+      "submit_http_status": 202,
+      "input_sha256": "fbdef6a2418d9339283895e3f5d9d3ea24dce0e18a5696b06cd425323fe15b49",
+      "production_seed": 20261111,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 779.291,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "390ffebc51670f0cae95db6bea62f423dd56d4839e3fd1ec9dac0da7bdb7979c",
+      "artifact_count": 57,
+      "artifact_bytes": 20301681,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85802.45721719047,
+          "total_energy_kj_mol": -69483.86867571429,
+          "temperature_K": 297.239905952381,
+          "pressure_bar": -584.4039132380952
+        },
+        "npt": {
+          "potential_kj_mol": -85882.22693457143,
+          "total_energy_kj_mol": -69262.81212804762,
+          "temperature_K": 302.71939242857144,
+          "pressure_bar": -420.6973,
+          "density_kg_m3": 837.0008923333334
+        },
+        "production": {
+          "potential_kj_mol": -87806.80382118282,
+          "total_energy_kj_mol": -71317.29343313187,
+          "temperature_K": 300.353208978022,
+          "pressure_bar": -18.717344406593405,
+          "density_kg_m3": 983.1943107542457
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-b19dfb73cc19-tx7t7",
+      "node": "computeinstance-e00gsy65zks1mx6dmc",
+      "gpu_container_started_at": "2026-10-03T10:09:19Z",
+      "admission_to_gpu_container_seconds": 167.713289
+    },
+    {
+      "run": "cohort-1/request-03",
+      "operation_id": "1de868d4-5971-4607-99a6-13d2962ebbb4",
+      "workload_id": "50fa759c-ebe8-54a7-b902-852a81b538ad",
+      "accepted_at": "2026-10-03T10:06:30.870071Z",
+      "completed_at": "2026-10-03T10:12:31.308843Z",
+      "admission_to_terminal_seconds": 360.438772,
+      "submit_seconds": 2.6428266800940037,
+      "submit_http_status": 202,
+      "input_sha256": "5af528e43268520cf98bf66afa2fb86d066fdb09c7034d58720e2bd62a40f303",
+      "production_seed": 20261114,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 787.452,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "88144bc70711f9b967fe3740e8292bfae593da4ea6f174805e4f79818c5a784e",
+      "artifact_count": 57,
+      "artifact_bytes": 20381820,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85815.10379471429,
+          "total_energy_kj_mol": -69489.14285709524,
+          "temperature_K": 297.37418185714284,
+          "pressure_bar": -565.2924411904762
+        },
+        "npt": {
+          "potential_kj_mol": -86065.7098214762,
+          "total_energy_kj_mol": -69616.32775290476,
+          "temperature_K": 299.6222910952381,
+          "pressure_bar": -448.9169442857143,
+          "density_kg_m3": 833.6902755238095
+        },
+        "production": {
+          "potential_kj_mol": -87821.68154501398,
+          "total_energy_kj_mol": -71342.956122,
+          "temperature_K": 300.1567636463536,
+          "pressure_bar": 10.524120396603395,
+          "density_kg_m3": 984.6693228681319
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-bb0fcbbc48ff-m746k",
+      "node": "computeinstance-e00gjeqfrq7xrh4cvx",
+      "gpu_container_started_at": "2026-10-03T10:09:16Z",
+      "admission_to_gpu_container_seconds": 165.129929
+    },
+    {
+      "run": "cohort-1/request-04",
+      "operation_id": "d41061cd-a422-4a0c-8f2e-1ce466d3d8fa",
+      "workload_id": "5f03943c-054f-59a3-ad91-87f57b1332a2",
+      "accepted_at": "2026-10-03T10:06:30.613008Z",
+      "completed_at": "2026-10-03T10:10:04.927776Z",
+      "admission_to_terminal_seconds": 214.314768,
+      "submit_seconds": 2.1458310149610043,
+      "submit_http_status": 202,
+      "input_sha256": "30d68bcbce5f9e0a6e2b14e1192fb8f66c4e63e5f10a1b563f2e01d87a6822c2",
+      "production_seed": 20261117,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 777.343,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "2ad96dcaa47845f8a8482abf1b93e0e5a957a699d85e015d5bf1c004324f79a3",
+      "artifact_count": 57,
+      "artifact_bytes": 20308453,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85942.03348214286,
+          "total_energy_kj_mol": -69598.52194933333,
+          "temperature_K": 297.69387666666665,
+          "pressure_bar": -525.3992371904762
+        },
+        "npt": {
+          "potential_kj_mol": -86006.75632452381,
+          "total_energy_kj_mol": -69474.874628,
+          "temperature_K": 301.12501457142855,
+          "pressure_bar": -511.2516580952381,
+          "density_kg_m3": 828.1120952380952
+        },
+        "production": {
+          "potential_kj_mol": -87843.36704700999,
+          "total_energy_kj_mol": -71376.13330419081,
+          "temperature_K": 299.94744583716283,
+          "pressure_bar": -17.51425466933067,
+          "density_kg_m3": 984.520868044955
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-415732c1a7a7-ktb5z",
+      "node": "computeinstance-e00zztqyjdmvvmc516",
+      "gpu_container_started_at": "2026-10-03T10:06:49Z",
+      "admission_to_gpu_container_seconds": 18.386992
+    },
+    {
+      "run": "cohort-1/request-05",
+      "operation_id": "0c1776b1-9898-473e-8592-d53db57a731f",
+      "workload_id": "51e5edd9-f874-5fdf-abda-15de1a4e4ccc",
+      "accepted_at": "2026-10-03T10:06:29.711498Z",
+      "completed_at": "2026-10-03T10:10:00.312329Z",
+      "admission_to_terminal_seconds": 210.600831,
+      "submit_seconds": 1.3180505372583866,
+      "submit_http_status": 202,
+      "input_sha256": "03d7303e14beda78a79ec4ff54e13141a3928df2ba0bd02efd63c70be91f3a2b",
+      "production_seed": 20261120,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 726.805,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "0f7606aa1a248f4ee170a3e884f5eb68e4a403906fe369b5563632d9ca10c280",
+      "artifact_count": 57,
+      "artifact_bytes": 20307522,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85817.75186019047,
+          "total_energy_kj_mol": -69518.08668157143,
+          "temperature_K": 296.8952133809524,
+          "pressure_bar": -634.9805341904762
+        },
+        "npt": {
+          "potential_kj_mol": -85905.95312504761,
+          "total_energy_kj_mol": -69485.59374990476,
+          "temperature_K": 299.09364395238094,
+          "pressure_bar": -442.3320262857143,
+          "density_kg_m3": 823.2692028571429
+        },
+        "production": {
+          "potential_kj_mol": -87856.83169955644,
+          "total_energy_kj_mol": -71387.88171983717,
+          "temperature_K": 299.97870575424577,
+          "pressure_bar": 0.721783368631368,
+          "density_kg_m3": 984.6642615684316
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-33d3994a9897-ttfxt",
+      "node": "computeinstance-e00cjp2bfywsenpzzv",
+      "gpu_container_started_at": "2026-10-03T10:06:38Z",
+      "admission_to_gpu_container_seconds": 8.288502
+    },
+    {
+      "run": "cohort-1/request-06",
+      "operation_id": "32e90d37-60a1-4562-997c-7ec9b3e951e0",
+      "workload_id": "9d523996-2240-507d-a4b5-d92507d4c47d",
+      "accepted_at": "2026-10-03T10:06:30.551042Z",
+      "completed_at": "2026-10-03T10:14:25.058243Z",
+      "admission_to_terminal_seconds": 474.507201,
+      "submit_seconds": 2.0496656484901905,
+      "submit_http_status": 202,
+      "input_sha256": "29f182877da42875d8efffa0679a1c997868741a7f9c86c7fe576674e2877aa7",
+      "production_seed": 20261123,
+      "pool": "h100-reserved-8x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 584.242,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "a6fd099d63aff759afe468460fc6b8d5c7a2e5576db2411b41723305c1943a0e",
+      "artifact_count": 57,
+      "artifact_bytes": 20347904,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86011.36160719048,
+          "total_energy_kj_mol": -69725.89062504761,
+          "temperature_K": 296.6366664761905,
+          "pressure_bar": -578.020520904762
+        },
+        "npt": {
+          "potential_kj_mol": -85942.87425585714,
+          "total_energy_kj_mol": -69408.32142847619,
+          "temperature_K": 301.17365233333334,
+          "pressure_bar": -435.5393514285714,
+          "density_kg_m3": 827.7702403809524
+        },
+        "production": {
+          "potential_kj_mol": -87805.79173172527,
+          "total_energy_kj_mol": -71329.71935096204,
+          "temperature_K": 300.1084392747253,
+          "pressure_bar": -0.8216159320679313,
+          "density_kg_m3": 983.935660947053
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-cb63cd887501-tnvzd",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "gpu_container_started_at": "2026-10-03T10:10:32Z",
+      "admission_to_gpu_container_seconds": 241.448958
+    },
+    {
+      "run": "cohort-1/request-07",
+      "operation_id": "118e93fa-0cd3-498a-95ef-f185697a9fb2",
+      "workload_id": "209566ce-1690-5cc1-b7cb-3f2b4d1c9a7e",
+      "accepted_at": "2026-10-03T10:06:30.048306Z",
+      "completed_at": "2026-10-03T10:09:56.996882Z",
+      "admission_to_terminal_seconds": 206.948576,
+      "submit_seconds": 1.4190829638391733,
+      "submit_http_status": 202,
+      "input_sha256": "3a9e2498bbb2c5a383d5a21f0f6e723d2628d3292cd469b63b24f9400b9ed875",
+      "production_seed": 20261126,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 724.842,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "473b61f9794fff950772b50776bcdf9b3e39f2e3a7cd8202f445833b37acf876",
+      "artifact_count": 57,
+      "artifact_bytes": 20291957,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86003.88839280952,
+          "total_energy_kj_mol": -69788.81547614286,
+          "temperature_K": 295.35439704761905,
+          "pressure_bar": -559.2900041904762
+        },
+        "npt": {
+          "potential_kj_mol": -86029.4441964762,
+          "total_energy_kj_mol": -69525.42373514286,
+          "temperature_K": 300.6175071904762,
+          "pressure_bar": -556.7775356666666,
+          "density_kg_m3": 824.0923693809524
+        },
+        "production": {
+          "potential_kj_mol": -87841.3108375924,
+          "total_energy_kj_mol": -71366.48694274326,
+          "temperature_K": 300.08569506993007,
+          "pressure_bar": -2.5778623006993002,
+          "density_kg_m3": 984.6820714775225
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-272a90826c0a-qps6p",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "gpu_container_started_at": "2026-10-03T10:06:38Z",
+      "admission_to_gpu_container_seconds": 7.951694
+    },
+    {
+      "run": "cohort-1/request-08",
+      "operation_id": "6d3fea22-70a8-445a-8ea1-c2931e6217f5",
+      "workload_id": "26e489ab-b78b-5a7b-bbc3-d062cb13f1de",
+      "accepted_at": "2026-10-03T10:06:30.674900Z",
+      "completed_at": "2026-10-03T10:09:56.209433Z",
+      "admission_to_terminal_seconds": 205.534533,
+      "submit_seconds": 2.4015802685171366,
+      "submit_http_status": 202,
+      "input_sha256": "4d89852b0a2fc4aa5729cc45a9ed89e17112eaa1474eb532ffea60df69710b10",
+      "production_seed": 20261129,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 748.029,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "935505b077236e14d64a63e9571a16ac325fe42b3486c8069a11335ae35146ad",
+      "artifact_count": 57,
+      "artifact_bytes": 20351578,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85821.3139882381,
+          "total_energy_kj_mol": -69547.77232142857,
+          "temperature_K": 296.4193849047619,
+          "pressure_bar": -569.2806091428571
+        },
+        "npt": {
+          "potential_kj_mol": -86219.37462804762,
+          "total_energy_kj_mol": -69740.15252971428,
+          "temperature_K": 300.16581947619045,
+          "pressure_bar": -494.1808958095238,
+          "density_kg_m3": 841.9913475238095
+        },
+        "production": {
+          "potential_kj_mol": -87839.11244223776,
+          "total_energy_kj_mol": -71362.67648757143,
+          "temperature_K": 300.11506356443556,
+          "pressure_bar": -29.414937998002,
+          "density_kg_m3": 984.2793458421578
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-8767d9a2dbbf-f2z97",
+      "node": "computeinstance-e00kqbebd4s7fepqvx",
+      "gpu_container_started_at": "2026-10-03T10:06:40Z",
+      "admission_to_gpu_container_seconds": 9.3251
+    },
+    {
+      "run": "cohort-1/request-09",
+      "operation_id": "144f2c84-9d78-4efd-9493-9880a5f5505a",
+      "workload_id": "dcb62b4a-18a4-5413-80d5-0633cd1c9327",
+      "accepted_at": "2026-10-03T10:06:30.716956Z",
+      "completed_at": "2026-10-03T10:12:29.921737Z",
+      "admission_to_terminal_seconds": 359.204781,
+      "submit_seconds": 2.389752933755517,
+      "submit_http_status": 202,
+      "input_sha256": "36841bc5679c79665728f7a7136a5ab5a44d688181efc41cc139bb840b766ecd",
+      "production_seed": 20261132,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 781.538,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "db7db47ec2bcbab807c7213b49fe32d7615531dd73469d181aba1a6da086318c",
+      "artifact_count": 57,
+      "artifact_bytes": 20319156,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85735.90922609523,
+          "total_energy_kj_mol": -69449.12686009523,
+          "temperature_K": 296.66056461904765,
+          "pressure_bar": -555.0669910952381
+        },
+        "npt": {
+          "potential_kj_mol": -86039.01004466666,
+          "total_energy_kj_mol": -69539.66517861905,
+          "temperature_K": 300.5323297142857,
+          "pressure_bar": -389.15095585714283,
+          "density_kg_m3": 843.3589244285714
+        },
+        "production": {
+          "potential_kj_mol": -87830.03170268731,
+          "total_energy_kj_mol": -71360.69072333266,
+          "temperature_K": 299.985828001998,
+          "pressure_bar": -33.18154336463537,
+          "density_kg_m3": 983.547470949051
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-0fecb94da7d8-l9x8f",
+      "node": "computeinstance-e00sd7nsp4btqa9500",
+      "gpu_container_started_at": "2026-10-03T10:09:14Z",
+      "admission_to_gpu_container_seconds": 163.283044
+    },
+    {
+      "run": "cohort-1/request-10",
+      "operation_id": "decec66d-15d8-4721-b6b6-d309f642c207",
+      "workload_id": "312157c4-9e63-50ab-babe-9d786b425215",
+      "accepted_at": "2026-10-03T10:06:30.109753Z",
+      "completed_at": "2026-10-03T10:09:59.362924Z",
+      "admission_to_terminal_seconds": 209.253171,
+      "submit_seconds": 1.5152111444622278,
+      "submit_http_status": 202,
+      "input_sha256": "d5ba4aa0b50063e8551a44efd299fba70a6380c38b30edcfd7d399592bd4ee34",
+      "production_seed": 20261135,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 721.857,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "ae6e2cfa023a2681be2f8b9d3590b2c5736244971c8b836ba0d971c40b004137",
+      "artifact_count": 57,
+      "artifact_bytes": 20298182,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85655.53757428571,
+          "total_energy_kj_mol": -69341.24479171429,
+          "temperature_K": 297.1616551904762,
+          "pressure_bar": -516.4371539047619
+        },
+        "npt": {
+          "potential_kj_mol": -86189.57291666667,
+          "total_energy_kj_mol": -69783.03125009524,
+          "temperature_K": 298.84193352380953,
+          "pressure_bar": -493.31505985714284,
+          "density_kg_m3": 832.3636969523809
+        },
+        "production": {
+          "potential_kj_mol": -87848.37343905594,
+          "total_energy_kj_mol": -71369.13278128771,
+          "temperature_K": 300.16615044755247,
+          "pressure_bar": 5.270896329670331,
+          "density_kg_m3": 985.2020185584415
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-0d17b7b5520e-6b9fv",
+      "node": "computeinstance-e00rwacqdngp6accx6",
+      "gpu_container_started_at": "2026-10-03T10:06:37Z",
+      "admission_to_gpu_container_seconds": 6.890247
+    },
+    {
+      "run": "cohort-1/request-11",
+      "operation_id": "2b5ef3c9-42a8-4be3-9260-05486dd5f92d",
+      "workload_id": "58026f02-1801-5f69-b0b7-02f9efd99317",
+      "accepted_at": "2026-10-03T10:06:31.074416Z",
+      "completed_at": "2026-10-03T10:12:30.528479Z",
+      "admission_to_terminal_seconds": 359.454063,
+      "submit_seconds": 2.9123789723962545,
+      "submit_http_status": 202,
+      "input_sha256": "35b840e2ac590e340bd91286a81ba3466311a71ddc52d2de4ece4b8511a3670b",
+      "production_seed": 20261138,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 777.705,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "b397e5264ad84b8b592adb02b59f69c5e5c2d0aa7d2539f6799ba85ccc99f567",
+      "artifact_count": 57,
+      "artifact_bytes": 20383723,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85858.82775290476,
+          "total_energy_kj_mol": -69623.56994061905,
+          "temperature_K": 295.7220474761905,
+          "pressure_bar": -609.7180336190477
+        },
+        "npt": {
+          "potential_kj_mol": -85933.81064004762,
+          "total_energy_kj_mol": -69447.09933033334,
+          "temperature_K": 300.3022256666667,
+          "pressure_bar": -385.56956547619046,
+          "density_kg_m3": 830.2357903809524
+        },
+        "production": {
+          "potential_kj_mol": -87830.6995972917,
+          "total_energy_kj_mol": -71345.54824862238,
+          "temperature_K": 300.27381364135863,
+          "pressure_bar": 14.410866934065934,
+          "density_kg_m3": 984.7527761678322
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-38e09fe54a74-tvjw9",
+      "node": "computeinstance-e00jj9k4n6yzc9bzds",
+      "gpu_container_started_at": "2026-10-03T10:09:14Z",
+      "admission_to_gpu_container_seconds": 162.925584
+    },
+    {
+      "run": "cohort-1/request-12",
+      "operation_id": "dc583c0f-98d2-4267-8c65-fa512ace9b85",
+      "workload_id": "3d0cb29b-f669-5525-941d-adc515cb450a",
+      "accepted_at": "2026-10-03T10:06:29.969608Z",
+      "completed_at": "2026-10-03T10:09:49.864469Z",
+      "admission_to_terminal_seconds": 199.894861,
+      "submit_seconds": 1.4133542347699404,
+      "submit_http_status": 202,
+      "input_sha256": "880c69ea4ce6fac0fb5283d11131ff739947293fd8365eb56038898b23d41388",
+      "production_seed": 20261141,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 751.217,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "09413a2a358c030790add50f1264ed87e2878389304df437556bdbcd584883b9",
+      "artifact_count": 57,
+      "artifact_bytes": 20287783,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85891.3716517619,
+          "total_energy_kj_mol": -69551.09188980953,
+          "temperature_K": 297.6350060952381,
+          "pressure_bar": -528.3282289047619
+        },
+        "npt": {
+          "potential_kj_mol": -85905.35007433333,
+          "total_energy_kj_mol": -69373.02120542857,
+          "temperature_K": 301.13314823809526,
+          "pressure_bar": -558.1388907142857,
+          "density_kg_m3": 830.1141269047619
+        },
+        "production": {
+          "potential_kj_mol": -87790.02202487412,
+          "total_energy_kj_mol": -71293.43124063636,
+          "temperature_K": 300.4821757202797,
+          "pressure_bar": -21.910570454545454,
+          "density_kg_m3": 983.1563048151849
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-60a8024a97f0-vtbfx",
+      "node": "computeinstance-e00wet1bnnk38nbxms",
+      "gpu_container_started_at": "2026-10-03T10:06:38Z",
+      "admission_to_gpu_container_seconds": 8.030392
+    },
+    {
+      "run": "cohort-1/request-13",
+      "operation_id": "7aaf9c6c-b3e5-4800-ba30-cfa15d6adfd1",
+      "workload_id": "6537be7c-c0f4-5646-9e58-a2f90e33d7e5",
+      "accepted_at": "2026-10-03T10:06:30.450316Z",
+      "completed_at": "2026-10-03T10:10:33.825877Z",
+      "admission_to_terminal_seconds": 243.375561,
+      "submit_seconds": 2.049270959571004,
+      "submit_http_status": 202,
+      "input_sha256": "07b59ce669db4c0078aa03444fe6dd9551cfe1448bfbfa0fd28dc68af2ba1e1f",
+      "production_seed": 20261144,
+      "pool": "h100-reserved-8x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 596.923,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "17a5cf28621302c6b25d194f1a201dadb43bd2303909b65c01911cef94c4f77c",
+      "artifact_count": 57,
+      "artifact_bytes": 20369485,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85820.60007442857,
+          "total_energy_kj_mol": -69492.7566964762,
+          "temperature_K": 297.4084749047619,
+          "pressure_bar": -513.8092381904762
+        },
+        "npt": {
+          "potential_kj_mol": -85995.64992542857,
+          "total_energy_kj_mol": -69427.79203861905,
+          "temperature_K": 301.78029238095235,
+          "pressure_bar": -497.7780197619048,
+          "density_kg_m3": 824.6314087142857
+        },
+        "production": {
+          "potential_kj_mol": -87825.42000967733,
+          "total_energy_kj_mol": -71345.58228491108,
+          "temperature_K": 300.17702342157844,
+          "pressure_bar": 0.2648461868131868,
+          "density_kg_m3": 984.654486991009
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-4c8a56af67fe-b7zc9",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "gpu_container_started_at": "2026-10-03T10:06:39Z",
+      "admission_to_gpu_container_seconds": 8.549684
+    },
+    {
+      "run": "cohort-1/request-14",
+      "operation_id": "5e702c57-0813-4d70-8877-a67769501abc",
+      "workload_id": "f7b2f038-cfb7-54c6-aa28-967b5737b15f",
+      "accepted_at": "2026-10-03T10:06:30.175139Z",
+      "completed_at": "2026-10-03T10:12:38.902921Z",
+      "admission_to_terminal_seconds": 368.727782,
+      "submit_seconds": 1.8208330869674683,
+      "submit_http_status": 202,
+      "input_sha256": "b8972c91cce206e7485d93a6872a90debed0b4aae78c2eadcded1a28f9ec59f4",
+      "production_seed": 20261147,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 783.148,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "b2c658338d00c6d825517bbfe97368d36fc51dc73ec120c66cffa677f87a1e03",
+      "artifact_count": 57,
+      "artifact_bytes": 20313693,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86063.2697172381,
+          "total_energy_kj_mol": -69868.61011895238,
+          "temperature_K": 294.9825579047619,
+          "pressure_bar": -566.1982952380953
+        },
+        "npt": {
+          "potential_kj_mol": -85879.40922614286,
+          "total_energy_kj_mol": -69389.33370528571,
+          "temperature_K": 300.3635020952381,
+          "pressure_bar": -475.32466757142856,
+          "density_kg_m3": 832.7271931428571
+        },
+        "production": {
+          "potential_kj_mol": -87810.4238573946,
+          "total_energy_kj_mol": -71330.92068868331,
+          "temperature_K": 300.1709298971029,
+          "pressure_bar": -0.8236127322677326,
+          "density_kg_m3": 984.2509447312688
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-68107c5d830e-k644s",
+      "node": "computeinstance-e00mvb8kya8g8cztmj",
+      "gpu_container_started_at": "2026-10-03T10:09:28Z",
+      "admission_to_gpu_container_seconds": 177.824861
+    },
+    {
+      "run": "cohort-1/request-15",
+      "operation_id": "d55d197d-5bfa-4237-8fa0-47c8e9d66109",
+      "workload_id": "32d25e15-9fee-566f-bd67-e14c9f688e20",
+      "accepted_at": "2026-10-03T10:06:30.281985Z",
+      "completed_at": "2026-10-03T10:13:15.259664Z",
+      "admission_to_terminal_seconds": 404.977679,
+      "submit_seconds": 1.9010802656412125,
+      "submit_http_status": 202,
+      "input_sha256": "2f49706f30bb3742278fcd10407aa37a304da390d4cf9456dfb4b4fa44c93e6b",
+      "production_seed": 20261150,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 721.45,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "2f65e23a13dae682c1212f2db88c61a87cce990ef484eeb8a02c46157204d991",
+      "artifact_count": 57,
+      "artifact_bytes": 20370524,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85906.03497028572,
+          "total_energy_kj_mol": -69701.10193447619,
+          "temperature_K": 295.16968723809526,
+          "pressure_bar": -643.6904943809524
+        },
+        "npt": {
+          "potential_kj_mol": -86082.86197909524,
+          "total_energy_kj_mol": -69560.91741066666,
+          "temperature_K": 300.94399742857144,
+          "pressure_bar": -488.7603005238095,
+          "density_kg_m3": 834.9660584761905
+        },
+        "production": {
+          "potential_kj_mol": -87826.38004182019,
+          "total_energy_kj_mol": -71352.35530095105,
+          "temperature_K": 300.0711411698302,
+          "pressure_bar": -15.658652053946055,
+          "density_kg_m3": 983.9190093906094
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-980efa54d2b5-xcvrr",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "gpu_container_started_at": "2026-10-03T10:09:54Z",
+      "admission_to_gpu_container_seconds": 203.718015
+    },
+    {
+      "run": "cohort-1/request-16",
+      "operation_id": "d4549d08-00bd-49ff-b7ab-41c24c1225e2",
+      "workload_id": "6f926088-9351-5fc6-8df9-6f43d5615ec5",
+      "accepted_at": "2026-10-03T10:06:29.774975Z",
+      "completed_at": "2026-10-03T10:12:25.354001Z",
+      "admission_to_terminal_seconds": 355.579026,
+      "submit_seconds": 1.3201055377721786,
+      "submit_http_status": 202,
+      "input_sha256": "6809fc13c4b228ed1064b2c2dadec25a1a9cd0ca8443ad94eab3e02674d19189",
+      "production_seed": 20261153,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 786.561,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "46a761bdf7403cf152a0820cae9c1b0b1dcd241c1f097afb520693da0bc5ada8",
+      "artifact_count": 57,
+      "artifact_bytes": 20316284,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85909.90401785714,
+          "total_energy_kj_mol": -69596.16741071429,
+          "temperature_K": 297.15151028571427,
+          "pressure_bar": -542.0846034285714
+        },
+        "npt": {
+          "potential_kj_mol": -86045.0007442381,
+          "total_energy_kj_mol": -69557.0353422381,
+          "temperature_K": 300.32506447619045,
+          "pressure_bar": -464.91827614285717,
+          "density_kg_m3": 841.4240809047619
+        },
+        "production": {
+          "potential_kj_mol": -87857.40699925474,
+          "total_energy_kj_mol": -71381.28396602598,
+          "temperature_K": 300.10936401798205,
+          "pressure_bar": 0.06260779320679248,
+          "density_kg_m3": 985.3677182857143
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-d329afc18d8d-8j7zq",
+      "node": "computeinstance-e00hh1kvj06m83r5db",
+      "gpu_container_started_at": "2026-10-03T10:09:17Z",
+      "admission_to_gpu_container_seconds": 167.225025
+    },
+    {
+      "run": "cohort-2/request-01",
+      "operation_id": "551c9573-b4a3-4368-b80f-0f58eb77c599",
+      "workload_id": "507e89bc-e2c6-5c95-9d19-43d38519e265",
+      "accepted_at": "2026-10-03T10:16:05.318033Z",
+      "completed_at": "2026-10-03T10:23:39.477835Z",
+      "admission_to_terminal_seconds": 454.159802,
+      "submit_seconds": 2.597228432074189,
+      "submit_http_status": 202,
+      "input_sha256": "435f5115e209f50286baca65892a96f36341331c89177f2f3caf3ba7603c713d",
+      "production_seed": 20261208,
+      "pool": "h100-reserved-8x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 636.497,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "a955f0170a435b828d3333c6a2d1e9986c156d6ba5b2dc2a2127d9a89ce435e6",
+      "artifact_count": 57,
+      "artifact_bytes": 20292865,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86029.59933042857,
+          "total_energy_kj_mol": -69834.46316961905,
+          "temperature_K": 294.9912443333333,
+          "pressure_bar": -547.2762784761904
+        },
+        "npt": {
+          "potential_kj_mol": -86034.37202385714,
+          "total_energy_kj_mol": -69621.42894347619,
+          "temperature_K": 298.958547,
+          "pressure_bar": -401.9865015238095,
+          "density_kg_m3": 825.8600870476191
+        },
+        "production": {
+          "potential_kj_mol": -87806.67966407293,
+          "total_energy_kj_mol": -71328.90990259041,
+          "temperature_K": 300.13935664535467,
+          "pressure_bar": -3.125955616383616,
+          "density_kg_m3": 984.3295827142857
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-ffd1e370c8d1-668sz",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "gpu_container_started_at": "2026-10-03T10:19:58Z",
+      "admission_to_gpu_container_seconds": 232.681967
+    },
+    {
+      "run": "cohort-2/request-02",
+      "operation_id": "b07a399d-3c67-46f5-93af-f4ca4754ebf8",
+      "workload_id": "5691fb68-4656-521d-9918-bc9f896d4172",
+      "accepted_at": "2026-10-03T10:16:03.896775Z",
+      "completed_at": "2026-10-03T10:19:33.958467Z",
+      "admission_to_terminal_seconds": 210.061692,
+      "submit_seconds": 1.2600833605974913,
+      "submit_http_status": 202,
+      "input_sha256": "aaf7a38dac2c2e16a07168aa5cad93fa4f0c5b88fbaa27530704eb7f6c4ef5ce",
+      "production_seed": 20261211,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 726.191,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "7b5e3f54fe3f8ac6a17f38012b59bde231a2b53b59b9e5b9555e5d404ee07a1d",
+      "artifact_count": 57,
+      "artifact_bytes": 20281374,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86001.77008928571,
+          "total_energy_kj_mol": -69736.39397314285,
+          "temperature_K": 296.27063861904765,
+          "pressure_bar": -499.48477276190476
+        },
+        "npt": {
+          "potential_kj_mol": -85838.54055061904,
+          "total_energy_kj_mol": -69223.36904766667,
+          "temperature_K": 302.64209276190473,
+          "pressure_bar": -491.69675952380953,
+          "density_kg_m3": 829.0723760476191
+        },
+        "production": {
+          "potential_kj_mol": -87831.29425262038,
+          "total_energy_kj_mol": -71347.19338475225,
+          "temperature_K": 300.25467774525475,
+          "pressure_bar": -16.41877178821179,
+          "density_kg_m3": 984.219144972028
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-d2f775f4aba7-msxlv",
+      "node": "computeinstance-e00rwacqdngp6accx6",
+      "gpu_container_started_at": "2026-10-03T10:16:12Z",
+      "admission_to_gpu_container_seconds": 8.103225
+    },
+    {
+      "run": "cohort-2/request-03",
+      "operation_id": "51bf8246-cbe9-423a-998e-07428517ee1d",
+      "workload_id": "c440693c-6eb0-56e5-97ce-34f54d159d61",
+      "accepted_at": "2026-10-03T10:16:04.015629Z",
+      "completed_at": "2026-10-03T10:19:40.660160Z",
+      "admission_to_terminal_seconds": 216.644531,
+      "submit_seconds": 1.3030498307198286,
+      "submit_http_status": 202,
+      "input_sha256": "7747a71792ed3d1a32527cf86cd2a965e5632c9925c729b355dc30c26f44c332",
+      "production_seed": 20261214,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 727.692,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "12b0843fa15e2b5e70105325b4b11de71986397d557c665278e62b154af44d99",
+      "artifact_count": 57,
+      "artifact_bytes": 20390562,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85825.69642857143,
+          "total_energy_kj_mol": -69521.9802827619,
+          "temperature_K": 296.9690041904762,
+          "pressure_bar": -611.203041952381
+        },
+        "npt": {
+          "potential_kj_mol": -86177.9203867619,
+          "total_energy_kj_mol": -69718.360491,
+          "temperature_K": 299.80767104761907,
+          "pressure_bar": -364.5663034285714,
+          "density_kg_m3": 832.4540781428572
+        },
+        "production": {
+          "potential_kj_mol": -87828.74991413686,
+          "total_energy_kj_mol": -71353.28547234066,
+          "temperature_K": 300.0973663116883,
+          "pressure_bar": -12.196025577422578,
+          "density_kg_m3": 984.2529530559441
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-fc301f53a88d-f4c4l",
+      "node": "computeinstance-e00cjp2bfywsenpzzv",
+      "gpu_container_started_at": "2026-10-03T10:16:12Z",
+      "admission_to_gpu_container_seconds": 7.984371
+    },
+    {
+      "run": "cohort-2/request-04",
+      "operation_id": "4de09717-3651-4c66-89c6-b4df68326ab7",
+      "workload_id": "e5eb0f81-7a3e-541f-bf18-3b97b3144817",
+      "accepted_at": "2026-10-03T10:16:04.876094Z",
+      "completed_at": "2026-10-03T10:22:53.935390Z",
+      "admission_to_terminal_seconds": 409.059296,
+      "submit_seconds": 2.4019951578229666,
+      "submit_http_status": 202,
+      "input_sha256": "c2b43bcf1a9b479f9c2563a7b6d693645434a435c0c06eb5bf330331f3684b0d",
+      "production_seed": 20261217,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 729.751,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "80c74052f518ab1e7ab35f32479454fb735496a6d2c271e12841d56daaa15800",
+      "artifact_count": 57,
+      "artifact_bytes": 20345783,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85945.84784238096,
+          "total_energy_kj_mol": -69716.55171133333,
+          "temperature_K": 295.6134606666667,
+          "pressure_bar": -521.9498182380952
+        },
+        "npt": {
+          "potential_kj_mol": -85857.73028285714,
+          "total_energy_kj_mol": -69298.33333333333,
+          "temperature_K": 301.62618,
+          "pressure_bar": -459.52869595238093,
+          "density_kg_m3": 824.5113670952381
+        },
+        "production": {
+          "potential_kj_mol": -87809.80896448051,
+          "total_energy_kj_mol": -71337.61074082418,
+          "temperature_K": 300.0378734025974,
+          "pressure_bar": -1.0242151168831175,
+          "density_kg_m3": 984.5119512537462
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-0829c4b14a2d-wk2z5",
+      "node": "computeinstance-e00rwacqdngp6accx6",
+      "gpu_container_started_at": "2026-10-03T10:19:33Z",
+      "admission_to_gpu_container_seconds": 208.123906
+    },
+    {
+      "run": "cohort-2/request-05",
+      "operation_id": "eda35ce1-8537-4d73-b9a4-cc6999a2a863",
+      "workload_id": "3cd6d05b-7aa5-5862-8bd2-b4ec191f4aa3",
+      "accepted_at": "2026-10-03T10:16:05.102924Z",
+      "completed_at": "2026-10-03T10:19:57.901781Z",
+      "admission_to_terminal_seconds": 232.798857,
+      "submit_seconds": 2.403226351365447,
+      "submit_http_status": 202,
+      "input_sha256": "9ef886859983c99d4468eea2f70d05929d786ecf86ce257c9b201294fd2b6c96",
+      "production_seed": 20261220,
+      "pool": "h100-reserved-8x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 631.03,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "35bae615268372affa36b79a1737d9dbcf3ea29497f7d3d2adce962a4f17ccb1",
+      "artifact_count": 57,
+      "artifact_bytes": 20291248,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85903.87016380952,
+          "total_energy_kj_mol": -69615.26711314285,
+          "temperature_K": 296.6937299047619,
+          "pressure_bar": -510.48654252380953
+        },
+        "npt": {
+          "potential_kj_mol": -86041.42075880952,
+          "total_energy_kj_mol": -69554.76190471428,
+          "temperature_K": 300.3012651904762,
+          "pressure_bar": -398.29052333333334,
+          "density_kg_m3": 816.8630312857143
+        },
+        "production": {
+          "potential_kj_mol": -87828.92348277722,
+          "total_energy_kj_mol": -71348.10857893307,
+          "temperature_K": 300.1948247032967,
+          "pressure_bar": -12.095795567432567,
+          "density_kg_m3": 983.9020559000999
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-47104f4249a8-fv8fc",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "gpu_container_started_at": "2026-10-03T10:16:14Z",
+      "admission_to_gpu_container_seconds": 8.897076
+    },
+    {
+      "run": "cohort-2/request-06",
+      "operation_id": "ab408e79-8e62-4405-ac1a-1094fa8dc171",
+      "workload_id": "3838107f-613c-5b61-96d4-0af64d8390e5",
+      "accepted_at": "2026-10-03T10:16:05.411160Z",
+      "completed_at": "2026-10-03T10:19:28.555792Z",
+      "admission_to_terminal_seconds": 203.144632,
+      "submit_seconds": 2.7590996772050858,
+      "submit_http_status": 202,
+      "input_sha256": "b183af642b54fb45ae80fdc21754f80661ec512c83acd263413d79fa50f8fffd",
+      "production_seed": 20261223,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 777.838,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "88ed4e8b8285e53f76ff7d72c59ed9352beed5e3375b4e4ef22f37b400905275",
+      "artifact_count": 57,
+      "artifact_bytes": 20304058,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86093.60528280953,
+          "total_energy_kj_mol": -69856.74330357143,
+          "temperature_K": 295.7512598571429,
+          "pressure_bar": -489.8140346190476
+        },
+        "npt": {
+          "potential_kj_mol": -85944.62090771428,
+          "total_energy_kj_mol": -69541.19270833333,
+          "temperature_K": 298.78522171428574,
+          "pressure_bar": -472.8491538571429,
+          "density_kg_m3": 833.9233078571428
+        },
+        "production": {
+          "potential_kj_mol": -87843.73261893906,
+          "total_energy_kj_mol": -71370.79029564736,
+          "temperature_K": 300.0514271738262,
+          "pressure_bar": -6.785216076923078,
+          "density_kg_m3": 984.4938943046953
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-143788cf33c6-mm7wd",
+      "node": "computeinstance-e00mvb8kya8g8cztmj",
+      "gpu_container_started_at": "2026-10-03T10:16:15Z",
+      "admission_to_gpu_container_seconds": 9.58884
+    },
+    {
+      "run": "cohort-2/request-07",
+      "operation_id": "78579692-212d-46f4-8b37-721cdc7f5e56",
+      "workload_id": "7b71dbd5-e938-5dab-bbc4-2e0f240603d7",
+      "accepted_at": "2026-10-03T10:16:04.401320Z",
+      "completed_at": "2026-10-03T10:19:33.200945Z",
+      "admission_to_terminal_seconds": 208.799625,
+      "submit_seconds": 2.269585134461522,
+      "submit_http_status": 202,
+      "input_sha256": "2ca82894fee250f2e6e125e3f75c9e07685baec9f7019492c7da91a7c378af1d",
+      "production_seed": 20261226,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 743.922,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "bfe92ead3fa38dcf0827cac55faa6967e42814872fd816d51dab7b8990d181e4",
+      "artifact_count": 57,
+      "artifact_bytes": 20308537,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85817.63653285714,
+          "total_energy_kj_mol": -69585.51041666667,
+          "temperature_K": 295.6650281428571,
+          "pressure_bar": -648.5646682857143
+        },
+        "npt": {
+          "potential_kj_mol": -86012.71465771428,
+          "total_energy_kj_mol": -69467.69642857143,
+          "temperature_K": 301.3642665714286,
+          "pressure_bar": -360.4492161904762,
+          "density_kg_m3": 832.0486043809524
+        },
+        "production": {
+          "potential_kj_mol": -87812.35096934365,
+          "total_energy_kj_mol": -71349.34020667433,
+          "temperature_K": 299.87052603996005,
+          "pressure_bar": -9.153498665334665,
+          "density_kg_m3": 983.6199001098901
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-266fc609279b-sfmbg",
+      "node": "computeinstance-e00wet1bnnk38nbxms",
+      "gpu_container_started_at": "2026-10-03T10:16:12Z",
+      "admission_to_gpu_container_seconds": 7.59868
+    },
+    {
+      "run": "cohort-2/request-08",
+      "operation_id": "2b0f2dea-7e74-449e-8e04-de2f1f22cebc",
+      "workload_id": "1026b5f1-986f-542a-bedd-0eb9240fee82",
+      "accepted_at": "2026-10-03T10:16:05.518482Z",
+      "completed_at": "2026-10-03T10:19:25.107174Z",
+      "admission_to_terminal_seconds": 199.588692,
+      "submit_seconds": 3.0246824137866497,
+      "submit_http_status": 202,
+      "input_sha256": "60dd5cc1d83326a1ff726c92a3d86be1709d3429e9c42870f7a563b2ea44bd20",
+      "production_seed": 20261229,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 778.937,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "37ffbf5de0d9879f8648eea15869f96021b7b1bc6359ea81df7ad94f98f92264",
+      "artifact_count": 57,
+      "artifact_bytes": 20410724,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86224.13318457143,
+          "total_energy_kj_mol": -69966.50260404762,
+          "temperature_K": 296.12957614285716,
+          "pressure_bar": -457.44026042857143
+        },
+        "npt": {
+          "potential_kj_mol": -86123.29501485714,
+          "total_energy_kj_mol": -69642.94717266667,
+          "temperature_K": 300.18632,
+          "pressure_bar": -445.31562304761906,
+          "density_kg_m3": 842.0443958095238
+        },
+        "production": {
+          "potential_kj_mol": -87862.54814716484,
+          "total_energy_kj_mol": -71389.62691996603,
+          "temperature_K": 300.051041986014,
+          "pressure_bar": -3.6682715964035966,
+          "density_kg_m3": 985.1839423286714
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-5302ef3af90e-ntsjq",
+      "node": "computeinstance-e00sd7nsp4btqa9500",
+      "gpu_container_started_at": "2026-10-03T10:16:17Z",
+      "admission_to_gpu_container_seconds": 11.481518
+    },
+    {
+      "run": "cohort-2/request-09",
+      "operation_id": "cce6f2f4-ae6b-4663-ac9e-ee4f3be88b5b",
+      "workload_id": "46d6177b-e411-5ff9-b8b5-cc1041531b0b",
+      "accepted_at": "2026-10-03T10:16:06.263135Z",
+      "completed_at": "2026-10-03T10:19:28.410789Z",
+      "admission_to_terminal_seconds": 202.147654,
+      "submit_seconds": 3.4873673412948847,
+      "submit_http_status": 202,
+      "input_sha256": "e20b87373ccf7ac8855b27e2ad7bdd88fbd679e13a231e2d45c2dbef34009699",
+      "production_seed": 20261232,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 798.472,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "5aed9b99b1e2b323ddcaef2b73d7718585788cf152c0b22d7ee3bf5a1cc95ffd",
+      "artifact_count": 57,
+      "artifact_bytes": 20327420,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85822.000372,
+          "total_energy_kj_mol": -69664.70386904762,
+          "temperature_K": 294.30199604761907,
+          "pressure_bar": -580.2713565714286
+        },
+        "npt": {
+          "potential_kj_mol": -85871.67447914285,
+          "total_energy_kj_mol": -69354.83593733334,
+          "temperature_K": 300.85097395238097,
+          "pressure_bar": -503.65428714285713,
+          "density_kg_m3": 821.2419346666667
+        },
+        "production": {
+          "potential_kj_mol": -87830.76346307991,
+          "total_energy_kj_mol": -71361.17541832867,
+          "temperature_K": 299.990327993007,
+          "pressure_bar": 8.945804793206793,
+          "density_kg_m3": 984.222553022977
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-493806734983-nxjvx",
+      "node": "computeinstance-e00gjeqfrq7xrh4cvx",
+      "gpu_container_started_at": "2026-10-03T10:16:15Z",
+      "admission_to_gpu_container_seconds": 8.736865
+    },
+    {
+      "run": "cohort-2/request-10",
+      "operation_id": "a17da692-3c6a-408a-bd83-8eae1c6db7f0",
+      "workload_id": "c84abdbc-140c-5aa8-a6c2-91931c7b7b39",
+      "accepted_at": "2026-10-03T10:16:05.810098Z",
+      "completed_at": "2026-10-03T10:19:40.568671Z",
+      "admission_to_terminal_seconds": 214.758573,
+      "submit_seconds": 3.1480662636458874,
+      "submit_http_status": 202,
+      "input_sha256": "5eb85d268e7d76968aad553d3fb2794d58b5199471c9ae44b1d9f426a2d002b1",
+      "production_seed": 20261235,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 747.792,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "e36702f83f2375042ad3ff67a1ba667d19f97f0435f2f7d0e95e14f91afbcbc8",
+      "artifact_count": 57,
+      "artifact_bytes": 20316933,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85852.30952385714,
+          "total_energy_kj_mol": -69458.06919638095,
+          "temperature_K": 298.6178829047619,
+          "pressure_bar": -624.080359952381
+        },
+        "npt": {
+          "potential_kj_mol": -86038.94196428571,
+          "total_energy_kj_mol": -69561.43191961905,
+          "temperature_K": 300.1346086666667,
+          "pressure_bar": -530.321426095238,
+          "density_kg_m3": 829.0941887619048
+        },
+        "production": {
+          "potential_kj_mol": -87851.99375623577,
+          "total_energy_kj_mol": -71382.2413211918,
+          "temperature_K": 299.99332398201796,
+          "pressure_bar": -19.1393346993007,
+          "density_kg_m3": 984.5787320599401
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-cfb2d284f175-hv5dr",
+      "node": "computeinstance-e00kqbebd4s7fepqvx",
+      "gpu_container_started_at": "2026-10-03T10:16:16Z",
+      "admission_to_gpu_container_seconds": 10.189902
+    },
+    {
+      "run": "cohort-2/request-11",
+      "operation_id": "c56d65e5-7f0d-4e87-8b09-641966a5fa2a",
+      "workload_id": "813698db-a25f-5efc-bbf1-06c30ef58ec6",
+      "accepted_at": "2026-10-03T10:16:06.368837Z",
+      "completed_at": "2026-10-03T10:19:27.522214Z",
+      "admission_to_terminal_seconds": 201.153377,
+      "submit_seconds": 3.5131005961447954,
+      "submit_http_status": 202,
+      "input_sha256": "7d2fdaa4473f8ea5b359c1ffbf6d1f5ed8730f73d643e0170555d26762e71630",
+      "production_seed": 20261238,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 772.287,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "01ce4d6b5bbb2bbf7616fec5acceec4729643e8f32c58165583d47c803f148ac",
+      "artifact_count": 57,
+      "artifact_bytes": 20342266,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85845.8623512381,
+          "total_energy_kj_mol": -69570.87760428572,
+          "temperature_K": 296.44566576190476,
+          "pressure_bar": -651.0811461904761
+        },
+        "npt": {
+          "potential_kj_mol": -85789.15438990477,
+          "total_energy_kj_mol": -69270.23921123809,
+          "temperature_K": 300.88881433333336,
+          "pressure_bar": -567.0065176190476,
+          "density_kg_m3": 812.9934604761904
+        },
+        "production": {
+          "potential_kj_mol": -87811.9290319091,
+          "total_energy_kj_mol": -71334.124680007,
+          "temperature_K": 300.13998835164836,
+          "pressure_bar": -5.036048755244755,
+          "density_kg_m3": 983.7450468901098
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-a6c9fc09a412-zqb5v",
+      "node": "computeinstance-e00zztqyjdmvvmc516",
+      "gpu_container_started_at": "2026-10-03T10:16:16Z",
+      "admission_to_gpu_container_seconds": 9.631163
+    },
+    {
+      "run": "cohort-2/request-12",
+      "operation_id": "ac9ca0b6-1c3b-4a4d-8c05-230e28535e8f",
+      "workload_id": "dec6af31-b069-5a49-9f90-0e9a2a371150",
+      "accepted_at": "2026-10-03T10:16:05.716872Z",
+      "completed_at": "2026-10-03T10:19:35.400853Z",
+      "admission_to_terminal_seconds": 209.683981,
+      "submit_seconds": 3.207054227590561,
+      "submit_http_status": 202,
+      "input_sha256": "4454023f22e32ac5a36f1fb38ae92e1779943fc2ad790b76625b996a611f58d1",
+      "production_seed": 20261241,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 774.946,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "670ee508a34f43d513bd8fc00a930db45a8ac3aadc90baa1b82ea0a11a80f6bd",
+      "artifact_count": 57,
+      "artifact_bytes": 20291722,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85772.64322928572,
+          "total_energy_kj_mol": -69568.29799114286,
+          "temperature_K": 295.1590046190476,
+          "pressure_bar": -511.475216047619
+        },
+        "npt": {
+          "potential_kj_mol": -86065.80022328571,
+          "total_energy_kj_mol": -69535.34598209524,
+          "temperature_K": 301.09899461904763,
+          "pressure_bar": -520.5203581904761,
+          "density_kg_m3": 853.6482717619048
+        },
+        "production": {
+          "potential_kj_mol": -87846.74079828372,
+          "total_energy_kj_mol": -71373.52250875125,
+          "temperature_K": 300.0564520609391,
+          "pressure_bar": 0.13578180419580455,
+          "density_kg_m3": 984.7340761698301
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-53d0e7deb11e-2x778",
+      "node": "computeinstance-e00gsy65zks1mx6dmc",
+      "gpu_container_started_at": "2026-10-03T10:16:17Z",
+      "admission_to_gpu_container_seconds": 11.283128
+    },
+    {
+      "run": "cohort-2/request-13",
+      "operation_id": "bccc72c7-1fc8-4afe-a3a4-bf63e4d67a2a",
+      "workload_id": "84a5c502-6fc8-5688-a6dd-b22847f54179",
+      "accepted_at": "2026-10-03T10:16:04.261035Z",
+      "completed_at": "2026-10-03T10:19:36.154070Z",
+      "admission_to_terminal_seconds": 211.893035,
+      "submit_seconds": 1.5752587486058474,
+      "submit_http_status": 202,
+      "input_sha256": "19a82245ed5fe6243e5de4e13daff740aa58f2c305e6bcee406ec97ad17bc532",
+      "production_seed": 20261244,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 712.137,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "6594ed466d791adfc8fa46a779e110bfe85c68ffae0dff828dec2caf6a6c0525",
+      "artifact_count": 57,
+      "artifact_bytes": 20325765,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85710.11123509523,
+          "total_energy_kj_mol": -69392.10081842857,
+          "temperature_K": 297.2293781428572,
+          "pressure_bar": -533.1725914285714
+        },
+        "npt": {
+          "potential_kj_mol": -86089.27455342856,
+          "total_energy_kj_mol": -69681.53757442857,
+          "temperature_K": 298.86372452380954,
+          "pressure_bar": -427.10435866666666,
+          "density_kg_m3": 829.2225603333334
+        },
+        "production": {
+          "potential_kj_mol": -87823.01723278122,
+          "total_energy_kj_mol": -71337.9409808961,
+          "temperature_K": 300.27244417582415,
+          "pressure_bar": -5.572890323676324,
+          "density_kg_m3": 984.3257234075924
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-ecef45ae7add-94h6f",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "gpu_container_started_at": "2026-10-03T10:16:12Z",
+      "admission_to_gpu_container_seconds": 7.738965
+    },
+    {
+      "run": "cohort-2/request-14",
+      "operation_id": "52c80124-77b5-4934-8cbf-35d101d55813",
+      "workload_id": "38ad970b-b947-5551-a697-6f0f18cd6305",
+      "accepted_at": "2026-10-03T10:16:06.079505Z",
+      "completed_at": "2026-10-03T10:19:31.926220Z",
+      "admission_to_terminal_seconds": 205.846715,
+      "submit_seconds": 3.3386836145073175,
+      "submit_http_status": 202,
+      "input_sha256": "1b3399b26af1600ab56b985dfd83407ad194d0d573afb6f7c2d86bcb1b757d88",
+      "production_seed": 20261247,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 782.695,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "6867834932980d232d275d4535cebadab882041886bd516c061318bdaabe4ba0",
+      "artifact_count": 57,
+      "artifact_bytes": 20312010,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -85672.79761890476,
+          "total_energy_kj_mol": -69464.58779761905,
+          "temperature_K": 295.2293832857143,
+          "pressure_bar": -670.537354952381
+        },
+        "npt": {
+          "potential_kj_mol": -85900.55877976191,
+          "total_energy_kj_mol": -69329.96391366667,
+          "temperature_K": 301.8301565714286,
+          "pressure_bar": -527.9983934285714,
+          "density_kg_m3": 837.3395995714286
+        },
+        "production": {
+          "potential_kj_mol": -87834.09056569231,
+          "total_energy_kj_mol": -71350.585438002,
+          "temperature_K": 300.24382557442556,
+          "pressure_bar": 9.08625744055944,
+          "density_kg_m3": 984.7138128701299
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-22944bb6910f-t4z57",
+      "node": "computeinstance-e00jj9k4n6yzc9bzds",
+      "gpu_container_started_at": "2026-10-03T10:16:15Z",
+      "admission_to_gpu_container_seconds": 8.920495
+    },
+    {
+      "run": "cohort-2/request-15",
+      "operation_id": "b450a576-58aa-450b-b997-6cfa40c0abf3",
+      "workload_id": "d9c8c4a8-4fc0-5bf2-b9f4-83c66901581a",
+      "accepted_at": "2026-10-03T10:16:04.664391Z",
+      "completed_at": "2026-10-03T10:22:51.068601Z",
+      "admission_to_terminal_seconds": 406.40421,
+      "submit_seconds": 1.78590258769691,
+      "submit_http_status": 202,
+      "input_sha256": "85b077731f05a022163151a56461e6a9f260496521e823f6e291e1cb6a8ae6da",
+      "production_seed": 20261250,
+      "pool": "h100-ondemand-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 735.975,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "155c38ae87f3aba4ad3504d10151c00e60e5b2e59382ea869da6d9e4d3244094",
+      "artifact_count": 57,
+      "artifact_bytes": 20278853,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86076.56101190476,
+          "total_energy_kj_mol": -69924.59635409524,
+          "temperature_K": 294.2049001904762,
+          "pressure_bar": -545.0510835714285
+        },
+        "npt": {
+          "potential_kj_mol": -86142.72172614286,
+          "total_energy_kj_mol": -69753.78162209524,
+          "temperature_K": 298.5213492857143,
+          "pressure_bar": -496.01064185714284,
+          "density_kg_m3": 838.2122714285714
+        },
+        "production": {
+          "potential_kj_mol": -87806.49505964135,
+          "total_energy_kj_mol": -71323.45751902997,
+          "temperature_K": 300.2353057932068,
+          "pressure_bar": -7.3915560829170825,
+          "density_kg_m3": 984.2994575514485
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-bddac044eeac-6l2rg",
+      "node": "computeinstance-e00wet1bnnk38nbxms",
+      "gpu_container_started_at": "2026-10-03T10:19:31Z",
+      "admission_to_gpu_container_seconds": 206.335609
+    },
+    {
+      "run": "cohort-2/request-16",
+      "operation_id": "baedcda6-2098-461c-b30b-fa6760404cdc",
+      "workload_id": "0b11f747-dcf6-5a7d-8534-33c8d0204342",
+      "accepted_at": "2026-10-03T10:16:05.902078Z",
+      "completed_at": "2026-10-03T10:19:29.028540Z",
+      "admission_to_terminal_seconds": 203.126462,
+      "submit_seconds": 3.103512618690729,
+      "submit_http_status": 202,
+      "input_sha256": "73a027ad5744630f3017c45e3f97179c5d02736f98f4093bc9233a298281ae1f",
+      "production_seed": 20261253,
+      "pool": "l40s-1x",
+      "attempts": 1,
+      "resources_released": true,
+      "production_performance_ns_day": 801.107,
+      "gpu_snapshot_used": false,
+      "native_checkpoint_generation": 13,
+      "atoms": 6598,
+      "trajectory_frames": 101,
+      "production_ps": 1000.0,
+      "trajectory_sha256": "8e547e76179ece04c7a9f7634a99425824cec21096d90722ff0a85c1391e6e35",
+      "artifact_count": 57,
+      "artifact_bytes": 20323776,
+      "all_13_commands_succeeded": true,
+      "energies": {
+        "nvt": {
+          "potential_kj_mol": -86008.78422614286,
+          "total_energy_kj_mol": -69799.62834828571,
+          "temperature_K": 295.2466024285714,
+          "pressure_bar": -543.9175814285715
+        },
+        "npt": {
+          "potential_kj_mol": -85986.39508928571,
+          "total_energy_kj_mol": -69603.25930052382,
+          "temperature_K": 298.4156130952381,
+          "pressure_bar": -409.25885152380954,
+          "density_kg_m3": 812.4396594761905
+        },
+        "production": {
+          "potential_kj_mol": -87811.59876841758,
+          "total_energy_kj_mol": -71322.27255557942,
+          "temperature_K": 300.3498554185814,
+          "pressure_bar": -14.19123634965035,
+          "density_kg_m3": 984.1323131168831
+        }
+      },
+      "convergence_claimed": false,
+      "pod": "fs2-workflow-canonical-al-a1-22e1039ebf85-znc8h",
+      "node": "computeinstance-e00hh1kvj06m83r5db",
+      "gpu_container_started_at": "2026-10-03T10:16:18Z",
+      "admission_to_gpu_container_seconds": 12.097922
+    }
+  ],
+  "customer_keys_used": false,
+  "customer_identity_binding_tested": false
+}

@@ -206,6 +206,12 @@ class ModelDeploymentRuntimeBridge:
         inventory_fresh = True
         wrote = False
         projection_errors = 0
+        for revision in await self.repository.retired(self.namespace):
+            try:
+                await self.writer.retire(revision)
+            except DesiredWriteError:
+                inventory_fresh = False
+                projection_errors += 1
         for revision in revisions:
             key = (revision.namespace, revision.name)
             if self._desired_matches(indexed.get(key), revision):

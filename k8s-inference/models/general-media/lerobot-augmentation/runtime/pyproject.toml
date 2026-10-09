@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fs2-lerobot-augmentation"
+version = "0.1.0"
+description = "Artifact-backed LeRobot v3 augmentation worker for Cosmos3-Nano"
+requires-python = ">=3.12,<3.14"
+license = { text = "Apache-2.0" }
+dependencies = [
+  "boto3==1.40.47",
+  "httpx==0.28.1",
+  "huggingface-hub==1.31.0",
+  "jsonschema==4.26.0",
+  "lerobot[dataset]==0.6.1",
+  "torch==2.11.0+cpu",
+  "torchvision==0.26.0+cpu",
+  "zstandard==0.24.0"
+]
+
+[project.scripts]
+fs2-augment-lerobot = "fs2_lerobot_augmentation.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fs2_lerobot_augmentation"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "N", "S", "UP"]
+ignore = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["fs2_lerobot_augmentation"]
+
+[[tool.mypy.overrides]]
+module = ["av.*", "boto3.*", "botocore.*", "huggingface_hub.*", "lerobot.*"]
+ignore_missing_imports = true

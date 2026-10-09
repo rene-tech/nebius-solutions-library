@@ -1,0 +1,80 @@
+{
+  "recorded_at": "2026-09-18 01:17:29 UTC",
+  "source_commit": "4dc1ef4850c1d794a5f4cd2a941f12d11b3f7718",
+  "source_tree": "453786b5079ad0435a81c1e08c1f7ca84506ff8f",
+  "published_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation:dataset-upload-replay-4dc1ef485-20260918",
+  "source_sha256": {
+    ".dockerignore": "cdef28b33b3a8f2329b7c8f9f56ce5d3b96028fe0b2f979f9b3e1a9fbb0eb9cf",
+    "Containerfile": "0fd3ecf358d21b05947e08f9d4bdfc387a196d41bdc1045858c60960b8216b52",
+    "README.md": "41121be46920f15dbb9f891c0ece836aa62257ed5f157fd25ba593f86401939e",
+    "pyproject.toml": "57fd443d19879480ee2e9edcde6dc174fee05af804c8336949f4e359c8cd4d58",
+    "src/fs2_lerobot_augmentation/__init__.py": "5ad1276547c0c1cfca8d609caad8c21df1442f1ac95faa1aea46a2c6750bf627",
+    "src/fs2_lerobot_augmentation/cli.py": "94b9cd061548dbf0bf2ab946d1c7936be6df631e297cb26f73a3ca6fe47ad6de",
+    "src/fs2_lerobot_augmentation/contracts.py": "83b78f1f4c98e0357c87b07b013cbc67658f306900196bdecf2b68be0fa22be6",
+    "src/fs2_lerobot_augmentation/cosmos.py": "f7ad930909863eafa58cf97b52ed15d52c1a0fbac30c3ad249695d99102b1d38",
+    "src/fs2_lerobot_augmentation/dataset.py": "f7e6b48d08dcb24150abcfd96f82caab5e4e15056dc00639c44603e2083ba327",
+    "src/fs2_lerobot_augmentation/localize.py": "7d1b5ed96bd6f599a9251a2302ad50a6516944f0d9ef8a8e89b3d6cc0474ca22",
+    "src/fs2_lerobot_augmentation/worker.py": "986647b12f866c588c5299b21c31b0e7cee41cbd572fa33def300c5cf08e4ff1",
+    "uv.lock": "d03d784fe11f492349b81ebd6d49364c03f6a5e024985fe2b124879cb2402a3a"
+  },
+  "runtime_context_sha256": "dd10d8a5074927d8f3800014ea701a749d6c377edb3f0dfa430f06d0548550df",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
+  "registry_manifest_digest": "sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
+  "configuration_digest": "sha256:f14e9859145d3be751a950564650b782f3dd5f450d0991af1c3190e975ee607b",
+  "manifest_media_type": "application/vnd.docker.distribution.manifest.v2+json",
+  "platform": "linux/amd64",
+  "container_user": "10001:10001",
+  "sbom_sha256": "4fb158b86169747d8db06230c69396a174a057796a3accc309a29be8bc9a181a",
+  "sbom_format": "SPDX JSON",
+  "sbom_location": "/home/tux/secure-handoff/lerobot-upload-replay-build-20260918-t7VxYlXo/worker-sbom.spdx.json",
+  "sbom_attached_to_registry": false,
+  "oci_attestation": "none: cached Docker driver with --provenance=false; exact source labels, independent registry manifest/config comparison and retained SBOM",
+  "credential_handling": "Explicit sandbox2 profile; isolated DOCKER_CONFIG; IAM token piped to stdin only; logout after verification; actual default CLI profile unchanged.",
+  "build": {
+    "command": "bash /home/tux/secure-handoff/lerobot-upload-replay-build-20260918-t7VxYlXo/build_publish.sh 4dc1ef4850c1d794a5f4cd2a941f12d11b3f7718",
+    "script_sha256": "8bf487559a7dea83305f228bcb245293b87adbb17cba5a3085f8b427c7f97522",
+    "context": "git archive exact committed runtime subtree; no dirty working-tree files included",
+    "context_permissions": "After private archive extraction, chmod -R a+rX is applied ONLY to the generated source context. Parent handoff and Docker credentials remain private. This prevents umask077 from making image source unreadable by UID10001.",
+    "retained_unpublished_failure": "First local image failed nonroot import smoke due to archive context permissions. It was not pushed. build-context-mode-failure.log and image-smoke-context-mode-failure.log retain that detection.",
+    "docker": "docker buildx build --builder default --platform linux/amd64 --provenance=false --load with source commit/tree/context/lock/Containerfile labels; target existence checked before push"
+  },
+  "offline_image_smoke": {
+    "status": "passed",
+    "command": "docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --entrypoint /opt/fs2/lerobot-augmentation/.venv/bin/python --mount type=bind,src=/home/tux/secure-handoff/lerobot-upload-replay-build-20260918-t7VxYlXo/replay_image_smoke.py,dst=/tmp/replay_image_smoke.py,readonly cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation:dataset-upload-replay-4dc1ef485-20260918 /tmp/replay_image_smoke.py",
+    "script_sha256": "9d07947da51e9e576d9f25a98c725d3557679af4b9bc07e3edb02d9e01befe5b",
+    "result": "UID10001 imports actual worker and pinned CPU reader; fresh-client succeeded upload replay executes POST begin, GET status, POST finalize, no content PUT."
+  },
+  "validation": {
+    "passed": 78,
+    "seconds": 52.99,
+    "warnings": "24 upstream multiprocessing fork deprecation warnings",
+    "ruff": "passed",
+    "strict_mypy": "passed: seven runtime files with pinned-reader Python dependency resolution",
+    "test_log": "/home/tux/secure-handoff/lerobot-upload-replay-build-20260918-t7VxYlXo/focused-tests-final.log",
+    "test_log_sha256": "08bc11859eda0d005739b2624a39c125063ab0418f56c2395652f637ffb6457d",
+    "command": "FS2_LEROBOT_FIXTURE_ASSETS=<pinned public fixture directory> FS2_LEROBOT_GENERATED_VIDEO=<retained final149 lighting 10fps MP4> /tmp/fs2-lerobot-venv/bin/python -m pytest -q tests --ignore=tests/test_scientific_adapter.py",
+    "source_fixture": "pinned official robot/actions; retained public cohort-1-lighting final149 front-camera output",
+    "control_plane_adapter_tests": "Separate control-plane environment/ownership; not included in this worker count.",
+    "earlier_test_setup": "A prior invocation incorrectly selected an 8fps preview against the 10fps fixture and correctly failed timestamp validation (76passed/1failed). Corrected only fixture path, not source behavior; original focused-tests.log retained.",
+    "reproduced_before_fix": "Actual 201 begin replay response with operation_id and same upload identity followed by write-once PUT409 reproduced for bare/enveloped generation response cases.",
+    "regressions": [
+      "Two variants reuse one content PUT but admit two distinct generation IDs and idempotency keys/seeds.",
+      "Fresh client resolves succeeded upload via real bare OperationView status, skips PUT and re-finalizes.",
+      "Digest, size, media-type and status-operation identity mismatch fail without inference.",
+      "Failed/cancelled/expired and malformed/unknown states fail; arbitrary queued PUT409 is not swallowed.",
+      "Malformed admission UUID/JSON remains nonretryable; earlier bare OperationView parser behavior preserved."
+    ]
+  },
+  "corrected_failure": {
+    "parent_operation_id": "dc708f87-d0a2-4021-b645-7540cf0f4837",
+    "previous_manifest": "sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
+    "cause": "Variant2 repeated the same parent+content-hash upload idempotency key, received the existing finalized upload identity, then attempted another write-once content PUT.",
+    "live_error": "PLATFORM_UPSTREAM_ERROR: fs2 artifact content upload returned HTTP 409; variant_index1, completed_units1,total_units2.",
+    "first_upload_operation": "e62b0fab-b4e2-43e3-949b-63927560c45e",
+    "first_generation_operation": "6b963566-dbf0-4423-9e35-67dc628a19a4",
+    "evidence": "activation/debug-failure-r149.json and protected observe149-failed-blur/cosmos3-lerobot-augmentation-logs.json; no second generation child.",
+    "behavior": "Read delegated upload OperationView after begin. queued: PUT+finalize; succeeded: skip PUT and idempotently finalize to obtain existing ArtifactRef. Validate exact source SHA256/size/media type. No new upload keys, cache dependency or arbitrary409 suppression."
+  },
+  "customer_ready": false,
+  "qualification": "Publication and local regression only. Root/Boyle own activation and rollout; fresh public two-variant workflow remains required. Earlier final149 mechanics and visual semantic limitations remain retained."
+}

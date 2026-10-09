@@ -1,0 +1,26 @@
+{
+  "kind": "browser-controls",
+  "checks": [
+    "/v1/workshop/runs accepted",
+    "/v1/workshop/runs/0fab24b1-a0a1-4ace-9915-8b1784775783/interventions accepted",
+    "pause persisted",
+    "/v1/workshop/runs/0fab24b1-a0a1-4ace-9915-8b1784775783/interventions accepted",
+    "/v1/workshop/runs/0fab24b1-a0a1-4ace-9915-8b1784775783/interventions accepted",
+    "patient takeover persisted",
+    "patient selected and ready for typed takeover",
+    "/v1/workshop/runs/0fab24b1-a0a1-4ace-9915-8b1784775783/interventions accepted",
+    "patient typed message retained",
+    "/v1/workshop/runs/0fab24b1-a0a1-4ace-9915-8b1784775783/interventions accepted",
+    "clinician takeover persisted",
+    "clinician selected and ready for typed takeover",
+    "/v1/workshop/runs/0fab24b1-a0a1-4ace-9915-8b1784775783/interventions accepted",
+    "clinician typed message retained",
+    "/v1/workshop/runs/0fab24b1-a0a1-4ace-9915-8b1784775783/interventions accepted",
+    "resume returns role to model",
+    "/v1/workshop/runs/0fab24b1-a0a1-4ace-9915-8b1784775783/interventions accepted",
+    "abort and intervention label persisted",
+    "intervened run excluded from comparison"
+  ],
+  "run_id": "0fab24b1-a0a1-4ace-9915-8b1784775783",
+  "passed": true
+}

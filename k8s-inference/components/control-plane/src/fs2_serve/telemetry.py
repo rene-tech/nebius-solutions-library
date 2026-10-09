@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
@@ -11,20 +12,106 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
+from prometheus_client.core import GaugeMetricFamily, Metric
+from prometheus_client.registry import Collector
 
+from .metrics_accounting import HistoricalSample
 from .models import OperationView, TerminalAccounting
 from .registry import OperationalModel
 
 if TYPE_CHECKING:
     from .lifecycle import LifecycleMetricRow, LifecycleRollupMetricRow
+    from .operation_metrics import CustomerOperationMetric
+    from .request_telemetry import RequestSemanticMetric
+
+
+@dataclass(frozen=True)
+class HistoricalAccounting:
+    terminal: tuple[TerminalAccounting, ...]
+    semantics: tuple[RequestSemanticMetric, ...]
+    operations: tuple[CustomerOperationMetric, ...] | None
+    lifecycle: tuple[LifecycleMetricRow, ...]
+    rollups: tuple[LifecycleRollupMetricRow, ...]
+
+
+_HISTORICAL_FAMILIES = frozenset(
+    {
+        "fs2_serve_customer_operations_total",
+        "fs2_serve_customer_operations_last_10m",
+        "fs2_serve_customer_long_running_failures_last_10m",
+        "fs2_serve_requests_total",
+        "fs2_serve_terminal_duration_seconds_total",
+        "fs2_serve_estimated_gpu_seconds_total",
+        "fs2_serve_lifecycle_gpu_seconds_total",
+        "fs2_serve_lifecycle_clock_gpu_seconds_total",
+        "fs2_serve_lifecycle_workloads_total",
+        "fs2_serve_lifecycle_reconciliation_delta_seconds_total",
+        "fs2_serve_lifecycle_unclassified_gpu_seconds_total",
+        "fs2_serve_public_exchanges_total",
+    }
+)
+
+
+class _HistoricalProjection(Collector):
+    def __init__(self, registry: CollectorRegistry, sample: HistoricalSample[HistoricalAccounting]) -> None:
+        self.registry = registry
+        self.sample = sample
+
+    def collect(self) -> Iterator[Metric]:
+        available = self.sample.value is not None
+        for family in self.registry.collect():
+            if available or family.name not in _HISTORICAL_FAMILIES:
+                yield family
+        yield GaugeMetricFamily(
+            "fs2_serve_historical_accounting_available",
+            "1 only when a complete historical accounting sample is less than 30 seconds old",
+            value=int(available),
+        )
+        yield GaugeMetricFamily(
+            "fs2_serve_historical_accounting_refresh_in_progress",
+            "One bounded historical refresh is running in this control-plane replica",
+            value=int(self.sample.refreshing),
+        )
+        if self.sample.age_seconds is not None:
+            yield GaugeMetricFamily(
+                "fs2_serve_historical_accounting_age_seconds",
+                "Age of the last successful sample, including expired samples whose accounting series are omitted",
+                value=self.sample.age_seconds,
+            )
+        if self.sample.sampled_at is not None:
+            yield GaugeMetricFamily(
+                "fs2_serve_historical_accounting_sampled_timestamp_seconds",
+                "Unix time before the first query of the last successful historical sample",
+                value=self.sample.sampled_at,
+            )
 
 
 class Metrics:
     _MAX_MODELS = 4096
     _MAX_LIFECYCLE_SERIES = 65_536
+    _MAX_SEMANTIC_SERIES = 65_536
 
     def __init__(self, models: Iterable[OperationalModel]) -> None:
         self.registry = CollectorRegistry(auto_describe=True)
+        self.customer_operations = Gauge(
+            "fs2_serve_customer_operations_total",
+            "Retained exactly-once terminal operation facts, independent of HTTP/MCP acceptance",
+            ("tenant", "model", "protocol", "outcome", "workload_class", "error_class"),
+            registry=self.registry,
+        )
+        self.recent_customer_operations = Gauge(
+            "fs2_serve_customer_operations_last_10m",
+            "Terminal operations in the last ten minutes; a rolling gauge, not a request counter",
+            ("tenant", "model", "protocol", "outcome", "workload_class", "error_class"),
+            registry=self.registry,
+        )
+        self.recent_long_running_failures = Gauge(
+            "fs2_serve_customer_long_running_failures_last_10m",
+            "Scientific terminal failures in ten minutes after at least five minutes running; excludes retries and cancellation",
+            ("tenant", "model", "protocol", "outcome", "workload_class", "error_class"),
+            registry=self.registry,
+        )
+        self._customer_operation_labels: set[tuple[str, str, str, str, str, str]] = set()
         self.request_total = Gauge(
             "fs2_serve_requests_total",
             "Exactly-once durable terminal operations projected from PostgreSQL usage facts",
@@ -115,6 +202,12 @@ class Metrics:
             "Durably admitted requests returned as operations because synchronous wait slots were full",
             registry=self.registry,
         )
+        self.public_exchange_semantics = Gauge(
+            "fs2_serve_public_exchanges_total",
+            "Observed public exchanges by protocol outcome; HTTP status remains a separate transport property",
+            ("model", "transport", "tool", "outcome", "admission_stage"),
+            registry=self.registry,
+        )
         self.model_info = Info(
             "fs2_serve_model",
             "Model registry metadata with configured deployment and original qualification accelerator classes",
@@ -127,6 +220,7 @@ class Metrics:
         self._lifecycle_labels: set[tuple[str, str, str, str]] = set()
         self._lifecycle_rollup_labels: set[tuple[str, str, str, str]] = set()
         self._lifecycle_clock_labels: set[tuple[str, str, str, str, str]] = set()
+        self._semantic_labels: set[tuple[str, str, str, str, str]] = set()
         self.sync_models(models)
 
     def sync_models(
@@ -194,6 +288,29 @@ class Metrics:
         for model_id, model in self._models.items():
             self.gpu_seconds.labels(model_id, model.gateway.gpu_class).set(gpu_by_model.get(model_id, 0.0))
 
+    def set_customer_operations(self, rows: Iterable[CustomerOperationMetric]) -> None:
+        values = list(rows)
+        labels: set[tuple[str, str, str, str, str, str]] = {
+            (r.tenant, r.model, r.protocol, r.outcome, r.workload_class, r.error_class) for r in values
+        }
+        if len(labels | self._customer_operation_labels) > self._MAX_LIFECYCLE_SERIES:
+            raise ValueError("customer operation metric cardinality exceeds the configured bound")
+        for row in values:
+            self.customer_operations.labels(
+                row.tenant, row.model, row.protocol, row.outcome, row.workload_class, row.error_class
+            ).set(row.operations)
+            self.recent_customer_operations.labels(
+                row.tenant, row.model, row.protocol, row.outcome, row.workload_class, row.error_class
+            ).set(row.recent_operations)
+            self.recent_long_running_failures.labels(
+                row.tenant, row.model, row.protocol, row.outcome, row.workload_class, row.error_class
+            ).set(row.recent_long_running_failures)
+        for missing in self._customer_operation_labels - labels:
+            self.customer_operations.labels(*missing).set(0)
+            self.recent_customer_operations.labels(*missing).set(0)
+            self.recent_long_running_failures.labels(*missing).set(0)
+        self._customer_operation_labels = labels
+
     def set_queue(self, counts: dict[tuple[str, str], int]) -> None:
         """Project durable queue demand, including live-added model IDs.
 
@@ -220,6 +337,23 @@ class Metrics:
         for model in queue_models:
             self.queue_age.labels(model).set(ages.get(model, 0))
         self._queue_models = queue_models
+
+    def set_request_semantics(self, rows: Iterable[RequestSemanticMetric]) -> None:
+        """Project durable protocol outcomes without request/customer labels."""
+
+        values = list(rows)
+        labels: set[tuple[str, str, str, str, str]] = set()
+        for row in values:
+            labels.add((row.model_id, row.transport, row.mcp_tool, row.semantic_outcome, row.admission_stage))
+        if len(labels | self._semantic_labels) > self._MAX_SEMANTIC_SERIES:
+            raise ValueError("public exchange semantic metric cardinality exceeds the configured bound")
+        for row in values:
+            self.public_exchange_semantics.labels(
+                row.model_id, row.transport, row.mcp_tool, row.semantic_outcome, row.admission_stage
+            ).set(row.exchanges)
+        for missing in self._semantic_labels - labels:
+            self.public_exchange_semantics.labels(*missing).set(0)
+        self._semantic_labels = labels
 
     def set_lifecycle_accounting(self, rows: Iterable[LifecycleMetricRow]) -> None:
         """Project restart-safe durable rollups without request/Pod/GPU labels."""
@@ -285,7 +419,19 @@ class Metrics:
         self._lifecycle_rollup_labels = rollup_labels
         self._lifecycle_clock_labels = clock_labels
 
-    def render(self) -> bytes:
+    def set_historical_accounting(self, rows: HistoricalAccounting) -> None:
+        self.set_terminal_accounting(rows.terminal)
+        self.set_request_semantics(rows.semantics)
+        if rows.operations is not None:
+            self.set_customer_operations(rows.operations)
+        self.set_lifecycle_accounting(rows.lifecycle)
+        self.set_lifecycle_rollups(rows.rollups)
+
+    def render(self, *, historical: HistoricalSample[HistoricalAccounting] | None = None) -> bytes:
+        if historical is not None:
+            projected = CollectorRegistry(auto_describe=False)
+            projected.register(_HistoricalProjection(self.registry, historical))
+            return generate_latest(projected)
         return generate_latest(self.registry)
 
 

@@ -8,18 +8,49 @@ import logging
 import os
 import signal
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from .entrypoint import SCIENTIFIC_COMPANION_COMMANDS
 from .scientific_batch.companion import (
     WorkloadArtifactHttpClient,
+    _contained,
+    _write_exclusive,
     collect_and_commit,
     materialize_artifact,
     prepare_workspace,
     verify_runtime_artifacts,
 )
 from .scientific_batch.models import MaterializationMode
+from .scientific_batch.stage_descriptor import MAX_BYTES, RELATIVE_PATH, verified_descriptor
+
+
+def _client(parser: argparse.ArgumentParser) -> WorkloadArtifactHttpClient:
+    api_url = os.environ.get("FS2_SCIENTIFIC_INTERNAL_API_URL")
+    capability = os.environ.get("FS2_SCIENTIFIC_WORKLOAD_CAPABILITY")
+    if not api_url or not capability:
+        parser.error("scientific companion API and capability are required")
+    return WorkloadArtifactHttpClient(
+        base_url=api_url,
+        capability=capability,
+        fallback_base_url=os.environ.get("FS2_SCIENTIFIC_INTERNAL_FALLBACK_API_URL"),
+    )
+
+
+def _descriptor(content: bytes | None = None) -> dict[str, Any]:
+    path = os.environ.get("FS2_STAGE_DESCRIPTOR_FILE")
+    digest = os.environ.get("FS2_STAGE_DESCRIPTOR_SHA256")
+    if not path or not digest:
+        raise ValueError("stage descriptor identity is required")
+    if content is None:
+        target = _contained(Path(path))
+        if target.is_symlink():
+            raise ValueError("stage descriptor must be a private regular file")
+        with target.open("rb") as source:
+            content = source.read(MAX_BYTES + 1)
+    return verified_descriptor(content, digest)
 
 
 def _materialize(client: WorkloadArtifactHttpClient, args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -89,6 +120,19 @@ def main() -> None:
             parser.error("scientific workspace is required")
         runtime_localization_json = os.environ.get("FS2_RUNTIME_ARTIFACTS_JSON")
         stage_invocation_json = os.environ.get("FS2_STAGE_INVOCATION_JSON")
+        descriptor_content = None
+        if os.environ.get("FS2_STAGE_DESCRIPTOR_FILE"):
+            if os.environ["FS2_STAGE_DESCRIPTOR_FILE"] != str(Path(args.workspace) / RELATIVE_PATH):
+                parser.error("stage descriptor path differs from the private workspace")
+            client = _client(parser)
+            try:
+                descriptor_content = client.stage_descriptor()
+                descriptor = _descriptor(descriptor_content)
+                stage_invocation_json = json.dumps(descriptor["invocation"])
+                if descriptor["invocation"]["working_directory"] != args.workspace:
+                    parser.error("stage descriptor names a different workspace")
+            finally:
+                client.client.close()
         if not runtime_localization_json or not stage_invocation_json:
             parser.error("scientific runtime localization marker and stage invocation are required")
         prepare_workspace(
@@ -96,6 +140,8 @@ def main() -> None:
             runtime_localization_json=runtime_localization_json,
             stage_invocation_json=stage_invocation_json,
         )
+        if descriptor_content is not None:
+            _write_exclusive(Path(args.workspace) / RELATIVE_PATH, descriptor_content)
         return
     if args.command == "scientific-verify-runtime-artifacts":
         runtime_localization_json = os.environ.get("FS2_RUNTIME_ARTIFACTS_JSON")
@@ -104,32 +150,30 @@ def main() -> None:
         verify_runtime_artifacts(runtime_localization_json=runtime_localization_json)
         return
 
-    api_url = os.environ.get("FS2_SCIENTIFIC_INTERNAL_API_URL")
-    capability = os.environ.get("FS2_SCIENTIFIC_WORKLOAD_CAPABILITY")
-    if not api_url or not capability:
-        parser.error("scientific companion API and capability are required")
-    client = WorkloadArtifactHttpClient(base_url=api_url, capability=capability)
+    client = _client(parser)
     try:
         if args.command == "scientific-materialize":
             _materialize(client, args, parser)
         elif args.command == "scientific-materialize-many":
-            try:
-                groups = [json.loads(value) for value in args.commands_json]
-            except ValueError:
-                parser.error("materialization commands must be JSON")
-            if not groups or not all(isinstance(group, list) and group for group in groups):
-                parser.error("materialization commands must be non-empty argument groups")
-            commands = [command for group in groups for command in group]
-            if not all(
-                isinstance(command, list) and command and all(isinstance(arg, str) for arg in command)
-                for command in commands
-            ):
-                parser.error("materialization commands must be a non-empty list of argument lists")
-            # Keep exactly the previous ordered materialization calls and
-            # per-artifact verification. One process avoids a kubelet/containerd
-            # init transition for every tiny input or predecessor output.
-            entries = [parser.parse_args(["scientific-materialize", *command]) for command in commands]
-            for index, entry in enumerate(entries):
+            if not args.commands_json and os.environ.get("FS2_STAGE_DESCRIPTOR_FILE"):
+                entries = [argparse.Namespace(**item) for item in _descriptor()["materializations"]]
+            else:
+                try:
+                    groups = [json.loads(value) for value in args.commands_json]
+                except ValueError:
+                    parser.error("materialization commands must be JSON")
+                if not groups or not all(isinstance(group, list) and group for group in groups):
+                    parser.error("materialization commands must be non-empty argument groups")
+                commands = [command for group in groups for command in group]
+                if not all(
+                    isinstance(command, list) and command and all(isinstance(arg, str) for arg in command)
+                    for command in commands
+                ):
+                    parser.error("materialization commands must be a non-empty list of argument lists")
+                # Backwards-compatible decoding for already admitted Jobs.
+                entries = [parser.parse_args(["scientific-materialize", *command]) for command in commands]
+
+            def materialize_entry(index: int, entry: argparse.Namespace) -> None:
                 started = time.monotonic()
                 _materialize(client, entry, parser)
                 logging.info(
@@ -140,8 +184,25 @@ def main() -> None:
                     entry.expected_size_bytes,
                     time.monotonic() - started,
                 )
+
+            if os.environ.get("FS2_STAGE_DESCRIPTOR_FILE") and len(entries) > 1:
+                with ThreadPoolExecutor(max_workers=8, thread_name_prefix="scientific-input") as executor:
+                    for start in range(0, len(entries), 128):
+                        group = entries[start : start + 128]
+                        client.prepare_downloads(tuple(UUID(entry.artifact_id) for entry in group))
+                        futures = [
+                            executor.submit(materialize_entry, start + index, entry)
+                            for index, entry in enumerate(group)
+                        ]
+                        for future in futures:
+                            future.result()
+            else:
+                for index, entry in enumerate(entries):
+                    materialize_entry(index, entry)
         else:
             invocation = os.environ.get("FS2_STAGE_INVOCATION_JSON")
+            if os.environ.get("FS2_STAGE_DESCRIPTOR_FILE"):
+                invocation = json.dumps(_descriptor()["invocation"])
             if (
                 not args.collector_id
                 or not args.validator_id

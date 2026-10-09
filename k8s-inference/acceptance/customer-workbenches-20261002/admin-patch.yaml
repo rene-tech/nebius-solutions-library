@@ -1,0 +1,14 @@
+# Scoped retained rollout; no Gateway, TLS, customer or model resource changes.
+spec:
+  template:
+    metadata:
+      annotations:
+        fs2.nebius.ai/admin-image-digest: sha256:de4df56d87fe141bdc456cc6bee8309e6a2abb21cdc92e13cba3400a3438366f
+        fs2.nebius.ai/admin-source-commit: f9e1f66664e3f99352c85df5384ac4c73b09a468
+        fs2.nebius.ai/admin-source-tree: 14a234204b9a0136eb5313914878e8cbc1a995d4
+        fs2.nebius.ai/admin-sbom-format: cyclonedx-json
+        fs2.nebius.ai/admin-sbom-sha256: c7463e5630d5423d710572c73964cd3d740ca4c885703ea0b59acbcf7edf48a7
+    spec:
+      containers:
+        - name: admin-console
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/admin-console@sha256:de4df56d87fe141bdc456cc6bee8309e6a2abb21cdc92e13cba3400a3438366f

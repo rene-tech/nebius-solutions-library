@@ -1,0 +1,53 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fs2-important-alerts
+  {{- with .Values.ruleLabels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: fs2-important-customer-incidents
+      rules:
+        - alert: Fs2CustomerLongJobInterrupted
+          expr: sum by (tenant,model) (max by (tenant,model,protocol,outcome,workload_class,error_class) (fs2_serve_customer_long_running_failures_last_10m{tenant!~{{ .Values.internalTenantsRegex | quote }}})) > 0
+          for: 1m
+          labels:
+            namespace: {{ .Release.Namespace }}
+            fs2_notification: important
+            severity: critical
+          annotations:
+            summary: A customer scientific job stopped after at least five minutes of execution
+            description: A durable operation ended in failure, expiry or exhausted preemption recovery. Inspect Admin Apps Runs for the job ID, terminal reason and latest resumable checkpoint. HTTP acceptance alone does not indicate success. No automatic customer resubmission is performed by this alert.
+        - alert: Fs2CustomerFailuresRepeated
+          expr: |
+            sum by (tenant,model) (max by (tenant,model,protocol,outcome,workload_class,error_class) (fs2_serve_customer_operations_last_10m{outcome=~"failed|expired|preempted",tenant!~{{ .Values.internalTenantsRegex | quote }}})) >= 5
+          for: 2m
+          labels:
+            namespace: {{ .Release.Namespace }}
+            fs2_notification: important
+            severity: critical
+          annotations:
+            summary: Repeated terminal customer job failures
+            description: At least five admitted operations failed within ten minutes. Inspect Admin Apps Runs, correlate attempts and request logs, and confirm whether the model remains usable. Admission validation errors and transient recovered attempts are not counted.
+        - alert: Fs2CustomerAPIUnavailable
+          expr: sum(up{namespace={{ .Values.platformNamespace | quote }},service="fs2-serve-control-plane"}) == 0 or absent(up{namespace={{ .Values.platformNamespace | quote }},service="fs2-serve-control-plane"})
+          for: 5m
+          labels:
+            namespace: {{ .Release.Namespace }}
+            fs2_notification: important
+            severity: critical
+          annotations:
+            summary: Scientific AI API monitoring has been unavailable for five minutes
+            description: No healthy API scrape targets are visible. Check the public readiness endpoint and API pods; this may be an API outage or a monitoring-path failure, not proof that every request failed.
+        - alert: Fs2DatabaseRedundancyDegraded
+          expr: sum(kube_pod_status_ready{namespace={{ .Values.databaseNamespace | quote }},pod=~{{ printf "%s-[0-9]+" .Values.databaseCluster | quote }},condition="false"}) > 0
+          for: 30m
+          labels:
+            namespace: {{ .Release.Namespace }}
+            fs2_notification: important
+            severity: critical
+          annotations:
+            summary: Database redundancy is degraded
+            description: Check PostgreSQL replication and preserve the active primary before repairing a replica.

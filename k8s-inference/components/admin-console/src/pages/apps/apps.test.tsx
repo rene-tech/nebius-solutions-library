@@ -59,6 +59,7 @@ const app: AppSummary = {
   },
   logical_run_count: 27,
   last_used_at: "2026-09-08T02:00:00Z",
+  customer_readiness: null,
 };
 function operation() {
   return structuredClone(
@@ -181,6 +182,83 @@ describe("Apps identity and tabs", () => {
         expect.any(AbortSignal),
       ),
     );
+  });
+  it("shows the machine-evaluated capability and scenario evidence without inferring readiness", async () => {
+    vi.spyOn(appsApi, "detail").mockResolvedValue(
+      testEnvelope({
+        ...app,
+        customer_readiness: {
+          verdict: "not-ready",
+          ready: false,
+          evaluated_at: "2026-09-15T18:00:00Z",
+          valid_until: "2026-09-16T18:00:00Z",
+          source_revision: "a".repeat(40),
+          capabilities: [
+            {
+              capability_id: "video-to-video",
+              advertised: true,
+              requested: true,
+              required: true,
+              state: "partial",
+              scenarios: [
+                {
+                  scenario_id: "v2v-upload",
+                  state: "partial",
+                  evidence_id: "evidence-v2v-upload",
+                  reasons: ["too few clean unchanged-release cohorts passed"],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    vi.spyOn(appsApi, "runs").mockResolvedValue(
+      testEnvelope({ items: [], next_cursor: null }),
+    );
+    renderPage(<AppDetailPage />);
+    expect(await screen.findByText("Recorded verdict: not-ready")).toBeInTheDocument();
+    expect(screen.getByText("Last qualification")).toBeInTheDocument();
+    expect(screen.getByTitle("a".repeat(40))).toHaveTextContent("a".repeat(12));
+    expect(screen.getByText(/Evidence evaluated 2026-09-15T18:00:00Z/)).toBeInTheDocument();
+    expect(screen.getByText(/not a fresh live health or current-release verification/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Recorded capability evidence"));
+    expect(screen.getByText(/not compared with the live release identity/)).toBeInTheDocument();
+    expect(screen.getByText("video-to-video")).toBeInTheDocument();
+    expect(screen.getByText("Advertised")).toBeInTheDocument();
+    expect(screen.getByText(/valid until 2026-09-16T18:00:00Z/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/v2v-upload: partial.*too few clean unchanged-release cohorts/),
+    ).toBeInTheDocument();
+  });
+  it.each(["list", "detail"])("labels a positive verdict as recorded evidence on the %s view", async (view) => {
+    const recorded: AppSummary = {
+      ...app,
+      customer_readiness: {
+        verdict: "customer-ready", ready: true,
+        evaluated_at: "2026-09-15T18:00:00Z", valid_until: "2026-09-16T18:00:00Z",
+        source_revision: "0123456789abcdef".repeat(2) + "01234567",
+        capabilities: [{
+          capability_id: "text-to-video", advertised: true, requested: true, required: true, state: "qualified",
+          scenarios: [{ scenario_id: "t2v-public", state: "qualified", evidence_id: "recorded-t2v", reasons: [] }],
+        }],
+      },
+    };
+    if (view === "list") {
+      vi.spyOn(appsApi, "list").mockResolvedValue(testEnvelope({ items: [recorded], next_cursor: null }));
+      renderPage(<AppsPage />, "/admin/apps", "/admin/apps");
+    } else {
+      vi.spyOn(appsApi, "detail").mockResolvedValue(testEnvelope(recorded));
+      vi.spyOn(appsApi, "runs").mockResolvedValue(testEnvelope({ items: [], next_cursor: null }));
+      renderPage(<AppDetailPage />);
+    }
+    expect(await screen.findByText("Recorded verdict: customer-ready")).toBeInTheDocument();
+    expect(screen.getByText("Last qualification")).toBeInTheDocument();
+    expect(screen.getByTitle(recorded.customer_readiness!.source_revision)).toHaveTextContent("0123456789ab");
+    expect(screen.getByText(/Evidence evaluated 2026-09-15T18:00:00Z/)).toBeInTheDocument();
+    expect(screen.getByText(/not a fresh live health or current-release verification/)).toBeInTheDocument();
+    expect(screen.queryByText("customer-ready", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Customer readiness", { exact: true })).not.toBeInTheDocument();
   });
   it("embeds plaintext correlated logs rather than interpreting messages as HTML", async () => {
     vi.spyOn(appsApi, "detail").mockResolvedValue(testEnvelope(app));

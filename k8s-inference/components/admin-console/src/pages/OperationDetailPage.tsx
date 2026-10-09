@@ -32,7 +32,7 @@ export function OperationDetailPage() {
               <div className="section-heading"><div><span className="eyebrow">Lifecycle</span><h2>Timing breakdown</h2></div></div>
               <div className="metric-grid metric-grid--small">
                 <MetricCard label="Queue" value={item.timings.queue_seconds} />
-                <MetricCard label="Cold start" value={item.timings.cold_start_seconds} />
+                <MetricCard label="Accepted to ready" value={item.timings.cold_start_seconds} />
                 <MetricCard label="Inference" value={item.timings.inference_seconds} />
                 <MetricCard label="Total" value={item.timings.total_seconds} />
               </div>

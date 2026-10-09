@@ -18,6 +18,8 @@ from .admin_models import (
     AdminSourceState,
     AdminWarning,
 )
+from .reporting_reads import scientific_read_trace
+from .scientific_admin_fit import ScientificNodeFitAdapter
 from .scientific_admin_models import (
     ScientificArtifact,
     ScientificCapabilities,
@@ -253,6 +255,7 @@ class ScientificAdminReadService:
         artifacts: ScientificArtifactAdminAdapter | None = None,
         controls: ScientificRunControlAdapter | None = None,
         policies: ScientificModelPolicyAdminAdapter | None = None,
+        placement: ScientificNodeFitAdapter | None = None,
         source_max_age_seconds: float = 90,
         adapter_timeout_seconds: float = 2,
         clock: Callable[[], datetime] | None = None,
@@ -272,6 +275,7 @@ class ScientificAdminReadService:
         self.controls = controls
         self.policies = policies
         self.models = models
+        self.placement = placement
         self.source_max_age_seconds = source_max_age_seconds
         self.adapter_timeout_seconds = adapter_timeout_seconds
         self.clock = clock or (lambda: datetime.now(UTC))
@@ -473,14 +477,16 @@ class ScientificAdminReadService:
         operation_id: UUID,
         *,
         tenant_id: str | None,
+        request_id: UUID | None = None,
     ) -> AdminEnvelope[ScientificRunDetail]:
         now = self.clock().astimezone(UTC)
         runs = self._require_runs()
         try:
-            run_snapshot = await asyncio.wait_for(
-                runs.get_run(operation_id, tenant_id=tenant_id),
-                timeout=self.adapter_timeout_seconds,
-            )
+            with scientific_read_trace(operation_id, request_id):
+                run_snapshot = await asyncio.wait_for(
+                    runs.get_run(operation_id, tenant_id=tenant_id),
+                    timeout=self.adapter_timeout_seconds,
+                )
         except asyncio.CancelledError:
             raise
         except KeyError:
@@ -494,6 +500,21 @@ class ScientificAdminReadService:
 
         sources = [self._available_source("scientific-controller", run_snapshot.observed_at, now)]
         detail = run_snapshot.data
+        if self.placement is not None:
+            try:
+                stages, fit_observed_at = await asyncio.wait_for(
+                    self.placement.enrich(detail.stages), timeout=self.adapter_timeout_seconds,
+                )
+            except asyncio.CancelledError:
+                raise
+            except (OSError, RuntimeError, TimeoutError, ValueError):
+                sources.append(_source(
+                    "scientific-node-fit", AdminSourceState.UNAVAILABLE, now=now,
+                    reason="Current node inventory is unavailable; frozen placement constraints remain available.",
+                ))
+            else:
+                sources.append(self._available_source("scientific-node-fit", fit_observed_at, now))
+                detail = detail.model_copy(update={"stages": stages})
         artifacts = self.artifacts
         if artifacts is None:
             sources.append(

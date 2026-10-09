@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-20T03:01:16.938600+00:00",
+  "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "user_id": "b43b834b-9c57-56a4-841c-4c207d079a4c",
+  "bucket": "fs2-fs2-starter-data-acceptance-20260920-0164f70008da5227",
+  "key": "examples-preflight/9703032a-09c1-4773-8341-ff856e5ac66d/create-only.txt",
+  "first_put_succeeded": true,
+  "second_put_status": 412,
+  "original_preserved": true,
+  "sha256": "0bcb68e928df147eb533d078578ec834ef8be9bd737f04ab3cc415eaabe24d0b",
+  "bytes": 36,
+  "scope": "Conditional-create provider capability only; not pack or model acceptance. Task-owned object retained; no customer object changed."
+}

@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/namd-workflow-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "jobs"
+  ],
+  "description": "NVIDIA NAMD 3.0.2 single-GPU native workflows. One immutable gzip-tar bundle holds config/Tcl, PSF/PDB or compatible topology, parameters, and restart/bias files. Native Tcl is executable user code inside an isolated worker, not a sandboxed expression language. GBIS and spinAngle Colvars are unavailable in this pinned build. No multi-node or persistent GPU snapshot claim.",
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/namd-workflow-request/v1"
+    },
+    "threads": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8,
+      "default": 4
+    },
+    "max_wall_seconds": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 259200,
+      "default": 21600
+    },
+    "max_output_bytes": {
+      "type": "integer",
+      "minimum": 1048576,
+      "maximum": 51539607552,
+      "default": 4294967296
+    },
+    "output_destination": {
+      "enum": [
+        "customer-bucket",
+        "platform-artifacts"
+      ],
+      "default": "customer-bucket"
+    },
+    "output_prefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "default": "runs/namd"
+    },
+    "jobs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "config",
+                "mode"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,47}$"
+                },
+                "config": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "directory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "default": "."
+                },
+                "mode": {
+                  "enum": [
+                    "dynamics",
+                    "native",
+                    "prepare"
+                  ],
+                  "description": "dynamics: configuration-only Tcl plus finite wrapper-managed run segments; native: complete NAMD Tcl program, completion-boundary recovery only; prepare: bundled psfgen Tcl script, completion-boundary recovery only."
+                },
+                "gpu_mode": {
+                  "enum": [
+                    "resident",
+                    "offload"
+                  ],
+                  "default": "resident"
+                },
+                "steps": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000000000
+                },
+                "segment_steps": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 10000000,
+                  "default": 50000,
+                  "description": "Finite native run length between closed-output checkpoints. Must align with stepsPerCycle and nonbonded/PME intervals. Each segment creates independent part files; cadence stays in the native config."
+                },
+                "first_step": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2000000000,
+                  "default": 0
+                },
+                "output_prefix": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Managed dynamics output basename; each segment gets .partNNNNNN, and final .coor/.vel/.xsc aliases are produced. Omit outputName/DCDfile/restartName from configuration-only scripts."
+                },
+                "restart": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "coordinates",
+                    "velocities",
+                    "cell"
+                  ],
+                  "properties": {
+                    "coordinates": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "velocities": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "cell": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "colvars_state": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    }
+                  },
+                  "description": "External native continuation. Coordinates, velocities, cell and enabled Colvars bias state must come from the same checkpoint; XSC timestep must equal first_step. Config uses fs2_restart to omit fresh velocity/cell initialization."
+                },
+                "initialize_colvars": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Explicitly introduce a new bias when starting this dynamics stage from an unbiased native checkpoint. Subsequent segments must restore the resulting bias state."
+                },
+                "expected_outputs": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "default": []
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "mode": {
+                        "const": "dynamics"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "steps",
+                      "output_prefix"
+                    ]
+                  },
+                  "else": {
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": [
+                            "steps"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "restart"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "output_prefix"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

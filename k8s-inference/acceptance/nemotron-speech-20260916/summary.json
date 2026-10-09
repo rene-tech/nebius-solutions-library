@@ -1,0 +1,156 @@
+{
+  "en": {
+    "status": "passed_direct_runtime_diagnostic_not_customer_acceptance",
+    "model": "nemotron-speech-en-0.6b",
+    "profile": {
+      "model": "nemotron-speech-en-0.6b",
+      "chunk_size_ms": 560,
+      "strip_language_tags": true,
+      "decoding": "greedy_batch",
+      "beam_size": 4,
+      "precision": "float32",
+      "confidence": false,
+      "cuda_graphs": false
+    },
+    "fixture": {
+      "source": "espeak-ng",
+      "sha256": "02bfe969674facbd59d5aef773a86cc9fbe030d12418b1657ae92d4ac678b4d4",
+      "audio_seconds": 14.69075
+    },
+    "cold_single_observation": {
+      "runtime_phases": {
+        "runtime_import_seconds": 6.711997264003003,
+        "checkpoint_acquisition_seconds": 29.03203492800094,
+        "model_load_seconds": 7.422210664000886
+      },
+      "warmup_seconds": 14.772656266999547,
+      "first_gpu_step_seconds": 14.069219924000208,
+      "job_created_to_runtime_loaded_seconds": 171.302,
+      "job_created_to_warmup_completed_seconds": 186.143,
+      "node_provisioning": "not measured; existing nodes",
+      "image_pull_seconds": 119.716
+    },
+    "file_speed": {
+      "wall_seconds": {
+        "samples": 3,
+        "min": 0.7222705309977755,
+        "mean": 0.7270004483325465,
+        "max": 0.7345905189977202
+      },
+      "real_time_factor": {
+        "samples": 3,
+        "min": 0.04916498687934758,
+        "mean": 0.04948695256079822,
+        "max": 0.050003609005511644
+      },
+      "first_partial_seconds": {
+        "samples": 3,
+        "min": 0.05421738000222831,
+        "mean": 0.054680187666235724,
+        "max": 0.055483019998064265
+      }
+    },
+    "realtime_paced": {
+      "first_partial_seconds": {
+        "samples": 3,
+        "min": 1.1711894930012932,
+        "mean": 1.1730877713331818,
+        "max": 1.174923137998121
+      },
+      "finalization_seconds": {
+        "samples": 3,
+        "min": 0.02492158300083247,
+        "mean": 0.026128703999953967,
+        "max": 0.026975518001563614
+      },
+      "wall_seconds": {
+        "samples": 3,
+        "min": 14.715726779999386,
+        "mean": 14.716928902666647,
+        "max": 14.71777393299999
+      }
+    },
+    "warm_gpu_peak_allocated_bytes": 2688301568,
+    "warm_gpu_peak_reserved_bytes": 5307891712,
+    "all_six_measurements_passed": true,
+    "transcript": "Welcome to the scientific artificial intelligence platform. This is a speech recognition test. We are checking that every spoken word is transcribed, including the very last word. The final word is telescope.",
+    "accuracy_scope": "synthetic English required-word diagnostic only; no locale quality qualification"
+  },
+  "multi": {
+    "status": "passed_direct_runtime_diagnostic_not_customer_acceptance",
+    "model": "nemotron-speech-multilingual-0.6b",
+    "profile": {
+      "model": "nemotron-speech-multilingual-0.6b",
+      "chunk_size_ms": 560,
+      "strip_language_tags": true,
+      "decoding": "greedy_batch",
+      "beam_size": 4,
+      "precision": "float32",
+      "confidence": false,
+      "cuda_graphs": false
+    },
+    "fixture": {
+      "source": "espeak-ng",
+      "sha256": "02bfe969674facbd59d5aef773a86cc9fbe030d12418b1657ae92d4ac678b4d4",
+      "audio_seconds": 14.69075
+    },
+    "cold_single_observation": {
+      "runtime_phases": {
+        "runtime_import_seconds": 7.652911588000279,
+        "checkpoint_acquisition_seconds": 31.116838219000783,
+        "model_load_seconds": 56.890845112000534
+      },
+      "warmup_seconds": 17.19631285200012,
+      "first_gpu_step_seconds": 16.410831080997013,
+      "job_created_to_runtime_loaded_seconds": 220.223,
+      "job_created_to_warmup_completed_seconds": 237.486,
+      "node_provisioning": "not measured; existing nodes",
+      "image_pull_seconds": 119.871
+    },
+    "file_speed": {
+      "wall_seconds": {
+        "samples": 3,
+        "min": 0.7982342059985967,
+        "mean": 0.8011462799998602,
+        "max": 0.804047626999818
+      },
+      "real_time_factor": {
+        "samples": 3,
+        "min": 0.05433583758477932,
+        "mean": 0.05453406259039601,
+        "max": 0.05473155740856104
+      },
+      "first_partial_seconds": {
+        "samples": 3,
+        "min": 0.05823763899752521,
+        "mean": 0.0594630283327812,
+        "max": 0.06107531599991489
+      }
+    },
+    "realtime_paced": {
+      "first_partial_seconds": {
+        "samples": 3,
+        "min": 1.1751436500017007,
+        "mean": 1.175598189001903,
+        "max": 1.175920927002153
+      },
+      "finalization_seconds": {
+        "samples": 3,
+        "min": 0.028867452001577476,
+        "mean": 0.02995533866851474,
+        "max": 0.030686714002513327
+      },
+      "wall_seconds": {
+        "samples": 3,
+        "min": 14.71968395300064,
+        "mean": 14.720764349333573,
+        "max": 14.72149139999965
+      }
+    },
+    "warm_gpu_peak_allocated_bytes": 5332897280,
+    "warm_gpu_peak_reserved_bytes": 5523898368,
+    "all_six_measurements_passed": true,
+    "transcript": "Welcome to the Scientific Artificial Intelligence Platform.  This is a speech recognition test.  We are checking out every spoken word is transcribed, including the very last word.  The final word is telescope.",
+    "accuracy_scope": "synthetic English required-word diagnostic only; no locale quality qualification"
+  }
+}

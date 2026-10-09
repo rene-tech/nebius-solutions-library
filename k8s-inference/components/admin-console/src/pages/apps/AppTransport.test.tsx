@@ -30,6 +30,10 @@ const observation: ObservedTransport = {
   operation_id: "operation-one",
   mcp_tool: "invoke_model",
   mcp_is_error: true,
+  semantic_outcome: "failed",
+  jsonrpc_error_code: -32602,
+  semantic_error_type: "model_input_validation",
+  admission_stage: "pre_admission",
 };
 const usage: ObservedTransportUsage = {
   request_count: 3,
@@ -38,6 +42,13 @@ const usage: ObservedTransportUsage = {
   successful_http_count: 2,
   failed_http_count: 1,
   mcp_tool_error_count: 1,
+  semantic_success_count: 0,
+  semantic_accepted_count: 1,
+  semantic_failed_count: 1,
+  semantic_cancelled_count: 0,
+  semantic_timed_out_count: 0,
+  semantic_unknown_count: 1,
+  pre_admission_failure_count: 1,
   request_bytes: 0,
   response_bytes: null,
   request_bytes_known_count: 3,
@@ -53,11 +64,13 @@ const usage: ObservedTransportUsage = {
       timestamp: "2026-09-08T11:59:00Z",
       request_count: null,
       status_classes: null,
+      semantic_outcomes: null,
     },
     {
       timestamp: "2026-09-08T12:00:00Z",
       request_count: 3,
       status_classes: { "2xx": 2, "5xx": 1 },
+      semantic_outcomes: { accepted: 1, failed: 1, unknown: 1 },
     },
   ],
 };
@@ -74,8 +87,9 @@ describe("actual request observations", () => {
   });
   it("shows actual HTTP200 and MCP tool error independently, with meaningful zero bytes", () => {
     render(<AppRunTransport observations={[observation]} />);
-    expect(screen.getByText("200")).toBeInTheDocument();
-    expect(screen.getByText("MCP tool error")).toBeInTheDocument();
+    expect(screen.getByText("HTTP 200")).toBeInTheDocument();
+    expect(screen.getByText(/failed · pre admission/)).toBeInTheDocument();
+    expect(screen.getByText(/model_input_validation · JSON-RPC -32602/)).toBeInTheDocument();
     expect(screen.getByText("invoke_model")).toBeInTheDocument();
     expect(screen.getByText("0 B / 12 B")).toBeInTheDocument();
     expect(

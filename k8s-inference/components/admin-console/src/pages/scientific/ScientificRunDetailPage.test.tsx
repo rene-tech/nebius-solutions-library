@@ -57,6 +57,64 @@ function renderPage(
 }
 
 describe("scientific run detail", () => {
+  it("shows exact device sample counts and gaps without claiming busy GPU-seconds", async () => {
+    const detail = detailFixture();
+    const attempt = detail.data.stages[1].attempts[0];
+    attempt.activity_capture_reason = "dcgm_capture_partial";
+    attempt.device_activity = [{
+      pod_uid: "exact-pod", node_uid: "exact-node", gpu_uuid: "exact-gpu", sample_count: 3,
+      positive_samples: 1, zero_samples: 2, min_percent: 0, max_percent: 80, max_gap_seconds: 5,
+      allocation_start: "2026-09-19T13:30:00Z", allocation_end: "2026-09-19T13:30:10Z",
+      first_sample_at: "2026-09-19T13:30:04Z", last_sample_at: "2026-09-19T13:30:09Z",
+      samples_sha256: "a".repeat(64), phase_samples: {active_compute: 3},
+      phase_zero_samples: {active_compute: 2}, phase_positive_samples: {active_compute: 1},
+    }];
+    renderPage(() => Promise.resolve(detail));
+    expect(await screen.findByText(/3 samples: 1 positive, 2 zero/)).toBeInTheDocument();
+    expect(screen.getByText(/Capture: dcgm_capture_partial/)).toHaveTextContent("No kernel-exact or billable busy/idle time is inferred");
+    expect(screen.getByText("exact-pod")).toBeInTheDocument();
+    expect(screen.getByText(/Maximum unsampled gap/)).toHaveTextContent("5s");
+  });
+
+  it("separates unavailable activity, observed phases and frozen whole-Pod fit requirements", async () => {
+    const detail = detailFixture();
+    const accounting = detail.data.run.gpu_accounting;
+    accounting.phase_partition = {unclassified: {...accounting.allocated, value: 5}};
+    accounting.sampled_device_activity = {
+      value: null, unit: "gpu-seconds", evidence: "unavailable", source: "lifecycle-ledger",
+      reason: "No attempt-correlated device activity samples are retained.",
+    };
+    detail.data.stages[1].placement = {
+      source: "frozen-admission-contract", scheduling_digest: "sha256:test", eligible_pool_ids: ["h100-1x"],
+      namespace: "fs2-models", required_node_labels: {"gpu.family": "h100"},
+      stage_cpu_millis: 16000, stage_memory_bytes: 1024, stage_ephemeral_storage_bytes: 1024,
+      pod_cpu_millis: 16100, pod_memory_bytes: 268436480, pod_ephemeral_storage_bytes: 1024,
+      accelerator_count: 1, reference_data_required: true, live_fit: "not-observed",
+      reason: "Frozen eligibility is not current placeable capacity.",
+      node_upper_bound_fit: {
+        source: "kubernetes-node-allocatable", observed_at: "2026-09-19T13:30:00Z",
+        reason: "Current node allocatable upper bounds, not free resources or a scheduling promise.",
+        pools: [{pool_id: "h100-1x", state: "blocked", nodes_observed: 1, possible_nodes: 0, unknown_nodes: 0,
+          blocking_reasons: {cpu_request_exceeds_node_allocatable: 1}, max_allocatable_cpu_millis: 15900,
+          max_allocatable_memory_bytes: 30000000000, max_allocatable_ephemeral_storage_bytes: 50000000000,
+          max_allocatable_accelerators: 1}],
+      },
+    };
+    renderPage(() => Promise.resolve(detail));
+    expect(await screen.findByText("Sampled device activity")).toBeInTheDocument();
+    expect(screen.getByText("No attempt-correlated device activity samples are retained.")).toBeInTheDocument();
+    const constraints = screen.getByRole("region", {name: "Frozen placement constraints"});
+    expect(constraints).toHaveTextContent("CPU 16100m");
+    expect(constraints).toHaveTextContent("gpu.family=h100");
+    expect(constraints).toHaveTextContent("Reference data: required");
+    expect(constraints).toHaveTextContent("not current placeable capacity");
+    expect(constraints).toHaveTextContent("h100-1x: blocked");
+    expect(constraints).toHaveTextContent("CPU 15900m");
+    expect(constraints).toHaveTextContent("cpu request exceeds node allocatable: 1");
+    expect(constraints).toHaveTextContent("not free resources or a scheduling promise");
+    expect(screen.getByText(/Not a bill or a measurement of device utilization/)).toBeInTheDocument();
+  });
+
   it("waits for successful result publication without polling failed or cancelled runs forever", () => {
     const detail = detailFixture().data;
     expect(scientificRunNeedsRefresh(undefined)).toBe(true);
@@ -166,7 +224,7 @@ describe("scientific run detail", () => {
     expect(await screen.findByRole("heading", { name: "CD8 binder backbone screen" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Phase durations" })).toBeInTheDocument();
     expect(screen.getByText(/Observed wall-time union per phase/)).toHaveTextContent("Parallel intervals count once");
-    expect(screen.getByRole("heading", { name: "GPU idle by cause" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "GPU occupancy partition" })).toBeInTheDocument();
     expect(screen.getByText("Reconciliation", { exact: false })).toHaveTextContent("0 GPU-s measured");
 
     const gpuStage = screen.getByRole("heading", { name: "Diffuse candidate backbones" }).closest("li");

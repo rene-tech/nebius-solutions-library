@@ -1,0 +1,68 @@
+{
+  "status": "passed",
+  "fixture": "canonical-alanine-tip3p",
+  "atoms": 6598,
+  "production_steps": 500000,
+  "production_ns": 1.0,
+  "native_elapsed_seconds": 118.38,
+  "ns_per_day": 729.8530157121135,
+  "ensemble": "NPT",
+  "relative_total_energy_span": 0.03113926550877606,
+  "temperature_mean_k": 298.32824,
+  "temperature_min_k": 285.65,
+  "temperature_max_k": 309.82,
+  "restart_boundaries": [],
+  "trajectories": [
+    {
+      "path": "data/production-001.nc",
+      "frames": 1000,
+      "atoms": 6598,
+      "native_ns_day": 729.84,
+      "native_elapsed_seconds": 118.38
+    }
+  ],
+  "rmsd_frames": 1000,
+  "rmsd_max_angstrom": 1.4515,
+  "gpu_samples": 0,
+  "gpu_utilization_mean_percent": null,
+  "gpu_memory_peak_mib": null,
+  "scientific_convergence_claimed": false,
+  "free_energy_convergence_claimed": false,
+  "exact_stochastic_continuation_claimed": false,
+  "gpu_process_snapshot": false,
+  "canonical_master_parity": true,
+  "master_sha256": {
+    "system.prmtop": "805a5f22bd3d3b0045b1ed02652f4272a8e6df8a143fe98278f924d77ad4b61a",
+    "system.rst7": "a402729188a58515f01fab8f611bf776b8146f6323445a2f666f76d7c658d898",
+    "system.pdb": "bc75b92a39dae59e4abcc72fc7b0791b4d732068bf23b495f9cccfb86da5ff05",
+    "master-manifest.json": "459d08d8300fd8fbe74eb241509235da51e63624877e03a01da3a62187a254a3"
+  },
+  "native_barostat": "stochastic cell rescaling, not plain Berendsen",
+  "native_pressure_estimator": "molecular virial",
+  "production_pressure_samples": 1000,
+  "production_pressure_mean_bar": -12.3712,
+  "production_pressure_sd_bar": 268.19004663050356,
+  "production_pressure_min_bar": -833.9,
+  "production_pressure_max_bar": 839.3,
+  "velocity_trajectories": [
+    {
+      "stage": "nvt",
+      "frames": 100,
+      "units": "angstrom/picosecond",
+      "scale_factor": 20.455
+    },
+    {
+      "stage": "npt",
+      "frames": 100,
+      "units": "angstrom/picosecond",
+      "scale_factor": 20.455
+    },
+    {
+      "stage": "production-001",
+      "frames": 1000,
+      "units": "angstrom/picosecond",
+      "scale_factor": 20.455
+    }
+  ],
+  "pressure_mean_target_closeness_not_used_as_short_run_convergence_claim": true
+}

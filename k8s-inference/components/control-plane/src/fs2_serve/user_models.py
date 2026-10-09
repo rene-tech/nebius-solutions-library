@@ -10,6 +10,8 @@ from pydantic import AwareDatetime, Field
 from .access_models import AdminApiKey, PrincipalKind
 from .admin_models import AdminMeasurement
 from .models import StrictModel
+from .usage_accounting import LifecycleUsageAccounting
+from .user_storage_models import UserStorage
 
 
 def owner_id(tenant_id: str, principal_id: str) -> UUID:
@@ -67,10 +69,19 @@ class UserUsage(StrictModel):
     pending: int = Field(ge=0)
     running: int = Field(ge=0)
     scientific_requests: int = Field(ge=0)
+    public_exchanges: int = Field(default=0, ge=0)
+    semantic_succeeded: int = Field(default=0, ge=0)
+    semantic_accepted: int = Field(default=0, ge=0)
+    semantic_failed: int = Field(default=0, ge=0)
+    semantic_cancelled: int = Field(default=0, ge=0)
+    semantic_timed_out: int = Field(default=0, ge=0)
+    semantic_unknown: int = Field(default=0, ge=0)
+    pre_admission_failed: int = Field(default=0, ge=0)
     last_request_at: AwareDatetime | None = None
     scheduler_occupied_gpu_seconds: AdminMeasurement
     active_gpu_seconds: AdminMeasurement
     occupied_idle_gpu_seconds: AdminMeasurement
+    lifecycle_accounting: LifecycleUsageAccounting | None = None
     input_tokens: AdminMeasurement
     output_tokens: AdminMeasurement
     request_series: list[UserUsagePoint] = Field(default_factory=list)
@@ -102,6 +113,7 @@ class UserDetail(StrictModel):
     user: UserRow
     keys: list[AdminApiKey]
     apps: list[UserAppChoice]
+    storage: UserStorage | None = None
     policy_note: str = (
         "User settings restrict, never expand, each API key's policy. Existing key limits remain per key. "
         "Academic classification is informational; every model uses the same app permissions. "

@@ -57,7 +57,7 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e") (ne .Values.migration.releaseContract.migrationSetSha256 "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2") (ne (int .Values.migration.releaseContract.migrationCount) 29) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0029_request_debug.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "98996da86d1a85fdb397558cd38a3b046c4cb07fc43e207b638fcc50a7b80ba1") (ne .Values.migration.releaseContract.migrationSetSha256 "f5569a923378a5cd4fee62a6e25936df6310fc9adb2ee057a1dc1448340472d3") (ne (int .Values.migration.releaseContract.migrationCount) 38) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0038_scientific_claimable_index.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
@@ -276,6 +276,27 @@ spec:
         {{- end }}
       {{- end }}
       initContainers:
+        {{- if and .Values.customerStorage.enabled .Values.customerStorage.starterPack.enabled }}
+        - name: install-starter-pack
+          image: {{ required "customerStorage.starterPack.image is required" .Values.customerStorage.starterPack.image | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/cp", "-R", "/pack/.", "/installed/"]
+          volumeMounts:
+            - name: starter-pack
+              mountPath: /installed
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+        {{- end }}
         - name: wait-schema
           image: {{ include "fs2-serve.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -309,6 +330,15 @@ spec:
             {{- include "fs2-serve.runtimeEnv" . | nindent 12 }}
           volumeMounts:
             {{- include "fs2-serve.runtimeVolumeMounts" . | nindent 12 }}
+            {{- if and .Values.customerStorage.enabled .Values.customerStorage.starterPack.enabled }}
+            - name: starter-pack
+              mountPath: /opt/fs2/starter-pack
+              readOnly: true
+            {{- end }}
+            # Multipart UploadFile spills files larger than 1 MiB to disk.
+            # Keep that scratch writable without changing the read-only image.
+            - name: upload-tmp
+              mountPath: /tmp
           startupProbe:
             httpGet:
               path: /livez
@@ -338,6 +368,14 @@ spec:
               drop: ["ALL"]
       volumes:
         {{- include "fs2-serve.runtimeVolumes" . | nindent 8 }}
+        {{- if and .Values.customerStorage.enabled .Values.customerStorage.starterPack.enabled }}
+        - name: starter-pack
+          emptyDir:
+            sizeLimit: 160Mi
+        {{- end }}
+        - name: upload-tmp
+          emptyDir:
+            sizeLimit: {{ ((.Values.temporaryStorage | default dict).sizeLimit | default "512Mi") | quote }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

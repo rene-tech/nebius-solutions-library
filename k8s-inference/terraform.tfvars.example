@@ -109,9 +109,10 @@ deployment = {
     cold_start_keepers = true
   }
 
-  # Live model lifecycle is configured only here. Terraform derives the
-  # internal pool envelope and renderer bundles from the model, accelerator,
-  # queue, tenant, image, and scaling choices above.
+  # Terraform declares infrastructure and model registration. The admin console
+  # owns existing Apps' desired lifecycle; bootstrap settings only seed new Apps.
+  # Internal pool envelopes and renderer bundles derive from the model,
+  # accelerator, queue, tenant, image, and initial scaling choices above.
   #
   # For a fresh cluster, seed these models through the authenticated admin API.
   # Other selected catalog models can then be added from the admin console.
@@ -127,6 +128,11 @@ deployment = {
     # Optional, machine-generated benchmark projection. Keep the receipt
     # cohort outside this human-authored file.
     # fast_start_evidence_file = "/absolute/private/run/fast-start-evidence.json"
+    # Existing admin-owned Apps can retain their exact immutable registrations
+    # across a redeploy without new bootstrap writes or static resources.
+    # Every pool referenced by this reviewed file must already be declared in
+    # accelerator_pools; this input never creates capacity or moves state.
+    # retained_registration_file = "/absolute/repository/k8s-inference/acceptance/idle-scale-zero-20261005/managed-runtime-adoptions.json"
     # A reviewed mechanism set declares compile-cache and residency-receipt
     # claim names. Terraform provisions those claims through
     # storage.fast_start_claims below unless manage=false adopts existing ones.
@@ -544,6 +550,9 @@ deployment = {
       repository             = "registry.example.invalid/k8s-inference/control-plane"
       digest                 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
       catalog_rollout_digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      # Optional: pin a previously qualified observer independently so gateway
+      # changes do not restart every GPU-node observer. Empty follows digest above.
+      gpu_observer_image = ""
       # Size this envelope to the schedulable CPU capacity of the system pool.
       autoscaling = {
         enabled                           = true

@@ -8,7 +8,7 @@ COPY . /
 
 FROM ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a AS uv
 
-FROM python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1 AS builder
+FROM python:3.13.15-alpine3.23@sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -22,6 +22,11 @@ COPY k8s-inference/components/control-plane/src ./src
 COPY k8s-inference/components/control-plane/migrations ./migrations
 COPY k8s-inference/components/control-plane/contracts ./contracts
 COPY k8s-inference/catalog/runtime /workspace/k8s-inference/catalog/runtime
+COPY k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs /workspace/k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs
+COPY k8s-inference/models/molecular-dynamics/lammps/runtime/fs2_lammps /workspace/k8s-inference/models/molecular-dynamics/lammps/runtime/fs2_lammps
+COPY k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd /workspace/k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd
+COPY k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber /workspace/k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber
+COPY k8s-inference/models/visual-science/scvi-scanvi/runtime/fs2_scvi /workspace/k8s-inference/models/visual-science/scvi-scanvi/runtime/fs2_scvi
 
 # The canonical catalog is a nested immutable tree and cannot be represented by
 # a single Kubernetes ConfigMap without flattening paths. Build the exact
@@ -48,11 +53,11 @@ RUN uv sync --frozen --no-dev --no-install-project \
     && uv build --wheel --out-dir /tmp/dist --build-constraints /tmp/build-constraints.txt --require-hashes \
     && uv pip install --python .venv/bin/python --no-deps --no-index /tmp/dist/fs2_serve_control_plane-*.whl \
     && uv pip check --python .venv/bin/python \
-    && .venv/bin/python -I -c "from pathlib import Path; import fs2_serve, fs2_serve_catalog; from fs2_serve.settings import Settings; from fs2_serve_catalog.loader import load_catalog; migration_dir=Settings.model_fields['migrations_dir'].default; assert isinstance(migration_dir, Path); assert migration_dir.parent == Path(fs2_serve.__file__).resolve().parent; assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 29; assert load_catalog(Path('/workspace/runtime-catalog'), repo_root=Path('/workspace/runtime-catalog/packaged-repository')).records['qwen3-8b'].model_id == 'qwen3-8b'" \
-    && .venv/bin/python -I -c "from pathlib import Path; from fs2_serve_catalog.loader import load_catalog; from fs2_serve.native_catalog import augment_native_catalog; root=Path('/workspace/runtime-catalog'); catalog=load_catalog(root, repo_root=root/'packaged-repository'); native=augment_native_catalog(catalog, root, repo_root=root/'packaged-repository'); assert {'phenoage','altumage'} <= native.records.keys(); assert native.digest == catalog.digest" \
+    && .venv/bin/python -I -c "from pathlib import Path; import fs2_serve, fs2_serve_catalog; from fs2_serve.settings import Settings; from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS; from fs2_serve_catalog.loader import load_catalog; migration_dir=Settings.model_fields['migrations_dir'].default; assert isinstance(migration_dir, Path); assert migration_dir.parent == Path(fs2_serve.__file__).resolve().parent; assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == len(EXPECTED_MIGRATIONS); assert load_catalog(Path('/workspace/runtime-catalog'), repo_root=Path('/workspace/runtime-catalog/packaged-repository')).records['qwen3-8b'].model_id == 'qwen3-8b'" \
+    && .venv/bin/python -I -c "from pathlib import Path; from fs2_serve_catalog.loader import load_catalog; from fs2_serve.native_catalog import augment_native_catalog; root=Path('/workspace/runtime-catalog'); catalog=load_catalog(root, repo_root=root/'packaged-repository'); native=augment_native_catalog(catalog, root, repo_root=root/'packaged-repository'); assert {'phenoage','altumage','cellpose-cpsam-v2','scvi-scanvi','sam2-1-hiera-large','wan2-2-t2v-nim','wan2-2-i2v-nim','ace-step-1-5'} <= native.records.keys(); assert native.digest == catalog.digest" \
     && .venv/bin/fs2-serve --help >/dev/null
 
-FROM python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1
+FROM python:3.13.15-alpine3.23@sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3
 
 ENV PATH="/workspace/k8s-inference/components/control-plane/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -94,6 +99,9 @@ RUN chmod -R u=rwX,go=rX /opt/fs2/catalog \
 # ability to stat the schema. Every model stage needs this schema to commit.
 USER 1000:1000
 RUN python -I -c "import json; from pathlib import Path; schema=json.loads(Path('/opt/fs2/catalog/schema/scientific-artifact-manifest.schema.json').read_text()); assert schema['type'] == 'object'"
+# Compile-only tests miss omissions from the companion's production bootstrap.
+# Verify the wheel's actual native collectors as the non-root workload identity.
+RUN python -I -c "from fs2_serve.scientific_batch.adapters import _COLLECTORS, _COMPILERS, amber, gromacs, gromacs_mpi, lammps, namd; from fs2_serve.scientific_batch.adapters.production_registry import install_production_adapters; install_production_adapters(); assert all(module.MODEL_ID in _COMPILERS and _COLLECTORS.get(module.COLLECTOR_ID) == module.collect_companion_output for module in (amber, gromacs, gromacs_mpi, lammps, namd))"
 RUN /opt/fs2/bin/mosaic-batch aggregate --help >/dev/null
 USER 0:0
 
@@ -111,7 +119,7 @@ RUN test -f /opt/fs2/catalog/schema/scientific-artifact-manifest.schema.json \
 LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
     org.opencontainers.image.revision="$FS2_SOURCE_COMMIT" \
     org.opencontainers.image.base.name="docker.io/library/python:3.13.15-alpine3.23" \
-    org.opencontainers.image.base.digest="sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1" \
+    org.opencontainers.image.base.digest="sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3" \
     ai.nebius.fs2-serve.source-tree="$FS2_SOURCE_TREE" \
     ai.nebius.fs2-serve.uv-lock-sha256="$FS2_UV_LOCK_SHA256" \
     ai.nebius.fs2-serve.dockerfile-sha256="$FS2_DOCKERFILE_SHA256" \

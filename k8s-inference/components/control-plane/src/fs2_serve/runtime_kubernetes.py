@@ -1,7 +1,8 @@
 """Fail-closed Kubernetes runtime identity and lifecycle observations.
 
-The public inference response is not an attribution authority.  This adapter
-resolves a single ready ModelDeployment Pod through the Kubernetes API and
+The public inference response is not an attribution authority. This adapter
+verifies instrumented response hints against Service/EndpointSlice/Pod facts,
+or resolves a single ready ModelDeployment Pod through the Kubernetes API and
 uses only Pod/Node status, Kubernetes Events, and annotations written by the
 node-local GPU allocation observer.  Ambiguous replicas deliberately produce
 no attribution rather than guessing which Pod served a request.
@@ -20,6 +21,11 @@ from uuid import UUID
 
 from .admin import AdminAdapterUnavailableError
 from .admin_adapters import KubernetesListReader
+from .gpu_identity import GPU_ALLOCATION_OBSERVED_AT_ANNOTATION as GPU_ALLOCATION_OBSERVED_AT_ANNOTATION
+from .gpu_identity import GPU_OBSERVER_RESOLUTION_ANNOTATION as GPU_OBSERVER_RESOLUTION_ANNOTATION
+from .gpu_identity import GPU_RESOURCE_PATTERN as _GPU_RESOURCE
+from .gpu_identity import GPU_UUIDS_ANNOTATION as GPU_UUIDS_ANNOTATION
+from .gpu_identity import pod_gpu_count as pod_gpu_count
 from .model_deployment import MODEL_ID_LABEL
 from .models import (
     RuntimeIdentity,
@@ -29,14 +35,12 @@ from .models import (
     RuntimePhaseObservation,
 )
 
-GPU_UUIDS_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-uuids"
-GPU_ALLOCATION_OBSERVED_AT_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-allocation-observed-at"
-GPU_OBSERVER_RESOLUTION_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds"
 PHASE_ANNOTATION_PREFIX = "telemetry.fs2.nebius.ai/phase-"
+RESPONSE_IDENTITY_ANNOTATION = "telemetry.fs2.nebius.ai/response-identity"
+RESPONSE_IDENTITY_VERSION = "asgi-v1"
+COSMOS_RESPONSE_IDENTITY_VERSION = "asgi-cosmos-adapter-v1"
+OPEN_HTTP_RESPONSE_IDENTITY_VERSION = "http-open-runtime-v1"
 
-_GPU_RESOURCE = re.compile(
-    r"^(?:nvidia\.com/(?:gpu|mig-[A-Za-z0-9_.-]+)|amd\.com/gpu|gpu\.intel\.com/(?:i915|xe))$"
-)
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 
@@ -59,37 +63,6 @@ def _timestamp(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         return None
     return parsed.astimezone(UTC)
-
-
-def _positive_int(value: object) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, str | int):
-        return None
-    text = str(value)
-    if not text.isdigit():
-        return None
-    parsed = int(text)
-    return parsed if 1 <= parsed <= 64 else None
-
-
-def pod_gpu_count(pod: Mapping[str, Any]) -> int | None:
-    total = 0
-    containers = _sequence(_mapping(pod.get("spec")).get("containers"))
-    if not containers:
-        return None
-    for raw_container in containers:
-        container = _mapping(raw_container)
-        resources = _mapping(container.get("resources"))
-        requests = _mapping(resources.get("requests"))
-        limits = _mapping(resources.get("limits"))
-        for name, raw_request in requests.items():
-            if not isinstance(name, str) or _GPU_RESOURCE.fullmatch(name) is None:
-                continue
-            request = _positive_int(raw_request)
-            limit = _positive_int(limits.get(name))
-            if request is None or request != limit:
-                return None
-            total += request
-    return total if 1 <= total <= 64 else None
 
 
 def _condition_time(pod: Mapping[str, Any], condition_type: str) -> datetime | None:
@@ -240,12 +213,200 @@ class KubernetesRuntimeMetadataProvider:
         model_id: str,
     ) -> RuntimeLifecycleObservation | None:
         del operation_id
+        return await self._resolve(model_id=model_id)
+
+    async def resolve_response_lifecycle(
+        self,
+        *,
+        operation_id: UUID,
+        model_id: str,
+        pod_uid: str,
+        service_name: str,
+        service_namespace: str,
+        service_port: int,
+        runtime_image_digest: str,
+        model_revision: str | None,
+    ) -> RuntimeLifecycleObservation | None:
+        del operation_id  # The RuntimeClient already verifies operation + attempt echo.
+        if service_namespace != self.namespace or _DNS_LABEL.fullmatch(service_name) is None or model_revision is None:
+            return None
+        return await self._resolve(
+            model_id=model_id,
+            response_binding={
+                "pod_uid": pod_uid,
+                "service_name": service_name,
+                "service_port": service_port,
+                "runtime_image_digest": runtime_image_digest,
+                "model_revision": model_revision,
+            },
+        )
+
+    async def _response_matches_endpoint(
+        self,
+        pod: Mapping[str, Any],
+        binding: Mapping[str, Any],
+    ) -> bool:
+        metadata, spec, status = (_mapping(pod.get(key)) for key in ("metadata", "spec", "status"))
+        annotations = _mapping(metadata.get("annotations"))
+        if (
+            metadata.get("namespace") != self.namespace
+            or annotations.get(RESPONSE_IDENTITY_ANNOTATION) not in {
+                RESPONSE_IDENTITY_VERSION, COSMOS_RESPONSE_IDENTITY_VERSION, OPEN_HTTP_RESPONSE_IDENTITY_VERSION,
+            }
+            or annotations.get("fs2.nebius/model-revision") != binding["model_revision"]
+            or annotations.get("fs2.nebius/runtime-image-digest") != binding["runtime_image_digest"]
+        ):
+            return False
+        containers = [_mapping(c) for c in _sequence(spec.get("containers"))]
+        is_cosmos_adapter = annotations.get(RESPONSE_IDENTITY_ANNOTATION) == COSMOS_RESPONSE_IDENTITY_VERSION
+        is_open_http = annotations.get(RESPONSE_IDENTITY_ANNOTATION) == OPEN_HTTP_RESPONSE_IDENTITY_VERSION
+        upstream: list[Mapping[str, Any]] = []
+        if is_cosmos_adapter:
+            # The media Service terminates on a CPU adapter, not vLLM's port.
+            # Its pinned implementation forwards only to 127.0.0.1:8000. Bind
+            # that same Pod's actual GPU container as well as the responding
+            # adapter; a hint from a separate relay Pod is never sufficient.
+            upstream = [
+                c for c in containers
+                if c.get("name") == "vllm-omni"
+                and str(c.get("image", "")).endswith("@" + binding["runtime_image_digest"])
+                and pod_gpu_count({"spec": {"containers": [c]}}) is not None
+                and any(_mapping(p).get("containerPort") == 8000
+                        and _mapping(p).get("protocol", "TCP") == "TCP"
+                        for p in _sequence(c.get("ports")))
+            ]
+            if len(upstream) != 1 or binding["service_port"] != 8080:
+                return False
+
+        def instrumented_entrypoint(container: Mapping[str, Any]) -> bool:
+            if is_cosmos_adapter:
+                return (
+                    container.get("name") == "bounded-json-adapter"
+                    and _sequence(container.get("command")) == ["python3", "/adapter/adapter.py"]
+                    and not _sequence(container.get("args"))
+                    and not any(
+                        _GPU_RESOURCE.fullmatch(str(resource))
+                        for kind in ("requests", "limits")
+                        for resource in _mapping(_mapping(container.get("resources")).get(kind))
+                    )
+                )
+            if is_open_http:
+                return (
+                    _sequence(container.get("command")) == ["python3", "/opt/fs2/runtime/common/server.py"]
+                    and not _sequence(container.get("args"))
+                    and pod_gpu_count({"spec": {"containers": [container]}}) is not None
+                )
+            return "fs2_runtime_identity.RuntimeIdentityMiddleware" in _sequence(container.get("args"))
+
+        instrumented = [
+            c
+            for c in containers
+            if str(c.get("image", "")).endswith("@" + binding["runtime_image_digest"])
+            and instrumented_entrypoint(c)
+            and any(
+                _mapping(e).get("name") == "FS2_RUNTIME_POD_UID"
+                and _mapping(_mapping(_mapping(e).get("valueFrom")).get("fieldRef")).get("fieldPath") == "metadata.uid"
+                for e in _sequence(c.get("env"))
+            )
+        ]
+        if len(instrumented) != 1:
+            return False
+        gpu_containers = [c for c in containers if pod_gpu_count({"spec": {"containers": [c]}}) is not None]
+        if is_open_http and len(gpu_containers) != 1:
+            # A CPU relay beside an unrelated GPU worker does not prove which
+            # model produced the response. This protocol terminates on the GPU.
+            return False
+        for component in [*instrumented, *upstream]:
+            running_images = [
+                _mapping(c).get("imageID")
+                for c in _sequence(status.get("containerStatuses"))
+                if _mapping(c).get("name") == component.get("name")
+            ]
+            if (
+                len(running_images) != 1
+                or not isinstance(running_images[0], str)
+                or not running_images[0].endswith("@" + binding["runtime_image_digest"])
+            ):
+                return False
+        services = await self.reader.list(f"/api/v1/namespaces/{self.namespace}/services")
+        services = [s for s in services if _mapping(s.get("metadata")).get("name") == binding["service_name"]]
+        if len(services) != 1:
+            return False
+        service_meta, service_spec = (_mapping(services[0].get(k)) for k in ("metadata", "spec"))
+        selector, labels = _mapping(service_spec.get("selector")), _mapping(metadata.get("labels"))
+        if not service_meta.get("uid") or not selector or any(labels.get(k) != v for k, v in selector.items()):
+            return False
+        ports = [
+            _mapping(p)
+            for p in _sequence(service_spec.get("ports"))
+            if _mapping(p).get("port") == binding["service_port"] and _mapping(p).get("protocol", "TCP") == "TCP"
+        ]
+        if len(ports) != 1:
+            return False
+        target = ports[0].get("targetPort", binding["service_port"])
+        container_ports = [_mapping(p) for p in _sequence(instrumented[0].get("ports"))]
+        selected = [
+            p
+            for p in container_ports
+            if (p.get("name") == target if isinstance(target, str) else p.get("containerPort") == target)
+        ]
+        if len(selected) != 1:
+            return False
+        if is_open_http:
+            listener = [_mapping(e).get("value") for e in _sequence(instrumented[0].get("env"))
+                        if _mapping(e).get("name") == "FS2_PORT"]
+            if listener != [str(selected[0].get("containerPort"))]:
+                return False
+        slices = await self.reader.list(f"/apis/discovery.k8s.io/v1/namespaces/{self.namespace}/endpointslices")
+        for item in slices:
+            slice_meta = _mapping(item.get("metadata"))
+            if (
+                _mapping(slice_meta.get("labels")).get("kubernetes.io/service-name") != binding["service_name"]
+                or not any(
+                    _mapping(o).get("kind") == "Service" and _mapping(o).get("uid") == service_meta["uid"]
+                    for o in _sequence(slice_meta.get("ownerReferences"))
+                )
+                or not any(
+                    _mapping(p).get("port") == selected[0].get("containerPort")
+                    and _mapping(p).get("protocol", "TCP") == "TCP"
+                    for p in _sequence(item.get("ports"))
+                )
+            ):
+                continue
+            for raw_endpoint in _sequence(item.get("endpoints")):
+                endpoint = _mapping(raw_endpoint)
+                ref, conditions = _mapping(endpoint.get("targetRef")), _mapping(endpoint.get("conditions"))
+                if (
+                    ref.get("kind") == "Pod"
+                    and ref.get("uid") == metadata.get("uid")
+                    and ref.get("name") == metadata.get("name")
+                    and ref.get("namespace") == self.namespace
+                    and conditions.get("ready") is True
+                    and conditions.get("terminating") is not True
+                    and isinstance(status.get("podIP"), str)
+                    and status["podIP"] in _sequence(endpoint.get("addresses"))
+                ):
+                    return True
+        return False
+
+    async def _resolve(
+        self,
+        *,
+        model_id: str,
+        response_binding: Mapping[str, Any] | None = None,
+    ) -> RuntimeLifecycleObservation | None:
         try:
             pods = await self.reader.list(f"/api/v1/namespaces/{self.namespace}/pods")
             candidates = [pod for pod in pods if _is_ready_model_pod(pod, model_id)]
+            if response_binding is not None:
+                candidates = [
+                    pod for pod in candidates if _mapping(pod.get("metadata")).get("uid") == response_binding["pod_uid"]
+                ]
             if len(candidates) != 1:
                 return None
             pod = candidates[0]
+            if response_binding is not None and not await self._response_matches_endpoint(pod, response_binding):
+                return None
             metadata = _mapping(pod.get("metadata"))
             spec = _mapping(pod.get("spec"))
             pod_uid = metadata.get("uid")

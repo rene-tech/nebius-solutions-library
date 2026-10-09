@@ -1,0 +1,208 @@
+{
+  "schema": "fs2-cosmos-upload-cpu-only-proof/v1",
+  "release_number": 146,
+  "outcome": "passed",
+  "customer_ready": false,
+  "release": {
+    "adapter": "cbdea972edc77cc9735eea0d30dfc70d733464fb39f8cdc7889c12c8a435363e",
+    "config": {
+      "/etc/fs2-scientific-batch/execution-map.json": "sha256:88c83daa474b2b66976c2d286cee863e21b0de7e8b1e08796515fb37852c3040",
+      "/etc/fs2-scientific-batch/kueue-scheduling.json": "sha256:e7bb83c3bbd78646367df71b2fbac86afcf145b713b71194c057e20a13ad3e14",
+      "/etc/fs2-serve/admin-observability/..2026_09_17_15_57_50.3741470442/config.json": "sha256:5f9787f4b4f74d2903c562a6933fa987d99e7650d474f3869a38b9d51cb41549",
+      "/etc/fs2-serve/admin-observability/config.json": "sha256:5f9787f4b4f74d2903c562a6933fa987d99e7650d474f3869a38b9d51cb41549",
+      "/etc/fs2-serve/admin/admin-configuration.json": "sha256:fe0354706ca1c699e468d15f05084551ff3d41086851ac3e97d12ff7915e8e6e",
+      "/etc/fs2-serve/bindings/model-variant-promotions.json": "sha256:a1f4c5a2e76e1f7e98770fc64a16dc79a354e84011f9fc5360cc0ee072931a97",
+      "/etc/fs2-serve/bindings/serving-bindings.json": "sha256:c0ac8754f75d649c697a19cda3b755cd9a887cd50660864f6f8fc56c1899ad76",
+      "/etc/fs2-serve/lean-routes/..2026_09_17_15_57_50.1839906651/deployment-runtimes.json": "sha256:07234652c31a51dcb413da7cabdac1f8c369185cc8e44ea9ae77faaeb2554efa",
+      "/etc/fs2-serve/lean-routes/..2026_09_17_15_57_50.1839906651/lean-routes.json": "sha256:d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+      "/etc/fs2-serve/lean-routes/deployment-runtimes.json": "sha256:07234652c31a51dcb413da7cabdac1f8c369185cc8e44ea9ae77faaeb2554efa",
+      "/etc/fs2-serve/lean-routes/lean-routes.json": "sha256:d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+      "/etc/fs2-serve/model-controller/infrastructure-envelope.json": "sha256:03bda7e70440bc4ef1d6db6ea13b6b39b0539e51b18372c3bc8afd044d1f3076",
+      "/etc/fs2-serve/model-controller/renderer-bundles.json": "sha256:b28e336b8c935720552f11b4280783a9318e33d5cd16bf14df2eacfa57a0f8ee"
+    },
+    "image": {
+      "control-plane": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:25438d07ec2caae07ae30209f6267d215b6a037b453aa9f0a3a5a76cb5b6e37e"
+    },
+    "policy": {
+      "gpu_seconds_budget": null,
+      "max_concurrency": 1,
+      "models": [
+        "cosmos3-nano"
+      ],
+      "rate_limit_requests": null,
+      "rate_window_seconds": null,
+      "request_budget": null,
+      "scopes": [
+        "catalog.read",
+        "inference.invoke",
+        "mcp.invoke",
+        "operations.acknowledge",
+        "operations.cancel",
+        "operations.read",
+        "operations.result"
+      ],
+      "tenant_id": "robotics"
+    },
+    "serving": [
+      {
+        "name": "cosmos3-nano-burst-h100-1x",
+        "runtime_images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
+        ],
+        "snapshot": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+        "spec_digest": "sha256:96bacd2bcce5f6061f71c70613c4ee1d0fa9cb359cf5e00caf992779f6cc7b15"
+      }
+    ]
+  },
+  "operation_id": "9d8cab8d-0647-48f8-aa07-bc019d9f8a14",
+  "accepted_at": "2026-09-17T16:03:25.591970Z",
+  "completed_at": "2026-09-17T16:04:56.783718Z",
+  "handle_expires_at": "2026-09-17T16:13:25.787681+00:00",
+  "observed_hold_seconds": 90.4086450682953,
+  "caller_samples": [
+    {
+      "observed_at": "2026-09-17T16:03:26.107177+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:03:36.586452+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:03:46.980519+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:03:57.364740+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:04:07.848363+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:04:18.250589+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:04:28.643547+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:04:39.040421+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:04:49.478424+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    },
+    {
+      "observed_at": "2026-09-17T16:04:56.248517+00:00",
+      "reserved_gpu_seconds": 0.0,
+      "runtime": {
+        "gpu_count": 0,
+        "gpu_uuids": [],
+        "node_uid": null,
+        "pod_uid": null,
+        "preemptible": null
+      },
+      "status": "queued"
+    }
+  ],
+  "terminal_status": "succeeded",
+  "terminal_protocol": "scientific-artifact-upload-v1",
+  "reserved_gpu_seconds": 0.0,
+  "artifact": {
+    "artifact_id": "d680a89d-2c8d-4b7b-a8bd-88c311af63bd",
+    "compression": "none",
+    "media_type": "video/mp4",
+    "sha256": "9880133da0e4da3411e38a38069686b187a7bbb1893513f7d0b523accf5ddce4",
+    "size_bytes": 25013
+  },
+  "inference_submitted": false,
+  "actual_zero_after": true,
+  "metrics_evidence": {
+    "path": "/home/tux/secure-handoff/cosmos-stockholm-rollout-20260917/held-upload-r146-retrospective-correlation.json",
+    "sha256": "7226e7be5bdbb626da4b804fd67010e06f1d66b3aeb31993c2f557576886a630",
+    "independent_verdict": "All nine CP queued/activating/running series and aggregate demand remain zero across19\u201320 distinct5s scrapes perCP; KSM desired/observed replicas and Pod count zero at16:03:20.604,16:03:50.604,16:04:20.604,16:04:50.604; startup_hold zero. Captured retrospectively after observer notification was delayed by context handoff; no inference overlapped the held window."
+  },
+  "private_receipt": {
+    "path": "/home/tux/secure-handoff/cosmos-public-media-20260917-aiumy1sU/upload-proof-release146/receipt.json",
+    "sha256": "e0c99e2c694c22dd22634c8642e3526b35f2e07379296ceb6d654b28a11d8a99"
+  },
+  "prior_negative_preserved": "public-cold-guard-negative-release145.json",
+  "cleanup": "Finalized the same upload normally via PUT and finalize; retained artifact/evidence. Disposable canary cleanup is recorded in the final media receipt."
+}

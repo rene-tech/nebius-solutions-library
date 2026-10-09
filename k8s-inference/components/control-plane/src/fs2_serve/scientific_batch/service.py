@@ -12,12 +12,14 @@ from pydantic import Field
 
 from ..auth import require_operation_access
 from ..models import AdmissionRequest, OperationView, PendingScientificAdmission, Principal, Scope, StrictModel
+from ..scientific_cpu import run_scientific_cpu
 from ..scientific_run_result import ArtifactRef, ScientificRunResult
 from ..scientific_run_result import SchedulingAdmission as PublicSchedulingAdmission
 from ..store import ConflictError, Store
-from .catalog_adapter import CatalogProfileAdapterError, scientific_plan_from_catalog_profile
+from .catalog_adapter import CatalogProfileAdapterError, ScientificStageExpansion, scientific_plan_from_catalog_profile
 from .codec import state_from_value, state_to_value
 from .controller import ScientificBatchController
+from .input_contracts import validate_input_roles
 from .models import (
     AdapterExecutionPlan,
     ArtifactAccessContext,
@@ -37,6 +39,7 @@ from .models import (
     WorkloadKind,
     accelerator_admission_projection,
 )
+from .pool_recovery import PoolRecoveryPolicy
 from .postgres_repository import ScientificBatchNotFoundError
 from .profile_catalog import (
     ScientificProfileCatalog,
@@ -45,6 +48,7 @@ from .profile_catalog import (
     profile_has_complete_qualification_evidence,
 )
 from .protocols import BatchRepositoryConflictError
+from .recovery_view import ScientificPoolRecovery, recovery_view
 from .scheduling import SchedulingContractError, SchedulingContractResolver
 
 
@@ -52,6 +56,15 @@ class ScientificArtifactAccess(Protocol):
     """Consumer seam implemented by the artifact-service owner."""
 
     async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission: ...
+
+    async def validate_model_input(
+        self,
+        model_id: str,
+        parameters: Mapping[str, Any],
+        admission: ScientificInputAdmission,
+        *,
+        tenant_id: str,
+    ) -> None: ...
 
     async def artifact_response(self, artifact_id: UUID, *, tenant_id: str) -> Mapping[str, Any]: ...
 
@@ -163,6 +176,7 @@ class ScientificAttemptView(StrictModel):
     scheduling_admission: PublicSchedulingAdmission | None
     failure_kind: FailureKind | None
     failure_code: str | None
+    recovery: ScientificPoolRecovery | None = None
 
 
 class ScientificStageView(StrictModel):
@@ -225,6 +239,7 @@ class ScientificProfileDiscovery(StrictModel):
     model_id: str
     display_name: str
     execution_mode: str
+    state: str = "qualified"
     operations: tuple[str, ...]
     service_classes: tuple[str, ...]
     parameter_schema: str
@@ -237,8 +252,8 @@ class ScientificProfileDiscovery(StrictModel):
     access_state: str
     access_receipt_digest: str | None
     h100_semantic_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    public_completion_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    scheduler_eligibility_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    public_completion_receipt_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
+    scheduler_eligibility_receipt_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
     execution_map_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     qualified_at: str = Field(
         min_length=20,
@@ -306,16 +321,30 @@ class ScientificBatchService:
                 continue
             try:
                 qualification = profile.value["qualification"]
-                if not profile_has_complete_qualification_evidence(profile.value):
+                if not profile_has_complete_qualification_evidence(profile.value, allow_active=True):
                     raise ScientificProfileError("scientific profile does not carry complete qualification receipts")
-                if self.execution_binding.execution_map_sha256 != (f"sha256:{qualification['execution_map_sha256']}"):
+                matches = getattr(self.execution_binding, "qualification_matches", None)
+                qualified_map = f"sha256:{qualification['execution_map_sha256']}"
+                if not (
+                    matches(profile.model_id, qualified_map)
+                    if callable(matches)
+                    else self.execution_binding.execution_map_sha256 == qualified_map
+                ):
                     raise ScientificProfileError("scientific qualification binds another execution map")
                 self.execution_binding.access_context(profile, tenant_id=tenant_id)
                 variant_id = self.execution_binding.variant_id(profile.model_id)
                 workload_namespace = self.execution_binding.workload_namespace(profile.model_id)
                 for stage in profile.value["workload"]["stages"]:
                     self.execution_binding.collector_id(profile.model_id, str(stage["id"]))
-                plan = scientific_plan_from_catalog_profile(profile.value)
+                # Discovery has no request-specific gang size. Probe each
+                # gang's minimum legal size without changing submission-time
+                # validation or the customer's requested parallelism.
+                expansions = {
+                    stage["id"]: ScientificStageExpansion(shard_ids=("gang",), gang_size=stage["min_parallelism"])
+                    for stage in profile.value["workload"]["stages"]
+                    if stage["admission_mode"] == "gang-jobset"
+                }
+                plan = scientific_plan_from_catalog_profile(profile.value, expansions=expansions)
                 possible_attempts = sum(len(stage.workload_units) * stage.max_attempts for stage in plan.stages)
                 if possible_attempts > self.profiles.max_result_attempts:
                     raise ScientificProfileError("scientific plan exceeds the public result attempt bound")
@@ -343,6 +372,7 @@ class ScientificBatchService:
                     model_id=profile.model_id,
                     display_name=profile.display_name,
                     execution_mode=profile.execution_mode,
+                    state=cast(str, profile.value["state"]),
                     operations=profile.operations,
                     service_classes=profile.service_classes,
                     parameter_schema=profile.parameter_schema,
@@ -355,9 +385,11 @@ class ScientificBatchService:
                     access_state=profile.access_state,
                     access_receipt_digest=profile.access_receipt_digest,
                     h100_semantic_receipt_sha256=cast(str, qualification["h100_semantic_receipt_sha256"]),
-                    public_completion_receipt_sha256=cast(str, qualification["public_completion_receipt_sha256"]),
+                    public_completion_receipt_sha256=cast(
+                        str | None, qualification["public_completion_receipt_sha256"]
+                    ),
                     scheduler_eligibility_receipt_sha256=cast(
-                        str, qualification["scheduler_eligibility_receipt_sha256"]
+                        str | None, qualification["scheduler_eligibility_receipt_sha256"]
                     ),
                     execution_map_sha256=cast(str, qualification["execution_map_sha256"]),
                     qualified_at=cast(str, qualification["qualified_at"]),
@@ -384,7 +416,12 @@ class ScientificBatchService:
         }
 
     @staticmethod
-    def _state_view(operation: OperationView, state: ScientificBatchState) -> dict[str, Any]:
+    def _state_view(
+        operation: OperationView,
+        state: ScientificBatchState,
+        *,
+        recovery_policy: PoolRecoveryPolicy | None = None,
+    ) -> dict[str, Any]:
         # Scientific results are committed to the artifact plane rather than the
         # generic operation response ciphertext.  Project the artifact
         # controller's publication state into the shared Operation view so a
@@ -436,6 +473,7 @@ class ScientificBatchService:
                                 ),
                                 failure_kind=attempt.failure_kind,
                                 failure_code=attempt.failure_code,
+                                recovery=recovery_view(state, attempt, policy=recovery_policy),
                             )
                             for attempt in stage.attempts
                         ),
@@ -480,7 +518,7 @@ class ScientificBatchService:
         workload_namespace = self.execution_binding.workload_namespace(model_id)
         if require_mcp_invocable and not profile.mcp_invocable:
             raise ScientificProfileError("scientific workload profile is not MCP-invocable")
-        validated = self.profiles.validate_request(profile, request)
+        validated = await run_scientific_cpu(self.profiles.validate_request, profile, request)
         # Capture the admin choice once, before either preflight or admission.
         # Existing operations and retries only use their durable stage binding.
         startup_overrides = {}
@@ -501,6 +539,9 @@ class ScientificBatchService:
         input_admission = await self.artifacts.validate_input(
             validated["input_manifest"], tenant_id=principal.tenant_id
         )
+        await run_scientific_cpu(
+            validate_input_roles, str(profile.value["model_id"]), validated, input_admission.manifest.entries
+        )
         # Input artifacts are caller-owned scientific data, not license
         # credentials. Academic runtime authorization is deployment-bound and
         # projected from the reviewed execution handoff, never supplied by a
@@ -510,7 +551,8 @@ class ScientificBatchService:
         except CatalogProfileAdapterError as error:
             raise ScientificProfileError("scientific workload deployment authorization is not runnable") from error
         try:
-            preflight = self.plan_factory.plan(
+            preflight = await run_scientific_cpu(
+                self.plan_factory.plan,
                 profile,
                 validated,
                 operation_id=UUID(int=0),
@@ -519,6 +561,10 @@ class ScientificBatchService:
             )
         except CatalogProfileAdapterError as error:
             raise ScientificProfileError("scientific workload profile cannot form an execution plan") from error
+        if model_id == "proteina-complexa":
+            await self.artifacts.validate_model_input(
+                model_id, validated["parameters"], input_admission, tenant_id=principal.tenant_id
+            )
         plan = preflight.controller_plan if isinstance(preflight, AdapterExecutionPlan) else preflight
         try:
             runtime_artifacts = (
@@ -563,7 +609,9 @@ class ScientificBatchService:
             )
         except SchedulingContractError as error:
             raise ScientificProfileError("Kueue scheduling contract cannot admit this profile") from error
-        body = json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        body = await run_scientific_cpu(
+            lambda: json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        )
 
         def freeze_admission(operation: OperationView) -> dict[str, object]:
             if startup_error is not None:
@@ -608,21 +656,29 @@ class ScientificBatchService:
                     raise ScientificProfileError("scientific runtime binding changed during admission") from error
             else:
                 execution_plan = None
-            return state_to_value(
-                ScientificBatchState.admit(
-                    operation_id=operation.id,
-                    tenant_id=principal.tenant_id,
-                    model_id=model_id,
-                    variant_id=variant_id,
-                    input_artifact_id=UUID(validated["input_manifest"]["artifact_id"]),
-                    plan=plan,
-                    scheduling=snapshot,
-                    execution_plan=execution_plan,
-                    access_context=access_context,
-                    input_manifest=input_admission.manifest,
-                    runtime_artifacts=runtime_artifacts,
+            # Validate with the actual durable reader before the enclosing
+            # transaction commits. A writer/reader contract mismatch must reject
+            # this request, not leave a poison outbox row in every worker loop.
+            try:
+                payload = state_to_value(
+                    ScientificBatchState.admit(
+                        operation_id=operation.id,
+                        tenant_id=principal.tenant_id,
+                        model_id=model_id,
+                        variant_id=variant_id,
+                        input_artifact_id=UUID(validated["input_manifest"]["artifact_id"]),
+                        plan=plan,
+                        scheduling=snapshot,
+                        execution_plan=execution_plan,
+                        access_context=access_context,
+                        input_manifest=input_admission.manifest,
+                        runtime_artifacts=runtime_artifacts,
+                    )
                 )
-            )
+                state_from_value(payload)
+            except (KeyError, TypeError, ValueError) as error:
+                raise ScientificProfileError("scientific execution plan cannot be durably restored") from error
+            return payload
 
         operation = await self.store.append_operation(
             principal=principal,
@@ -662,10 +718,10 @@ class ScientificBatchService:
             # while this original submit was materializing its outbox row.
             current = await self.store.get_operation(operation.id, tenant_id=principal.tenant_id)
             operation = current.model_copy(update={"reused": operation.reused})
-        return self._state_view(operation, state)
+        return self._state_view(operation, state, recovery_policy=getattr(self.controller, "recovery_policy", None))
 
     async def _materialize_pending(self, pending: PendingScientificAdmission) -> ScientificBatchState:
-        state = state_from_value(pending.payload)
+        state = await run_scientific_cpu(state_from_value, pending.payload)
         operation = await self.store.get_operation(state.operation_id, tenant_id=state.tenant_id)
         if (
             operation.id != pending.operation_id
@@ -698,10 +754,20 @@ class ScientificBatchService:
             except ScientificBatchNotFoundError:
                 raise conflict from None
             frozen_fields = (
-                "operation_id", "batch_id", "workload_id", "tenant_id", "model_id",
-                "variant_id", "input_artifact_id", "plan", "scheduling",
-                "execution_plan", "access_context", "input_manifest",
-                "runtime_artifacts", "stored_schema",
+                "operation_id",
+                "batch_id",
+                "workload_id",
+                "tenant_id",
+                "model_id",
+                "variant_id",
+                "input_artifact_id",
+                "plan",
+                "scheduling",
+                "execution_plan",
+                "access_context",
+                "input_manifest",
+                "runtime_artifacts",
+                "stored_schema",
             )
             if any(getattr(admitted, name) != getattr(state, name) for name in frozen_fields):
                 raise
@@ -718,10 +784,17 @@ class ScientificBatchService:
     async def recover_pending_admissions(self, *, limit: int = 100) -> int:
         """Materialize accepted batch requests left by a stopped API process."""
 
-        pending = await self.store.list_scientific_admissions(limit=limit)
-        for item in pending:
-            await self._materialize_pending(item)
-        return len(pending)
+        # Every controller worker used to read/decode/materialize the same
+        # potentially multi-MiB page. Keep one background recovery owner across
+        # replicas; the original API submit remains independent, with the
+        # existing frozen-admission comparison handling their legitimate race.
+        async with self.store.scientific_admission_recovery() as acquired:
+            if not acquired:
+                return 0
+            pending = await self.store.list_scientific_admissions(limit=limit)
+            for item in pending:
+                await self._materialize_pending(item)
+            return len(pending)
 
     async def status(self, operation_id: UUID, *, principal: Principal) -> dict[str, Any]:
         self._authorize(principal, Scope.OPERATIONS_READ)
@@ -730,7 +803,7 @@ class ScientificBatchService:
         if operation.protocol != "scientific-batch-v1":
             raise ScientificBatchNotFoundError("operation is not a scientific batch")
         state = await self.repository.get(operation_id, tenant_id=principal.tenant_id)
-        return self._state_view(operation, state)
+        return self._state_view(operation, state, recovery_policy=getattr(self.controller, "recovery_policy", None))
 
     async def cancel(self, operation_id: UUID, *, principal: Principal) -> dict[str, Any]:
         self._authorize(principal, Scope.OPERATIONS_CANCEL)
@@ -741,7 +814,7 @@ class ScientificBatchService:
         state = await self.repository.request_cancel(
             operation_id, tenant_id=principal.tenant_id, actor=principal.principal_id
         )
-        return self._state_view(operation, state)
+        return self._state_view(operation, state, recovery_policy=getattr(self.controller, "recovery_policy", None))
 
     async def events(
         self,

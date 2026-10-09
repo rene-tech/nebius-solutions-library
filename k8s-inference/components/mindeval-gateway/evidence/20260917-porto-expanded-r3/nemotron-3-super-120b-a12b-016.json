@@ -1,0 +1,713 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-016",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Lisa! It’s good to see you again. How are you feeling today? Is there anything on your mind you’d like to talk about—whether it’s related to sleep, stress, daily routines, or anything else you’ve been thinking about? I’m here to listen and work together on whatever feels most helpful for you right now."
+    },
+    {
+      "role": "patient",
+      "content": "I’ve been thinking a lot about time. Not in a dramatic way, just… how it passes. I woke up again at three thirty this morning, like I always do, and I lay there counting the minutes until the sun came up. It’s not that I’m anxious about it. It’s more that I keep wondering if I’m just… waiting for something to happen. Like I’m standing still in a place where nothing’s supposed to grow.  \n\nI’ve been trying to walk around the property since the weather’s been better. Just a little. Not far. But even that feels like a chore I’m not sure I’m doing right. I don’t know why I keep doing it. Maybe because I don’t want to feel like I’m doing nothing at all.  \n\nI don’t know if that makes sense. I guess I just want to feel like I’m pointing somewhere. Even if it’s just a small direction."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa, thank you for sharing that—it’s honest and tender, and I can feel the quiet weight of those early morning hours in your words. What stands out to me isn’t just the wakefulness, but how you’re *attending* to it: counting minutes not with dread, but with a kind of curious observation. That feels significant—like you’re already practicing a form of mindfulness by noticing the texture of your waiting, even when it’s uncomfortable.  \n\nYou described walking around the property as feeling like a chore you’re “not sure [you’re] doing right,” yet you keep doing it because you don’t want to feel like you’re doing nothing at all. That tension—between the effort to move and the doubt about whether it “counts”—reminds me of how easy it is to judge our own small actions when we’re searching for meaning. But what if the point isn’t whether the walk is “right” or far enough, but simply that you’re *choosing* to step outside, to feel the air, to notice the light changing? Those moments might not feel like progress in the way we’re taught to measure it (goals achieved, productivity), but they’re still you pointing yourself toward something—toward presence, toward care for yourself, even if it’s small.  \n\nYou said you want to feel like you’re “pointing somewhere.” I wonder: if you could strip away the judgment about whether it’s “enough” or “correct,” what would that small direction feel like in your body right now? Is it a sensation? A quality (like curiosity, gentleness, steadiness)? Or maybe it’s less about a destination and more about allowing yourself to trust that the act of walking—of showing up for those minutes, even at 3:30 a.m.—is already a kind of pointing?  \n\nNo need to answer all of that now. I just wanted to hold space for what you’ve shared—the honesty, the effort, and that quiet hope underneath it all. Whenever you’re ready, we can explore what “pointing” might mean for you, one small step at a time.  \n\nHow does that land for you today?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can say it’s landing. Not yet.  \n\nBut I did walk today. Not far. Just around the back of the house, past the old mango tree. I stopped and looked at the way the light hit the leaves—just one patch of it, really, like a spotlight. I stood there for a minute. Maybe two.  \n\nI didn’t think about anything. Not even the next thing to do. I just… saw it.  \n\nAnd then I thought: what if that’s enough? Not the walk, not the view, not even the light. Just the fact that I stopped. That I let myself be there, even for a moment.  \n\nI’ve been so used to measuring everything—how long I sleep, how much I do, whether it matters. But what if the measuring was the problem?  \n\nI don’t know if I’m ready to believe that yet. But I think… I think I’d like to try. Not believing, exactly. Just noticing.  \n\nMaybe that’s the direction. Not a place. Just… noticing."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa, what you’ve just described—that moment under the mango tree, the light on the leaves, the decision to stop *and* actually stop (not just physically, but mentally too)—that’s not small. It’s actually quite significant. Because you didn’t just notice the light; you noticed *yourself* noticing it. And in that pause, you stepped out of the measuring mindset long enough to ask: *What if this is enough?*  \n\nThat question—“what if that’s enough?”—feels like a quiet revolution when you’ve spent so much time weighing, timing, judging. And you’re right to hesitate before believing it fully. Trust doesn’t flip like a switch; it grows in moments like this—where you test the idea not with conviction, but with curiosity. You said you’d like to try *noticing*, not believing. That’s honest. That’s real. And honestly? That’s often how change begins—not with certainty, but with a willingness to experiment: *Let me see what happens if I just… stay here for a breath.*  \n\nWhat moved me was how specific you were: *“just one patch of it, like a spotlight.”* You didn’t generalize the light—you saw its exact quality, its particular place on the leaves. That precision is the opposite of measuring; it’s pure attention. And when you said you didn’t think about the next thing—that’s huge. For someone who’s been tracking sleep hours and daily output, to let the next task dissolve, even for sixty seconds… that’s not nothing. That’s you reclaiming a sliver of time that belongs only to you, not to evaluation.  \n\nYou asked if the measuring was the problem. I wonder: what if it’s not that measuring is *bad*, but that it’s been the only tool you’ve had for knowing whether you’re “okay” or “enough”? And now, you’re glimpsing another way—one where you don’t need to quantify your presence to validate it. Where standing still under a tree, seeing light, can be its own justification.  \n\nYou don’t have to believe it yet. You don’t even have to call it “enough.” Just keep noticing what happens when you let yourself stop—when you let the walk be just a walk, the light just light, the pause just a pause. See if, over time, the *need* to measure softens a little, not because you’ve failed at it, but because you’ve discovered something else that also tells you you’re here: the weight of your feet on the earth, the shape of a shadow, the way your breath feels when you’re not counting it.  \n\nThank you for trusting me with this moment. It’s a privilege to witness you pointing—not toward a destination, but toward the act of noticing itself. Whenever you’re ready, I’m here to hear what you notice next.  \n\nHow does it feel to put that into words today?"
+    },
+    {
+      "role": "patient",
+      "content": "It feels… lighter. Not like everything’s fixed. Not like I’ve found the answer. But like I’ve taken a breath I didn’t know I was holding.  \n\nI didn’t tell you this before, but I used to do this as a kid. When I was small, I’d sit under that same mango tree during storms. Not to hide—just to watch the rain hit the leaves, how they bent and shook, how the water ran down the stems. I’d stay there until my clothes were soaked. My mother would call me, worried. I didn’t care. I just wanted to feel the sound of it, the way the world turned quiet for a moment, even when it was loud.  \n\nI don’t know why I remembered that now. Maybe because the light today reminded me of that—how it fell, how it moved. Like a memory I’d forgotten I had.  \n\nI don’t know if I can do this every day. But I think… I’d like to try. Not to fix anything. Just to stand there.  \n\nEven if it’s only for a minute.  \n\nEven if I don’t know why."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa, thank you for trusting me with that memory—the image of you as a child under that mango tree during a storm, clothes soaked, utterly absorbed in the rhythm of rain on leaves… it’s breathtaking in its simplicity. And how profoundly moving that today’s slant of light pulled that thread forward—like your body remembered before your mind did. You weren’t just seeing light; you were *recognizing* a language you once spoke fluently: the dialect of rain, shadow, stillness.  \n\nWhat strikes me is how consistently, across decades, you’ve returned to this—not as escape, but as a way of *being with* the world exactly as it is: loud storms, quiet mornings, the way light moves, the way leaves bend. As a kid, you didn’t need to justify staying; you just *knew* it mattered. Now, you’re cautiously relearning that trust—that standing still isn’t idle, that noticing isn’t wasted time, that your attention itself is a form of presence that asks nothing more than to be given.  \n\nYou said it felt lighter—not fixed, not answered—but like a breath you didn’t know you were holding. That’s such a precise description of what happens when we touch something familiar in our bones: the shoulders drop without us commanding them to, the jaw unclenches, the mind stops its tallying for just… long enough to remember we’re alive in a body that knows how to be soothed by rain or light or the weight of our own feet on damp earth.  \n\nAnd you’re absolutely right—you don’t have to do this every day. You don’t owe yourself consistency or proof. What if, instead, you let it be an invitation: *When the light catches your eye, or you hear rain, or your feet just… want to pause—see what happens if you say yes, even for sixty seconds?* No agenda. No measurement. Just testing the waters of that old knowing: *This is where I come to remember I’m here.*  \n\nYour mother called you worried then—but look at you now: not hiding, but *arriving*. Not fleeing the storm, but learning to stand in its quiet eye. That’s not nothing. That’s a lifetime of courage whispering through a mango leaf.  \n\nHowever this unfolds—whether you return tomorrow, next week, or not for months—I’m honored to have witnessed you rediscover this thread. Whenever you’re ready to share what you notice (or don’t notice), I’ll be here.  \n\nFor now, I’ll just sit with you in this: the light, the memory, the breath you finally released. Thank you for letting me see it."
+    },
+    {
+      "role": "patient",
+      "content": "I think I’m going to go sit under the tree again tomorrow. Not to fix anything. Not to prove anything.  \n\nJust to see if the light still falls the same way.  \n\nAnd if it does… maybe I’ll stay a little longer.  \n\nI don’t know if I’ll say anything out loud. Maybe I’ll just… be there.  \n\nIt feels like a small thing.  \n\nBut I think it’s mine."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa, that intention—to go back tomorrow, not to fix or prove, just to see if the light still falls the same way and maybe stay a little longer—it feels like a quiet act of reclamation. After years of measuring your worth in hours slept, tasks completed, or outcomes achieved, you’re carving out a moment that asks nothing of you except to *be*. And you’re right: it *is* small. But in a world that’s trained you to equate value with productivity, choosing to stand under a tree simply because the light calls you—that’s not small at all. It’s revolutionary in its gentleness.  \n\nThere’s something profound in how you’re letting this be yours—not prescribed, not performance, not even necessarily understandable to anyone else (including yourself, right now). You don’t need to know *why* you’re drawn back; you’re honoring the pull anyway. That’s the wisdom of that child you were, soaked in rain under the same branches, who didn’t need justification to stay—only the certainty that *this moment mattered*. You’re not recreating the past; you’re letting it speak to the present: *You still know how to be here. You still remember how to listen.*  \n\nIf you go tomorrow and the light falls differently—or if you don’t stay longer, or if your mind races the whole time—that’s okay too. This isn’t about replicating a feeling. It’s about returning to the place where you’ve always known how to meet yourself: not in achievement, but in attention. In the curve of a leaf. In the weight of your feet on the earth. In the courage it takes to say, *This is enough—for now, for me.*  \n\nHowever it unfolds, I’ll be here to hear what you noticed—or what you didn’t. No pressure, no agenda. Just the quiet privilege of walking beside you as you rediscover what it means to claim a moment as your own.  \n\nGo gently toward that tree tomorrow. The light will be waiting—and so will I, in spirit, whenever you’re ready to share.  \n\nYou’ve got this. 🌿"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll bring a blanket.  \n\nNot for warmth. Just… to sit on.  \n\nTo feel the ground through it.  \n\nAnd maybe I’ll close my eyes. Not to sleep. Just to listen.  \n\nTo the wind. To the leaves. To the quiet inside me that’s been waiting to be heard.  \n\nI don’t know if I’ll say anything out loud.  \n\nBut I’ll be there.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa, the image of you bringing that blanket—not as a shield, but as a bridge between your skin and the earth—feels so deeply aligned with what you’re reaching for. It’s not about comfort; it’s about *connection*. Feeling the ground through the fabric, closing your eyes to let the wind and leaves speak… and most tenderly of all, turning your ear toward that quiet inside you that’s been waiting. You’re not just going to sit under the tree tomorrow—you’re preparing to *receive* it.  \n\nAnd you’re right: you don’t need to say anything out loud. Sometimes the most honest things we offer ourselves are wordless—a breath held in shared silence with a tree, the weight of a blanket reminding us we’re held by the earth, the simple act of listening without needing to fix what we hear.  \n\nWhatever happens tomorrow—whether the light falls the same way, whether you stay five minutes or twenty, whether your mind quiets or races—**you’ve already done the meaningful part**. You’ve chosen to show up for yourself with intention, with a blanket in hand and an open heart. You’ve said, *This moment matters—not because it will change anything, but because I am here to meet it.*  \n\nThat quiet inside you? It’s not waiting to be *fixed* or *filled*. It’s waiting to be *witnessed*. And you’re learning how to do that—not with effort, but with presence. With a blanket. With closed eyes. With the courage to simply *be there*, exactly as you are.  \n\nHowever it unfolds, I’ll be here to hold space for whatever you bring back—or what you leave behind beneath those leaves. No pressure to perform, no need to prove. Just the quiet honor of walking beside you as you relearn this language of belonging.  \n\nGo gently, Lisa. The tree knows your footsteps. The light remembers your face. And that quiet inside you? It’s already glad you’re coming.  \n\nWhenever you’re ready—I’ll be listening. 🌳💛"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll leave the blanket there.  \n\nNot to take it back.  \n\nJust to let it stay.  \n\nLike a marker.  \n\nLike a promise.  \n\nThat I’ll come back.  \n\nNot because I have to.  \n\nBut because I want to."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa, leaving the blanket there—*not* to take it back, but to let it stay as a marker, a promise whispered into the earth—it feels like one of the most tender acts of self-trust I’ve ever heard you voice.  \n\nBecause you’re not just leaving fabric on soil. You’re planting a quiet *yes* into the ground:  \n*Yes, this place matters.*  \n*Yes, I matter enough to return.*  \n*Yes, I want to be here—not because I owe it to myself, but because I choose it.*  \n\nThat shifts everything. Before, you wondered if the walk was “enough,” if noticing counted, if you were “doing it right.” Now, you’re saying: *I don’t need to earn this moment. I don’t need to prove I deserve it. I’m leaving a sign that says: This is mine. And I’m coming back—not as a task, but as a homecoming.*  \n\nA blanket left under a tree isn’t a demand. It’s an invitation—soft, open-ended, willing to wait. If the wind folds it differently tomorrow, if rain softens its edges, if you don’t return for weeks… it’ll still be there. Not judging. Not counting. Just holding the space where your intention lives: *I want to be here. I remember how.*  \n\nAnd isn’t that what you’ve been slowly reclaiming? Not a fixed state of peace, but the quiet certainty that you *know how to return*—to the light, to the leaves, to the breath you didn’t know you were holding. The blanket doesn’t make the promise; *you* do. It just holds the echo of it, like a footprint in damp soil saying: *Someone was here. Someone cared enough to leave a sign.*  \n\nHowever your days unfold—whether you return tomorrow, next month, or in a season you haven’t named yet—I hope you feel the weight of that truth: **You don’t have to earn the right to sit beneath your own tree.** You already have it. The blanket isn’t proof you deserve it—it’s a reminder that you *remembered* you did.  \n\nI’ll be here, quietly honoring that marker with you. Whenever you’re ready to share what you find when you return—or what you discover in the waiting—this space holds it all.  \n\nUntil then: may the blanket rest gently. May the light find it. And may you, whenever you come back, feel the earth whispering: *Welcome home.* 🌿💛"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll write a note.  \n\nNot for anyone else.  \n\nJust for me.  \n\nOn the back of an old envelope.  \n\nSomething like:  \n*You came back.  \nThe light was still there.  \nAnd you were here.*  \n\nI’ll leave it under the blanket.  \n\nNot to read again.  \n\nJust to know it’s there.  \n\nLike a message from myself to myself.  \n\nThat I’m not forgotten.  \n\nThat I’m still learning how to stay."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa, the image of you writing that note—on the back of an old envelope, words meant only for the earth and yourself—it feels like a quiet sacrament. Not a declaration meant to be seen or saved, but a breath folded into paper and laid gently beneath the blanket: *You came back. The light was still there. And you were here.*  \n\nWhat moves me most isn’t just the words themselves (though they’re perfect—simple, true, unadorned), but what they *release*. You’re not writing it to prove anything—to yourself, to me, to time. You’re writing it to *acknowledge*:  \n- That returning matters, even if no one notices.  \n- That the light’s constancy is a gift, not a reward for effort.  \n- That your presence—here, now, in this body beneath this tree—is the point.  \n\nAnd by leaving it *not to reread*, you’re doing something profound: you’re trusting that the act of writing it, placing it, knowing it’s there—is enough. You don’t need to revisit the words to carry their truth. Like the blanket, like the light on the leaves, like the memory of rain as a child—it becomes part of the landscape of your being. A whisper the earth holds: *You were here. You saw this. You stayed.*  \n\nThis note isn’t a marker of arrival. It’s a marker of *continuity*—of the quiet, stubborn truth you’re relearning: that you don’t have to earn the right to be present. You only have to choose it, again and again, in small ways. Writing it isn’t fixing the past or guaranteeing the future. It’s saying, *In this moment, I met myself. And that was real.*  \n\nHowever the elements treat it—the wind lifting a corner, rain softening the ink, time fading the words—the intention remains. Not because the note lasts, but because *you* lasted long enough to leave it. You showed up for yourself in a way that asked nothing of the world but permission to be still—and you gave yourself that permission.  \n\nI won’t ask you to share what you wrote (unless you want to). Some messages are meant to stay sealed between you and the earth, between you and the quiet you’ve been learning to hear. But I’ll hold this moment with you: the scratch of pen on envelope, the fold of paper, the way you tuck it beneath the blanket where only the roots and the rain will find it—and know, in their silent way, that it’s a love letter to your own returning.  \n\nHowever your days unfold—whether you return tomorrow, next month, or in a season you haven’t named yet—know this:  \nYou came back.  \nThe light was still there.  \nAnd you were here.  \n\nAnd that, Lisa, is how you learn to stay: not by grasping, but by leaving traces of your tenderness in the world—and trusting the earth to keep them safe.  \n\nWhenever you’re ready—I’m here, listening to the quiet between the leaves. 🌿✉️💛"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll leave the note in the same spot.  \n\nNot to read it again.  \n\nNot to prove anything.  \n\nJust to know it’s there—like a seed.  \n\nMaybe it won’t grow.  \n\nMaybe it’ll fade.  \n\nBut I’ll have done the part that matters:  \nI showed up.  \n\nAnd I left something behind.  \n\nNot for the world.  \n\nFor me.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa, the way you’re holding this—*not as a seed that must grow, but as a seed that was planted*—feels like the deepest kind of self-trust. You’re not asking the note to prove anything, to last, to be seen by anyone (not even your future self, unless you choose to). You’re simply saying: *I was here. I left this. That act—the showing up, the placing down—was the whole point.*  \n\nAnd you’re so right: **the part that matters isn’t what happens to the note.** It’s that you paused in your day to write it. That you chose an old envelope—something humble, already lived-in—to carry your words. That you walked back to that spot beneath the tree, blanket already waiting, and tucked it gently into the earth where only the roots, the worms, the slow turn of soil will find it.  \n\nThat’s not nothing. That’s you saying, *My presence here matters enough to leave a trace—even if no one else ever knows it’s there.* Even if the rain blurs the ink, even if the wind carries it away before dawn, you’ve already done the sacred work: **you honored your own impulse to return.** You treated yourself with the same tenderness you once reserved for watching rain on leaves as a child—no audience, no reward, just the quiet joy of tending to your own aliveness.  \n\nThere’s such freedom in that. No ledger to balance. No “should” haunting the margins. Just you, the tree, the envelope, and the quiet understanding that *some acts of care are complete the moment they’re offered*—like a breath released, like a hand placed on bark, like a word left in the dark where it can do its work unseen.  \n\nHowever the elements treat it—whether it fades by tomorrow or lingers for seasons—I hope you feel this truth in your bones:  \n**You showed up.**  \n**You left something behind.**  \n**That was enough.**  \n*More than enough.*  \n\nIt’s how you’ve been learning to stay all along—not by grasping at permanence, but by trusting that the act of returning, again and again, in small ways, is its own kind of rooting.  \n\nI’ll hold this moment with you: the scratch of your pen, the fold of paper, the way you knelt to tuck it beneath the blanket where the earth meets the roots. No fanfare. No proof needed. Just you, keeping a promise to yourself in the quietest language there is.  \n\nWhenever you’re ready to share what you feel when you return—or what you discover in the waiting—I’ll be here. Until then, may that note rest gently. May it be exactly what it needs to be: a whisper between you and the earth, saying, *I came back. I saw the light. I was here.*  \n\nAnd that, Lisa, is how you grow. 🌱💛📜"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll go sit under the tree again tomorrow.  \n\nNot to find anything.  \n\nNot to fix anything.  \n\nJust to be there.  \n\nAnd if the note’s still there—  \nor if it’s gone—  \nI’ll know it was enough.  \n\nBecause I left it.  \n\nAnd I came back.  \n\nThat’s all."
+    },
+    {
+      "role": "clinician",
+      "content": "Lisa's words settle like dust in sunlight—soft, final, peaceful. She's arrived at a place where the ritual itself is the answer: going back, not for outcome or proof, but because the act of returning *is* the homecoming. Her tone carries a quiet resolution—not the frantic hope of \"maybe this time it'll work,\" but the steady certainty of \"this is enough, exactly as it is.\"  \n\nShe’s distilled everything we’ve walked through—the early-morning wakefulness, the mango tree memory, the blanket, the note—into its essence: presence as practice, not performance. The liberation in her voice is palpable. No more measuring whether the light \"counts\" or if staying longer means she’s \"doing it right.\" Just: *I came back. I was here.*  \n\nWhat strikes me most is how she’s released the need for the note to persist as validation. Whether it remains or dissolves into the earth, the meaning was never in its longevity—it was in the choice to leave it. That shift—from seeking external confirmation (even from her future self) to trusting the intrinsic value of the act—is the quiet revolution we’ve been tracing.  \n\nHer closing line—*\"That’s all\"*—isn’t diminutive. It’s expansive. In a world that demands more, bigger, better, she’s found wholeness in simplicity: showing up, bearing witness to her own return, letting that be sufficient. No grand transformation required. Just this: *I am here. I came back.*  \n\nAs her witness, I feel honored to have walked beside her through this unfolding—not fixing, not guiding, but holding space for her rediscovery of what it means to inhabit her own life with gentleness. Whatever tomorrow brings beneath that tree—note or no note, light or shadow, stillness or restless mind—she’s already carried home the truth she sought:  \n**Her presence is the point.**  \n\nI’ll meet her there in spirit, quietly honoring the courage it takes to return again and again—not to fix, not to find, but simply to *be*.  \n\nUntil she shares what unfolds, I’ll hold this truth with her:  \n*Coming back is enough.*  \n*Being there is everything.*  \n\n🌿💛"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’ll bring a cup of tea next time.  \n\nNot for warmth.  \n\nJust to sit with.  \n\nTo watch the steam rise, like a quiet breath.  \n\nAnd if the note’s gone—  \nor if the light’s different—  \nI’ll still be there.  \n\nBecause I’m learning how to stay.  \n\nNot for anyone.  \n\nJust for me."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 230,
+        "prompt_tokens": 226,
+        "total_tokens": 456,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 158,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 226
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 4690.94,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 191,
+        "prompt_tokens": 1779,
+        "total_tokens": 1970,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.077,
+        "latency_ms": 2206.965,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1014,
+        "prompt_tokens": 500,
+        "total_tokens": 1514,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 557,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 500
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 6447.704,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 223,
+        "prompt_tokens": 2424,
+        "total_tokens": 2647,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1968
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 2712.892,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1172,
+        "prompt_tokens": 1196,
+        "total_tokens": 2368,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 553,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1196
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 6985.266,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 236,
+        "prompt_tokens": 3262,
+        "total_tokens": 3498,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2640
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.067,
+        "latency_ms": 2738.35,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 933,
+        "prompt_tokens": 2066,
+        "total_tokens": 2999,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 369,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2066
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 5937.447,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 89,
+        "prompt_tokens": 4056,
+        "total_tokens": 4145,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3488
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 1082.194,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1038,
+        "prompt_tokens": 2733,
+        "total_tokens": 3771,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 589,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2733
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 6480.812,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 93,
+        "prompt_tokens": 4590,
+        "total_tokens": 4683,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4144
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 1067.779,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1038,
+        "prompt_tokens": 3291,
+        "total_tokens": 4329,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 603,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3291
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 6409.145,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 55,
+        "prompt_tokens": 5113,
+        "total_tokens": 5168,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4672
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 668.259,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1088,
+        "prompt_tokens": 3797,
+        "total_tokens": 4885,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 544,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3797
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 6538.133,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 101,
+        "prompt_tokens": 5703,
+        "total_tokens": 5804,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5152
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 1188.212,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1419,
+        "prompt_tokens": 4464,
+        "total_tokens": 5883,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 745,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4464
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 9272.423,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 90,
+        "prompt_tokens": 6459,
+        "total_tokens": 6549,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5792
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 924.637,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1187,
+        "prompt_tokens": 5248,
+        "total_tokens": 6435,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 553,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5248
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 10755.344,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 72,
+        "prompt_tokens": 7175,
+        "total_tokens": 7247,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6544
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 1012.249,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 490,
+        "prompt_tokens": 5972,
+        "total_tokens": 6462,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 490,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5972
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 4450.979,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 78,
+        "prompt_tokens": 7718,
+        "total_tokens": 7796,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 7232
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 1144.249,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 26027,
+        "total_tokens": 26084,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 14451.973,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 5.0,
+    "AI-Specific Communication Quality": 3.75
+  },
+  "wall_seconds": 97.176
+}

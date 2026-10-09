@@ -19,6 +19,12 @@ class ScientificAdapterError(ValueError):
 class ScientificParameterError(ScientificAdapterError):
     """Caller-supplied model parameters are invalid, not the runtime binding."""
 
+    def __init__(self, message: str, *, public_detail: str | None = None) -> None:
+        super().__init__(message)
+        # Opt-in, deliberately authored scientific guidance only. Never expose
+        # arbitrary exception text, runtime paths, request bodies or credentials.
+        self.public_detail = public_detail
+
 
 class ArtifactLocalizationError(ScientificAdapterError):
     """A runtime mount, archive, or localization contract failed closed."""

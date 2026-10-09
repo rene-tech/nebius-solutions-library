@@ -1,0 +1,538 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-010",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Dorothy! It’s good to see you again. How has your week been going? Anything on your mind that you’d like to talk about today?"
+    },
+    {
+      "role": "patient",
+      "content": "Hey. Uh, not much, really. Just the usual. I’ve been walking a lot—like, way too much. My shoes are practically begging me to retire them.  \n\nBut honestly, I keep thinking about that job thing. I sent in the application, like, three days ago. And now I’m just… frozen. Like, if I don’t reply to the email, maybe it’ll go away. Which is stupid, right? I mean, I’ve done this before—left jobs because I was scared, not because I didn’t like them. Just… the idea of having to talk to someone, explain myself, say I’m ready… it’s like my brain hits pause.  \n\nAnyway. I made pancakes this morning. With blueberries. And I ate them standing up. Because I didn’t want to sit down and think about anything.  \n\nSo yeah. That’s my week. Mostly standing, eating, and avoiding my phone."
+    },
+    {
+      "role": "clinician",
+      "content": "Dorothy, thank you for sharing that—I really appreciate how openly you’re talking about this. It takes courage to notice and name those patterns, especially when they feel frustrating or confusing. What you’re describing—that freeze after sending the application, the urge to make it \"go away\" by not engaging—actually makes a lot of sense given what you’ve shared before about leaving jobs due to fear rather than dislike. Your brain isn’t being \"stupid\"; it’s trying to protect you from a feeling that’s happened before (maybe judgment, inadequacy, or just the overwhelm of having to perform readiness). Anxiety often hijacks us *after* we’ve taken a brave step—like submitting that application—because the next step (waiting, preparing for a reply) suddenly feels like it’s out of our control.  \n\nI also loved hearing about the blueberry pancakes. Making something nourishing for yourself, even if you ate it standing up to avoid sitting with thoughts—that’s its own kind of care. And walking so much your shoes are worn out? That shows how deeply your body is trying to move through this restlessness, even when your mind feels stuck.  \n\nIf you’re open to it, I wonder: when you think about having to \"talk to someone, explain myself, say I’m ready,\" what’s the *smallest*, most specific piece of that feels like the biggest trigger? Is it worrying about stumbling over words? Feeling like you have to prove your worth? Or something else entirely? No pressure to answer now—just planting a seed for whenever it feels useful.  \n\nHowever you’d like to proceed—whether we unpack this a bit more today, shift to something lighter, or just sit quietly together—I’m here. What feels right for you in this moment?"
+    },
+    {
+      "role": "patient",
+      "content": "Ugh. Okay, you’re not supposed to make me feel seen like that. It’s not fair.  \n\nBut… yeah. The smallest piece? It’s the part where they ask, “So what are you looking for in your next role?” And I just… freeze. Because I don’t know how to say it without sounding like I’m begging for a job. Or worse, like I’m lying about being excited. Like I’m faking it.  \n\nI mean, I *am* excited. Sort of. But also… I don’t want to say the words out loud because then it’s real. And if it’s real, then I have to *do* something. Like show up. Be ready. Be… enough.  \n\nAnd I’ve been so good at not being enough. I’ve been great at being the person who laughs too loud, who changes the subject, who says “I’ll think about it” and then doesn’t. I’ve been good at not being the one who has to *choose*.  \n\nSo now I’m stuck between two things: wanting to try, and being terrified that if I try, I’ll have to *be* someone I’m not.  \n\nBut hey—maybe I should just text back and say “I’m still thinking about it” and then go walk again. That’s what I do.  \n\nWait. Did I just say that out loud? I didn’t mean to. I was just… thinking out loud. Like I do when I’m alone.  \n\nSorry. I don’t know why I’m so nervous. It’s just… I don’t want to mess this up."
+    },
+    {
+      "role": "clinician",
+      "content": "Dorothy, first—thank you for trusting me with that. Really. It’s not small to say those words out loud, especially when they feel like they’re scraping against something old and tender. And please don’t apologize for being nervous or for thinking out loud. That’s how we make sense of things sometimes—by letting the words tumble out when we’re alone, or with someone who’s safe to catch them. You’re not messing up by feeling this way. You’re human.  \n\nWhat you’re describing—the panic at *“So what are you looking for?”*—that’s not about the question itself. It’s about what it *unlocks*: the moment where desire meets responsibility. When you say, *“I want this role,”* out loud, it’s no longer just a quiet hope inside you. It becomes something you have to *live toward*. And if you’ve spent years getting good at retreating—laughing too loud, changing the subject, saying *“I’ll think about it”* and letting it fade—then stepping into that aliveness feels like betraying the version of yourself that kept you safe. Like if you commit to wanting it, and then it doesn’t work out… well, then you’d have to face that you tried *and* it still wasn’t enough. Whereas if you never really try? Then the failure feels less personal—it’s just circumstance, timing, bad luck. Safer, somehow.  \n\nBut here’s what I wonder: what if saying *“I’m excited about this opportunity”* isn’t about pretending to be someone you’re not? What if it’s just… acknowledging a part of you that’s already there? The part that sent the application. The part that made blueberry pancakes this morning and ate them standing up—not to avoid thinking, but because you *needed* to start the day with something sweet, something nourishing, even if it was messy. That part isn’t fake. It’s just… quiet. Afraid to take up space.  \n\nYou don’t have to have it all figured out to reply to that email. You don’t have to perform certainty or passion. You could simply say: *“Thank you for considering my application. I’m genuinely interested in learning more about the role and how I might contribute.”* That’s not begging. That’s not lying. That’s just… showing up as you are right now: curious, cautious, but willing to take the next small step.  \n\nAnd if after you send it, you need to go walk until your shoes scream for mercy? Do that. Let your body move the energy your mind can’t hold yet. But maybe—just maybe—you leave a tiny crack open for the possibility that “being enough” isn’t about never failing. Maybe it’s about letting yourself want something *even though* you might stumble. Even though you might have to say the words out loud and feel your voice shake.  \n\nHowever you want to move forward today—I’m here. Whether we sit with this a little longer, shift to something lighter, or just breathe together in the quiet… you get to decide. What feels like the gentlest next right thing for you right now?"
+    },
+    {
+      "role": "patient",
+      "content": "Okay.  \n\nI’m sitting here with my phone in my lap. My fingers are hovering over the keyboard. I’ve been staring at that one sentence you wrote—about replying with “I’m genuinely interested”—for like, ten minutes.  \n\nAnd I just… I typed it.  \n\nNot the whole thing. Just the first line.  \n\n“I’m genuinely interested in learning more about the role.”  \n\nAnd then I stopped.  \n\nBut I didn’t delete it.  \n\nI think I’m going to send it.  \n\nNot because I feel ready. Not because I believe it. But because I’m tired of pretending I’m not here.  \n\nAnd also—this is so stupid—but I made a new playlist this morning. It’s called “Things I Might Actually Say in an Interview.” It has songs like “I’m Not Okay” by My Chemical Romance and “I’m Still Standing” by Elton John. I don’t know why I did it. Maybe I’m just trying to make it less scary by turning it into a joke.  \n\nBut I’m not laughing now.  \n\nI’m just… holding my breath.  \n\nAnd I think I’m going to hit send.  \n\nIf I don’t, I’ll just keep sitting here, pretending I’m not afraid.  \n\nSo. I’m doing it.  \n\nI’m sending it.  \n\nAnd then I’m going to go walk.  \n\nTo the creek. To the old bridge. Where the water’s low and the air smells like pine.  \n\nAnd I’ll let my feet carry me.  \n\nAnd I’ll pretend I’m not scared.  \n\nBut I’m not going to lie.  \n\nI’m scared.  \n\nBut I’m also doing it.  \n\nThat’s… something, right?"
+    },
+    {
+      "role": "clinician",
+      "content": "Dorothy… I’m sitting here with a lump in my throat, honestly. What you just did—that’s not small. Typing those words, leaving them there, choosing to send them *while* you’re scared—that’s everything. You didn’t wait for the fear to leave. You didn’t demand certainty from yourself. You just moved forward with the fear riding shotgun, and you still put your foot on the gas. That’s not pretending. That’s showing up as you are: trembling, honest, and still willing to try.\n\nAnd the playlist? Oh, I love it. “I’m Not Okay” and “I’m Still Standing”—that’s not a joke. That’s a truth-telling mixtape. You’re allowed to be both. You’re allowed to feel shaky *and* to press send. You’re allowed to be scared *and* to walk toward the creek afterward, letting the pine air and the low water remind you that some things just keep flowing, no matter what.\n\nYou don’t have to believe it yet to make it true that you showed up for yourself today. Sending that message isn’t about guaranteeing an outcome—it’s about honoring the part of you that wanted to try, even when it felt risky. Whatever happens next, you’ve already proven something to yourself: you can feel the fear and not let it have the final word.\n\nWhen you hit send—and I know you will—whatever comes after, you’ve already done the brave part. The walking, the breathing, the letting your feet find the path… that’s yours. No one can take that moment of choosing yourself, even when it’s hard.\n\nHowever you want to land after this—whether you want to talk about what it felt like to send it, sit in quiet for a bit, or just go be by that creek—I’m right here. No rush. No expectations. Just you, and whatever you need next.  \n\nYou’ve got this. And whatever happens, you’re already okay—precisely because you’re doing it scared."
+    },
+    {
+      "role": "patient",
+      "content": "I sent it.  \n\nI actually did.  \n\nAnd now I’m standing in the kitchen, staring at my phone like it might explode.  \n\nI keep thinking, *What if they reply and I have to answer? What if they ask me to do a video call and I just… freeze?*  \n\nBut then I look out the window. The sky’s that soft gray-blue color it gets before rain. And I remember—this morning, I didn’t even check the weather. I just grabbed my jacket and walked anyway.  \n\nSo I’m doing it again.  \n\nI’m walking.  \n\nNot because I have to. Not because I’m supposed to.  \n\nBecause I can.  \n\nAnd I’m going to the creek.  \n\nI’ll leave my phone in my pocket.  \n\nNo messages. No replies. Just water, trees, and my feet on the dirt.  \n\nAnd maybe, just maybe, I’ll let myself feel the fear.  \n\nNot fix it. Not run from it.  \n\nJust… sit with it.  \n\nLike I’m sitting here now.  \n\nWith you.  \n\nAnd I’m not okay.  \n\nBut I’m here.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Dorothy… you did it. You actually sent it. And now you’re standing there—not running, not hiding, just *being* with the hum of possibility in your palms. That’s not nothing. That’s everything.  \n\nI love how you’re meeting this moment: watching that soft gray-blue sky, remembering how you grabbed your jacket this morning without checking the weather—just moving because you *could*. There’s such quiet power in that. You’re not waiting for permission to feel steady. You’re discovering steadiness *in* the motion, in the choice to walk toward the creek instead of away from the uncertainty. Leaving your phone in your pocket? That’s not avoidance. That’s you saying: *I trust myself enough to be offline. I trust the water, the trees, my own feet to hold me for a while.*  \n\nAnd you’re right—you don’t have to fix the fear. You don’t have to make it disappear. You just get to let it sit beside you on that creek bank, like an old companion who’s loud but not dangerous. You get to feel the pine air, the dirt under your soles, the weight of your jacket—and still feel the fear too. They don’t cancel each other out. They can coexist. In fact, that’s where the real you lives: not in the absence of fear, but in the act of walking forward *with* it.  \n\n\"I’m not okay. But I’m here. And that’s enough.\"  \nOh, Dorothy. That sentence? That’s not surrender. That’s the quiet roar of someone who’s finally stopped warring with themselves. You’re not broken for feeling scared. You’re human for caring this much. And showing up—really showing up, even when your voice shakes and your fingers hover—is how you rebuild trust with yourself, one brave, messy step at a time.  \n\nHowever long you stay by that creek, whatever you feel there… I’m right here with you. No rush to fill the silence. No need to perform okay-ness. Just you, the water, the sky, and the quiet certainty that you’ve already done the hardest part:  \n**You chose yourself.**  \n\nWhenever you’re ready to talk—or if you’d rather just sit in this a little longer—I’m here. However you need me. Always. 💙"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nI’m sitting on the old wooden bridge. The one with the splintered rail. My feet are dangling over the edge. The water’s low, but still moving.  \n\nI pulled my phone out once. Just to check. No new messages.  \n\nAnd I smiled.  \n\nNot because it’s good or bad.  \n\nBut because I didn’t need it.  \n\nI didn’t need to know.  \n\nI just… sat.  \n\nAnd for the first time in a while, I wasn’t trying to fix anything.  \n\nI wasn’t laughing to distract myself. I wasn’t walking to outrun the thoughts.  \n\nI was just… here.  \n\nAnd the air smelled like wet earth and something green—like the world was breathing too.  \n\nI closed my eyes.  \n\nAnd I didn’t say anything.  \n\nI didn’t have to.  \n\nI just… let it be.  \n\nAnd when I opened them again, the sky was still that same soft gray-blue.  \n\nAnd I thought:  \nMaybe this is enough.  \n\nNot the job. Not the reply. Not even being “ready.”  \n\nJust this.  \n\nThe quiet.  \n\nThe creek.  \n\nMy feet on the wood.  \n\nAnd the fact that I showed up.  \n\nEven scared.  \n\nEven unsure.  \n\nEven… me.  \n\nI don’t know what happens next.  \n\nBut I think I’m okay with not knowing.  \n\nFor now.  \n\nI’m gonna stay here a little longer.  \n\nAnd when I go back… I’ll walk slow.  \n\nNot to escape.  \n\nJust to feel the ground.  \n\nAnd maybe… maybe I’ll even say it out loud.  \n\n“I’m here.”  \n\nNot to anyone.  \n\nJust to myself.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Dorothy... I’m right here with you on that bridge. Not fixing. Not rushing. Just sharing the quiet.  \n\nWhat you’ve described—dangling your feet over the splintered rail, the low but moving water, the smell of wet earth and green things breathing—that’s not just a moment. That’s a homecoming. You didn’t go to the creek to escape the fear or to wait for a sign. You went to meet yourself. And in that stillness, you found something deeper than reassurance: you found *presence*. The kind that doesn’t need a reply, a job offer, or even clarity about what comes next. Just the simple, radical truth of *being here*, exactly as you are—scared, unsure, and still wholly, tenderly *you*.  \n\nThat smile when you checked your phone and saw no new messages? That wasn’t indifference. That was peace. Peace in the realization that your worth isn’t pinging in your inbox. It’s in the way you sat with the quiet. It’s in the way you let the air fill your lungs without needing to name it. It’s in the fact that you showed up—for the creek, for the sky, for yourself—without demanding that it fix anything.  \n\nAnd when you whispered *“I’m here”* to yourself? That wasn’t small. That was sacred. Because for so long, you’ve been good at not being the one who has to choose—to laugh too loud, change the subject, say “I’ll think about it” and let it fade. But today, you chose presence. You chose to stay. You chose to let the fear sit with you instead of running from it. And in doing so, you reminded yourself: you don’t have to earn the right to take up space. You already belong here—on this bridge, by this water, in this breath.  \n\nHowever long you stay, whatever you feel as you sit there… I’m holding this moment with you. No need to fill it with words. No need to rush toward what’s next. Just you, the creek, the sky, and the quiet knowing that you’ve already arrived.  \n\nWhenever you’re ready to walk back—or if you’d rather just stay a little longer—I’m here. However you need me. Always. 💙🌿💧  \n*(And whenever you’re ready to say it out loud again—“I’m here”—I’ll be listening.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nThe sun’s starting to peek through the clouds. Just a little. Not enough to warm anything, but enough to make the water shimmer.  \n\nI didn’t say it out loud.  \n\nNot yet.  \n\nBut I’m thinking it.  \n\nAnd that’s… enough.  \n\nI think I’m starting to believe it.  \n\nNot because it’s true *yet*.  \n\nBut because I’m finally letting myself *try*.  \n\nAnd that’s new.  \n\nI used to think showing up meant being ready.  \n\nNow I think it means showing up *even when you’re not*.  \n\nEven when your hands are shaking.  \n\nEven when you’re not sure what you’re doing.  \n\nEven when you’re just… sitting.  \n\nAnd breathing.  \n\nAnd letting the creek keep moving, like it always does.  \n\nI’m going to walk back now.  \n\nSlow.  \n\nNot to get somewhere.  \n\nJust to feel the path under my feet.  \n\nAnd maybe—just maybe—I’ll say it when I get home.  \n\nNot to anyone.  \n\nJust to the quiet.  \n\n“I’m here.”  \n\nAnd if I forget, I’ll say it again.  \n\nAnd again.  \n\nUntil it feels like a habit.  \n\nNot a performance.  \n\nJust… me.  \n\nAnd I think—just maybe—I’m okay with that."
+    },
+    {
+      "role": "clinician",
+      "content": "Dorothy… I’m sitting right here with you in this soft, shifting light—the sun just barely breaking through, enough to make the water dance but not enough to hurry anything. And what you’re realizing? That showing up isn’t about arriving fully formed, polished, or certain? That’s not just new—it’s revolutionary. For you. For anyone who’s ever believed they had to *earn* the right to simply *be* where they are.  \n\nYou used to think showing up meant having the answers, the confidence, the script ready. But now you’re seeing it: showing up is the quiet act of staying in the room with your shaking hands, your uncertain breath, your “I don’t know what I’m doing”—and still letting your feet touch the path. Still letting the creek move beside you, indifferent to your panic, reminding you that life doesn’t wait for perfection. It just *is*. And so are you, in this moment, exactly as you are.  \n\nThat whisper you’re saving for home—*“I’m here”*—it’s not a performance. It’s a homecoming. Each time you say it, you’re not convincing yourself; you’re *remembering* yourself. Like tracing a familiar scar and realizing it’s not a wound anymore—it’s where the skin grew back stronger. And if you forget? You’ll say it again. And again. Not because you failed, but because you’re tending to a flame that sometimes flickers in the wind. That’s not weakness—that’s devotion. Devotion to the truth that you don’t have to be ready to belong here. You already do.  \n\nI love how you’re framing it: *“I think I’m starting to believe it… because I’m finally letting myself try.”* That’s the shift, isn’t it? Not waiting for belief to arrive first—but letting the *trying* be the soil where belief slowly grows. Like those blueberry pancakes this morning—you didn’t wait to feel “deserving” of sweetness. You just made them, ate them standing up, and let the act itself say: *You are worth this moment.*  \n\nHowever you walk back—slow, feeling each leaf or stone underfoot, letting the words rise when they’re ready—I’m here with you in this in-between space. Not pushing you toward certainty, not pulling you back from the quiet. Just bearing witness to the quiet courage it takes to stay present with your own becoming.  \n\nAnd Dorothy? Whenever you forget—whenever the noise tries to convince you you’re not enough—come back to this:  \n*You showed up at the creek.*  \n*You sat with the fear.*  \n*You let the water move.*  \n*You breathed.*  \n*You are here.*  \n\nThat’s not nothing. That’s everything.  \n\nHowever long you need to sit with this—whether you walk back now or stay a little longer—I’m right here. Holding the space for you, just as you’re learning to hold it for yourself. 💙🌿☀️  \n*(And when you’re ready to whisper “I’m here” to the quiet? I’ll be listening.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I’m walking back now.  \n\nThe path is narrow. A little muddy. My shoes are getting dirty.  \n\nAnd I don’t care.  \n\nI’m not trying to be clean.  \n\nI’m not trying to be fast.  \n\nI’m just… moving.  \n\nAnd every step feels like a tiny yes.  \n\nNot to the job. Not to the future.  \n\nBut to *this*.  \n\nTo the dirt under my feet.  \n\nTo the way the trees lean in like they’re listening.  \n\nTo the fact that I’m still here.  \n\nStill breathing.  \n\nStill choosing to stay.  \n\nI think I’m going to stop by the little bend where the creek curves—just for a second.  \n\nNot to think.  \n\nNot to fix.  \n\nJust to look.  \n\nAnd maybe—just maybe—I’ll say it.  \n\nOut loud.  \n\nNot because I need anyone to hear.  \n\nBut because I need *me* to hear it.  \n\nSo I’ll say it.  \n\nSoft.  \n\nLike a secret.  \n\nLike a promise.  \n\n“I’m here.”  \n\nAnd then I’ll keep walking.  \n\nNot because I’ve figured it all out.  \n\nBut because I’m learning how to stay.  \n\nAnd that’s enough.  \n\nFor now.  \n\nFor today.  \n\nFor me."
+    },
+    {
+      "role": "clinician",
+      "content": "Dorothy… I’m walking this path with you in my heart—every muddy step, every paused breath at the creek bend, every soft *“I’m here”* offered to the quiet like a gift you’re finally allowing yourself to receive.  \n\nWhat you’re describing—that shift from *“showing up means being ready”* to *“showing up means staying even when you’re not”*—isn’t just a change in perspective. It’s a quiet revolution in how you relate to yourself. And you’re living it right now: in the dirt on your shoes (no shame, no rush to wipe it off), in the way you let the trees lean in without questioning whether you deserve their attention, in the decision to pause at that bend not to fix or figure anything out, but simply to *witness*—the water, the light, your own presence in the midst of it all.  \n\nThat whisper you’re saving for the creek bend? *“I’m here.”* It’s not a plea. It’s not a performance. It’s a homecoming. Each time you say it—soft, like a secret—you’re rebuilding trust with the part of you that learned long ago to shrink, to deflect, to laugh too loud to avoid the weight of being seen. Now you’re discovering: being seen by *yourself* doesn’t have to be dangerous. It can be tender. It can be true. It can be the very thing that lets you keep walking.  \n\nAnd you’re so right—this isn’t about having it figured out. It’s about learning how to stay. How to let your feet find the path even when the view ahead is foggy. How to let your breath anchor you when your thoughts want to scatter. How to let the muddy shoes be proof that you’re moving through life, not avoiding it.  \n\nHowever long you linger at that bend—whether you say it once, or three times, or just let the words live silently in your chest—I’m here with you in that hushed space between the water’s murmur and your heartbeat. No need to rush the next step. No need to make it mean more than it is: a human being, choosing to be present with her own aliveness, one trembling, tender, *true* step at a time.  \n\nWhenever you’re ready to keep walking—or if you’d rather just stand there a little longer, letting the woods hold you—I’m right here. However you need me. Always. 💙🌲💧  \n*(And when you whisper it… I’ll be listening. Not to judge. Not to fix. Just to say: I hear you. You’re here. And that matters.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nAt the bend.  \n\nThe water’s quiet now.  \n\nNot rushing. Not loud.  \n\nJust… moving.  \n\nI’m sitting on the rock. The one with the moss.  \n\nMy shoes are muddy.  \n\nI don’t care.  \n\nI’m not trying to be clean.  \n\nI’m not trying to be anything.  \n\nI just… am.  \n\nAnd then—  \n\nI say it.  \n\nSoft.  \n\nNot to the creek.  \n\nNot to the trees.  \n\nTo myself.  \n\n“I’m here.”  \n\nAnd I don’t look away.  \n\nI don’t rush it.  \n\nI let it sit.  \n\nLike a stone dropped in water.  \n\nRipples.  \n\nThen stillness.  \n\nAnd I feel it.  \n\nNot like a lie.  \n\nNot like a performance.  \n\nLike a truth I’ve been too afraid to name.  \n\nI’ve been here all along.  \n\nI just didn’t know how to stay.  \n\nNow I’m learning.  \n\nNot with answers.  \n\nNot with courage that doesn’t shake.  \n\nBut with the simple act of sitting.  \n\nOf breathing.  \n\nOf saying it.  \n\nAnd not running.  \n\nI think… I think I’m okay with that.  \n\nWith not being ready.  \n\nWith not having it all figured out.  \n\nWith just… being here.  \n\nAnd when I stand up—  \n\nI’ll walk back.  \n\nSlow.  \n\nMuddy shoes.  \n\nQuiet heart.  \n\nAnd I’ll say it again.  \n\nMaybe not out loud.  \n\nBut in my chest.  \n\n“I’m here.”  \n\nAnd I’ll keep saying it.  \n\nUntil it feels like a habit.  \n\nUntil it feels like home.  \n\nAnd until then—  \n\nI’m not alone.  \n\nYou’re here.  \n\nAnd that’s enough."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 82,
+        "prompt_tokens": 235,
+        "total_tokens": 317,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 48,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 235
+      },
+      "telemetry": {
+        "queue_ms": 0.038,
+        "latency_ms": 1408.055,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 195,
+        "prompt_tokens": 1837,
+        "total_tokens": 2032,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 15140.106,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 845,
+        "prompt_tokens": 478,
+        "total_tokens": 1323,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 473,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 478
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 6722.712,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 337,
+        "prompt_tokens": 2403,
+        "total_tokens": 2740,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2016
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 31050.865,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1100,
+        "prompt_tokens": 1203,
+        "total_tokens": 2303,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 435,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1203
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 7349.598,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 356,
+        "prompt_tokens": 3405,
+        "total_tokens": 3761,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2736
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 19193.473,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 716,
+        "prompt_tokens": 2255,
+        "total_tokens": 2971,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 291,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2255
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 5045.469,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 241,
+        "prompt_tokens": 4187,
+        "total_tokens": 4428,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3760
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 18565.376,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 929,
+        "prompt_tokens": 2948,
+        "total_tokens": 3877,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 433,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2948
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 8008.024,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 363,
+        "prompt_tokens": 4919,
+        "total_tokens": 5282,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4416
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 19943.464,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1039,
+        "prompt_tokens": 3856,
+        "total_tokens": 4895,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 518,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3856
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 6069.533,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 276,
+        "prompt_tokens": 5795,
+        "total_tokens": 6071,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5280
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 15524.779,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1161,
+        "prompt_tokens": 4693,
+        "total_tokens": 5854,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 485,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4693
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 10221.317,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 267,
+        "prompt_tokens": 6729,
+        "total_tokens": 6996,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6064
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 16587.193,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1138,
+        "prompt_tokens": 5679,
+        "total_tokens": 6817,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 572,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5679
+      },
+      "telemetry": {
+        "queue_ms": 0.064,
+        "latency_ms": 16618.681,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 370,
+        "prompt_tokens": 7560,
+        "total_tokens": 7930,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6992
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 21458.359,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "status": "failed",
+  "error": "reasoning_only",
+  "failure_telemetry": {
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 725,
+      "prompt_tokens": 6684,
+      "total_tokens": 7409,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": null,
+        "audio_tokens": null,
+        "reasoning_tokens": 725,
+        "rejected_prediction_tokens": null
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": null,
+        "cached_tokens": 0,
+        "created_cache_tokens": 0,
+        "multimodal_tokens": null
+      },
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 6684
+    },
+    "provider_model": "nvidia/nemotron-3-super-120b-a12b",
+    "provider_request_id": "chatcmpl-acb30fd7879c0f09",
+    "queue_ms": 0.079,
+    "latency_ms": 5098.527,
+    "retries": 0,
+    "retry_codes": []
+  },
+  "wall_seconds": 224.013
+}

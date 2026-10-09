@@ -1,0 +1,95 @@
+{
+  "generation": {
+    "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-probe/v1",
+    "started_at": "2026-09-20T04:43:02.825605+00:00",
+    "image": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+    "requested_profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+    "source": {
+      "width": 1280,
+      "height": 720,
+      "frames": 153,
+      "fps": 30,
+      "duration_seconds": 5.1,
+      "audio": [],
+      "size_bytes": 2183869,
+      "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+    },
+    "prompt_sha256": "f021eac01848d74abbe8f5652948bcde59df21842c8c69f849756dae5e380c3f",
+    "request_parameters": {
+      "seed": 42,
+      "guidance": 7,
+      "num_steps": 35,
+      "sigma_max": 90,
+      "resolution": "720",
+      "edge": {
+        "control_weight": 1.0
+      }
+    },
+    "alignment_passed": true,
+    "weather_verified": false,
+    "motion_verified": false,
+    "public_platform_path_tested": false,
+    "customer_ready": false,
+    "inference_request_attempted": true,
+    "readiness_status": 200,
+    "manifest_http_status": 200,
+    "manifest_sha256": "b4772f9b2ca0215697611b2a4494afcd3cedfbf22f3025c3f8326085b2d2b345",
+    "model_manifest_file_sha256": "67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17",
+    "metadata_http_status": 200,
+    "metadata_sha256": "15305e195c99913acc8563c8e3ed72566acf8bc91d025bb14750b1c9f03f0dc0",
+    "observed_profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+    "observed_nim_version": "1.1.0",
+    "openapi_sha256": "1445ba2623beb25320b3e9297aa55029df49adb898c1dfde6315fd1a1f310360",
+    "request_sha256": "686c091eb0a75f0129b03ac0bc8bcad69d4cac86050e036c980b665fc414dfc1",
+    "http_status": 200,
+    "returned_seed": 42,
+    "output": {
+      "width": 1280,
+      "height": 720,
+      "frames": 153,
+      "fps": 30,
+      "duration_seconds": 5.1,
+      "audio": [],
+      "size_bytes": 1060024,
+      "sha256": "69d6f54fc1a423f180de8402de1bb986e1a84c6c0f7ad4313e9e2f9e4f00af12"
+    },
+    "status": "direct-generation-structure-passed",
+    "elapsed_seconds": 501.59218538179994,
+    "finished_at": "2026-09-20T04:51:24.417819+00:00"
+  },
+  "quality": {
+    "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-quality/v1",
+    "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+    "generation_receipt_sha256": "b14b633b3fb968716c8755879efee5dd779e2ce670837416b1e37bc323799f0d",
+    "source_sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863",
+    "output_sha256": "69d6f54fc1a423f180de8402de1bb986e1a84c6c0f7ad4313e9e2f9e4f00af12",
+    "target_weather": "overcast",
+    "vlm_model": "MiniMaxAI/MiniMax-M3",
+    "llm_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    "evaluation_frames": 5,
+    "alignment_passed": true,
+    "public_platform_path_tested": false,
+    "customer_ready": false,
+    "limitation": "Automated motion and sampled-weather checks are not proof of physical fidelity or label validity; human review is required.",
+    "motion": {
+      "score": 0.9525093473463488,
+      "total_frames": 153,
+      "total_hallucinated_pixels": 82078,
+      "total_augmented_dynamic_pixels": 1728298,
+      "params": {
+        "grad_thresh": 10.0,
+        "blur_ksize": 7,
+        "morph_k": 3,
+        "dist_tol_px": 7.0,
+        "max_frames": null
+      },
+      "threshold": 0.682,
+      "passed": true
+    },
+    "weather": {
+      "passed": true
+    },
+    "accepted_by_automated_checks": true,
+    "elapsed_seconds": 7.5428148321807384
+  }
+}

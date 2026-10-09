@@ -46,6 +46,10 @@ spec:
         {{- include "fs2-serve.scientificAccessSelectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
       automountServiceAccountToken: false
       enableServiceLinks: false

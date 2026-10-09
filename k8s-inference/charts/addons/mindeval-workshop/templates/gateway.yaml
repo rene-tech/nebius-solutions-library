@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.gateway.persistence.claimName }}
+  labels:
+    {{- include "mindeval.labels" . | nindent 4 }}
+  {{- if .Values.gateway.persistence.retain }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.gateway.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.gateway.persistence.size | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.gateway.name }}
+  labels:
+    {{- include "mindeval.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.gateway.name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.gateway.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "mindeval.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ .Values.gateway.name }}
+    spec:
+      terminationGracePeriodSeconds: 210
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ .Values.gateway.image | quote }}
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - name: MINDEVAL_AUTHZ_URL
+              value: {{ .Values.gateway.authUrl | quote }}
+            - name: MINDEVAL_DB_PATH
+              value: /data/mindeval/gateway.sqlite
+          resources: {{ toYaml .Values.gateway.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          volumeMounts:
+            - {name: data, mountPath: /data/mindeval}
+            - {name: token-factory, mountPath: /run/secrets/token-factory, readOnly: true}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.gateway.persistence.claimName }}
+        - name: token-factory
+          secret:
+            secretName: {{ .Values.gateway.tokenFactorySecret }}
+            defaultMode: 0440
+            items:
+              - {key: {{ .Values.gateway.tokenFactorySecretKey }}, path: api-key}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.gateway.name }}
+  labels:
+    {{- include "mindeval.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Values.gateway.name }}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

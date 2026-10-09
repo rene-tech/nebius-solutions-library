@@ -1,0 +1,4 @@
+# Complete CPU analysis environment used with Python 3.12.3.
+-r ../analysis/requirements.txt
+-r requirements-wham.txt
+ParmEd==4.3.1

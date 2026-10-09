@@ -1,0 +1,17 @@
+# Wrapper-only release over an immutable, previously built scientific engine.
+# Use Containerfile/Containerfile.mpi for a new engine/toolchain build. This
+# recipe preserves PLUMED and other engine features while updating orchestration.
+ARG ENGINE_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643
+FROM ${ENGINE_IMAGE}
+ARG ENGINE_IMAGE
+ARG SOURCE_REVISION
+USER root
+COPY fs2_gromacs /opt/fs2/gromacs/fs2_gromacs
+RUN test -n "${SOURCE_REVISION}" \
+ && python3 -m compileall -q /opt/fs2/gromacs/fs2_gromacs \
+ && chmod -R a+rX /opt/fs2/gromacs/fs2_gromacs
+LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.base.name="${ENGINE_IMAGE}" \
+      ai.nebius.scientific.release="gromacs-multigpu-20261003"
+USER 10001:10001

@@ -1,0 +1,3174 @@
+{
+  "interpretation": "Automated suggestions, not adjudicated error counts or clinical accuracy",
+  "generation": [
+    {
+      "id": "en-01-reference",
+      "status": "ok",
+      "case": "en-01",
+      "source": "human_reference",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 43.1187545247376,
+      "facts": 30,
+      "evidence_quotes": 45,
+      "nonliteral_evidence_quotes": [
+        "pain in my, like, um...yeah, just to one side. One side. Uh, on the left side.",
+        "Yeah, yeah, just normal vomit, yeah. No no blood",
+        "Any other symptoms like sweating, or um, night sweats? No?",
+        "I ate at a Chinese restaurant with friends",
+        "uh, yeah, that's fine. I just, yeah, use an inhaler, and uh that's under control",
+        "uh, yeah, that's fine. I just, yeah, use an inhaler",
+        "I think uh, um, just to recap for the last three days you've been having loose stool, diarrhea...I wondered whether that might be the cause of your problems",
+        "mainly caused by viruses but there can be a possibility of bacteria uh causing its symptoms",
+        "what we'd recommend is just what we say conservative management...drinking fluids. there are things like Dioralyte you can get from the pharmacy",
+        "taking some paracetamol, uh, two tablets up to four times a day for the first few days can also help",
+        "I would say the next two, two to three days as the infection clears from your system to take some time off and rest",
+        "if your symptoms haven't got better, you know, in in three to four days, I'd like to come and see you again",
+        "we may need to do further tests like um taking a sample of your stool so we can test that",
+        "is the treatment plan clear? Uh, yes, yeah, that's that's very clear"
+      ],
+      "uncertainties": [
+        "Uncertain if the patient measured temperature or only felt hot.",
+        "Uncertain if the child's vomiting is related to the same exposure.",
+        "Uncertain whether the clinician said 'fever and' or something else during the recap (\"vomiting and <UNSURE>fever and</UNSURE>\").",
+        "Uncertain exact name of medication mentioned (e.g., 'Dioralyte' is clear, but pronunciation/mention had disfluency).",
+        "Uncertain if the patient said 'athsma' or 'asthma' (likely typo for asthma)."
+      ]
+    },
+    {
+      "id": "en-02-reference",
+      "status": "ok",
+      "case": "en-02",
+      "source": "human_reference",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 41.378293606452644,
+      "facts": 23,
+      "evidence_quotes": 38,
+      "nonliteral_evidence_quotes": [
+        "just the chest, hands and like, like inside the elbows",
+        "you've not, haven't uh seen any other uh pus or blood, coming out of your skin. No. No",
+        "do you have any allergies to anything? Ohh, allergies. Uh, no",
+        "do you drink much in the way of alcohol? ... a few beers per week",
+        "you've not, haven't uh seen any other uh pus or blood",
+        "anything on your face at all? ... No"
+      ],
+      "uncertainties": [
+        "Uncertainty about whether the rash affects the legs (initially said arms, chest, hands; later clarified not on legs).",
+        "Uncertainty about the name of the steroid cream used over-the-counter.",
+        "Uncertainty about whether the clinician said 'Sarah' or another name.",
+        "Uncertainty about the exact content of inaudible speech segments affecting completeness of history and examination details.",
+        "Uncertainty about whether the clinician visually examined the rash (implied but not clearly confirmed)."
+      ]
+    },
+    {
+      "id": "en-01-en",
+      "status": "ok",
+      "case": "en-01",
+      "source": "nemotron-speech-en-0.6b",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 36.70225394051522,
+      "facts": 27,
+      "evidence_quotes": 37,
+      "nonliteral_evidence_quotes": [
+        "I would certainly advise you to take some time work actually... next two two to three days"
+      ],
+      "uncertainties": [
+        "Exact timing of symptom onset relative to food consumption (e.g., whether diarrhea started immediately after the meal).",
+        "Whether 'felt hot' at symptom onset constitutes a true fever.",
+        "Specific name of inhaler used for asthma not documented.",
+        "Unclear if 'dire light' refers to Dioralyte or another rehydration product.",
+        "No confirmation of whether the child with vomiting shared the same meal."
+      ]
+    },
+    {
+      "id": "en-02-en",
+      "status": "ok",
+      "case": "en-02",
+      "source": "nemotron-speech-en-0.6b",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 40.2230916377157,
+      "facts": 28,
+      "evidence_quotes": 43,
+      "nonliteral_evidence_quotes": [
+        "even at work I like um when I'm in the meeting... I'm always like uh disturbed",
+        "no temperature or fevers",
+        "do you have any allergies to anything... Oh, allergies uh no no",
+        "do you smoke at all No, no",
+        "I have tried the antihistamines uh lately but it didn't really help"
+      ],
+      "uncertainties": [
+        "Exact name of over-the-counter steroid cream not specified.",
+        "Exact name of prescribed steroid, emollient, and antihistamine (e.g., 'fetcophenidine' likely refers to fexofenadine, but not confirmed).",
+        "Whether the rash is truly a flare of eczema or a different dermatitis is uncertain due to lack of physical examination.",
+        "Sound quality was poor, potentially affecting accuracy of information exchange.",
+        "Patient did not confirm if previous eczema treatment included a specific shower product name."
+      ]
+    },
+    {
+      "id": "en-01-multi",
+      "status": "ok",
+      "case": "en-01",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 35.87789411563426,
+      "facts": 31,
+      "evidence_quotes": 48,
+      "nonliteral_evidence_quotes": [
+        "I feel a bit weak and shaky",
+        "mainly caused by viruses but they can be uh possibility of bacteria uh causing symptoms"
+      ],
+      "uncertainties": [
+        "Exact timing of symptom onset relative to food ingestion is approximate (\"about four days ago\").",
+        "Patient did not measure temperature; fever is subjective.",
+        "Spelling of 'Dioralyte' uncertain (transcript says 'dirolite').",
+        "Unclear if 'simples' refers to 'symptoms' (likely typo).",
+        "Unclear if 'halt down fluids' means 'hold down fluids' (likely speech error).",
+        "Unclear if 'Simpsons' refers to 'symptoms' (likely mishearing).",
+        "Unclear if 'wealth hydrated' means 'well hydrated' (likely speech error).",
+        "Unclear if 'two tables' means 'two tablets' (likely speech error)."
+      ]
+    },
+    {
+      "id": "en-02-multi",
+      "status": "ok",
+      "case": "en-02",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 33.741080736741424,
+      "facts": 25,
+      "evidence_quotes": 39,
+      "nonliteral_evidence_quotes": [
+        "i'm thirty one"
+      ],
+      "uncertainties": [
+        "Exact name of over-the-counter cream is unclear (referred to as 'sterile cream', possibly steroid cream).",
+        "Name of prescribed antihistamine is unclear ('fexapenide' likely refers to fexofenadine).",
+        "Name of emollient is unclear ('ammolians' likely refers to emollients).",
+        "Exact timing of symptom onset: patient says 'a few days' and 'three days ago'.",
+        "Whether rash affects arms or only inner elbows is slightly inconsistent.",
+        "Clinician mentions examining skin, but this was a remote consultation with poor audio; visual examination likely not performed.",
+        "Patient says antihistamines 'didn't help' but does not specify type, dose, or duration."
+      ]
+    },
+    {
+      "id": "de-herzrasen-multi",
+      "status": "ok",
+      "case": "de-herzrasen",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 46.65621345490217,
+      "facts": 20,
+      "evidence_quotes": 34,
+      "nonliteral_evidence_quotes": [
+        "seit wann sagen Sie sechs Wochen vielleicht",
+        "ich sitze auf dem Sofa und plötzlich gebe das los",
+        "fühlt sich an, als müsste das irgendwie gegen ein Widerstand irgendwie kämpfen",
+        "in zwei, drei Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt"
+      ],
+      "uncertainties": [
+        "Genauer Beginn der Symptome ist unklar („seit einer Weile“, „vielleicht sechs Wochen“).",
+        "Keine Angaben zu Medikamenteneinnahme oder Allergien.",
+        "Keine Angaben zu weiteren körperlichen Untersuchungsbefunden (da Untersuchung noch nicht erfolgt).",
+        "Keine Bestätigung der Schilddrüsenüberfunktion – bleibt vorläufige Hypothese.",
+        "Keine Angaben zu Alkohol, Nikotin oder anderen Substanzen.",
+        "Keine Angaben zu Temperaturgefühl, Stuhl, Menstruation oder anderen möglichen Symptomen der Schilddrüsenüberfunktion."
+      ]
+    },
+    {
+      "id": "de-grippaler-infekt-multi",
+      "status": "ok",
+      "case": "de-grippaler-infekt",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 54.83320873696357,
+      "facts": 21,
+      "evidence_quotes": 21,
+      "nonliteral_evidence_quotes": [
+        "ich bin nicht so leistungsfähig, ich bin auch nicht so motiviert wie sonst, habe mühemorgens in die Gänge zu kommen",
+        "ich funktioniere schon, aber unter Schmerzen sozusagen, also ich nehme ab und zu ein bisschen Iboprofen um das zu lindern"
+      ],
+      "uncertainties": [
+        "Genauer Zeitpunkt des Beginns der Symptome (nur 'seit drei Monaten' dokumentiert).",
+        "Ob Fieber objektiv gemessen wurde oder subjektives Gefühl.",
+        "Ob bereits andere symptomatische Maßnahmen (z. B. Nasensprays, Inhalation) versucht wurden.",
+        "Ob der Patient bereits psychosomatische Komponenten in Betracht zieht.",
+        "Ob der Patient bereits mit dem Arbeitgeber über Belastung gesprochen hat.",
+        "Ob der Patient bereits andere Ärzte aufgesucht hat.",
+        "Ob der Patient Allergien oder Vorerkrankungen hat (nicht dokumentiert).",
+        "Ob der Patient regelmäßig Medikamente einnimmt (außer gelegentlichem Ibuprofen).",
+        "Ob der Patient Raucher ist (nicht dokumentiert).",
+        "Ob der Patient Alkohol oder andere Substanzen konsumiert (nicht dokumentiert).",
+        "Ob der Patient Schlafstörungen hat (nicht explizit erwähnt).",
+        "Ob der Patient bereits Gedanken über Burnout oder psychische Belastung geäußert hat (implizit, aber nicht direkt)."
+      ]
+    },
+    {
+      "id": "de-polyarthritis-multi",
+      "status": "ok",
+      "case": "de-polyarthritis",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "consultation",
+      "sample_group": null,
+      "document_kind": "consultation_draft",
+      "wall_seconds": 37.359185826964676,
+      "facts": 18,
+      "evidence_quotes": 24,
+      "nonliteral_evidence_quotes": [
+        "heute Morgen war es nochmal so ein bisschen da habe ich dann Ibuprofen genommen und jetzt ist besser.",
+        "Muss man jetzt einfach abwarten was hielten die davon, wenn wir uns noch ein zweites Mal zusammensetzen und so konkrete Schritte zu planen",
+        "dass wir dann erstmal so ein bisschen Sacken kann",
+        "dass wir dann sehr gerne auch mit mir nochmal über Nebenwirkungen sprechen können",
+        "da habe ich dann Ibuprofen genommen",
+        "Ich würde es heute erstmal gerne dabei belasten."
+      ],
+      "uncertainties": [
+        "Unklar, ob 'Rollenmar' oder 'Räume' als medizinischer Begriff korrekt wiedergegeben ist (offenbar Tipp-/Sprechfehler für 'rheumatoide Arthritis').",
+        "Unklar, ob 'Laborwehrte' als 'Laborwerte' gemeint ist.",
+        "Unklar, ob 'Rhema-tologen' korrekt als 'Rheumatologen' zu interpretieren ist.",
+        "Unklar, ob 'Ipop häen' als 'Ibuprofen' gemeint ist (wird aber im Kontext plausibel).",
+        "Unklar, ob 'nicht so gute Nachhalt' als 'nicht so gute Nachricht' gemeint ist.",
+        "Unklar, ob 'Berufen fähig' als 'berufsunfähig' gemeint ist.",
+        "Unklar, ob 'Filmier gucken' als 'sorgfältig gucken' oder 'monitoring' gemeint ist (vermutlich 'sorgfältig prüfen')."
+      ]
+    },
+    {
+      "id": "multimed-0000-reference",
+      "status": "ok",
+      "case": "multimed-0000",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 14.77509668469429,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, welche spezifische Erkrankung neben HIV gemeint ist.",
+        "Unklar, ob die Maßnahmen bereits ergriffen wurden oder zukünftig ergriffen werden sollen.",
+        "Unklar, ob es sich um eine medizinische, präventive oder politische Handlungsempfehlung handelt."
+      ]
+    },
+    {
+      "id": "multimed-0000-multi",
+      "status": "ok",
+      "case": "multimed-0000",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 4.754260097630322,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, welche spezifischen Maßnahmen gemeint sind.",
+        "Unklar, um welche Erkrankung es sich handelt.",
+        "Unklar, wer mit 'Sie' gemeint ist."
+      ]
+    },
+    {
+      "id": "multimed-0037-reference",
+      "status": "ok",
+      "case": "multimed-0037",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 6.428129909560084,
+      "facts": 5,
+      "evidence_quotes": 5,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob 'Er' in 'Er hat ja vorhin nur gelallt' sich auf Herrn Müller oder Herrn Fuchs bezieht, jedoch nahelegend, dass es sich auf Herrn Fuchs bezieht, da er zuletzt erwähnt wurde und im Kontext aktiv ist."
+      ]
+    },
+    {
+      "id": "multimed-0037-multi",
+      "status": "ok",
+      "case": "multimed-0037",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.235057722777128,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Die Bedeutung des Wortes 'geleilt' ist unklar – möglicherweise ein Tippfehler oder umgangssprachliche Äußerung.",
+        "Der aktuelle Zustand von Herrn Müller ist nicht beschrieben.",
+        "Der Zeitpunkt der vorherigen Handlung von Herrn Fuchs ist ungenau ('vorhin')."
+      ]
+    },
+    {
+      "id": "multimed-0075-reference",
+      "status": "ok",
+      "case": "multimed-0075",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 9.005306103266776,
+      "facts": 5,
+      "evidence_quotes": 5,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob 'er' Patient oder eine andere Person ist.",
+        "Unklar, um welche Art des Sprungs es sich handelt (z. B. Sturz, Suizidversuch).",
+        "Unklar, ob das Blutungsereignis vor oder nach dem Sprung stattfand.",
+        "Unklar, ob medizinische Versorgung bereits erfolgte oder ausstehend ist."
+      ]
+    },
+    {
+      "id": "multimed-0075-multi",
+      "status": "ok",
+      "case": "multimed-0075",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 7.721141690388322,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob der Sprung ein Suizidversuch, Unfall oder anderes Ereignis war.",
+        "Unklar, um welche Person es sich handelt (wer geblutet hat, wer gesprungen ist).",
+        "Unklar, ob die betroffene Person männlich ist (Verwendung von 'er').",
+        "Unklar, ob das Ereignis real oder hypothetisch beschrieben wird.",
+        "Unklar, ob medizinische Versorgung erfolgt ist oder wer 'Herr Doktor' ist."
+      ]
+    },
+    {
+      "id": "multimed-0112-reference",
+      "status": "ok",
+      "case": "multimed-0112",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 3.0044098533689976,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0112-multi",
+      "status": "ok",
+      "case": "multimed-0112",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 9.527971069328487,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der vollständige Abschluss des letzten Satzes fehlt (\"dann funktioniert es do\"), sodass unklar ist, ob etwas Wesentliches nicht mitgeteilt wurde."
+      ]
+    },
+    {
+      "id": "multimed-0150-reference",
+      "status": "ok",
+      "case": "multimed-0150",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 10.111167347989976,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Es ist unklar, welche konkreten Schritte zur Tumordiagnostik gehören.",
+        "Es ist nicht dokumentiert, warum der Blasenkatheter gesetzt wurde.",
+        "Es ist nicht klar, ob Herr Trabitz bereits entlassen wurde oder noch im Haus ist."
+      ]
+    },
+    {
+      "id": "multimed-0150-multi",
+      "status": "ok",
+      "case": "multimed-0150",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.06654886342585,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0187-reference",
+      "status": "ok",
+      "case": "multimed-0187",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.860480982810259,
+      "facts": 2,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Die genaue Beschreibung der 'Grundbedingungen' ist im vorliegenden Ausschnitt nicht enthalten.",
+        "Unklar, ob der Zugang bereits gewährt wurde oder zukünftig gewährt wird."
+      ]
+    },
+    {
+      "id": "multimed-0187-multi",
+      "status": "ok",
+      "case": "multimed-0187",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 9.701387064531446,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Es ist unklar, welche konkreten Grundbedingungen gemeint sind, da sie im vorliegenden Textausschnitt nicht genannt werden."
+      ]
+    },
+    {
+      "id": "multimed-0193-reference",
+      "status": "ok",
+      "case": "multimed-0193",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "missing_output_challenge",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 9.805903373286128,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Die Bedeutung der Zahlen 96, 110, 96 ist unklar.",
+        "Es ist unklar, ob „Emily, falsches Zimmer“ von der Frau direkt zu Emily gesagt wird oder über sie.",
+        "Der Kontext der Musik ist nicht ersichtlich."
+      ]
+    },
+    {
+      "id": "multimed-0193-multi",
+      "status": "ok",
+      "case": "multimed-0193",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "missing_output_challenge",
+      "document_kind": "insufficient_content",
+      "wall_seconds": 4.353622460737824,
+      "facts": 0,
+      "evidence_quotes": 0,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der Transkriptinhalt ist leer, daher können keine Aussagen getroffen werden."
+      ]
+    },
+    {
+      "id": "multimed-0225-reference",
+      "status": "ok",
+      "case": "multimed-0225",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 9.053704022429883,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der Kontext oder die vollständige Aussage über die 'Leidenschaft der Musik' ist unvollständig und nicht klar.",
+        "Die Aussage 'Umso erstaunlicher, dass hier' bleibt ohne Fortsetzung; die darauf bezogene Behauptung ist nicht dokumentiert."
+      ]
+    },
+    {
+      "id": "multimed-0225-multi",
+      "status": "ok",
+      "case": "multimed-0225",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 11.94342552125454,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der Bezug von 'ihrer Leidenschaft nachgehen, der Musik' ist unklar – es wird nicht dokumentiert, auf wen sich 'ihrer' bezieht oder ob dies Teil eines größeren Kontextes über eine Person ist.",
+        "Der Satz 'Umso erstaunlicher, dass' bleibt unvollständig – es ist nicht klar, was erstaunlich ist."
+      ]
+    },
+    {
+      "id": "multimed-0263-reference",
+      "status": "ok",
+      "case": "multimed-0263",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 13.92443550657481,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der Text bricht mitten im Satz über den Menschen ab, sodass die vollständige Aussage über menschliche Eigenschaften oder Vergleiche unklar ist."
+      ]
+    },
+    {
+      "id": "multimed-0263-multi",
+      "status": "ok",
+      "case": "multimed-0263",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 14.555966904386878,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der Text bricht ab mit 'Der Mensch', sodass unklar ist, welche Eigenschaften oder Aussagen über den Menschen folgen sollten."
+      ]
+    },
+    {
+      "id": "multimed-0300-reference",
+      "status": "ok",
+      "case": "multimed-0300",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 11.352244056761265,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Die Frage zur Alkoholabhängigkeit bleibt unbeantwortet und ist unklar.",
+        "Die Aussage 'Vielleicht' am Ende deutet auf Unsicherheit hin, ohne klaren Bezug."
+      ]
+    },
+    {
+      "id": "multimed-0300-multi",
+      "status": "ok",
+      "case": "multimed-0300",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 9.44542810227722,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob die Aussage über Alkoholkonsum subjektiv oder objektiv gesichert ist.",
+        "Formulierung „Vielleicht“ am Ende deutet auf Unsicherheit oder abgebrochene Gedankenfolge hin, Inhalt nicht vollständig."
+      ]
+    },
+    {
+      "id": "multimed-0338-reference",
+      "status": "ok",
+      "case": "multimed-0338",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 5.535834150388837,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0338-multi",
+      "status": "ok",
+      "case": "multimed-0338",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 6.489536066539586,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0375-reference",
+      "status": "ok",
+      "case": "multimed-0375",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.250840837135911,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob die Aussage über die Fettverbrennung als allgemeine Behauptung oder als medizinische Empfehlung gemeint ist.",
+        "Unklar, was mit „Spätberufener in Laufdingen“ genau gemeint ist (z. B. Beruf, Hobby, Laufsport?).",
+        "Unklar, ob die angesprochene Person tatsächlich in Laufdingen aktiv ist oder war."
+      ]
+    },
+    {
+      "id": "multimed-0375-multi",
+      "status": "ok",
+      "case": "multimed-0375",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.478881294839084,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob 'Laufdingen' ein Ort, eine Aktivität oder ein metaphorischer Ausdruck ist.",
+        "Grammatikalische Unschärfen im Satz 'setzt die Fettverbrennung einer halbe Stunde täglich ist mindestens anzustreben' erschweren die exakte Interpretation der Empfehlung."
+      ]
+    },
+    {
+      "id": "multimed-0413-reference",
+      "status": "ok",
+      "case": "multimed-0413",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.921736940741539,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Zeitpunkt des Todes der Frau ist nicht dokumentiert.",
+        "Weitere mögliche Symptome oder Erkrankungen sind nicht dokumentiert."
+      ]
+    },
+    {
+      "id": "multimed-0413-multi",
+      "status": "ok",
+      "case": "multimed-0413",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 5.526223690249026,
+      "facts": 3,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Zeitpunkt des Todes der Frau ist nicht dokumentiert.",
+        "Weitere Begleitumstände oder zusätzliche Symptome sind nicht dokumentiert."
+      ]
+    },
+    {
+      "id": "multimed-0451-reference",
+      "status": "ok",
+      "case": "multimed-0451",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 3.247080661356449,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0451-multi",
+      "status": "ok",
+      "case": "multimed-0451",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 4.304872697219253,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0488-reference",
+      "status": "ok",
+      "case": "multimed-0488",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.315709113143384,
+      "facts": 3,
+      "evidence_quotes": 5,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der genaue Inhalt der geplanten Untersuchung ist unklar.",
+        "Die Bedeutung von 'Bären' im Kontext ist unklar (wörtlich oder metaphorisch?).",
+        "Welcher weitere Punkt von Frau Dierhof angesprochen werden soll, bleibt offen."
+      ]
+    },
+    {
+      "id": "multimed-0488-multi",
+      "status": "ok",
+      "case": "multimed-0488",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 11.429821327328682,
+      "facts": 5,
+      "evidence_quotes": 5,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der genaue Inhalt, auf den Frau Dierhoff hinweisen möchte, bleibt unvollständig und unklar.",
+        "Der Kontext der geplanten Untersuchung (medizinisch, technisch, administrativ) ist nicht ersichtlich.",
+        "Die Bedeutung des Wortes 'springen' im Zusammenhang mit dem Budget ist unklar (vermutlich Tippfehler für 'sprengen')."
+      ]
+    },
+    {
+      "id": "multimed-0526-reference",
+      "status": "ok",
+      "case": "multimed-0526",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 7.4289626413956285,
+      "facts": 7,
+      "evidence_quotes": 7,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Es ist unklar, ob und welche Maßnahmen vorgeschlagen wurden, da die Frage an Frau Steffen gerichtet ist, aber keine Antwort dokumentiert ist."
+      ]
+    },
+    {
+      "id": "multimed-0526-multi",
+      "status": "ok",
+      "case": "multimed-0526",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 14.265179905109107,
+      "facts": 7,
+      "evidence_quotes": 7,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob 'Tarykadie' Tachykardie oder ein anderes Phänomen bezeichnet.",
+        "Unklar, ob 'Aligorie' gemeint ist (nicht im Text verifizierbar, möglicher Hörfehler für Apathie oder Allgemeinbefinden).",
+        "Unklar, ob der Hämatorit-Wert 53 % beträgt (gesprochen: 'drei und fünfzig') oder ein anderer Wert gemeint ist.",
+        "Unklar, ob 'vorgeschaut' ein Tippfehler oder Hörfehler für 'vorgeschlagen' oder 'erwartet' ist."
+      ]
+    },
+    {
+      "id": "multimed-0563-reference",
+      "status": "ok",
+      "case": "multimed-0563",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 12.020343216136098,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob der Sprecher ein Patient ist oder in welchem Kontext diese Äußerung gemacht wurde.",
+        "Unklar, ob es sich um eine medizinische Beschwerde oder eine technische Anfrage handelt.",
+        "Unklar, ob die Aussage vollständig ist (Ende 'bis 17 uhr bin' ist grammatikalisch unvollständig)."
+      ]
+    },
+    {
+      "id": "multimed-0563-multi",
+      "status": "ok",
+      "case": "multimed-0563",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 11.735009946860373,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Die genaue Ursache der hohen Temperaturen ist nicht dokumentiert.",
+        "Ob ein Techniker bereits im Einsatz ist oder ob die Anfrage neu ist, ist unklar.",
+        "Die Uhrzeit 'Bis siebzehn Uhr Uhr Uhr' enthält eine Wiederholung und könnte ungenau sein."
+      ]
+    },
+    {
+      "id": "multimed-0601-reference",
+      "status": "ok",
+      "case": "multimed-0601",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 10.936498583294451,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob die Bauchschmerzen aktuell bestehen oder nur in der Vergangenheit vor Reisen aufgetreten sind.",
+        "Unklar, um welchen Patienten es sich handelt (z. B. Kind, Angehöriger).",
+        "Unvollständige Information über den weiteren Tagesablauf oder die Dauer des Besuchs bei Oma."
+      ]
+    },
+    {
+      "id": "multimed-0601-multi",
+      "status": "ok",
+      "case": "multimed-0601",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 19.482170440256596,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob die Bauchschmerzen aktuell bestehen oder nur in der Vergangenheit vor Reiseantritten auftraten.",
+        "Unvollständige Aussage über den morgigen Besuch – Ziel oder Person mit 'O' nicht identifiziert."
+      ]
+    },
+    {
+      "id": "multimed-0638-reference",
+      "status": "ok",
+      "case": "multimed-0638",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 14.373116379603744,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0638-multi",
+      "status": "ok",
+      "case": "multimed-0638",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 13.984902121126652,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0676-reference",
+      "status": "ok",
+      "case": "multimed-0676",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 14.97981845960021,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Die vollständige Rolle oder Abteilung, zu der die Assistentin gehört, ist unvollständig dokumentiert.",
+        "Unklar, ob 'sie frau und mann' sich auf eine oder mehrere Personen bezieht."
+      ]
+    },
+    {
+      "id": "multimed-0676-multi",
+      "status": "ok",
+      "case": "multimed-0676",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.853373432531953,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Die vollständige Funktion oder Abteilungszugehörigkeit von Frau Zündmann ist unvollständig dokumentiert (Ende des Satzes fehlt)."
+      ]
+    },
+    {
+      "id": "multimed-0714-reference",
+      "status": "ok",
+      "case": "multimed-0714",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 10.501560087315738,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Welche Substanz genau gemeint ist, bleibt unklar.",
+        "Der genaue Kontext (z. B. Medikamente, Hormone, Nahrungsergänzung) ist nicht dokumentiert.",
+        "Der vollständige Inhalt der negativen Auswirkung ist nicht abschließend formuliert."
+      ]
+    },
+    {
+      "id": "multimed-0714-multi",
+      "status": "ok",
+      "case": "multimed-0714",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 11.689149274490774,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Welcher Stoff genau gemeint ist, bleibt unklar.",
+        "Der genaue Kontext der künstlichen Manipulation (z. B. Medikamente, Hormone, Therapieform) ist nicht dokumentiert."
+      ]
+    },
+    {
+      "id": "multimed-0751-reference",
+      "status": "ok",
+      "case": "multimed-0751",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 10.330994545482099,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [
+        "ziehende Schmerzen — so, als würde jemand an eurem Körperteil ziehen"
+      ],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0751-multi",
+      "status": "ok",
+      "case": "multimed-0751",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 6.681318607181311,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0789-reference",
+      "status": "ok",
+      "case": "multimed-0789",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 13.594475532881916,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, was genau bei der Aufnahme beobachtet wurde, da der Satz unvollständig ist.",
+        "Unklar, wann genau die Veränderung des Verhaltens einsetzte."
+      ]
+    },
+    {
+      "id": "multimed-0789-multi",
+      "status": "ok",
+      "case": "multimed-0789",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 14.837553086690605,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob 'Aufnahme' vor oder nach dem Mittagessen erfolgte.",
+        "Unklar, wer die Patientin gefunden hat – wurde nur 'Pflegekraft' erwähnt oder eine spezifische Person?",
+        "Unklar, ob 'sie' sich auf die Patientin bezieht – Geschlecht nicht explizit genannt."
+      ]
+    },
+    {
+      "id": "multimed-0826-reference",
+      "status": "ok",
+      "case": "multimed-0826",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 6.892772289924324,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob die Aussage über die Universitätskosten sich auf Simbabwe im Allgemeinen oder auf persönliche Erfahrungen bezieht.",
+        "Unklar, wo sich die neue Umgebung befindet und worin sie besteht."
+      ]
+    },
+    {
+      "id": "multimed-0826-multi",
+      "status": "ok",
+      "case": "multimed-0826",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.183049015700817,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der Begriff 'kumme' ist unklar und möglicherweise ein Tippfehler oder umgangssprachliche Äußerung.",
+        "Der genaue Gegenstand der Investition ist nicht spezifiziert.",
+        "Der Kontext der Äußerung fehlt; es ist unklar, ob es sich um eine persönliche, finanzielle oder hypothetische Aussage handelt."
+      ]
+    },
+    {
+      "id": "multimed-0864-reference",
+      "status": "ok",
+      "case": "multimed-0864",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 4.9091810174286366,
+      "facts": 2,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0864-multi",
+      "status": "ok",
+      "case": "multimed-0864",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 6.120419627986848,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0902-reference",
+      "status": "ok",
+      "case": "multimed-0902",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.853768569417298,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Welche beiden Themen genau zur Auswahl stehen, ist nicht dokumentiert.",
+        "Ob Herr Gül das Thema vollständig behandelt hat, ist auf Basis des Ausschnitts unklar.",
+        "Der weitere Inhalt von Herrn Güls Aussage ist nicht dokumentiert."
+      ]
+    },
+    {
+      "id": "multimed-0902-multi",
+      "status": "ok",
+      "case": "multimed-0902",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 17.73113676905632,
+      "facts": 5,
+      "evidence_quotes": 5,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Es ist unklar, um welche Art von Prüfung es sich handelt.",
+        "Die beiden zur Auswahl stehenden Themen werden nicht genannt.",
+        "Es ist unklar, ob Herr Gühl tatsächlich ein Thema ausgewählt hat oder ob die Auswahl bevorsteht."
+      ]
+    },
+    {
+      "id": "multimed-0939-reference",
+      "status": "ok",
+      "case": "multimed-0939",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.859591361135244,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-0939-multi",
+      "status": "ok",
+      "case": "multimed-0939",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 17.94438205845654,
+      "facts": 6,
+      "evidence_quotes": 6,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Die Bedeutung von 'Obergörter' ist unklar und möglicherweise ein Hörfehler oder Fachjargon.",
+        "Der genaue Inhalt von 'irgendwas am ersten vier Segment' ist unklar.",
+        "Der Kontext der Aussage über das Bett (medizinisch, sicherheitsrelevant, technisch) ist nicht ersichtlich.",
+        "Die Bedeutung von 'nicht public' im klinischen Kontext bleibt unklar."
+      ]
+    },
+    {
+      "id": "multimed-0977-reference",
+      "status": "ok",
+      "case": "multimed-0977",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 17.35857890173793,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Was genau 'das' ist, was geschafft werden soll, ist unklar.",
+        "Der Kontext der Erwähnung der Igel bleibt unklar – ob wörtlich oder metaphorisch gemeint.",
+        "Der Inhalt dessen, worauf hingewiesen wird (\"guck hier\"), ist nicht vollständig dokumentiert."
+      ]
+    },
+    {
+      "id": "multimed-0977-multi",
+      "status": "ok",
+      "case": "multimed-0977",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 16.339359872043133,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, auf wen oder was sich die Aussage über das Schaffen bezieht.",
+        "Unklar, was mit 'da kann ich ja' gemeint ist – Kontext fehlt.",
+        "Unklar, wer oder was 'Kukia' ist."
+      ]
+    },
+    {
+      "id": "multimed-1014-reference",
+      "status": "ok",
+      "case": "multimed-1014",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 18.597202097065747,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Der vollständige Gedanke oder die Absicht hinter der Aussage über das Arbeiten bleibt unklar, da der Satz abbricht.",
+        "Es ist unklar, ob die Aussage über den Stress allein im Büro als faktisch oder hypothetisch gemeint ist.",
+        "Die Identität der angesprochenen Person („du“) ist nicht bekannt."
+      ]
+    },
+    {
+      "id": "multimed-1014-multi",
+      "status": "ok",
+      "case": "multimed-1014",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 10.077065842226148,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob die alleinige Anwesenheit im Büro tatsächlich zu mehr Stress führt.",
+        "Unvollständige Aussage zum Ende des Transkripts: Absicht oder vollständiger Gedanke nicht erkennbar."
+      ]
+    },
+    {
+      "id": "multimed-1052-reference",
+      "status": "ok",
+      "case": "multimed-1052",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 7.927139513194561,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Es ist unklar, bei wem genau Frau Steffens das Blut abgenommen hat („bei Ihnen“ – Bezug unklar).",
+        "Die genaue Beziehung zwischen den Personen ist nicht dokumentiert."
+      ]
+    },
+    {
+      "id": "multimed-1052-multi",
+      "status": "ok",
+      "case": "multimed-1052",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 14.305785404518247,
+      "facts": 2,
+      "evidence_quotes": 2,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": [
+        "Unklar, ob 'bei Ihnen Blut' vollständig 'Blut abgenommen' bedeutet.",
+        "Unklar, wer mit 'Ihnen' gemeint ist.",
+        "Unklar, ob der Sprecher medizinisches Personal oder eine andere Person ist."
+      ]
+    },
+    {
+      "id": "multimed-1090-reference",
+      "status": "ok",
+      "case": "multimed-1090",
+      "source": "human_reference",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 8.735165645368397,
+      "facts": 4,
+      "evidence_quotes": 4,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    },
+    {
+      "id": "multimed-1090-multi",
+      "status": "ok",
+      "case": "multimed-1090",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "document_kind": "excerpt_note",
+      "wall_seconds": 6.276583192870021,
+      "facts": 3,
+      "evidence_quotes": 3,
+      "nonliteral_evidence_quotes": [],
+      "uncertainties": []
+    }
+  ],
+  "reviews": [
+    {
+      "case": "en-01",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "en-01-reference",
+          "findings": [],
+          "assessment": "The draft report derived from the human reference transcript faithfully captures all major and minor facts from the reference. No omissions, contradictions, unsupported additions, or over‑certain statements were identified."
+        },
+        {
+          "input_id": "en-01-en",
+          "findings": [],
+          "assessment": "The automatically generated report from the nemotron‑speech‑en model is consistent with the reference transcript. All key symptoms, timing, exposures, background, and management plan are accurately represented; no factual errors were detected."
+        },
+        {
+          "input_id": "en-01-multi",
+          "findings": [],
+          "assessment": "The report produced by the multilingual model aligns with the reference transcript. No missing or contradictory information was found; the clinical content matches the source."
+        }
+      ],
+      "source_conflicts": [
+        "Clinician note states the vomiting was \"mainly bilous\" (bilious), which is not supported by the patient transcript (vomit described as normal food colour with no blood)."
+      ]
+    },
+    {
+      "case": "en-02",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "en-02-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "The draft does not mention the clinician’s comment that the rash also involves the back.",
+              "reference_quote": "it’s mainly affecting your chest and your back.",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": false,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Overall the draft is highly faithful to the transcript; only a minor omission of the back involvement is noted."
+        },
+        {
+          "input_id": "en-02-en",
+          "findings": [
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "The report says the patient bought a \"sterile cream\" whereas the transcript says a \"steroid cream\".",
+              "reference_quote": "I bought a, a steroid cream at the pharmacy last night.",
+              "report_quote": "I bought like a sterile cream at the pharmacy last night.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "The antihistamine is named \"fetcophenidine\" in the report, which does not match the transcript’s \"fexofenadine\".",
+              "reference_quote": "something like Fexofenadine, which I can give to you today",
+              "report_quote": "something like fetcophenidine which I can give to you today",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "The report adds a differential diagnosis (allergic contact dermatitis) that was not discussed in the transcript.",
+              "reference_quote": "",
+              "report_quote": "Differential includes allergic contact dermatitis or other dermatitis",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "The report states that no physical examination was performed, which is an inference not explicitly stated in the transcript.",
+              "reference_quote": "",
+              "report_quote": "No physical examination performed due to remote consultation",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Medication names are miss‑spelled (\"latidine\" and \"puritan\"), introducing uncertainty about the exact drugs.",
+              "reference_quote": "Loratadine or Piriton",
+              "report_quote": "latidine or puritan",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "The report uses the term \"ammoience\" for emollients, a mis‑recognition that adds no clinical value.",
+              "reference_quote": "some emollients",
+              "report_quote": "some ammoience",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            }
+          ],
+          "assessment": "The draft captures the overall story but contains several major factual errors (incorrect medication names) and minor unsupported additions."
+        },
+        {
+          "input_id": "en-02-multi",
+          "findings": [
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "The report refers to a \"sterile cream\" instead of the \"steroid cream\" described in the transcript.",
+              "reference_quote": "I bought a, a steroid cream at the pharmacy last night.",
+              "report_quote": "I bought like a sterile cream at the pharmacy last night",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "The antihistamine is called \"fexapenide\" in the report, which does not match the transcript’s \"fexofenadine\".",
+              "reference_quote": "something like fexofenadine, which I can give to you today",
+              "report_quote": "something like fexapenide which I can give to you today",
+              "likely_origin": "both",
+              "reference_quote_literal": false,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "The report adds a statement that the differential was not fully explored due to poor audio quality, which was not said by the clinician.",
+              "reference_quote": "",
+              "report_quote": "Differential not fully explored due to remote consultation and poor audio quality.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "The term \"ammolians\" is used for emollients, a mis‑recognition that adds no clinical information.",
+              "reference_quote": "some emollients",
+              "report_quote": "some ammolians",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "The clinician’s comment that the rash also involves the back is omitted.",
+              "reference_quote": "it’s mainly affecting your chest and your back.",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": false,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The multilingual draft mirrors the content of the EN report, inheriting the same major medication‑name errors and adding a few extra unsupported statements."
+        }
+      ],
+      "source_conflicts": [
+        "Clinician note states rash is \"mainly on chest and back\" whereas the patient never mentioned back involvement; the transcript only mentions chest, hands, arms, and inside elbows.",
+        "Clinician note specifies medication names (Betnovate BD, Cetraben) that are not mentioned in the transcript; the transcript only says a stronger steroid and emollients will be prescribed.",
+        "Clinician note suggests follow‑up in 10‑14 days, while the clinician in the transcript said to return \"next week\" (≈7 days)."
+      ]
+    },
+    {
+      "case": "de-herzrasen",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": false,
+      "reports": [
+        {
+          "input_id": "de-herzrasen-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Patient expressed concern that his grandfather’s heart attacks might be hereditary and asked for other possible explanations; the draft does not mention this concern.",
+              "reference_quote": "Ich weiß nicht, wann ich es letzte Mal mehr als fünf Stunden ein Stück geschlafen habe ... mein Opa hatte drei Herzinfarkte ... und ich mich natürlich fragte, ob das irgendwie erblich sein kann",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": false,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Report states \"Keine kardialen Risikofaktoren oder akute psychosoziale Belastungen benannt\" which is an inference not directly supported by the transcript.",
+              "reference_quote": "",
+              "report_quote": "Keine kardialen Risikofaktoren oder akute psychosoziale Belastungen benannt",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "informational",
+              "description": "Report phrases the thyroid hypothesis as \"spricht anamnestisch für eine mögliche Schilddrüsenüberfunktion\" – phrasing is appropriately tentative, so no overcertainty is identified.",
+              "reference_quote": "Die Beschwerden, die sich schildern, lassen mich eine Schilddrüsenüberfunktion denken",
+              "report_quote": "Symptomkombination ... spricht anamnestisch für eine mögliche Schilddrüsenüberfunktion",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "attribution",
+              "severity": "informational",
+              "description": "All statements are correctly attributed to the patient or clinician; no mis‑attribution detected.",
+              "reference_quote": "",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The draft report faithfully captures the majority of clinically relevant information from the transcript. Minor issues are limited to an omitted patient concern about hereditary heart disease and an unsupported inference about the absence of cardiac risk factors. No major contradictions or dangerous over‑statements are present."
+        }
+      ],
+      "source_conflicts": [
+        "Report adds the statement \"Keine kardialen Risikofaktoren oder akute psychosoziale Belastungen benannt\" which is not explicitly present in the transcript.",
+        "Report omits the patient’s expressed concern about possible hereditary heart disease (family history of heart attacks) and the question \"sonst irgendwelche Ideen\"."
+      ]
+    },
+    {
+      "case": "de-grippaler-infekt",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": false,
+      "reports": [
+        {
+          "input_id": "de-grippaler-infekt-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Report does not mention the patient’s awareness that antibiotics are harmful and likely ineffective for his viral infection.",
+              "reference_quote": "Die Antibiotika schaden mehr als dass sie nützen, weil die natürlich nur gegen bakterielle Infekte helfen",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Report presents a definitive clinical assessment (“Klinisch typische Symptome eines anhaltenden viralen Infekts”) without having performed a physical examination yet.",
+              "reference_quote": "sie haben die klassischen Symptome einer typischen Präpareninfektion beschrieben ...",
+              "report_quote": "Klinisch typische Symptome eines anhaltenden viralen Infekts mit beginnender chronifizierter Verlaufsform.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": false,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "contradiction",
+              "severity": "minor",
+              "description": "Report claims the patient \"lehnt Krankschreibung ab\" (refuses sick leave) whereas the transcript only indicates reluctance and concern about job consequences, not an outright refusal.",
+              "reference_quote": "ich sehe das oftdass dann irgendwann einfach zu viel ist ... (Implikation von beruflicher Belastung und Angst vor Vertragsverlust)",
+              "report_quote": "Patient lehnt Krankschreibung ab, da er berufliche Nachteile und Gefahr für Vertragverlängerung befürchtet.",
+              "likely_origin": "both",
+              "reference_quote_literal": false,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Report does not capture the patient’s statement about lacking any time at all (“ich habe da auch keine Zeit zu kurz gesagt, das muss aufhören …”) – not clinically essential but part of the narrative.",
+              "reference_quote": "ich habe da auch keine Zeit zu kurz gesagt, das muss aufhören und deswegen bin ich hier seit drei Monaten in Fekt.",
+              "report_quote": "",
+              "likely_origin": "asr",
+              "reference_quote_literal": false,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Overall the draft report is highly faithful to the transcript. All major clinical facts (duration, symptom constellation, work context, medication use, patient expectations, assessment, and plan) are accurately represented. Minor issues are limited to slight over‑statement of the patient’s refusal of sick leave, omission of the patient’s explicit comment on antibiotic harm, and a modest degree of diagnostic certainty before examination. These do not materially change the clinical picture."
+        }
+      ],
+      "source_conflicts": [
+        "Report states the patient \"lehnt Krankschreibung ab\" whereas the transcript only shows hesitation/reluctance, not an explicit refusal.",
+        "Report omits the patient’s explicit statement that antibiotics would be harmful, despite the patient also expressing a desire for a medication that “cleans up” the infection."
+      ]
+    },
+    {
+      "case": "de-polyarthritis",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": false,
+      "reports": [
+        {
+          "input_id": "de-polyarthritis-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht lässt die im Transkript erwähnte Diskussion über die Verträglichkeit von Medikamenten und die Notwendigkeit häufigerer Praxisbesuche weg.",
+              "reference_quote": "es gibt Medikamente, mit denen man heute die diese Erkrankung sehr gut ... nicht für jeden gut verträglich. Das bedeutet, dass sie häufiger in die Praxis kommen müssen",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": false,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht erwähnt nicht, dass die Ärztin ausdrücklich sagte, dass die Ursache der Erkrankung unbekannt ist und kein Patienten‑Fehler vorliegt.",
+              "reference_quote": "wir wissen gar nicht, warum ... Wir wissen nichts, was jemand falsch machen könnte",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": false,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht enthält keine Erwähnung, dass die Patientin überrascht war und das Gespräch als unerwartet empfand.",
+              "reference_quote": "Ich merke, wie unerwartet sie das getroffen hat",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht formuliert, dass die Laboruntersuchung „eindeutig“ auf rheumatoide Arthritis hinweist, während das Transkript nur sagt, dass die Laborwerte dafür sprechen (nicht absolut sicher).",
+              "reference_quote": "Die Laborwerte, die wir abgenommen haben, sprechen dafür, dass bei Ihnen einen Rollenmar vorliegt",
+              "report_quote": "Laboruntersuchung weist eindeutig auf rheumatoide Arthritis („Rollenmar“, „Räume“) hin",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "attribution",
+              "severity": "informational",
+              "description": "Der Bericht gibt die Aussage „Klinische Diagnose wird vom Arzt als sehr wahrscheinlich angesehen“ wieder, was im Transkript als „ich gehe jetzt erstmal davon aus“ formuliert ist – die Attribution ist korrekt.",
+              "reference_quote": "ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben",
+              "report_quote": "Klinische Diagnose wird vom Arzt als sehr wahrscheinlich angesehen",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der generierte Bericht ist insgesamt sehr treu zum Transkript und enthält die wichtigsten klinischen Fakten. Es gibt jedoch kleinere Auslassungen (Medikamenten‑Toleranz, explizite Aussage zur unbekannten Ätiologie, Patient*innen‑Reaktion) und eine leicht über‑sichere Formulierung zu den Laborbefunden. Diese Fehler sind klinisch von geringerer Tragweite (minor)."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0000",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0000-reference",
+          "findings": [],
+          "assessment": "The draft faithfully reflects all reference facts. No omissions, contradictions, or unsupported additions are detected."
+        },
+        {
+          "input_id": "multimed-0000-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Missing reference fact that the statement is not only about HIV (F1).",
+              "reference_quote": "nicht nur HIV sein",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Missing reference fact that the addressed person should implement the measures (F4).",
+              "reference_quote": "Das machen Sie",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "contradiction",
+              "severity": "minor",
+              "description": "Verb form altered from singular \"ergreift\" (source transcript) to plural passive \"werden ergriffen\" in the report, which is not present in the source.",
+              "reference_quote": "Maßnahmen ergreift, um den Ausbruch einer Erkrankung zu verhindern",
+              "report_quote": "Maßnahmen werden ergriffen, um den Ausbruch einer Erkrankung zu verhindern",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The report captures the core intervention ideas but omits contextual information about HIV and the addressed person, and introduces a minor verb‑form change. These issues are minor in clinical impact but affect completeness and fidelity."
+        }
+      ],
+      "source_conflicts": [
+        "Report multimed-0000-multi omits the reference fact that the statement is not only about HIV (F1).",
+        "Report multimed-0000-multi omits the reference fact that the addressed person should carry out the measures (F4).",
+        "Report multimed-0000-multi changes the verb form from singular \"ergreift\" (as in the transcript) to plural passive \"werden ergriffen\", which is not supported by the source."
+      ]
+    },
+    {
+      "case": "multimed-0037",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0037-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht erwähnt nicht, dass die Referenz einen Unsicherheits‑Hinweis zur Referenz von „Er“ enthält.",
+              "reference_quote": "Er hat ja vorhin nur gelallt.",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt alle expliziten Fakten des Referenz‑Transkripts korrekt wieder und kennzeichnet die Unsicherheit über das Pronomen. Keine falschen oder über‑sicheren Aussagen."
+        },
+        {
+          "input_id": "multimed-0037-multi",
+          "findings": [
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Das Wort „geleilt“ wird im Bericht verwendet, obwohl das Referenz‑Transkript „gelallt“ enthält.",
+              "reference_quote": "gelallt",
+              "report_quote": "geleilt",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht legt fest, dass „Herr Fuchs\" das vorherige „gel...“ getan hat, obwohl das Referenz‑Transkript die Referenz von „Er“ als unklar kennzeichnet.",
+              "reference_quote": "Er hat ja vorhin nur gelallt.",
+              "report_quote": "Herr Fuchs hat zuvor nur 'geleilt'.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht lässt die Unsicherheit über das Pronomen „Er“ aus, die im Referenz‑Transkript explizit erwähnt wird.",
+              "reference_quote": "Er hat ja vorhin nur gelallt.",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht spiegelt den fehlerhaften ASR‑Transkript („geleilt“) wider und interpretiert das Pronomen „Er“ eindeutig als Herr Fuchs, was über‑sicher ist im Vergleich zum Referenz‑Transkript, das die Referenz als unklar kennzeichnet. Alle anderen Fakten (Krankenhaus, Patient, geplante Untersuchung, Blutdruckmessung) sind korrekt wiedergegeben."
+        }
+      ],
+      "source_conflicts": [
+        "Der nemotron‑Transkript verwendet das Wort „geleilt“ anstelle von „gelallt“, das im menschlichen Referenz‑Transkript steht."
+      ]
+    },
+    {
+      "case": "multimed-0075",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0075-reference",
+          "findings": [
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht fügt die Spekulation \"(möglicher Sturz oder Suizidversuch)\" zum Sprung hinzu, obwohl die Referenz keine Angabe zur Art des Sprungs macht.",
+              "reference_quote": "der Sprung?",
+              "report_quote": "(möglicher Sturz oder Suizidversuch)",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "attribution",
+              "severity": "minor",
+              "description": "Der Bericht bezeichnet den Sprecher als \"Patient oder Angehöriger\", was in der Referenz nicht spezifiziert ist.",
+              "reference_quote": "",
+              "report_quote": "Patient oder Angehöriger",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt alle Fakten der Referenz korrekt wieder, fügt jedoch spekulative Details zur Art des Sprungs und zur Identität des Sprechers hinzu. Diese Ergänzungen sind nicht durch die Originalaussage gestützt und stellen leichte Überunsicherheiten dar."
+        },
+        {
+          "input_id": "multimed-0075-multi",
+          "findings": [
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht ergänzt \"(möglicherweise Sturz oder Suizidversuch)\" als mögliche Erklärung für den Sprung, obwohl die Referenz nur \"der Sprung\" erwähnt.",
+              "reference_quote": "der Sprung?",
+              "report_quote": "(möglicherweise Sturz oder Suizidversuch)",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "categorization",
+              "severity": "informational",
+              "description": "Der Bericht klassifiziert das starke Bluten als \"Symptome\", obwohl es sich um ein Ereignis (Blutverlust) handelt.",
+              "reference_quote": "er hat wahnsinnig geblutet",
+              "report_quote": "Beschreibt starkes Bluten",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht spiegelt den Inhalt der Referenz weitgehend korrekt wider, fügt jedoch eine nicht belegte Spezifikation zur Art des Sprungs hinzu und verwendet eine leicht unpassende Kategorisierung für das Blutungsereignis. Keine wesentlichen Fakten fehlen."
+        }
+      ],
+      "source_conflicts": [
+        "Beide Berichte spekulieren über die Art des \"Sprungs\" (möglicher Sturz oder Suizidversuch), obwohl die Referenz nur \"der Sprung\" nennt.",
+        "Der erste Bericht weist eine Attribution \"Patient oder Angehöriger\" zu, die in der Referenz nicht angegeben ist."
+      ]
+    },
+    {
+      "case": "multimed-0112",
+      "status": "ok",
+      "schema_valid": false,
+      "human_reference": true,
+      "reports": [],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0150",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0150-reference",
+          "findings": [
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Der Bericht gibt an, dass es nicht dokumentiert sei, welche konkreten Schritte zur Tumordiagnostik gehören – diese Information fehlt im Referenz‑Transkript.",
+              "reference_quote": "",
+              "report_quote": "Es ist unklar, welche konkreten Schritte zur Tumordiagnostik gehören.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Der Bericht behauptet, dass nicht dokumentiert sei, warum der Blasenkatheter gesetzt wurde – diese Information ist im Referenz‑Transkript nicht enthalten.",
+              "reference_quote": "",
+              "report_quote": "Es ist nicht dokumentiert, warum der Blasenkatheter gesetzt wurde.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Der Bericht stellt die Unsicherheit fest, ob Herr Trabitz bereits entlassen wurde oder noch im Haus ist – das Transkript enthält keine Angabe zum Entlassungsstatus.",
+              "reference_quote": "",
+              "report_quote": "Es ist nicht klar, ob Herr Trabitz bereits entlassen wurde oder noch im Haus ist.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            }
+          ],
+          "assessment": "Der Bericht gibt die drei im Referenz‑Transkript enthaltenen Fakten korrekt wieder und fügt nur spekulative Unsicherheits‑Hinweise hinzu, die nicht im Originaltext stehen. Diese Zusätze stellen keine klinisch relevanten Fehlinterpretationen dar, werden aber als nicht durch das Transkript gestützte Ergänzungen (minor) gekennzeichnet."
+        },
+        {
+          "input_id": "multimed-0150-multi",
+          "findings": [
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht formuliert die Aussage als „Es ist geplant“, obwohl das Original nur den Wunsch der Oberärztin („möchte“) ausdrückt.",
+              "reference_quote": "Die Oberärztin möchte, dass wir die komplette Tumordiagnostik durchführen, bevor Herr Trabitz entlassen wird.",
+              "report_quote": "Es ist geplant, die komplette Tumordiagnostik durchzuführen, bevor Herr Trabitz entlassen wird.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht stellt das Entfernen des Blasenkatheters als festes Vorhaben dar („soll entfernt werden“), während das Original nur den Wunsch („wollen Sie ja auch diesen … wieder loswerden“) ausdrückt.",
+              "reference_quote": "Schließlich wollen Sie ja auch diesen Blasenkatheter wieder loswerden.",
+              "report_quote": "Der Blasenkatheter soll entfernt werden.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Hinweis, dass Maßnahmen nur durchgeführt werden sollen, wenn sie wirklich notwendig sind, fehlt im Bericht.",
+              "reference_quote": "wirklich notwendig ist.",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt die beiden Hauptinformationen (Tumordiagnostik‑Plan und Wunsch, den Katheter zu entfernen) wieder, interpretiert sie jedoch als bereits fest geplante Maßnahmen, was eine leichte Überinterpretation darstellt. Zusätzlich wird ein im Originaltext vorhandenes Hinweis‑Statement zur Notwendigkeit von Maßnahmen ausgelassen. Alle Abweichungen sind von geringer klinischer Tragweite (minor)."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0187",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0187-reference",
+          "findings": [],
+          "assessment": "The draft faithfully reflects the reference excerpt. No major or minor factual errors, omissions, or mis‑attributions were identified."
+        },
+        {
+          "input_id": "multimed-0187-multi",
+          "findings": [
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "The report changes a definitive statement about partner selection into a possibility (‘could be selected’), contradicting the reference which states the selection will occur when conditions are met.",
+              "reference_quote": "werden Sie als potentieller Partner des Unternehmen-Weltladen ausgewählt",
+              "report_quote": "Der Sprecher könnte als potenzieller Partner des Unternehmens Weltladen ausgewählt werden.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "major",
+              "description": "The term ‘Informationspunkt’ is used instead of the reference term ‘Informationspool’, introducing an inaccurate concept.",
+              "reference_quote": "bekommen Zugang zu unserem umfangreichen Informationspool",
+              "report_quote": "Zugang zu einem umfangreichen Informationspunkt könnte gewährt werden.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "attribution",
+              "severity": "minor",
+              "description": "The report attributes the statement to the speaker (‘Der Sprecher…’) whereas the original excerpt is a direct address to the listener.",
+              "reference_quote": "werden Sie als potentieller Partner des Unternehmen-Weltladen ausgewählt",
+              "report_quote": "Der Sprecher könnte als potenzieller Partner des Unternehmens Weltladen ausgewählt werden.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            }
+          ],
+          "assessment": "The second report contains several factual deviations from the reference excerpt, notably altering certainty of partner selection, substituting a key noun, and mis‑attributing the statement. These errors are major because they change the intended meaning and could mislead the recipient about the status of partnership and the nature of the information resource."
+        }
+      ],
+      "source_conflicts": [
+        "Report multimed-0187-multi misrepresents the certainty of partner selection (states ‘could be selected’ vs. definitive selection in reference).",
+        "Report multimed-0187-multi substitutes ‘Informationspool’ with ‘Informationspunkt’, a factual deviation.",
+        "Report multimed-0187-multi attributes the statement to the speaker (‘Der Sprecher könnte…’) whereas the reference is a direct statement to the listener."
+      ]
+    },
+    {
+      "case": "multimed-0193",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0193-reference",
+          "findings": [
+            {
+              "kind": "attribution",
+              "severity": "minor",
+              "description": "Der Bericht formuliert „Eine Frau stellt fest, dass Emily im falschen Zimmer ist.“ – die Originaltranskription gibt nur an, dass eine Frau die Worte sagt, nicht dass sie eine Feststellung macht.",
+              "reference_quote": "(Frau) Emily, falsches Zimmer.",
+              "report_quote": "Eine Frau stellt fest, dass Emily im falschen Zimmer ist.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            }
+          ],
+          "assessment": "Der Bericht gibt alle im Transkript genannten Fakten wieder und kennzeichnet Unsicherheiten korrekt. Die einzige Abweichung ist die leicht überinterpretierende Formulierung, die klinisch nicht kritisch ist."
+        },
+        {
+          "input_id": "multimed-0193-multi",
+          "findings": [],
+          "assessment": "Der Bericht gibt korrekt wieder, dass kein Transkriptinhalt vorliegt, und enthält keine falschen oder fehlenden klinischen Angaben."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0225",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0225-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "The opening phrase \"Welt ihrer Leidenschaft nachgehen der Musik\" and the trailing incomplete clause \"Umso erstaunlicher, dass hier\" are omitted from the report.",
+              "reference_quote": "Welt ihrer Leidenschaft nachgehen der Musik. Bad Arolsen, eine Kleinstadt in Nordhessen, nordwestlich von Kassel, hat rund 15.500 Einwohner. Umso erstaunlicher, dass hier",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The report accurately captures the two factual statements about location and population. The omission concerns only non‑factual introductory and trailing fragments, which is a minor informational loss."
+        },
+        {
+          "input_id": "multimed-0225-multi",
+          "findings": [],
+          "assessment": "The report faithfully reproduces the factual content of the ASR transcript (location and population) and correctly notes the incomplete contextual phrases. No contradictions, unsupported additions, or over‑certainty are present."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0263",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0263-reference",
+          "findings": [
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Der Bericht fügt das Attribut „arbeitsstabiler“ hinzu, das im Referenztext nicht vorkommt.",
+              "reference_quote": "arbeitet präziser und gleichmäßiger als sein menschlicher Kollege",
+              "report_quote": "Der Roboter wird als arbeitsstabiler, präziser und gleichmäßiger als der Mensch beschrieben",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht erwähnt nicht, dass der Originaltext unvollständig endet („Der Mensch wird …“).",
+              "reference_quote": "Der Mensch wird",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt die vier Kernaussagen korrekt wieder, fügt jedoch ein nicht belegtes Attribut („arbeitsstabiler“) hinzu und lässt den Hinweis auf den abgeschnittenen Satz weg."
+        },
+        {
+          "input_id": "multimed-0263-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "major",
+              "description": "Der Bericht lässt alle vier im Referenztext genannten Fakten (nie krank, kein Urlaub, keine Familie, präziser + gleichmäßiger Arbeit) weg.",
+              "reference_quote": "Der Roboter ist nie krank, braucht keinen Urlaub, hat keine Familie, für die er sorgen muss und arbeitet präziser und gleichmäßiger als sein menschlicher Kollege",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Der Bericht führt neue Attribute („arbeitsfähig“, „zuverlässig“, „präzise“) ein, die im Referenztext nicht vorkommen.",
+              "reference_quote": "arbeitet präziser und gleichmäßiger als sein menschlicher Kollege",
+              "report_quote": "Der Roboter wird als arbeitsfähig, zuverlässig und präzise beschrieben im Vergleich zum Menschen",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Hinweis, dass der Originaltext mit „Der Mensch …“ abbricht, fehlt.",
+              "reference_quote": "Der Mensch wird",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht weicht stark vom Referenztext ab: Er lässt die wesentlichen Fakten weg und fügt nicht belegte Eigenschaften hinzu. Zudem wird das unvollständige Ende des Ausgangstextes nicht erwähnt."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0300",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0300-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "major",
+              "description": "Der Bericht lässt die offene Einschätzung zur Alkoholabhängigkeit und das Hinweiswort „Vielleicht“ weg, das im Referenztext als Hinweis auf Unsicherheit enthalten ist.",
+              "reference_quote": "Vielleicht",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt die drei klaren Fakten korrekt wieder, fügt jedoch keine Information über die noch offene Beurteilung der Alkoholabhängigkeit hinzu. Das Fehlen dieser Unsicherheitsangabe ist ein wesentlicher Verlust (major)."
+        },
+        {
+          "input_id": "multimed-0300-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "major",
+              "description": "Der Bericht enthält nicht die im Referenz‑ bzw. ASR‑Transkript vorhandene Hinweis auf die noch offene Einschätzung der Alkoholabhängigkeit („Vielleicht“).",
+              "reference_quote": "Vielleicht",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht reproduziert die drei dokumentierten Fakten korrekt, lässt jedoch die im Ausgangstext ausgedrückte Unsicherheit zur Alkoholabhängigkeit weg. Auch hier handelt es sich um einen wesentlichen (major) Informationsverlust."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0338",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0338-reference",
+          "findings": [],
+          "assessment": "Der Bericht gibt alle referenzierten Fakten korrekt wieder, ohne Auslassungen, Widersprüche oder ungestützte Ergänzungen."
+        },
+        {
+          "input_id": "multimed-0338-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "major",
+              "description": "Das Geburtsjahr (1963) wird im Bericht nicht erwähnt, obwohl es im Referenz‑Transkript angegeben ist.",
+              "reference_quote": "Sie sind am 14. März 1963 geboren, ist das richtig? Ja, das stimmt.",
+              "report_quote": "",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht lässt das Geburtsjahr aus, was ein wichtiges demografisches Merkmal ist. Sonstige Angaben (Tag/Monat des Geburtstags und Adresse) sind korrekt wiedergegeben."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0375",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0375-reference",
+          "findings": [
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "Der Bericht interpretiert die Aussage, dass die Fettverbrennung einsetzt, fälschlich als \"nach einer halben Stunde täglich einsetzt\" – das Original legt keine zeitliche Bedingung für das Einsetzen der Fettverbrennung fest, sondern empfiehlt lediglich mindestens eine halbe Stunde tägliche Aktivität.",
+              "reference_quote": "setzt die Fettverbrennung ein, eine halbe Stunde täglich ist mindestens anzustreben",
+              "report_quote": "Es wird erwähnt, dass die Fettverbrennung nach einer halben Stunde täglich einsetzt.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "accurate_representation",
+              "severity": "minor",
+              "description": "Der Bericht gibt korrekt wieder, dass eine Frage gestellt wird, ob die Person ein Spätberufener in Laufdingen ist.",
+              "reference_quote": "Sie sind ja selbst ein Spätberufener in Laufdingen?",
+              "report_quote": "Es wird die Frage gestellt, ob die angesprochene Person ein „Spätberufener in Laufdingen“ sei.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Ein wesentlicher inhaltlicher Fehler (Fettverbrennung‑Zeitpunkt) wird gemacht; die Frage‑Wiedergabe ist korrekt."
+        },
+        {
+          "input_id": "multimed-0375-multi",
+          "findings": [
+            {
+              "kind": "accurate_paraphrase",
+              "severity": "minor",
+              "description": "Der Bericht fasst die Empfehlung zusammen, täglich mindestens eine halbe Stunde für die Fettverbrennung zu investieren. Die Formulierung \"zu trainieren\" ist eine plausible Ergänzung, die nicht im Widerspruch zum Original steht.",
+              "reference_quote": "setzt die Fettverbrennung ein, eine halbe Stunde täglich ist mindestens anzustreben",
+              "report_quote": "Es wird empfohlen, täglich mindestens eine halbe Stunde für die Fettverbrennung zu trainieren.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "Der Bericht stellt die im Original gestellte Frage als Feststellung dar („Die angesprochene Person wird als … bezeichnet“), wodurch die Frage‑Intention verloren geht.",
+              "reference_quote": "Sie sind ja selbst ein Spätberufener in Laufdingen?",
+              "report_quote": "Die angesprochene Person wird als „Spätberufener im Bereich Laufdingen“ bezeichnet.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            }
+          ],
+          "assessment": "Die Empfehlung wird korrekt wiedergegeben, jedoch wird die Frage fälschlich als Aussage interpretiert – ein signifikanter Bedeutungsfehler."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0413",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0413-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht nennt nicht explizit, dass die Ehefrau des Patienten verstorben ist (Life‑Event‑Fakt). Der Sachverhalt ist jedoch implizit in der Formulierung „nach dem Tod seiner Frau“ enthalten.",
+              "reference_quote": "Nach dem Tod meiner Frau",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt die wesentlichen klinischen Informationen korrekt wieder. Nur die explizite Nennung des Todes der Ehefrau fehlt, was jedoch die klinische Aussage nicht wesentlich verändert."
+        },
+        {
+          "input_id": "multimed-0413-multi",
+          "findings": [],
+          "assessment": "Der Bericht gibt alle im Transkript enthaltenen klinischen Fakten korrekt wieder, ohne Fehlinterpretationen, Über‑ oder Unter‑Darstellungen."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0451",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0451-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "The report omits the conditional clause \"wenn ich abends schlafen gehe\" from the original statement, reducing the exact wording of the subjective wellbeing claim.",
+              "reference_quote": "Ich weiß, wenn ich abends schlafen gehe, kann ich mit einem guten Gewissen schlafen.",
+              "report_quote": "Der Sprecher äußert, abends mit gutem Gewissen schlafen zu können.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Overall faithful to the reference; only a minor omission that does not change the clinical meaning."
+        },
+        {
+          "input_id": "multimed-0451-multi",
+          "findings": [
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "The report attributes the education (Pflegemanagement) to the speaker (\"Der Sprecher\") whereas the source states that a third‑person female (\"Sie\") is studying it.",
+              "reference_quote": "Sie studiert Pflegemanagement.",
+              "report_quote": "Der Sprecher hat Pflegemanagement studiert.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "major",
+              "description": "The report adds that the speaker \"verbindet seinen Beruf mit einem guten Gewissen beim Schlafengehen,\" a relationship not present in the source transcript.",
+              "reference_quote": "Ich weiß, wenn ich abends schlafen gehe, kann ich mit einem guten Gewissen schlafen.",
+              "report_quote": "Der Sprecher verbindet seinen Beruf mit einem guten Gewissen beim Schlafengehen.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The report contains major factual errors: mis‑attribution of who is studying Pflegemanagement and an unsupported claim linking the profession to the sleep‑related conscience. Fidelity to the source is low."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0488",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0488-reference",
+          "findings": [
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Der Bericht fügt die Bewertung \"ironisch\" hinzu, obwohl der Originaltext keine Hinweis auf Ironie enthält.",
+              "reference_quote": "oder Bären die geplante Untersuchung vorspielen … … das dürfte wohl kaum das Jahresbudget sprengen. Frau Dierhof, Sie möchten noch etwas einwenden? Nein, nein. Ich möchte auf einen weiteren Punkt",
+              "report_quote": "Es wird ironisch angemerkt, dass die Durchführung einer geplanten Untersuchung (möglicherweise mit Bären im Zusammenhang) kaum das Jahresbudget sprengen würde.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "Der Bericht behauptet, Frau Dierhof lehne eine Einwendung ab, obwohl sie unmittelbar danach einen weiteren Punkt anführt, was kein vollständiges Ablehnen darstellt.",
+              "reference_quote": "Nein, nein. Ich möchte auf einen weiteren Punkt",
+              "report_quote": "Frau Dierhof lehnt es ab, eine Einwendung vorzubringen.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht interpretiert \"möglicherweise mit Bären im Zusammenhang\" als Fakt, obwohl das Original nur das Wort \"Bären\" enthält, ohne Klarstellung des Zusammenhangs.",
+              "reference_quote": "oder Bären die geplante Untersuchung vorspielen",
+              "report_quote": "(möglicherweise mit Bären im Zusammenhang)",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt die Kernaussagen korrekt wieder, fügt jedoch eine nicht belegte Tonalität (Ironie) hinzu und stellt Frau Dierhofs Reaktion fälschlich als vollständige Ablehnung dar. Diese Fehler sind klein‑bis‑mittelgroß, könnten aber das Verständnis ihrer Haltung verfälschen."
+        },
+        {
+          "input_id": "multimed-0488-multi",
+          "findings": [
+            {
+              "kind": "attribution",
+              "severity": "minor",
+              "description": "Der Name der Gesprächspartnerin wird als \"Frau Dierhoff\" (mit doppeltem f) wiedergegeben, während im Original \"Frau Dierhof\" steht.",
+              "reference_quote": "Frau Dierhof, Sie möchten noch etwas einwenden?",
+              "report_quote": "Frau Dierhoff, Sie möchten noch etwas einwenden.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "contradiction",
+              "severity": "minor",
+              "description": "Im Bericht wird das Wort \"springen\" verwendet, während im Original \"sprengen\" steht. Der Sinn bleibt gleich, aber das Zitat ist nicht exakt.",
+              "reference_quote": "das dürfte wohl kaum das Jahresbudget sprengen",
+              "report_quote": "Das dürfte wohl kaum das Jahresbudget springen",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            }
+          ],
+          "assessment": "Der Bericht spiegelt den Inhalt des Transkripts weitgehend korrekt wider. Die einzigen Abweichungen betreffen die Schreibweise des Namens und einen kleinen Transkriptionsfehler beim Wort \"sprengen\". Beide Fehler sind geringfügig und ändern die klinische Bedeutung nicht."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0526",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0526-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht lässt die im Referenztext enthaltene Frage an Frau Steffen („was hätten Sie vorgeschlagen?“) weg.",
+              "reference_quote": "Und Frau Steffen, was hätten Sie vorgeschlagen?",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt alle klinischen Fakten korrekt wieder, jedoch fehlt die Kommunikations‑Komponente (Frage an Frau Steffen)."
+        },
+        {
+          "input_id": "multimed-0526-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "major",
+              "description": "Der Befund Oligurie, ein wichtiges Zeichen der Dehydration, wird im Bericht nicht erwähnt.",
+              "reference_quote": "Oligurie",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "uncertainty_handled",
+              "severity": "minor",
+              "description": "Der ASR‑Ausdruck \"Tarykadie\" wird im Bericht als \"Tachykardie\" wiedergegeben – korrekte Interpretation trotz Transkriptionsfehler.",
+              "reference_quote": "Tachykardie",
+              "report_quote": "Tachykardie",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Laborbefund wird als \"erhöhter Hämatorit von 53 %\" wiedergegeben; die Schreibweise \"Hämatorit\" ist ein Rechtschreibfehler, ändert aber nicht die klinische Aussage.",
+              "reference_quote": "erhöhtem Hämatokrit von 53 %",
+              "report_quote": "erhöhter Hämatorit von 53 %",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht enthält die wesentlichen Diagnosen und Befunde, jedoch fehlt das klinische Zeichen Oligurie, was die Bewertung der Dehydration beeinträchtigen kann. Rechtschreib‑/Transkriptionsfehler werden größtenteils korrekt interpretiert."
+        }
+      ],
+      "source_conflicts": [
+        "Tarykadie (source) vs Tachykardie (reference)",
+        "Aligorie (source) vs Oligurie (reference)",
+        "\"drei und fünfzig Prozent\" (source) vs 53 % (reference)",
+        "\"vorgeschaut\" (source) vs \"vorgeschlagen\" (reference)"
+      ]
+    },
+    {
+      "case": "multimed-0563",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0563-reference",
+          "findings": [],
+          "assessment": "The report faithfully reproduces all reference facts; no omissions, contradictions, or unsupported additions were detected."
+        },
+        {
+          "input_id": "multimed-0563-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "The report does not mention that the temperature is described as \"nicht akzeptabel\" in the source transcript.",
+              "reference_quote": "das ist nicht akzeptabel",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The report captures the main temperature and action facts but omits the evaluative statement that the temperature is not acceptable."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0601",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0601-reference",
+          "findings": [],
+          "assessment": "Der Bericht gibt alle referenzierten Fakten korrekt wieder, ohne Fehlinterpretationen, Übertreibungen oder fehlende Angaben."
+        },
+        {
+          "input_id": "multimed-0601-multi",
+          "findings": [],
+          "assessment": "Der Bericht spiegelt den ASR‑Transkriptinhalt treu wider; er kennzeichnet die unvollständige Aussage zu \"O\" korrekt und fügt keine falschen Informationen hinzu."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0638",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0638-reference",
+          "findings": [],
+          "assessment": "The draft faithfully reproduces all four reference facts without contradiction, unsupported addition, or over‑certainty."
+        },
+        {
+          "input_id": "multimed-0638-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Missing mention that a second case will be introduced after the current discussion.",
+              "reference_quote": "nun der zweite Fall",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The report captures the context, intervention, and effectiveness statements correctly, but omits the narrative fact about the upcoming second case."
+        }
+      ],
+      "source_conflicts": [
+        "Report multimed-0638-multi omits the narrative fact that a second case will be introduced."
+      ]
+    },
+    {
+      "case": "multimed-0676",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0676-reference",
+          "findings": [],
+          "assessment": "Der Bericht gibt die im Referenz‑Transkript enthaltenen Fakten korrekt wieder, lässt keine wesentlichen Informationen weg und fügt keine nicht‑unterstützten Angaben hinzu."
+        },
+        {
+          "input_id": "multimed-0676-multi",
+          "findings": [
+            {
+              "kind": "unsupported_addition",
+              "severity": "major",
+              "description": "Der Bericht führt ein konkretes Beispiel mit dem Namen „Frau Zündmann“ ein („Frau Zündmann ist Assistentin der…“), das im Referenz‑Transkript nicht vorkommt.",
+              "reference_quote": "",
+              "report_quote": "Frau Zündmann ist Assistentin der...",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Das im Referenz‑Transkript genannte Beispiel „sie frau und mann sind assistentin der“ wird im Bericht nicht wiedergegeben.",
+              "reference_quote": "zum beispiel sie frau und mann sind assistentin der",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht ist im Wesentlichen korrekt bezüglich der Zugangsberechtigung, aber er ersetzt das im Original genannte Beispiel durch ein nicht‑unterstütztes Beispiel und lässt das Originalbeispiel aus, was zu einer unzutreffenden Personen‑ und Funktionsangabe führt."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0714",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0714-reference",
+          "findings": [],
+          "assessment": "Der Bericht gibt den Inhalt des Human‑Reference‑Auszugs korrekt wieder, ohne wesentliche Auslassungen, Widersprüche oder Fehlzuweisungen."
+        },
+        {
+          "input_id": "multimed-0714-multi",
+          "findings": [
+            {
+              "kind": "attribution",
+              "severity": "major",
+              "description": "Der Bericht weist die Aussage, dass ein Stoff nicht ausreichend vom Körper produziert wird, dem Patienten zu („Der Patient produziert…“), obwohl das Originalzitat keine Personen‑zuordnung enthält und als allgemeine Aussage formuliert ist.",
+              "reference_quote": "die er von selbst nicht oder nicht in genügend von selbst produziert. Das heißt, dass man seinen Körper künstlich manipuliert und das hat in den allermeisten Fällen eine negative",
+              "report_quote": "Der Patient produziert einen bestimmten Stoff von sich aus nicht oder nicht ausreichend von selbst.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            }
+          ],
+          "assessment": "Abgesehen von der fehlerhaften Personen‑zuordnung ist der Inhalt des Berichts mit dem ASR‑Transkript konsistent."
+        }
+      ],
+      "source_conflicts": [
+        "Der ASR‑Transkript‑Text fehlt das Wort \"in\" in der Phrase \"nicht in genügend\" (Human‑Reference: \"nicht oder nicht in genügend von selbst produziert\")."
+      ]
+    },
+    {
+      "case": "multimed-0751",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0751-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Missing statement that pain can be ziehend (Fact 1).",
+              "reference_quote": "Dann können Schmerzen **ziehend** sein.",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The report faithfully captures the descriptive part of pulling pain but omits the introductory statement that pain can be ziehend."
+        },
+        {
+          "input_id": "multimed-0751-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Missing statement that pain can be ziehend (Fact 1).",
+              "reference_quote": "Dann können Schmerzen **ziehend** sein.",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Same omission as above; otherwise the report accurately restates the pulling‑pain description."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-0789",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0789-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "informational",
+              "description": "Keine wesentlichen Fakten aus dem Referenztext wurden ausgelassen.",
+              "reference_quote": "",
+              "report_quote": "",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "contradiction",
+              "severity": "informational",
+              "description": "Keine widersprüchlichen Aussagen zum Referenztext.",
+              "reference_quote": "",
+              "report_quote": "",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "informational",
+              "description": "Keine nicht durch den Referenztext gestützten Fakten.",
+              "reference_quote": "",
+              "report_quote": "",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "informational",
+              "description": "Der Bericht gibt die Unsicherheit über den unvollständigen Satz bei der Aufnahme wieder (\"Zustand ... nicht vollständig beschrieben\").",
+              "reference_quote": "Bei der Aufnahme war",
+              "report_quote": "Der Zustand der Patientin bei der Aufnahme wurde nicht vollständig dokumentiert.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "uncertainty_handled",
+              "severity": "informational",
+              "description": "Der Bericht listet explizite Unsicherheiten zu den unvollständigen Informationen auf.",
+              "reference_quote": "Bei der Aufnahme war",
+              "report_quote": "Unklar, was genau bei der Aufnahme beobachtet wurde, da der Satz unvollständig ist.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            }
+          ],
+          "assessment": "Der Bericht gibt den Inhalt des Referenztextes korrekt wieder, fügt keine falschen Fakten hinzu und kennzeichnet die vorhandene Unsicherheit angemessen."
+        },
+        {
+          "input_id": "multimed-0789-multi",
+          "findings": [
+            {
+              "kind": "unsupported_addition",
+              "severity": "major",
+              "description": "Der Bericht behauptet, dass der Zustand bei der Aufnahme dokumentiert bzw. festgestellt wurde, obwohl der Referenztext nur mit \"Bei der Aufnahme war\" endet und keinen konkreten Befund liefert.",
+              "reference_quote": "Bei der Aufnahme war",
+              "report_quote": "Zustand bei Aufnahme dokumentiert.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "major",
+              "description": "Durch die Formulierung \"Der Zustand wurde bei der Aufnahme festgestellt\" wird ein definitiver Befund impliziert, der im Ausgangstext nicht vorhanden ist.",
+              "reference_quote": "Bei der Aufnahme war",
+              "report_quote": "Der Zustand wurde bei der Aufnahme festgestellt.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht lässt die explizite Unsicherheit über den unvollständigen Satz bei der Aufnahme weg, die im Referenztext vorhanden ist.",
+              "reference_quote": "Bei der Aufnahme war",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "contradiction",
+              "severity": "informational",
+              "description": "Keine direkte Widerspruch zu den anderen Fakten; die neuen Aussagen stehen im Konflikt zur Unvollständigkeit des Originaltextes.",
+              "reference_quote": "",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der zweite Bericht fügt nicht durch den Referenztext gestützte Informationen über den Aufnahmezustand hinzu und stellt diese mit zu hoher Sicherheit dar, was ein potenziell irreführendes Bild erzeugt."
+        }
+      ],
+      "source_conflicts": [
+        "Der zweite Bericht (multimed-0789-multi) behauptet, dass der Zustand bei der Aufnahme dokumentiert bzw. festgestellt wurde, obwohl der Ausgangstext nur mit \"Bei der Aufnahme war\" endet und keinen konkreten Befund liefert."
+      ]
+    },
+    {
+      "case": "multimed-0826",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0826-reference",
+          "findings": [],
+          "assessment": "Der Bericht gibt alle im Referenz‑Transkript enthaltenen Fakten korrekt wieder und kennzeichnet die Unsicherheiten angemessen. Keine wesentlichen Auslassungen, Widersprüche oder ungestützten Zusätze erkennbar."
+        },
+        {
+          "input_id": "multimed-0826-multi",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "major",
+              "description": "Der Bericht lässt die Aussage über die Herkunft des Sprechers („woher ich komme“) völlig weg.",
+              "reference_quote": "woher ich komme",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "major",
+              "description": "Der Bericht erwähnt nicht, dass Universitäten in Simbabwe als „ein bisschen teuer“ beschrieben werden.",
+              "reference_quote": "Universitäten in Simbabwe sind ein bisschen teuer",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "Der Bericht behauptet, dass etwas namens „kumme“ in Simbabwe investiert ist, was im Referenz‑Transkript nicht vorkommt und die ursprüngliche Aussage über Universitäten verfälscht.",
+              "reference_quote": "Universitäten in Simbabwe sind ein bisschen teuer",
+              "report_quote": "etwas, das er „kumme“ nennt, in Simbabwe investiert ist",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "major",
+              "description": "Die Behauptung über eine Investition („diese investiert in Zimbabwe“) ist nicht durch das Referenz‑Transkript gestützt.",
+              "reference_quote": "Universitäten in Simbabwe sind ein bisschen teuer",
+              "report_quote": "diese investiert in Zimbabwe",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "overcertainty",
+              "severity": "major",
+              "description": "Der Bericht stellt die ungesicherten Aussagen („kumme“ ist investiert, Kosten) als definitive Fakten dar, obwohl das Original nur vage Formulierungen enthält.",
+              "reference_quote": "Universitäten in Simbabwe sind ein bisschen teuer",
+              "report_quote": "etwas, das er „kumme“ nennt, in Simbabwe investiert ist und etwas teuer sei",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht auf Basis des fehlerhaften ASR‑Transkripts enthält mehrere gravierende Fehler: Auslassungen wichtiger Fakten, falsche Interpretation von \"Universitäten\" als \"Investition\" sowie ungestützte und zu sichere Aussagen. Diese Fehler resultieren hauptsächlich aus der fehlerhaften Spracherkennung und der nachfolgenden fehlerhaften Zusammenfassung."
+        }
+      ],
+      "source_conflicts": [
+        "Das ASR‑Transkript \"wie ich kumme\" weicht von der Referenz \"woher ich komme\" ab.",
+        "Das ASR‑Transkript interpretiert \"Universitäten in Simbabwe\" fälschlich als \"diese investiert in Zimbabwe\".",
+        "Der Begriff \"Zimbabwe\" wird in der Referenz nicht verwendet; dort steht \"Simbabwe\"."
+      ]
+    },
+    {
+      "case": "multimed-0864",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0864-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "The report does not mention the fact that a previous part should be trained.",
+              "reference_quote": "sondern diesen teil vorher auch trainieren",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Overall faithful to the transcript regarding clothing advice, but missing the training‑part statement."
+        },
+        {
+          "input_id": "multimed-0864-multi",
+          "findings": [],
+          "assessment": "Fully faithful to the transcript; all three reference facts are represented without contradiction or unsupported addition."
+        }
+      ],
+      "source_conflicts": [
+        "Report 1 omits the fact that a previous part should be trained (Fact 1)."
+      ]
+    },
+    {
+      "case": "multimed-0902",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0902-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "The report does not mention the participant’s brief thank‑you \"er danke\" that appears in the transcript.",
+              "reference_quote": "er danke",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Overall faithful; only a minor omission of a non‑essential utterance."
+        },
+        {
+          "input_id": "multimed-0902-multi",
+          "findings": [
+            {
+              "kind": "contradiction",
+              "severity": "minor",
+              "description": "The report states that Herr Gühl answers with \"Ja, danke\", which is not present in the transcript (the transcript has \"er danke\").",
+              "reference_quote": "er danke",
+              "report_quote": "\"Ja, danke\"",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "misattribution",
+              "severity": "minor",
+              "description": "The participant’s name is rendered as \"Herr Gühl\" instead of the transcript’s \"Herr Gül\".",
+              "reference_quote": "herr gül",
+              "report_quote": "Herr Gühl",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "The report captures the main exam instructions correctly but introduces two minor factual errors (incorrect thank‑you phrase and misspelled name)."
+        }
+      ],
+      "source_conflicts": [
+        "Report 2 mis‑records the participant’s utterance as \"Ja, danke\" whereas the transcript contains \"er danke\".",
+        "Report 2 spells the name as \"Herr Gühl\" instead of the transcript’s \"Herr Gül\"."
+      ]
+    },
+    {
+      "case": "multimed-0939",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0939-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht lässt die beruhigende Aussage „Nicht erschrecken“ aus, die im Referenz‑Transkript als klinische Kommunikation vorkommt.",
+              "reference_quote": "Nicht erschrecken",
+              "report_quote": "",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht ist insgesamt treu zum Referenz‑Transkript; nur ein geringfügiges Kommunikationsdetail fehlt."
+        },
+        {
+          "input_id": "multimed-0939-multi",
+          "findings": [
+            {
+              "kind": "contradiction",
+              "severity": "major",
+              "description": "Der Bericht behauptet, es werde über eine Entscheidung zur Betthöhe diskutiert, während das Referenz‑Transkript eine klare Anweisung zum Hochfahren/Hochpumpen des Bettes gibt.",
+              "reference_quote": "müssen wir das Bett hochfahren oder hochpumpen",
+              "report_quote": "Es wird eine Entscheidung bezüglich der Höhe des Bettes diskutiert.",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Erwähnung von \"nicht public\" hat keinen Bezug zum Referenz‑Transkript.",
+              "reference_quote": "",
+              "report_quote": "Es wird erwähnt, dass etwas nicht öffentlich sein soll.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Frage nach weiteren Allergien wird im Referenz‑Transkript nicht gestellt.",
+              "reference_quote": "",
+              "report_quote": "Es wird nach weiteren Allergien gefragt oder überlegt.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Der Begriff \"Obergörter\" ist im Referenz‑Transkript nicht vorhanden und scheint ein Fehlinterpretation zu sein.",
+              "reference_quote": "",
+              "report_quote": "Es wird erwähnt, dass jetzt „Obergörter“ gemacht werden sollen.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "partial_mismatch",
+              "severity": "minor",
+              "description": "Formulierung \"diese Stückchen runter\" entspricht inhaltlich dem Original \"ein Stück runter\", ist jedoch sprachlich verfälscht.",
+              "reference_quote": "wir machen jetzt Oberkörper ein Stück runter",
+              "report_quote": "diese Stückchen runter",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Verweis auf \"erstes vier Segment\" hat keinen Gegenpart im Referenz‑Transkript.",
+              "reference_quote": "",
+              "report_quote": "haben irgendwas am ersten vier Segment",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht weicht stark vom Referenz‑Transkript ab; die meisten aufgeführten Fakten sind entweder falsch interpretiert oder komplett erfunden, was die klinische Aussagekraft erheblich beeinträchtigt."
+        }
+      ],
+      "source_conflicts": [
+        "Der zweite Transkript‑Auszug (nemotron‑speech‑multilingual‑0.6b) enthält mehrere inhaltlich nicht im Original vorhandene Elemente (Allergie‑Frage, „nicht public“, das Wort „Obergörter“, Verweis auf ein „erstes vier Segment“), die im Referenz‑Transkript nicht vorkommen.",
+        "Im zweiten Transkript wird das Wort „hochfahren“ zu „hoch sein“ verfälscht und das Wort „hochpumpen“ fehlt komplett, wodurch die ursprüngliche Anweisung zur Betthöhen‑Anpassung verzerrt wird."
+      ]
+    },
+    {
+      "case": "multimed-0977",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-0977-reference",
+          "findings": [
+            {
+              "kind": "omission",
+              "severity": "informational",
+              "description": "Der Bericht nennt nicht explizit das Wort „guck hier\" als eigenständige Aussage, sondern fasst es zusammen mit der positiven Reaktion.",
+              "reference_quote": "So, guck hier! Super, da kann ich",
+              "report_quote": "",
+              "likely_origin": "both",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt den Inhalt des Human‑Reference‑Transkripts weitgehend korrekt wieder. Die einzige Schwäche ist die Zusammenfassung von zwei separaten Äußerungen („guck hier\" und „Super, da kann ich\") zu einer einzigen Fakt‑Beschreibung, was jedoch die klinische Bedeutung nicht verändert."
+        },
+        {
+          "input_id": "multimed-0977-multi",
+          "findings": [
+            {
+              "kind": "contradiction",
+              "severity": "informational",
+              "description": "Der Bericht verwendet das Wort „Kukia\" (aus dem Nemotron‑Transkript) anstelle von \"guck hier\" aus dem Human‑Reference‑Transkript, was zu einer inhaltlichen Diskrepanz zwischen den beiden Quellen führt.",
+              "reference_quote": "So, guck hier! Super, da kann ich",
+              "report_quote": "So Kukia super, da kann ich ja",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht spiegelt das Nemotron‑Transkript korrekt wider, enthält jedoch Informationen (z. B. \"Kukia\") die im Human‑Reference‑Transkript nicht vorkommen. Da das Bericht‑Ziel die Wiedergabe des jeweiligen Eingabe‑Transkripts ist, gibt es keine Fehlinterpretation des eigenen Quelltextes, aber ein Quellen‑Konflikt besteht."
+        }
+      ],
+      "source_conflicts": [
+        "Der Nemotron‑Transkript‑Auszug weicht vom Human‑Reference‑Transkript ab: das Wort „Doch!\" fehlt, stattdessen erscheint \"doch\" im selben Satz.",
+        "Im Nemotron‑Transkript wird \"guck hier\" zu \"Kukia\" geändert („So Kukia super\"), was im Human‑Reference nicht vorkommt.",
+        "Im Nemotron‑Transkript lautet die Formulierung \"Du schaffst es niemals doch das will ich sehen, ob du da schaffst\" (ein zusammengefügter Satz), während das Human‑Reference‑Transkript zwei getrennte Sätze mit Ausrufezeichen enthält."
+      ]
+    },
+    {
+      "case": "multimed-1014",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-1014-reference",
+          "findings": [
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht klassifiziert den Kommentar \"das ist doch toll\" als sarkastisch, obwohl der Referenztext keine klare Tonlage liefert.",
+              "reference_quote": "das ist doch toll",
+              "report_quote": "Der Sprecher äußert sarkastisch „das ist doch toll“ im Zusammenhang mit der Arbeits- oder Stresssituation.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": false
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht lässt die im Referenztext vorhandene Anrede \"du\" weg.",
+              "reference_quote": "dann kannst du arbeiten und",
+              "report_quote": "",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht gibt die Fakten des Referenztextes im Wesentlichen korrekt wieder, fügt jedoch eine nicht belegte sarkastische Bewertung hinzu und lässt die Anrede \"du\" aus. Keine schwerwiegenden klinischen Fehlinterpretationen, aber leichte Überinterpretation des Tonfalls."
+        },
+        {
+          "input_id": "multimed-1014-multi",
+          "findings": [
+            {
+              "kind": "overcertainty",
+              "severity": "minor",
+              "description": "Der Bericht stellt den Kommentar \"das ist doch toll\" als positiven Kommentar dar, obwohl die Stimmung im Original nicht eindeutig ist.",
+              "reference_quote": "das ist doch toll",
+              "report_quote": "Positiver Kommentar: Möglichkeit zum Arbeiten in einer Situation, in der andere Kollegen fehlen.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            },
+            {
+              "kind": "omission",
+              "severity": "minor",
+              "description": "Der Bericht erwähnt nicht, dass im Originaltext das Wort \"du\" vorkommt.",
+              "reference_quote": "dann kannst du arbeiten und",
+              "report_quote": "",
+              "likely_origin": "asr",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht fasst die Kernaussagen des Referenztextes gut zusammen, interpretiert jedoch den Ton des Satzes \"das ist doch toll\" als eindeutig positiv, was nicht durch den Originaltext gestützt wird. Zusätzlich fehlt die Erwähnung der Anrede \"du\". Keine gravierenden inhaltlichen Fehler."
+        }
+      ],
+      "source_conflicts": [
+        "Interpretation von \"das ist doch toll\" als eindeutig sarkastisch (Report 1) oder eindeutig positiv (Report 2) ist nicht durch den Referenztext belegt.",
+        "Beide Berichte erwähnen nicht, dass das Wort \"du\" im Referenztext vorkommt."
+      ]
+    },
+    {
+      "case": "multimed-1052",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-1052-reference",
+          "findings": [
+            {
+              "kind": "unsupported_addition",
+              "severity": "minor",
+              "description": "Der Bericht fügt die Formulierung \"bei einer anderen Person\" hinzu, die im Referenztext nicht vorkommt und die Beziehung zu \"bei Ihnen\" missinterpretiert.",
+              "reference_quote": "Die hat heute Morgen bei Ihnen Blut abgenommen.",
+              "report_quote": "Frau Steffens hat heute Morgen Blut bei einer anderen Person (\"bei Ihnen\") abgenommen.",
+              "likely_origin": "summarizer",
+              "reference_quote_literal": true,
+              "report_quote_literal": true
+            }
+          ],
+          "assessment": "Der Bericht ist im Wesentlichen korrekt, enthält jedoch eine kleine, nicht durch den Referenztext gestützte Zusatzinformation."
+        },
+        {
+          "input_id": "multimed-1052-multi",
+          "findings": [],
+          "assessment": "Der Bericht gibt die im Referenztext enthaltenen Fakten korrekt wieder und fügt keine ungestützten Informationen hinzu."
+        }
+      ],
+      "source_conflicts": []
+    },
+    {
+      "case": "multimed-1090",
+      "status": "ok",
+      "schema_valid": true,
+      "human_reference": true,
+      "reports": [
+        {
+          "input_id": "multimed-1090-reference",
+          "findings": [],
+          "assessment": "The draft faithfully represents all reference facts with no omissions, contradictions, unsupported additions, or over‑certainty."
+        },
+        {
+          "input_id": "multimed-1090-multi",
+          "findings": [],
+          "assessment": "The draft faithfully represents the ASR‑derived content; all facts are present and correctly rendered, with no clinical errors."
+        }
+      ],
+      "source_conflicts": []
+    }
+  ],
+  "usage": {
+    "generation_completion_tokens": 42930,
+    "generation_prompt_tokens": 46065,
+    "generation_total_tokens": 88995,
+    "review_completion_tokens": 72301,
+    "review_prompt_tokens": 80411,
+    "review_total_tokens": 152712
+  }
+}

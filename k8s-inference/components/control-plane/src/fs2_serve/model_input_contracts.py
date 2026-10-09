@@ -26,12 +26,21 @@ from .scientific_batch.profile_catalog import (
     ScientificProfileCatalog,
     ScientificWorkloadProfile,
 )
+from .speech_models import MEDICAL_NEMOTRON, MEDICAL_NEMOTRON_VARIANT, SPEECH_SCHEMA_BASES
 
 Schema = dict[str, Any]
 _PROTEIN = "ACDEFGHIKLMNPQRSTVWY"
 _SEQUENCE = "ACDEFGHIKLMNPQRSTVWY"
 _ARTIFACT_ID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
+_GENMOL_MASK_DESCRIPTION = (
+    "De-novo mask [*{minimum-maximum}], with 1 <= minimum <= maximum <= 512. "
+    "The adapter passes floor((minimum + maximum) / 2) as upstream min_add_len, a minimum number of "
+    "SAFE mask tokens; [*{10-20}] therefore reports minimum_mask_tokens=15. "
+    "Upstream samples token length from its empirical distribution above that minimum. "
+    "Neither endpoint is a heavy-atom bound, and maximum is not a maximum token or molecular-size limit. "
+    "Measure and filter heavy-atom counts on returned SMILES separately if required."
+)
 
 
 class InputContractUnavailable(ValueError):  # noqa: N818 - published adapter interface
@@ -87,13 +96,16 @@ def _artifact_reference(*, media_types: tuple[str, ...]) -> Schema:
     return _object(
         {
             "artifact_id": _field(
-                "string", "Caller-owned immutable artifact UUID returned after upload finalization.",
+                "string",
+                "Caller-owned immutable artifact UUID returned after upload finalization.",
                 pattern=_ARTIFACT_ID_PATTERN,
             ),
             "sha256": _field("string", "SHA-256 of the exact uploaded bytes.", pattern=_SHA256_PATTERN),
             "size_bytes": _field("integer", "Exact uploaded byte count.", minimum=0),
             "media_type": _field(
-                "string", "Media type of the uploaded bytes.", enum=list(media_types),
+                "string",
+                "Media type of the uploaded bytes.",
+                enum=list(media_types),
             ),
             "compression": _constant("none", "Artifact input must be stored without transport compression."),
         },
@@ -106,7 +118,8 @@ def _fixture_reference(*fixture_ids: str) -> Schema:
     return _object(
         {
             "fixture_id": _field(
-                "string", "Pinned server-side smoke fixture; no fixture bytes pass through the language model.",
+                "string",
+                "Pinned server-side smoke fixture; no fixture bytes pass through the language model.",
                 enum=list(fixture_ids),
             )
         },
@@ -237,20 +250,65 @@ _DESCRIPTIONS = {
 }
 
 _PURPOSES = {
+    "qwen3-6-27b-fp8": "Caption and verify original videos/images with the pinned NVIDIA PAIDF reference VLM.",
+    "qwen2-5-14b-instruct": (
+        "Generate transformation prompts and verification questions with the pinned NVIDIA PAIDF reference LLM."
+    ),
     "boltz2": "Predict proteins from chains and supplied A3M; returns mmCIF structures and confidence scores.",
     "openfold2": "Predict a protein from its sequence; returns ranked structure and confidence values.",
     "openfold3": "Predict a protein assembly from chains and optional supplied A3M; returns CIF structure results.",
     "diffdock": "Dock a SMILES ligand into a receptor PDB; returns ranked poses and docking confidence.",
     "proteinmpnn": "Design sequences compatible with a protein backbone PDB; returns sampled sequences and scores.",
-    "genmol": "Generate de-novo molecules from a length mask; returns generated SMILES and property scores.",
-    "molmim": "Optimize a starting SMILES molecule with CMA-ES; returns molecules with QED and similarity scores.",
+    "genmol": (
+        "Generate de-novo molecules using a SAFE mask-token minimum, not heavy-atom bounds; "
+        "returns generated SMILES and property scores."
+    ),
+    "molmim": (
+        "Run bounded CMA-ES/QED search from a SMILES molecule; returns distinct changed molecules or explicit "
+        "GENERATION_EXHAUSTED when the requested count is not found. Property improvement is not guaranteed."
+    ),
     "msa-search-pdb70": "Search the pinned local PDB70 database for a protein sequence; returns A3M alignments.",
     "sdxl": "Generate a 512x512 image from text; returns PNG bytes or the selected JSON/base64 envelope.",
     "nv-segment-ct": "Segment a CT NIfTI volume from labels or points; returns encoded segmentation and label counts.",
-    "cosmos3-nano": "Generate an image or video from text; returns a JSON/base64 PNG or MP4 with media metadata.",
+    "cellpose-cpsam-v2": (
+        "Segment a bounded 2D microscopy image with Cellpose CPSAM v2; returns a labeled PNG mask, "
+        "object count and per-object pixel areas."
+    ),
+    "scvi-scanvi": (
+        "Fit scVI or scANVI to a bounded raw-count AnnData file; returns an integrated AnnData object, "
+        "latent embeddings, run manifest and saved model as a ZIP artifact."
+    ),
+    "wan2-2-t2v-nim": (
+        "Generate a bounded landscape or portrait MP4 from text with the pinned NVIDIA Wan2.2 NIM t2v deployment."
+    ),
+    "wan2-2-i2v-nim": (
+        "Animate a caller-owned PNG or JPEG into a bounded MP4 with the pinned NVIDIA Wan2.2 NIM i2v deployment."
+    ),
+    "ace-step-1-5": (
+        "Generate a bounded WAV music track from a text description and optional lyrics with pinned ACE-Step 1.5."
+    ),
+    "sam2-1-hiera-large": (
+        "Segment a bounded image automatically or from point/box prompts, or track prompted objects through MP4 video; "
+        "returns masks, metadata and a colorful overlay in a ZIP artifact."
+    ),
+    "cosmos3-nano": (
+        "Generate or transform image/video from text and bounded media controls; large MP4 results are artifacts."
+    ),
+    "cosmos-transfer2-5-2b": (
+        "Transform a caller-owned MP4 using text and full-video edge control with NVIDIA Cosmos Transfer 2.5; "
+        "returns a silent MP4 artifact preserving source geometry, frame count and FPS. Built on NVIDIA Cosmos."
+    ),
     "evo2-40b": "Continue a DNA sequence with Evo2-40B; returns generated DNA and elapsed milliseconds per token.",
     "altumage": "Predict methylation-based chronological age from the full CpG panel; returns age by sample ID.",
     "phenoage": "Calculate clinical phenotypic age from age and nine blood biomarkers; returns results by sample ID.",
+    "admet-ai": (
+        "Screen small molecules with ADMET-AI: 41 learned ADMET/assay endpoints plus 11 calculated descriptors and alerts. "
+        "Returns per-molecule scores with endpoint units and species; not a human-safety verdict."
+    ),
+    "ctoxpred2": (
+        "Screen small molecules for hERG, Nav1.5 and Cav1.2 ion-channel inhibition with CToxPred2. "
+        "Returns channel-specific model scores and labels, not clinical cardiotoxicity or arrhythmia risk."
+    ),
     "qwen3-8b": "General-purpose text chat and reasoning; returns an OpenAI-compatible assistant completion and usage.",
     "nv-reason-cxr-3b": "Chest-X-ray reasoning from image and text; returns an assistant response, not a diagnosis.",
     "glm-5-2-fp8": "GLM text chat and reasoning; returns a completion when a compatible deployment is available.",
@@ -264,6 +322,19 @@ _PURPOSES = {
     "openfold3-openbind": "Predict structures with the independent OpenFold3/OpenBind batch backend, not AlphaFold3.",
     "protenix-v2": "Predict structures with pinned Protenix v2, selected seeds and the no-MSA input lane.",
     "alphafold3": "Predict complexes with AlphaFold3; raw input first runs the reference-data CPU pipeline.",
+    "lammps": (
+        "Run ordered native LAMMPS scripts for molecular/materials dynamics, minimization and analysis; "
+        "returns trajectories, restart files, logs and hash-verified customer-bucket manifests."
+    ),
+    "namd": (
+        "Run NVIDIA-packaged NAMD preparation and molecular-dynamics workflows from complete native inputs; "
+        "returns trajectory segments, restart/bias state, logs and hash-verified customer-bucket manifests."
+    ),
+    "amber": (
+        "Run licensed AMBER26 PMEMD CUDA or CPU simulations and AmberTools preparation/analysis from native inputs; "
+        "returns trajectories, energies, native restart files, logs and hash-verified customer-bucket manifests. "
+        "Available for the operator-approved academic use; not an NVIDIA NIM."
+    ),
 }
 
 
@@ -303,11 +374,32 @@ def _pydantic_contract(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
         schema["description"] = "Local MMseqs2 search against the pinned PDB70_220313 database."
     elif model_ref == "genmol":
         props["smiles"]["pattern"] = r"^\[\*\{[0-9]+-[0-9]+\}\]$"
+        props["smiles"]["description"] = _GENMOL_MASK_DESCRIPTION
         props["scoring"]["pattern"] = r"^(?:[Qq][Ee][Dd]|[Ll][Oo][Gg][Pp])$"
         props["temperature"]["anyOf"][0]["exclusiveMinimum"] = 0
         props["noise"]["anyOf"][0]["minimum"] = 0
         schema["description"] = (
-            "GenMol de-novo mask generation. Range order and finite numeric strings are checked by the runtime."
+            _GENMOL_MASK_DESCRIPTION + " Range order and finite numeric strings are checked by the runtime."
+        )
+    elif model_ref == "molmim":
+        schema["description"] = (
+            "The search uses exactly particles * iterations model decodes and never silently expands this budget. "
+            "num_molecules must not exceed that product; the runtime enforces this cross-field constraint. "
+            "Finite-search exhaustion is not proof of chemical infeasibility. QED is a descriptor, not efficacy."
+        )
+        props["algorithm"]["description"] = "Actual adaptive CMA-ES with the requested fixed population and iterations."
+        props["min_similarity"]["description"] = (
+            "Hard final-output Morgan/Tanimoto similarity cutoff. It is also used in the soft CMA-ES objective; "
+            "the hard output filter is stricter than upstream's soft-only score."
+        )
+        props["particles"]["description"] = "CMA-ES population size, at least two; part of the exact decode budget."
+        props["iterations"]["description"] = "Requested CMA-ES ask/tell updates; no automatic increase on exhaustion."
+        props["radius"]["description"] = (
+            "Multiplier of the initial CMA-ES sigma 0.75; not a guaranteed chemical-distance radius."
+        )
+        props["minimize"]["description"] = (
+            "Guide search toward lower QED and sort ascending; "
+            "improvement over the starting molecule is not guaranteed."
         )
     elif model_ref == "altumage":
         props["cpg_sites"]["uniqueItems"] = True
@@ -333,6 +425,23 @@ def _pydantic_contract(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
         )
     elif model_ref == "phenoage":
         schema["description"] = "Clinical PhenoAge from age plus nine blood biomarkers, not DNA-methylation PhenoAge."
+    elif model_ref in {"admet-ai", "ctoxpred2"}:
+        props["smiles_column"]["description"] = "CSV column containing molecular SMILES; defaults to smiles."
+        props["id_column"]["description"] = "Optional CSV identifier column; otherwise stable row IDs are generated."
+        for name, materialization, media in (
+            ("molecules", "json", ("application/json",)),
+            ("csv", "utf-8", ("text/csv", "text/plain")),
+            ("sdf", "utf-8", ("chemical/x-mdl-sdfile", "text/plain")),
+        ):
+            props[name] = _transportable(
+                props[name], materialization=materialization, media_types=media, max_bytes=16 * 1024 * 1024
+            )
+        schema["description"] = (
+            "Supply exactly one of smiles, molecules, csv or sdf. Batch records retain caller IDs and row errors; "
+            "up to 1000 molecules per operation. File inputs can use immutable tenant artifact references. "
+            "No salt stripping or tautomer replacement is added. Unknown endpoint names are errors. "
+            "Use small-molecule structures, not protein sequences; review applicability and assay definitions."
+        )
     _describe(schema)
     return schema, (record["source"],)
 
@@ -553,45 +662,780 @@ def _segment() -> Schema:
     return schema
 
 
-def _cosmos() -> Schema:
-    record = _resource("cosmos.json")
-    image, video = copy.deepcopy(record["image"]), copy.deepcopy(record["video"])
-    props = {**image["properties"], **video["properties"]}
-    props["mode"] = _field("string", "Select image or video generation.", enum=["text-to-image", "text-to-video"])
-    props["size"] = _field(
-        "string",
-        "WIDTHxHEIGHT: multiples of 16, width 256–1280, height 256–720, <=921600 pixels. "
-        "Default is 512x512 for images and 448x256 for video; dimensions are validated by the runtime.",
-        pattern=r"^[0-9]+x[0-9]+$",
-        minLength=7,
-        maxLength=9,
+def _cellpose() -> Schema:
+    return _object(
+        {
+            "image_base64": _transportable(
+                _field(
+                    "string",
+                    "Base64-encoded 2D microscopy image, at most 4 megapixels.",
+                    minLength=4,
+                    contentEncoding="base64",
+                ),
+                materialization="base64",
+                media_types=("image/png", "image/jpeg", "image/tiff"),
+                max_bytes=16 * 1024 * 1024,
+            ),
+            "media_type": _field(
+                "string",
+                "Exact media type of the image bytes.",
+                enum=["image/png", "image/jpeg", "image/tiff"],
+                default="image/png",
+            ),
+            "diameter": {
+                "type": ["number", "null"],
+                "exclusiveMinimum": 0,
+                "maximum": 2048,
+                "default": None,
+                "description": "Optional expected object diameter in pixels; null lets CPSAM infer scale.",
+            },
+            "research_only": _constant(
+                True,
+                "Required acknowledgement for the research-only Cellpose checkpoint and its training-data terms.",
+            ),
+        },
+        ("image_base64", "media_type", "research_only"),
+        "Bounded 2D instance segmentation. The runtime rejects images above 4 megapixels.",
     )
-    props["output_format"] = _field(
-        "string", "png for images, mp4 for video (mode-specific default).", enum=["png", "mp4"]
+
+
+def _scvi_scanvi() -> Schema:
+    optional_key = {
+        "type": ["string", "null"],
+        "minLength": 1,
+        "maxLength": 128,
+    }
+    return _object(
+        {
+            "anndata_base64": _transportable(
+                _field(
+                    "string",
+                    "Base64-encoded raw-count AnnData .h5ad file for the bounded interactive lane.",
+                    minLength=4,
+                    contentEncoding="base64",
+                ),
+                materialization="base64",
+                media_types=("application/x-hdf5", "application/octet-stream"),
+                max_bytes=64 * 1024 * 1024,
+            ),
+            "filename": _field(
+                "string",
+                "Display filename ending in .h5ad; no path components.",
+                pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}\.h5ad$",
+                default="input.h5ad",
+            ),
+            "method": _field(
+                "string",
+                "scvi performs unsupervised integration; scanvi performs semi-supervised annotation after scVI.",
+                enum=["scvi", "scanvi"],
+                default="scvi",
+            ),
+            "batch_key": {
+                **optional_key,
+                "description": "Optional AnnData obs column containing batch labels.",
+            },
+            "labels_key": {
+                **optional_key,
+                "description": "AnnData obs label column; required for scanvi.",
+            },
+            "unlabeled_category": _field(
+                "string",
+                "Value in labels_key used for unlabeled cells during scanvi.",
+                minLength=1,
+                maxLength=128,
+                default="Unknown",
+            ),
+            "max_epochs": _integer(
+                "Training epochs in this interactive lane; scanvi applies the bound to both training stages.",
+                1,
+                20,
+                20,
+            ),
+            "n_latent": _integer("Latent embedding dimensions.", 2, 64, 10),
+            "seed": _field(
+                "integer",
+                "Nonnegative reproducibility seed.",
+                minimum=0,
+                maximum=2_147_483_647,
+                default=0,
+            ),
+            "research_only": _constant(True, "Required acknowledgement that this is a research integration workflow."),
+        },
+        ("anndata_base64", "filename", "method", "max_epochs", "n_latent", "seed", "research_only"),
+        "Bounded interactive scVI/scANVI lane. Use folder fan-out for multiple small files; larger studies need a "
+        "scientific-batch profile rather than this synchronous adapter.",
     )
-    props["model"]["description"] = "Optional fixed upstream identity; omit it to use the pinned Cosmos model."
-    props["prompt"]["description"] = "Text description of the requested image or video."
-    props["negative_prompt"]["description"] = "Unwanted image/video content."
-    props["num_inference_steps"]["description"] = "Denoising steps."
-    props["guidance_scale"]["description"] = "Prompt guidance strength."
-    props["num_frames"]["description"] = "Number of video frames; valid only for text-to-video."
-    props["fps"]["description"] = "Video frames per second; valid only for text-to-video."
+
+
+def _cosmos_transfer25() -> Schema:
+    video = _artifact_reference(media_types=("video/mp4",))
+    video["properties"]["size_bytes"].update(minimum=16, maximum=128 * 1024**2)
+    video.update({
+        "description": "Finalized caller-owned MP4 with 93–480 frames and arbitrary source resolution. "
+        "This platform artifact transport is limited to 128 MiB, not a NVIDIA model byte limit. "
+        "No workbench resize, crop, trim or retiming. "
+        "Upload the actual file; URLs, local paths and inline base64 are not accepted by this public contract.",
+        "x-fs2-artifact-materialization": "base64",
+        "x-fs2-artifact-max-bytes": 128 * 1024**2,
+        "x-fs2-artifact-media-types": ["video/mp4"],
+    })
+    return _object(
+        {
+            "video": video,
+            "prompt": _field("string", "Describe the desired scene/weather while preserving source motion.",
+                             minLength=1),
+            "negative_prompt": _field("string", "Optional unwanted visual properties."),
+            "seed": _integer("Deterministic sampling seed.", 0, 4294967295, 42),
+            "num_steps": _field("integer", "Denoising steps; NVIDIA PAIDF reference uses 35.", minimum=1, default=35),
+            "guidance": _integer("Integer prompt guidance; NVIDIA PAIDF reference uses 7.", 0, 7, 7),
+            "resolution": _field("string", "Internal NIM processing resolution, not a source resize. PAIDF uses 720.",
+                                 enum=["256", "480", "512", "720"], default="720"),
+            "sigma_max": _field("number", "Maximum diffusion noise; NVIDIA PAIDF reference uses 90.", default=90),
+            "edge": _object({"control_weight": _field("number", "Native edge-control strength.", minimum=0,
+                                                      maximum=1, default=1)}, (), "NVIDIA reference edge control."),
+            "control_weight": _field("number", "Legacy alias for edge.control_weight. Do not combine with edge.",
+                                     minimum=0, maximum=1),
+            "output_delivery": _constant("artifact", "Return the generated MP4 as a platform-owned artifact."),
+        },
+        ("video", "prompt"),
+        "Bounded Cosmos Transfer 2.5 edge-conditioned video-to-video. Built on NVIDIA Cosmos. "
+        "NIM guardrails remain enabled. Audio is not carried into the native result. "
+        "This native App does not itself run PAIDF motion/weather verification, human approval or batch fan-out; "
+        "generated media is not physical ground truth or validated annotation.",
+    )
+
+
+def _wan2_common() -> Schema:
+    return {
+        "prompt": _field("string", "Concrete visual scene and motion description.", minLength=1, maxLength=4096),
+        "size": _field("string", "Output orientation and dimensions.", enum=["832x480", "480x832"], default="832x480"),
+        "seconds": _integer(
+            "Requested video duration in seconds; the final 16-fps clip may be slightly shorter.", 1, 12, 4
+        ),
+        "seed": _field(
+            "integer",
+            "Sampling seed; zero asks the NIM to choose a random seed.",
+            minimum=0,
+            maximum=4294967295,
+            default=0,
+        ),
+        "steps": _integer("Diffusion steps.", 1, 100, 50),
+        "cfg_scale": _field(
+            "number", "Prompt guidance strength, strictly greater than one.", exclusiveMinimum=1, maximum=20, default=5
+        ),
+    }
+
+
+def _wan2_t2v() -> Schema:
+    return _object(
+        _wan2_common(),
+        ("prompt",),
+        "Wan2.2 NIM text-to-video. Built-in NIM content filtering remains enabled. "
+        "The result is a verified MP4 artifact.",
+    )
+
+
+def _wan2_i2v() -> Schema:
+    properties = _wan2_common()
+    properties["input_reference"] = _transportable(
+        _field("string", "PNG or JPEG data URL materialized only at the runtime boundary.", minLength=1),
+        materialization="data-url",
+        media_types=("image/png", "image/jpeg"),
+        max_bytes=16 * 1024 * 1024,
+    )
+    return _object(
+        properties,
+        ("prompt", "input_reference"),
+        "Wan2.2 NIM image-to-video. Built-in NIM content filtering remains enabled. "
+        "The result is a verified MP4 artifact.",
+    )
+
+
+def _ace_step() -> Schema:
+    return _object(
+        {
+            "prompt": _field(
+                "string",
+                "Describe the genre, mood, instrumentation, pacing and production style.",
+                minLength=1,
+                maxLength=4096,
+            ),
+            "lyrics": _field(
+                "string",
+                "Optional lyrics. Omit or use [Instrumental] for music without vocals.",
+                maxLength=12000,
+                default="[Instrumental]",
+            ),
+            "duration_seconds": _field(
+                "number", "Requested audio duration in seconds.", minimum=10, maximum=60, default=20
+            ),
+            "thinking": _field(
+                "boolean", "Use the pinned 4B music language model for planning and audio codes.", default=True
+            ),
+            "seed": _field(
+                "integer", "Deterministic generation seed.", minimum=0, maximum=4294967295, default=0
+            ),
+            "bpm": {
+                "type": ["integer", "null"],
+                "description": "Optional tempo in beats per minute; null lets the model choose.",
+                "minimum": 30,
+                "maximum": 300,
+                "default": None,
+            },
+            "key_scale": _field(
+                "string", "Optional musical key and scale, for example C major.", maxLength=32, default=""
+            ),
+            "time_signature": _field(
+                "string",
+                "Optional time signature.",
+                enum=["", "2", "3", "4", "6", "2/4", "3/4", "4/4", "6/8"],
+                default="",
+            ),
+            "vocal_language": _field(
+                "string", "Language code used when lyrics contain vocals.", pattern=r"^[A-Za-z-]{2,16}$", default="en"
+            ),
+        },
+        ("prompt",),
+        "ACE-Step 1.5 text-to-music generation with one result per request. The qualified path returns a complete "
+        "WAV, uses the turbo diffusion model and can use the pinned 4B planning model. Generated audio must be "
+        "reviewed before publication.",
+    )
+
+
+def _sam2() -> Schema:
+    point = _object(
+        {
+            "x": _field("number", "Horizontal pixel coordinate.", minimum=0, maximum=16384),
+            "y": _field("number", "Vertical pixel coordinate.", minimum=0, maximum=16384),
+            "label": _field("integer", "One selects foreground and zero selects background.", enum=[0, 1], default=1),
+            "object_id": _field(
+                "integer", "Positive object label shared by points for one object.", minimum=1, maximum=65535, default=1
+            ),
+        },
+        ("x", "y"),
+        "One positive or negative point prompt in source-pixel coordinates.",
+    )
+    media = _transportable(
+        _field(
+            "string",
+            "Base64 media bytes materialized only at the runtime boundary.",
+            minLength=4,
+            contentEncoding="base64",
+        ),
+        materialization="base64",
+        media_types=("image/png", "image/jpeg", "video/mp4"),
+        max_bytes=64 * 1024 * 1024,
+    )
     schema = _object(
-        props, ("prompt", "mode"), "Pinned Cosmos3 Nano image/video adapter, not an arbitrary vLLM Omni API."
+        {
+            "mode": _field(
+                "string", "Segmentation workflow.", enum=["prompted-image", "automatic-image", "prompted-video"]
+            ),
+            "media_base64": media,
+            "media_type": _field("string", "Exact uploaded media type.", enum=["image/png", "image/jpeg", "video/mp4"]),
+            "points": _array(point, "Point prompts; group multiple objects with object_id.", maxItems=64),
+            "box": _array(
+                _field("number", "Box coordinate in source pixels.", minimum=0, maximum=16384),
+                "Optional [x0,y0,x1,y1] box prompt.",
+                minItems=4,
+                maxItems=4,
+            ),
+            "object_id": _field(
+                "integer", "Object label assigned to the optional box.", minimum=1, maximum=65535, default=1
+            ),
+            "prompt_frame": _field(
+                "integer", "Zero-based video frame receiving the prompts.", minimum=0, maximum=319, default=0
+            ),
+            "max_masks": _integer("Maximum masks returned by automatic-image.", 1, 128, 32),
+        },
+        ("mode", "media_base64", "media_type"),
+        "SAM 2.1 Hiera Large segmentation. Images are at most 2,073,600 pixels; videos are at most 320 frames. "
+        "The output ZIP contains manifest.json, masks and an overlay image or MP4.",
     )
-    # Root stays an explicit object so admission controls may be added without
-    # colliding with additionalProperties:false inside union branches.
     schema["allOf"] = [
         {
-            "if": {"properties": {"mode": {"const": "text-to-image"}}, "required": ["mode"]},
+            "if": {"properties": {"mode": {"const": "automatic-image"}}, "required": ["mode"]},
             "then": {
-                "properties": {"output_format": {"const": "png"}},
-                "not": {"anyOf": [{"required": ["num_frames"]}, {"required": ["fps"]}]},
+                "properties": {"media_type": {"enum": ["image/png", "image/jpeg"]}, "points": {"maxItems": 0}},
+                "not": {"required": ["box"]},
             },
-            "else": {"properties": {"output_format": {"const": "mp4"}}},
-        }
+        },
+        {
+            "if": {"properties": {"mode": {"const": "prompted-image"}}, "required": ["mode"]},
+            "then": {
+                "properties": {"media_type": {"enum": ["image/png", "image/jpeg"]}},
+                "anyOf": [
+                    {"properties": {"points": {"minItems": 1}}, "required": ["points"]},
+                    {"required": ["box"]},
+                ],
+            },
+        },
+        {
+            "if": {"properties": {"mode": {"const": "prompted-video"}}, "required": ["mode"]},
+            "then": {
+                "properties": {"media_type": {"const": "video/mp4"}},
+                "anyOf": [
+                    {"properties": {"points": {"minItems": 1}}, "required": ["points"]},
+                    {"required": ["box"]},
+                ],
+            },
+        },
     ]
     return schema
+
+
+def _cosmos() -> Schema:
+    props = _cosmos_properties()
+    schema = _object(
+        props,
+        ("prompt", "mode"),
+        "Pinned Cosmos3 Nano media API. Media inputs use tenant artifacts or immutable HTTPS URLs; "
+        "large MP4 outputs use the operation artifact store.",
+    )
+    # Keep the complete property map at the root for MCP discovery and artifact
+    # materialization, but validate against exactly one mode-shaped request.
+    # This prevents an incompatible field from reaching the GPU merely because
+    # it is meaningful to some *other* Cosmos workflow.
+    schema["oneOf"] = [_cosmos_generic_mode_schema(mode) for mode in _COSMOS_MODES]
+    return schema
+
+
+_COSMOS_MODES = (
+    "text-to-image",
+    "text-to-video",
+    "image-to-video",
+    "video-to-video",
+    "transfer-video",
+)
+_COSMOS_SOURCE_REFS = (
+    "https://huggingface.co/nvidia/Cosmos3-Nano/blob/7a312c868bcce8e40b3eb40861300a9d0ba3fde1/README.md",
+    "https://github.com/vllm-project/vllm-omni/blob/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/recipes/cosmos3/Cosmos3-Nano.md",
+)
+
+
+def _cosmos_reference(description: str, *, media_types: tuple[str, ...], max_bytes: int = 512 * 1024 * 1024) -> Schema:
+    return _transportable(
+        _field(
+            "string",
+            description + " Use the final immutable HTTPS URL; redirects and customer-local paths are rejected.",
+            pattern=r"^https://",
+            maxLength=4096,
+        ),
+        materialization="data-url",
+        media_types=media_types,
+        max_bytes=max_bytes,
+    )
+
+
+def _cosmos_control() -> Schema:
+    reference = _cosmos_reference(
+        "Optional control image/video. Required for depth, segmentation and WSM; "
+        "edge/blur may derive from input_reference.",
+        media_types=("image/jpeg", "image/png", "image/webp", "video/mp4", "application/mp4"),
+        max_bytes=128 * 1024 * 1024,
+    )
+    schema = _object(
+        {
+            "control_type": _field(
+                "string", "Transfer representation supplied to Cosmos.", enum=["edge", "blur", "depth", "seg", "wsm"]
+            ),
+            "reference": reference,
+            "control_weight": _field(
+                "number",
+                "Nonnegative relative control weight; at least one selected control must be positive.",
+                minimum=0,
+                maximum=100,
+                default=1,
+            ),
+            "edge_threshold": _field(
+                "string",
+                "Edge extraction preset; valid only for edge control.",
+                enum=["none", "very_low", "low", "medium", "high", "very_high"],
+            ),
+            "blur_strength": _field(
+                "string",
+                "Blur extraction preset; valid only for blur control.",
+                enum=["none", "very_low", "low", "medium", "high", "very_high"],
+            ),
+        },
+        ("control_type",),
+        "One typed transfer control. Control types may not repeat in a request.",
+    )
+    schema["allOf"] = [
+        {
+            "if": {
+                "properties": {"control_type": {"enum": ["depth", "seg", "wsm"]}},
+                "required": ["control_type"],
+            },
+            "then": {"required": ["reference"]},
+        },
+        {
+            "if": {
+                "properties": {"control_type": {"not": {"const": "edge"}}},
+                "required": ["control_type"],
+            },
+            "then": {"not": {"required": ["edge_threshold"]}},
+        },
+        {
+            "if": {
+                "properties": {"control_type": {"not": {"const": "blur"}}},
+                "required": ["control_type"],
+            },
+            "then": {"not": {"required": ["blur_strength"]}},
+        },
+    ]
+    return schema
+
+
+def _cosmos_properties() -> Schema:
+    input_reference = _cosmos_reference(
+        "Reference image or MP4 selected by mode.",
+        media_types=("image/jpeg", "image/png", "image/webp", "video/mp4", "application/mp4"),
+    )
+    return {
+        "model": _constant(
+            "nvidia/Cosmos3-Nano@7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+            "Exact pinned model identity; omit to use this fixed deployment.",
+        ),
+        "mode": _field("string", "Exact Cosmos workflow; prefer its dedicated MCP tool.", enum=list(_COSMOS_MODES)),
+        "prompt": _field(
+            "string",
+            "Scene description or robotics instruction. Structured upsampled prompts are accepted as strings.",
+            minLength=1,
+            maxLength=4096,
+        ),
+        "negative_prompt": _field("string", "Content and artifacts to avoid.", maxLength=4096, default=""),
+        "seed": _field("integer", "Deterministic sampling seed.", minimum=0, maximum=4294967295, default=0),
+        "num_inference_steps": _integer("Denoising steps.", 1, 50, 30),
+        "guidance_scale": _field("number", "Prompt guidance strength.", minimum=0, maximum=20, default=7),
+        "size": _field(
+            "string",
+            "WIDTHxHEIGHT; each dimension is a multiple of 16, width 256–1280, height 256–720 and area <=921600.",
+            pattern=r"^[0-9]+x[0-9]+$",
+            minLength=7,
+            maxLength=9,
+        ),
+        "num_frames": _integer("Generated video frames (5–400).", 5, 400, 25),
+        "fps": _integer("Generated video frames per second.", 1, 30, 24),
+        "input_reference": input_reference,
+        "vision_path": _field(
+            "string",
+            "Deprecated compatibility alias for input_reference. Only an HTTPS URL is accepted; "
+            "a customer-local path never is.",
+            pattern=r"^https://",
+            maxLength=4096,
+        ),
+        "generate_sound": _field(
+            "boolean", "Generate synchronized AAC audio for text-to-video or image-to-video.", default=False
+        ),
+        "sound_duration": _field(
+            "number", "Generated audio seconds; requires generate_sound=true.", exclusiveMinimum=0, maximum=30
+        ),
+        "condition_frame_indexes_vision": _array(
+            _field("integer", "Nonnegative conditioned latent-frame index.", minimum=0, maximum=100),
+            "Selected latent frames used for V2V continuation, not full-trajectory preservation. "
+            "[0] reads one source pixel frame; [0,1] reads five. Unconditioned future motion is generated.",
+            minItems=1,
+            maxItems=16,
+            uniqueItems=True,
+        ),
+        "condition_video_keep": _field(
+            "string",
+            "Decode the needed reference frames from the beginning or end.",
+            enum=["first", "last"],
+            default="first",
+        ),
+        "controls": _array(_cosmos_control(), "One or more typed transfer controls.", minItems=1, maxItems=5),
+        "resolution": _field(
+            "integer",
+            "Legacy transfer resolution hint retained for compatibility. The hosted runtime uses explicit "
+            "size for output dimensions (448x256 when omitted); this hint does not preserve source aspect ratio.",
+            enum=[256, 480, 704, 720],
+            default=480,
+        ),
+        "control_guidance": _field("number", "Transfer control guidance strength.", minimum=0, maximum=20, default=1.5),
+        "control_guidance_interval": _array(
+            _field("number", "Inclusive denoising fraction.", minimum=0, maximum=1),
+            "Ordered [start,end] transfer-guidance interval.",
+            minItems=2,
+            maxItems=2,
+        ),
+        "num_video_frames_per_chunk": _integer("Transfer chunk size.", 5, 400, 93),
+        "num_conditional_frames": _integer("Conditional frames per transfer chunk.", 1, 16, 1),
+        "num_first_chunk_conditional_frames": _integer("Additional first-chunk conditional frames.", 0, 16, 0),
+        "share_vision_temporal_positions": _field(
+            "boolean", "Share control/target temporal positions in transfer mode.", default=True
+        ),
+        "emphasize_control_in_prompt": _field(
+            "boolean", "Append the pinned control-adherence directive in transfer mode.", default=True
+        ),
+        "output_format": _field("string", "Mode-specific output format.", enum=["png", "mp4"]),
+        "output_delivery": _field(
+            "string",
+            "Video delivery only: use the operation artifact store or legacy inline text-to-video. "
+            "Omit for text-to-image, which returns the legacy PNG JSON envelope.",
+            enum=["inline-base64", "artifact"],
+        ),
+    }
+
+
+def _cosmos_mode_schema(mode: str) -> Schema:
+    props = _cosmos_properties()
+    allowed: dict[str, tuple[str, ...]] = {
+        "text-to-image": (
+            "model",
+            "prompt",
+            "negative_prompt",
+            "seed",
+            "num_inference_steps",
+            "guidance_scale",
+            "size",
+        ),
+        "text-to-video": (
+            "model",
+            "prompt",
+            "negative_prompt",
+            "seed",
+            "num_inference_steps",
+            "guidance_scale",
+            "size",
+            "num_frames",
+            "fps",
+            "generate_sound",
+            "sound_duration",
+        ),
+        "image-to-video": (
+            "model",
+            "prompt",
+            "negative_prompt",
+            "seed",
+            "num_inference_steps",
+            "guidance_scale",
+            "size",
+            "num_frames",
+            "fps",
+            "input_reference",
+            "vision_path",
+            "generate_sound",
+            "sound_duration",
+        ),
+        "video-to-video": (
+            "model",
+            "prompt",
+            "negative_prompt",
+            "seed",
+            "num_inference_steps",
+            "guidance_scale",
+            "size",
+            "num_frames",
+            "fps",
+            "input_reference",
+            "vision_path",
+            "condition_frame_indexes_vision",
+            "condition_video_keep",
+        ),
+        "transfer-video": (
+            "model",
+            "prompt",
+            "negative_prompt",
+            "seed",
+            "num_inference_steps",
+            "guidance_scale",
+            "size",
+            "num_frames",
+            "fps",
+            "input_reference",
+            "vision_path",
+            "controls",
+            "resolution",
+            "control_guidance",
+            "control_guidance_interval",
+            "num_video_frames_per_chunk",
+            "num_conditional_frames",
+            "num_first_chunk_conditional_frames",
+            "share_vision_temporal_positions",
+            "emphasize_control_in_prompt",
+        ),
+    }
+    required = ["prompt"]
+    if mode in {"image-to-video", "video-to-video"}:
+        required.append("input_reference")
+    if mode == "transfer-video":
+        required.append("controls")
+    schema = _object(
+        {name: props[name] for name in allowed[mode]},
+        tuple(required),
+        f"Typed {mode} inputs for the pinned Cosmos3 Nano runtime.",
+    )
+    if "vision_path" in schema["properties"]:
+        if mode in {"image-to-video", "video-to-video"}:
+            schema["oneOf"] = [{"required": ["input_reference"]}, {"required": ["vision_path"]}]
+            schema["required"].remove("input_reference")
+        else:
+            schema.setdefault("allOf", []).append({"not": {"required": ["input_reference", "vision_path"]}})
+    if "sound_duration" in schema["properties"]:
+        schema.setdefault("allOf", []).append(
+            {
+                "if": {"required": ["sound_duration"]},
+                "then": {"properties": {"generate_sound": {"const": True}}, "required": ["generate_sound"]},
+            }
+        )
+    return schema
+
+
+def _cosmos_generic_mode_schema(mode: str) -> Schema:
+    """Add the discriminator and caller-visible delivery fields to one strict mode."""
+
+    schema = _cosmos_mode_schema(mode)
+    properties = schema["properties"]
+    properties["mode"] = _constant(mode, f"Select the {mode} Cosmos workflow.")
+    schema["required"].append("mode")
+    if mode == "text-to-image":
+        properties["output_format"] = _constant("png", "PNG output only.")
+    elif mode == "text-to-video":
+        properties["output_format"] = _constant("mp4", "MP4 output only.")
+        properties["output_delivery"] = _field(
+            "string",
+            "Return legacy inline base64 or externalize the MP4 through the operation artifact store.",
+            enum=["inline-base64", "artifact"],
+        )
+    else:
+        properties["output_format"] = _constant("mp4", "MP4 output only.")
+        properties["output_delivery"] = _constant("artifact", "Store MP4 bytes as a tenant-owned operation artifact.")
+    disallowed = sorted(set(_cosmos_properties()) - set(properties))
+    if disallowed:
+        schema.setdefault("allOf", []).append({"not": {"anyOf": [{"required": [field]} for field in disallowed]}})
+    # The outer schema owns the complete public property allow-list. Keeping
+    # this branch open lets the MCP layer add its idempotency/wait controls
+    # without weakening the mode-specific model-field exclusions above.
+    schema["additionalProperties"] = True
+    return schema
+
+
+COSMOS_SPECIALIZED_TOOL_NAMES = frozenset(
+    {
+        "cosmos3_nano_text_to_image",
+        "cosmos3_nano_text_to_video",
+        "cosmos3_nano_image_to_video",
+        "cosmos3_nano_video_to_video",
+        "cosmos3_nano_transfer_video",
+    }
+)
+
+
+def cosmos_specialized_contracts(
+    model: OperationalModel,
+) -> tuple[tuple[str, ModelInputContract, dict[str, Any], str, str], ...]:
+    """Task-specific Cosmos media tools qualified on the exact pinned runtime."""
+
+    if model.id != "cosmos3-nano" or "native" not in model.gateway.protocols:
+        return ()
+    model_ref = model.dynamic_policy.publication.source_model_ref if model.dynamic_policy else model.id
+    if model_ref != "cosmos3-nano":
+        return ()
+    specs = (
+        (
+            "cosmos3_nano_text_to_image",
+            "text-to-image",
+            "Cosmos text to image",
+            "Generate one bounded PNG from text and return the legacy inline base64 envelope. "
+            "GPU work can queue and take minutes; submit once and poll the returned operation ID.",
+        ),
+        (
+            "cosmos3_nano_text_to_video",
+            "text-to-video",
+            "Cosmos text to video",
+            "Generate a 5–400 frame MP4 from text, optionally with synchronized AAC audio. "
+            "The asynchronous result is an artifact; GPU work can queue and take minutes.",
+        ),
+        (
+            "cosmos3_nano_image_to_video",
+            "image-to-video",
+            "Cosmos image to video",
+            "Animate a tenant artifact or immutable HTTPS image into a 5–400 frame MP4, optionally with "
+            "synchronized AAC audio. Work can queue and take minutes; use text-to-video without image control.",
+        ),
+        (
+            "cosmos3_nano_video_to_video",
+            "video-to-video",
+            "Cosmos video to video",
+            "Continue an MP4 of at most 512 MiB from selected first/last latent frames. Future motion is "
+            "generated, not preserved from the full source clip or recorded robot actions. The queued result "
+            "is an MP4 artifact; use transfer-video for full-sequence spatial controls and validate motion separately.",
+        ),
+        (
+            "cosmos3_nano_transfer_video",
+            "transfer-video",
+            "Cosmos controlled video transfer",
+            "Generate a queued MP4 guided across the reference sequence by edge, blur, depth, segmentation "
+            "or WSM controls. This does not guarantee object identity, robot contacts or action alignment. "
+            "The result can take minutes; transfer cannot be combined with sound or robotics action.",
+        ),
+    )
+    examples: dict[str, dict[str, Any]] = {
+        "text-to-image": {"prompt": "A red cube on a white table", "size": "512x512", "seed": 1},
+        "text-to-video": {
+            "prompt": "A robot arm places a pear in a basket",
+            "size": "448x256",
+            "num_frames": 25,
+            "fps": 24,
+            "seed": 1,
+        },
+        "image-to-video": {
+            "prompt": "The scene comes to life with smooth natural motion.",
+            "input_reference": {
+                "artifact_id": "00000000-0000-4000-8000-000000000011",
+                "sha256": "1" * 64,
+                "size_bytes": 1024,
+                "media_type": "image/png",
+                "compression": "none",
+            },
+        },
+        "video-to-video": {
+            "prompt": "Continue the same scene with consistent subjects and lighting.",
+            "input_reference": {
+                "artifact_id": "00000000-0000-4000-8000-000000000012",
+                "sha256": "2" * 64,
+                "size_bytes": 4096,
+                "media_type": "video/mp4",
+                "compression": "none",
+            },
+            "condition_frame_indexes_vision": [0, 1],
+            "condition_video_keep": "first",
+        },
+        "transfer-video": {
+            "prompt": "Preserve the scene while following the depth control.",
+            "size": "640x480",
+            "controls": [
+                {
+                    "control_type": "depth",
+                    "reference": {
+                        "artifact_id": "00000000-0000-4000-8000-000000000013",
+                        "sha256": "3" * 64,
+                        "size_bytes": 4096,
+                        "media_type": "video/mp4",
+                        "compression": "none",
+                    },
+                }
+            ],
+        },
+    }
+    return tuple(
+        (
+            name,
+            ModelInputContract(_cosmos_mode_schema(mode), (examples[mode],), _COSMOS_SOURCE_REFS, model_ref, "native"),
+            {
+                "mode": mode,
+                # The pinned TextToImageRequest returns legacy JSON and forbids
+                # output_delivery; only the video request DTOs accept it.
+                **({} if mode == "text-to-image" else {"output_delivery": "artifact"}),
+                "output_format": "png" if mode == "text-to-image" else "mp4",
+            },
+            title,
+            description,
+        )
+        for name, mode, title, description in specs
+    )
 
 
 def _evo2() -> Schema:
@@ -808,12 +1652,40 @@ _NATIVE_BUILDERS = {
         "#/opt/evo2/server/evo2_deep/runtime.py",
     ),
     "cosmos3-nano": (_cosmos, "k8s-inference/models/general-media/k8s/cosmos3-nano.yaml#data.adapter.py"),
+    "cosmos-transfer2-5-2b": (
+        _cosmos_transfer25,
+        "k8s-inference/models/general-media/cosmos-transfer25/adapter/app.py",
+    ),
     "openfold2": (_openfold2, "k8s-inference/models/structure/openfold2-upstream/server.py"),
     "openfold3": (_openfold3, "k8s-inference/models/structure/openfold3-preview2/server.py"),
     "diffdock": (_diffdock, "k8s-inference/models/structure/runtime/adapters/diffdock.py"),
     "proteinmpnn": (_proteinmpnn, "k8s-inference/models/structure/runtime/adapters/proteinmpnn.py"),
     "sdxl": (_sdxl, "k8s-inference/models/general-media/sdxl_server.py"),
     "nv-segment-ct": (_segment, "k8s-inference/models/general-media/nv_segment_ct_server.py"),
+    "cellpose-cpsam-v2": (
+        _cellpose,
+        "k8s-inference/models/visual-science/cellpose-cpsam-v2/app.py",
+    ),
+    "scvi-scanvi": (
+        _scvi_scanvi,
+        "k8s-inference/models/visual-science/scvi-scanvi/app.py",
+    ),
+    "wan2-2-t2v-nim": (
+        _wan2_t2v,
+        "k8s-inference/models/general-media/wan2-adapter/app.py",
+    ),
+    "wan2-2-i2v-nim": (
+        _wan2_i2v,
+        "k8s-inference/models/general-media/wan2-adapter/app.py",
+    ),
+    "ace-step-1-5": (
+        _ace_step,
+        "k8s-inference/models/general-media/ace-step/adapter/app.py",
+    ),
+    "sam2-1-hiera-large": (
+        _sam2,
+        "k8s-inference/models/visual-science/sam2/app.py",
+    ),
 }
 
 
@@ -830,6 +1702,11 @@ def _check_adapter(model: OperationalModel, model_ref: str) -> None:
         )
         if isinstance(value, str)
     }
+    if model_ref == MEDICAL_NEMOTRON:
+        # This input adapter is staged independently of the not-yet-qualified
+        # catalog record. Never inherit the base model's runtime qualification.
+        if model.gateway.runtime_kind != "custom" or variants != {MEDICAL_NEMOTRON_VARIANT}:
+            raise InputContractUnavailable("medical Nemotron requires its distinct reviewed runtime variant")
     if expected is not None:
         if model.gateway.runtime_kind != expected["runtime_kind"]:
             raise InputContractUnavailable(
@@ -845,13 +1722,82 @@ def _check_adapter(model: OperationalModel, model_ref: str) -> None:
         )
 
 
+def _paidf_chat(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
+    schema = copy.deepcopy(_resource("paidf-chat.json")[model_ref])
+
+    def media_fields(value: Any) -> None:
+        if isinstance(value, dict):
+            if "x-reference-media-types" in value:
+                media_types = value.pop("x-reference-media-types")
+                maximum = value.pop("x-reference-max-bytes")
+                field = _transportable(copy.deepcopy(value), materialization="data-url",
+                                       media_types=tuple(media_types), max_bytes=maximum)
+                value.clear()
+                value.update(field)
+                return
+            for child in value.values():
+                media_fields(child)
+        elif isinstance(value, list):
+            for child in value:
+                media_fields(child)
+
+    media_fields(schema)
+    source = schema["properties"]["model"]["const"]
+    return schema, (
+        "k8s-inference/models/general-media/paidf-chat/adapter/contracts.py",
+        "https://huggingface.co/" + source + "/tree/" + schema["x-scientific-source-revision"],
+        "https://github.com/NVIDIA/paidf-augmentation/tree/bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+    )
+
+
 def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
     """Resolve clones by source identity, without weakening route admission."""
     model_ref = model.dynamic_policy.publication.source_model_ref if model.dynamic_policy else model.id
     _check_adapter(model, model_ref)
     if protocol not in model.gateway.protocols:
         raise InputContractUnavailable(f"{model_ref} does not publish protocol {protocol}")
-    if protocol == "native" and model_ref in _resource("runtime-pydantic.json"):
+    if protocol == "native" and model_ref in {"mindguard-4b", "mindguard-8b"}:
+        from .mindguard_contracts import MindGuardAssessRequest
+
+        schema = MindGuardAssessRequest.model_json_schema()
+        schema["properties"]["model"] = {"const": model_ref, "default": model_ref, "type": "string"}
+        schema["description"] = (
+            "Observe English mental-health conversation risk with " + model_ref + ". "
+            "Every user turn is assessed with its preceding context. Returns per-turn labels, "
+            "coverage and measured usage; never blocks or changes the conversation and is not a diagnosis. "
+            "Submit once, poll the returned operation ID, then retrieve its complete result."
+        )
+        return ModelInputContract(schema, (), (
+            "k8s-inference/components/control-plane/src/fs2_serve/mindguard_contracts.py",
+            "k8s-inference/components/control-plane/src/fs2_serve/mindguard.py",
+        ), model_ref, protocol)
+    if protocol == "native" and model_ref in _resource("voice.json"):
+        schema = copy.deepcopy(_resource("voice.json")[model_ref])
+        schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+        return ModelInputContract(
+            schema, (), ("k8s-inference/components/voice-runtime/src/fs2_voice/contracts.py",), model_ref, protocol
+        )
+    if protocol == "native" and model_ref in SPEECH_SCHEMA_BASES:
+        schema = copy.deepcopy(_resource("speech.json")[SPEECH_SCHEMA_BASES[model_ref]])
+        if model_ref == MEDICAL_NEMOTRON:
+            schema["description"] = (
+                "Domain-adapted English Nemotron transcription. English wire options do not identify its weights; "
+                "the selected App and immutable checkpoint identify the derivative. Not clinical validation."
+            )
+        schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+        return ModelInputContract(
+            schema,
+            (),
+            (
+                "k8s-inference/components/speech-runtime/src/fs2_speech/contracts.py",
+                "k8s-inference/components/speech-runtime/src/fs2_speech/audio.py",
+            ),
+            model_ref,
+            protocol,
+        )
+    if protocol == "native" and model_ref in _resource("paidf-chat.json"):
+        schema, refs = _paidf_chat(model_ref)
+    elif protocol == "native" and model_ref in _resource("runtime-pydantic.json"):
         schema, refs = _pydantic_contract(model_ref)
     elif protocol == "native" and model_ref in _NATIVE_BUILDERS:
         builder, source = _NATIVE_BUILDERS[model_ref]
@@ -878,12 +1824,21 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
         refs += (_resource("native-examples.json")[model_ref]["source"],)
     if model_ref == "altumage":
         refs += ("k8s-inference/models/aging/fixtures.py#methylation_payload",)
+    if model_ref == "genmol":
+        refs += (
+            "https://github.com/NVIDIA-BioNeMo/genmol/blob/"
+            "add09fc83b7255bd09c797e527c0f4b51f5fb7c1/src/genmol/sampler.py",
+        )
     if model_ref == "nv-segment-ct":
         refs += ("k8s-inference/catalog/runtime/validators/validate_nv_segment_ct.py",)
     return ModelInputContract(schema, examples, refs, model_ref, protocol)
 
 
 def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
+    if model_ref in _resource("paidf-chat.json"):
+        return ({"model": _resource("paidf-chat.json")[model_ref]["properties"]["model"]["const"],
+                 "messages": [{"role": "user", "content": "Describe the inputs accepted by this reference model."}],
+                 "max_tokens": 64, "stream": False},)
     fixture = _resource("native-examples.json").get(model_ref)
     if fixture is not None:
         # The canonical validation requests retain their complete PDB bytes in
@@ -996,6 +1951,91 @@ def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
             "input_nifti_base64": {"fixture_id": "nifti/nv-segment-ct-synthetic-ellipsoid-v1"},
             "label_prompt": [1],
         },
+        "cellpose-cpsam-v2": {
+            "image_base64": {
+                "artifact_id": "00000000-0000-4000-8000-000000000021",
+                "sha256": "4" * 64,
+                "size_bytes": 4096,
+                "media_type": "image/png",
+                "compression": "none",
+            },
+            "media_type": "image/png",
+            "diameter": None,
+            "research_only": True,
+        },
+        "scvi-scanvi": {
+            "anndata_base64": {
+                "artifact_id": "00000000-0000-4000-8000-000000000022",
+                "sha256": "5" * 64,
+                "size_bytes": 1048576,
+                "media_type": "application/x-hdf5",
+                "compression": "none",
+            },
+            "filename": "cells.h5ad",
+            "method": "scvi",
+            "batch_key": "batch",
+            "max_epochs": 20,
+            "n_latent": 10,
+            "seed": 0,
+            "research_only": True,
+        },
+        "wan2-2-t2v-nim": {
+            "prompt": (
+                "A colorful protein ribbon rotates slowly in a clean scientific visualization, smooth camera orbit"
+            ),
+            "size": "832x480",
+            "seconds": 4,
+            "seed": 7,
+            "steps": 50,
+            "cfg_scale": 5,
+        },
+        "wan2-2-i2v-nim": {
+            "prompt": "Animate the scientific visualization with a slow cinematic orbit and subtle depth",
+            "input_reference": {
+                "artifact_id": "00000000-0000-4000-8000-000000000031",
+                "sha256": "6" * 64,
+                "size_bytes": 524288,
+                "media_type": "image/png",
+                "compression": "none",
+            },
+            "size": "832x480",
+            "seconds": 4,
+            "seed": 7,
+        },
+        "ace-step-1-5": {
+            "prompt": "Instrumental cinematic electronic music for a scientific product demo, precise and optimistic",
+            "lyrics": "[Instrumental]",
+            "duration_seconds": 20,
+            "thinking": True,
+            "seed": 7,
+        },
+        "cosmos-transfer2-5-2b": {
+            "video": {
+                "artifact_id": "00000000-0000-4000-8000-000000000033",
+                "sha256": "8" * 64,
+                "size_bytes": 2097152,
+                "media_type": "video/mp4",
+                "compression": "none",
+            },
+            "prompt": "Preserve the camera and all recorded motion; change the weather to overcast.",
+            "seed": 42,
+            "num_steps": 35,
+            "guidance": 7,
+            "control_weight": 1.0,
+            "output_delivery": "artifact",
+        },
+        "sam2-1-hiera-large": {
+            "mode": "prompted-image",
+            "media_base64": {
+                "artifact_id": "00000000-0000-4000-8000-000000000032",
+                "sha256": "7" * 64,
+                "size_bytes": 524288,
+                "media_type": "image/png",
+                "compression": "none",
+            },
+            "media_type": "image/png",
+            "points": [{"x": 512, "y": 384, "label": 1, "object_id": 1}],
+        },
     }
     # Asset-bearing examples use immutable artifact or packaged fixture
     # references, never fabricated scientific bytes in the model context.
@@ -1069,12 +2109,96 @@ def scientific_contract_for(
     schema["properties"]["service_class"]["enum"] = list(profile.service_classes)
     model_ref = str(profile.value["model_id"])
     purpose = _PURPOSES.get(model_ref, f"{profile.display_name}: {profile.operations}")
+    if model_ref == "scvi-scanvi":
+        purpose = (
+            "Train scVI integration, scANVI annotation or map query cells to an exported reference. "
+            "Returns all-cell embeddings, optional label probabilities, selected-gene AnnData, "
+            "a reusable reference.tar.gz, training curves and optional UMAP. "
+            "Use this durable batch route for large inputs; the legacy native route has separate smaller limits."
+        )
     schema["description"] = (
         purpose + " Upload/finalize the input manifest, submit this asynchronous run, then poll its operation. "
         "After publication, inspect validation results and download the result/artifact manifest and output files. "
         "Example artifact references describe source fixtures, not uploads available to the caller."
     )
     _describe(schema)
+    if model_ref == "scvi-scanvi":
+        descriptions = {
+            "schema": "Versioned single-cell training parameter contract.",
+            "method": "scvi produces an integrated latent representation; scanvi additionally learns cell labels and probabilities.",
+            "mode": "train fits a new reference; map-query maps new cells using a previously exported reference artifact.",
+            "batch_key": "AnnData obs column identifying donor, experiment or technical batch; null disables batch covariates.",
+            "labels_key": "AnnData obs column containing cell labels, required for scANVI training.",
+            "unlabeled_category": "Exact obs label for unlabeled cells. It need not occur when every cell has a label.",
+            "n_top_genes": "Number of batch-aware highly variable genes to retain when gene_selection is hvg.",
+            "scanvi_max_epochs": "Separate scANVI fine-tuning epoch budget after the initial scVI fit.",
+            "query_max_epochs": "Epoch budget for reference-based query adaptation, not initial reference training.",
+            "early_stopping": "Stop training when upstream validation criteria stop improving.",
+            "early_stopping_patience": "Validation checks without improvement tolerated before early stopping.",
+            "batch_size": "Cells per training minibatch; larger batches trade memory for throughput and can change optimization.",
+            "n_latent": "Dimensionality of the learned biological latent representation.",
+            "n_hidden": "Hidden-layer width of the scVI neural network.",
+            "n_layers": "Number of hidden layers in the scVI neural network.",
+            "gene_likelihood": "Count likelihood: negative binomial, zero-inflated negative binomial or Poisson.",
+            "train_size": "Fraction of cells used for training; remaining cells support validation, not independent biological accuracy claims.",
+            "seed": "Recorded random seed for model initialization and sampling.",
+            "checkpoint_every_n_epochs": "Save full training state at this epoch interval for interrupted-job recovery.",
+            "visualization": "Create a sampled UMAP, full-data UMAP or no visualization. Full UMAP can require substantial CPU time and memory.",
+            "visualization_cells": "Maximum number of cells included in sampled visualization; all cells still receive embeddings.",
+            "write_integrated_h5ad": "Export selected counts, metadata and latent embeddings as AnnData; does not copy every original layer.",
+            "max_wall_seconds": "Maximum requested worker run time in seconds, up to 14 days.",
+            "max_output_bytes": "Maximum total retained result bytes for this operation.",
+            "output_destination": "Publish to your authorized customer bucket or platform-managed immutable artifacts.",
+            "output_prefix": "Relative output prefix inside your authorized workspace.",
+        }
+        for name, field in schema["properties"]["parameters"]["properties"].items():
+            if name in descriptions:
+                field["description"] = descriptions[name]
+    if model_ref in {"gromacs", "gromacs-mpi", "namd", "lammps", "amber"}:
+        md_descriptions = {
+            "jobs": "Independent workflow jobs; each job executes its declared native stages in order.",
+            "threads": "CPU execution threads requested for each native worker within its allocated CPU limit.",
+            "max_wall_seconds": "Maximum wall-clock seconds for this workflow, within the selected profile's bound.",
+            "max_output_bytes": "Maximum total retained output bytes permitted for the workflow result.",
+            "output_destination": (
+                "Publish outputs to the authenticated customer's bucket or to platform-managed immutable artifacts."
+            ),
+            "output_prefix": "Relative output key prefix in the authorized workspace; never a different tenant's bucket.",
+            "backend": "Native execution backend and precision; CPU execution must be explicitly selected.",
+        }
+        for name, field in schema["properties"]["parameters"]["properties"].items():
+            if name in md_descriptions and not field.get("description"):
+                field["description"] = md_descriptions[name]
+    if model_ref == "cosmos3-lerobot-augmentation":
+        descriptions = {
+            "source": (
+                "LeRobot dataset source: an immutable uploaded zstd tar bundle, pinned Hugging Face revision, "
+                "or authorized object-store binding; client-local paths are not accessible."
+            ),
+            "selection": (
+                "Explicit episode indices and observation.images camera names to augment; unselected camera "
+                "streams and recorded non-video fields are preserved."
+            ),
+            "variants": (
+                "Number of augmented variants and exactly that many unique seeds, so each requested variation "
+                "has a reproducible identity."
+            ),
+            "augmentation": (
+                "Video-to-video continues selected prefix/suffix frames and may change future motion. Transfer "
+                "uses full-sequence spatial controls. Neither guarantees recorded-action alignment or "
+                "policy-training validity; review generated trajectories before use."
+            ),
+            "actions": (
+                "Recorded action policy. Only preserve is supported: original actions and states remain unchanged; "
+                "inverse-dynamics replacement actions are not qualified."
+            ),
+            "failure_policy": (
+                "Whether an exhausted segment failure stops the run (fail-fast) or permits other segments to "
+                "continue, and the bounded maximum attempts per segment."
+            ),
+        }
+        for name, description in descriptions.items():
+            schema["properties"]["parameters"]["properties"][name]["description"] = description
     record = _resource("scientific-examples.json").get(model_ref)
     refs: tuple[str, ...] = (SCIENTIFIC_REQUEST_SCHEMA, profile.parameter_schema)
     examples = () if record is None else (copy.deepcopy(record["request"]),)

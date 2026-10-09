@@ -1,0 +1,48 @@
+{
+  "status": "passed",
+  "backend": "cpu",
+  "command": [
+    "/opt/amber26/bin/pmemd",
+    "-O",
+    "-i",
+    "static.in",
+    "-p",
+    "system.prmtop",
+    "-c",
+    "system.rst7",
+    "-o",
+    "static.mdout",
+    "-r",
+    "static.rst7",
+    "-inf",
+    "static.mdinfo"
+  ],
+  "exit_code": 0,
+  "requested_optimization_steps": 0,
+  "native_evaluation_count": 1,
+  "constraints_disabled": true,
+  "immutable_master_input_parity": true,
+  "terms_kcal_mol": {
+    "BOND": 0.1264,
+    "ANGLE": 0.362,
+    "DIHED": 9.644,
+    "1-4 VDW": 5.0157,
+    "1-4 EEL": 48.9355,
+    "VDWAALS": 2209.5285,
+    "EEL": -20700.5546,
+    "HBOND": 0.0,
+    "RESTRAINT": 0.0
+  },
+  "sum_terms_kcal_mol": -18426.9425,
+  "restart_coordinates_max_abs_difference_A": 0.0,
+  "native_restart_written": true,
+  "input_sha256": {
+    "system.prmtop": "805a5f22bd3d3b0045b1ed02652f4272a8e6df8a143fe98278f924d77ad4b61a",
+    "system.rst7": "a402729188a58515f01fab8f611bf776b8146f6323445a2f666f76d7c658d898",
+    "static.in": "5dedee7090458b37bc22bf720ce3e1f76f6eb99ed3e700a3e66d28ba5e850e75"
+  },
+  "mdout_sha256": "167a5e83bb721f64e6dabad434dc7264fd8ba9189061845e86f708b0f66ebe29",
+  "scientific_convergence_claimed": false,
+  "validation_correction": "PMEMD26 native field names EEL/HBOND/1-4 VDW, unchanged native artifacts",
+  "original_validation_sha256": "8b2d35eb54ee298c75020e8e75e92b1fed27d5ad752b9198413fc903be4f9377"
+}

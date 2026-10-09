@@ -1,0 +1,84 @@
+{
+  "schema": "fs2-serve.nebius.ai/lerobot-public-debug-negative/v1",
+  "observed_at": "2026-09-18T01:01:25.679392Z",
+  "state": "failed",
+  "qualified": false,
+  "helm_revision": 149,
+  "control_plane_image_digest": "sha256:da50219255ae4af4975bba74c0221890cce1eaad4b28ac114d89ceb087e624e4",
+  "worker_image_digest": "sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
+  "execution_identity_sha256": "1c906c5ca9a792531215cb26b0834dccb8f5a1491c8b6d2c8d6a96233958a34e",
+  "execution_map_sha256": "294aa00ebf9843a865ce70cf031568e1f83509e1cc46f2ecbccff6567115409f",
+  "parent": {
+    "operation_id": "dc708f87-d0a2-4021-b645-7540cf0f4837",
+    "attempt_id": "634b534e-4caa-52c6-b1f6-ec1b1a016be3",
+    "request_sha256": "adc34f31293289521bc8583f39c75f79dc5f8129e7d78a7d25c8aa2a0d1072c5",
+    "accepted_at": "2026-09-18T00:59:35.122959Z",
+    "completed_at": "2026-09-18T01:00:55.420392Z",
+    "status": "failed",
+    "http_status": 422,
+    "error_code": "PLATFORM_UPSTREAM_ERROR",
+    "error_detail": "The control plane rejected or could not process a delegated Cosmos request.",
+    "failure_kind": "application",
+    "max_concurrency": 1,
+    "attempt_resource_released": true
+  },
+  "children": [
+    {
+      "operation_id": "e62b0fab-b4e2-43e3-949b-63927560c45e",
+      "operation": "upload",
+      "status": "succeeded",
+      "http_status": 201,
+      "completed_at": "2026-09-18T00:59:52.895066Z",
+      "same_parent_token_principal_tenant": true
+    },
+    {
+      "operation_id": "6b963566-dbf0-4423-9e35-67dc628a19a4",
+      "operation": "generate-media",
+      "status": "succeeded",
+      "http_status": 200,
+      "attempt": 1,
+      "started_at": "2026-09-18T01:00:36.788811Z",
+      "completed_at": "2026-09-18T01:00:43.770707Z",
+      "cold_start_seconds": 43.273868,
+      "same_parent_token_principal_tenant": true,
+      "gpu_identity_attribution": "unavailable; null Pod/node and empty GPU UUIDs do not mean measured zero GPU use"
+    }
+  ],
+  "diagnosis": {
+    "scope": "Retained actual worker progress from Loki plus exact parent/attempt/child database observation; no generation replay.",
+    "cause": "Variant index 1 reused the content-addressed input upload idempotency key, then attempted another content PUT after that upload was already finalized.",
+    "failed_subcall": "fs2 artifact content upload",
+    "failed_http_status": 409,
+    "worker_message": "fs2 artifact content upload returned HTTP 409",
+    "variant_index": 1,
+    "completed_generation_units": 1,
+    "requested_generation_units": 2,
+    "retryable": false,
+    "second_generation_admitted": false,
+    "first_variant_worker_publish_event_observed": true,
+    "complete_public_output_dataset_set_created": false,
+    "independent_reader_reopen_attempted": false,
+    "new_admissions_stopped": true,
+    "negative_and_cancellation_probes_started": false
+  },
+  "preceding_release149_results": {
+    "scope": "Historical intermediate single-variant dataset mechanics only, not final unchanged-successor qualification.",
+    "independent_reader_passes": 4,
+    "parent_operation_ids": [
+      "6068f623-0263-4e34-9e18-68989b78411d",
+      "2073d32c-58de-45ab-b7e3-2ab0c24369a0",
+      "d9b7a2a0-076a-4c24-ac17-46716b9ad6fd",
+      "4543a009-76bf-413f-ba46-041ded5698a3"
+    ],
+    "semantic_limits": "Lighting also changed fruit/gripper appearance. V2V environment did not visibly produce the requested laboratory background and altered robot trajectories. Numeric preservation and reader passes do not prove semantic intent, action alignment or multi-view synchronization."
+  },
+  "private_evidence": {
+    "directory": "/home/tux/secure-handoff/lerobot-release-20260917/final-cohorts-r149/cohort-2-blur",
+    "run.json_sha256": "07563a77cde19b10edda9fed234a875cb0cdabccee43da974424afa3b594809e",
+    "prepared.json_sha256": "6ab1cbb7f504a2e64c38ea9b4757fd245d26e06e236dcc3230200ce274c38bde",
+    "qualification-observation-running.json_sha256": "6cea37fa87b23c35794958444757c5a1a8c5668aa2aa34a99f0e8064833bb530",
+    "qualification-observation-final.json_sha256": "14d2f66f99f0bf4403c32cf5eb49d112f44437ed6e9009c8698f487358088481",
+    "worker_loki_receipt_path": "/home/tux/secure-handoff/lerobot-release-20260917/observe149-failed-blur/cosmos3-lerobot-augmentation-logs.json",
+    "worker_loki_receipt_sha256": "96a38429654534b7796243d504c598bf3c7d964e09817a8506614ed32505727a"
+  }
+}

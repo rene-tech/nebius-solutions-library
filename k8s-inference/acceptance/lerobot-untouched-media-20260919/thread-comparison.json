@@ -1,0 +1,100 @@
+{
+  "scope": "One recorded128-row fixture, retained real public generation, no new GPU work",
+  "trials": [
+    {
+      "trial": "published-image-r2",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dfc0622c0a889d95a44c91340f293d390299216d2346fd0562f0490c44d75a88",
+      "receipt_sha256": "1008a246026c464b14473716a89a5be000d735c097253b3f1dbd73d027bbb9da",
+      "elapsed_seconds": 492.99318861961365,
+      "timing_basis": "receipt mtime minus immediately preceding Docker command write; approximate wall time",
+      "thread_settings": null,
+      "limits": {
+        "cpus": 4,
+        "memory": "24Gi"
+      },
+      "caller_thread_overrides": false
+    },
+    {
+      "trial": "published-image-threads4",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dfc0622c0a889d95a44c91340f293d390299216d2346fd0562f0490c44d75a88",
+      "receipt_sha256": "f87fc45283186025cd35466f3d83b71e891a70bb06cbb3c610b12dab8964030b",
+      "elapsed_seconds": 73.29434540867805,
+      "timing_basis": "monotonic subprocess wall time",
+      "thread_settings": {
+        "torch_intraop": 4,
+        "torch_interop": 64,
+        "environment": {
+          "OMP_NUM_THREADS": "4",
+          "MKL_NUM_THREADS": "4",
+          "OPENBLAS_NUM_THREADS": "4"
+        }
+      },
+      "limits": {
+        "cpus": 4,
+        "memory": "24Gi"
+      },
+      "caller_thread_overrides": true
+    },
+    {
+      "trial": "published-image-final",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:69fe161d370fac4cc9517d24ecfee7b025bb569a935ffadab8eb31e49c783a11",
+      "receipt_sha256": "c3ba08f056c6f9cbe42125308741aa011b7a44a7ba21a56e00359bc66181cba9",
+      "elapsed_seconds": 73.22735330276191,
+      "timing_basis": "monotonic subprocess wall time",
+      "thread_settings": {
+        "torch_intraop": 4,
+        "torch_interop": 64,
+        "environment": {
+          "OMP_NUM_THREADS": "4",
+          "MKL_NUM_THREADS": "4",
+          "OPENBLAS_NUM_THREADS": "4"
+        }
+      },
+      "limits": {
+        "cpus": 4,
+        "memory": "24Gi"
+      },
+      "caller_thread_overrides": false
+    }
+  ],
+  "exact_comparisons": [
+    {
+      "trial": "published-image-threads4",
+      "files_compared": 10,
+      "byte_differences": [
+        "fs2-bundle-manifest.json",
+        "meta/stats.json"
+      ],
+      "statistics_exact_after_json_parse": true,
+      "all_mp4_numeric_and_episode_metadata_bytes_equal": true
+    },
+    {
+      "trial": "published-image-final",
+      "files_compared": 10,
+      "byte_differences": [
+        "fs2-bundle-manifest.json",
+        "meta/stats.json"
+      ],
+      "statistics_exact_after_json_parse": true,
+      "all_mp4_numeric_and_episode_metadata_bytes_equal": true
+    }
+  ],
+  "observed_baseline_to_matched_wall_ratio": 6.726210403691568,
+  "limitations": [
+    "Not a broad throughput benchmark; baseline wall time is timestamp-derived.",
+    "JSON key ordering differs; parsed statistics, numeric records and media bytes are exact.",
+    "Defaults match current coordinator4CPU limit and are standard overridable environment values; retune future CPU profiles.",
+    "Torch inter-op setting unchanged. No model/inference quality or physical alignment claim."
+  ],
+  "historical_throttling_observation": {
+    "baseline_process_threads": 186,
+    "matched_process_threads": 11,
+    "baseline_nr_periods": 4001,
+    "baseline_nr_throttled": 3914,
+    "baseline_throttled_usec": 28218634316,
+    "matched_nr_periods": 401,
+    "matched_nr_throttled": 244,
+    "matched_throttled_usec": 98811643,
+    "scope": "Different intermediate durations; corroborating counters, not normalized performance estimates."
+  }
+}

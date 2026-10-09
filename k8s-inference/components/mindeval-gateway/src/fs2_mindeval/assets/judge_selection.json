@@ -1,0 +1,75 @@
+{
+  "status": "pilot_calibrated",
+  "selected_model": "google/gemma-3-27b-it",
+  "selected_family": "gemma",
+  "selection_rule": "minimum selection-set MAE with 100% valid judgments",
+  "selection": {
+    "n": 24,
+    "valid": 24,
+    "mae": 0.4392361111111111,
+    "bias": 0.134375,
+    "rmse": 0.5466252736700113,
+    "by_axis": {
+      "Clinical Accuracy & Competence": {
+        "mae": 0.328125,
+        "bias": 0.09895833333333333
+      },
+      "Ethical & Professional Conduct": {
+        "mae": 0.37499999999999994,
+        "bias": 0.04513888888888895
+      },
+      "Assessment & Response": {
+        "mae": 0.3802083333333333,
+        "bias": 0.328125
+      },
+      "Therapeutic Relationship & Alliance": {
+        "mae": 0.5086805555555555,
+        "bias": -0.23784722222222224
+      },
+      "AI-Specific Communication Quality": {
+        "mae": 0.6041666666666666,
+        "bias": 0.4375
+      }
+    },
+    "within_profile_pairwise_accuracy": 1,
+    "pairs": 1
+  },
+  "validation": {
+    "n": 24,
+    "valid": 24,
+    "mae": 0.45694444444444443,
+    "bias": 0.1125,
+    "rmse": 0.5792515924944941,
+    "by_axis": {
+      "Clinical Accuracy & Competence": {
+        "mae": 0.4791666666666667,
+        "bias": 0.07291666666666667
+      },
+      "Ethical & Professional Conduct": {
+        "mae": 0.3993055555555556,
+        "bias": 0.059027777777777735
+      },
+      "Assessment & Response": {
+        "mae": 0.421875,
+        "bias": 0.359375
+      },
+      "Therapeutic Relationship & Alliance": {
+        "mae": 0.47395833333333326,
+        "bias": -0.3142361111111111
+      },
+      "AI-Specific Communication Quality": {
+        "mae": 0.5104166666666666,
+        "bias": 0.3854166666666667
+      }
+    },
+    "within_profile_pairwise_accuracy": null,
+    "pairs": 0
+  },
+  "excluded_clinician_families": [
+    "gemma"
+  ],
+  "calibration_date": "2026-09-16T16:28:55.414121+00:00",
+  "bias_boundary": "Pilot on published synthetic conversations, not clinical validation. Family exclusion reduces self-preference but does not remove training-data or patient-family bias. No post-hoc score offsets. Human zero ratings excluded as out of scale; undocumented criterion11 excluded. Exact-profile matched comparisons are sparse in the published sample; no model-ranking reliability claim is made.",
+  "upstream_revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+  "methodology": "48 eligible human conversations after excluding 12 records whose patient names appear in judge examples; names grouped into deterministic 24/24 selection/validation split. No score offsets or prompt optimization on validation."
+}

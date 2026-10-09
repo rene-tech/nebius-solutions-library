@@ -1,0 +1,35 @@
+rule_files:
+  - rendered-rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: one long customer failure is actionable and replica scrapes are deduplicated
+    interval: 1m
+    input_series:
+      - series: 'fs2_serve_customer_long_running_failures_last_10m{tenant="customer",model="gromacs",protocol="scientific-batch-v1",outcome="failed",workload_class="scientific",error_class="unknown",pod="api-a"}'
+        values: '1+0x4'
+      - series: 'fs2_serve_customer_long_running_failures_last_10m{tenant="customer",model="gromacs",protocol="scientific-batch-v1",outcome="failed",workload_class="scientific",error_class="unknown",pod="api-b"}'
+        values: '1+0x4'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: Fs2CustomerLongJobInterrupted
+        exp_alerts:
+          - exp_labels:
+              tenant: customer
+              model: gromacs
+              namespace: fs2-observability
+              fs2_notification: important
+              severity: critical
+            exp_annotations:
+              summary: A customer scientific job stopped after at least five minutes of execution
+              description: A durable operation ended in failure, expiry or exhausted preemption recovery. Inspect Admin Apps Runs for the job ID, terminal reason and latest resumable checkpoint. HTTP acceptance alone does not indicate success. No automatic customer resubmission is performed by this alert.
+  - name: internal QA and short failures do not page the owner
+    interval: 1m
+    input_series:
+      - series: 'fs2_serve_customer_long_running_failures_last_10m{tenant="system",model="gromacs",protocol="scientific-batch-v1",outcome="failed",workload_class="scientific",error_class="unknown"}'
+        values: '9+0x4'
+      - series: 'fs2_serve_customer_long_running_failures_last_10m{tenant="customer",model="gromacs",protocol="scientific-batch-v1",outcome="failed",workload_class="scientific",error_class="unknown"}'
+        values: '0+0x4'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: Fs2CustomerLongJobInterrupted
+        exp_alerts: []

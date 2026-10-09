@@ -64,7 +64,7 @@ from .configuration_models import ConfigurationRevision, PlatformConfiguration
 from .crypto import KeyedHasher, PayloadCipher
 from .entrypoint import SCIENTIFIC_COMPANION_COMMANDS
 from .federation import FederationRouter
-from .gpu_allocation_observer import KubernetesGpuAllocationPublisher, run_gpu_allocation_observer
+from .gpu_allocation_observer_cli import observe_gpu_allocations
 from .lifecycle import PostgresLifecycleRepository
 from .mcp_server import mount_mcp
 from .model_deployment_admin import ModelDeploymentReadService, StoreModelDeploymentRepository
@@ -81,6 +81,7 @@ from .request_debug import PostgresDebugStore
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
 from .runtime_kubernetes import KubernetesRuntimeMetadataProvider
+from .scientific_activity import ScientificActivityCapture
 from .scientific_admin_postgres import postgres_scientific_admin_read_service
 from .scientific_artifacts import (
     PostgresArtifactRepository,
@@ -90,10 +91,14 @@ from .scientific_batch.artifact_bridge import ArtifactServiceBridge, SignedArtif
 from .scientific_batch.canary import run_internal_cpu_canary
 from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from .scientific_batch.execution import FileScientificManifestRenderer
-from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
 from .scientific_batch.placement import execution_resource_envelope
-from .scientific_batch.policy import PolicyAwareScientificBatchController, PostgresScientificModelPolicyRepository
+from .scientific_batch.policy import PostgresScientificModelPolicyRepository
+from .scientific_batch.pool_recovery import (
+    PoolRecoveryPolicy,
+    PoolRecoveryScientificCluster,
+    PoolRecoveryScientificController,
+)
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
 from .scientific_batch.profile_catalog import ScientificProfileCatalog
 from .scientific_batch.scheduling import SchedulingContractResolver
@@ -121,22 +126,6 @@ async def _store(settings: Settings) -> PostgresStore:
         cipher,
         hasher,
         settings.payload_ttl_seconds,
-    )
-
-
-async def observe_gpu_allocations(settings: Settings) -> None:
-    if settings.gpu_allocation_observer_node_name is None:
-        raise RuntimeError("GPU allocation observer requires its Kubernetes node name")
-    await run_gpu_allocation_observer(
-        publisher=KubernetesGpuAllocationPublisher(
-            base_url=settings.gpu_allocation_observer_api_url,
-            token_file=settings.gpu_allocation_observer_token_file,
-            ca_file=settings.gpu_allocation_observer_ca_file,
-            namespaces=settings.gpu_allocation_observer_namespace_set(),
-            node_name=settings.gpu_allocation_observer_node_name,
-            poll_seconds=settings.gpu_allocation_observer_poll_seconds,
-        ),
-        checkpoint_file=settings.gpu_allocation_observer_checkpoint_file,
     )
 
 
@@ -297,6 +286,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         variant_promotions_file=settings.variant_promotions_file,
         lean_routes_file=settings.lean_routes_file,
         deployment_runtime_records_file=settings.deployment_runtime_records_file,
+        native_serverless_deployments_file=settings.native_serverless_deployments_file,
         repo_root=settings.repo_root,
         evidence_root=settings.evidence_root,
         trusted_attestors_loader=settings.trusted_route_attestors,
@@ -326,7 +316,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     serving_snapshot_bundles: dict[str, dict[str, Any]] = {}
     scientific_batches: ScientificBatchService | None = None
     scientific_batch_worker: ScientificBatchWorker | None = None
-    scientific_batch_cluster: HttpScientificBatchCluster | AppScientificCluster | None = None
+    scientific_batch_cluster: PoolRecoveryScientificCluster | AppScientificCluster | None = None
     scientific_apps: ScientificAppsInventory | None = None
     scientific_repository: PostgresScientificBatchRepository | None = None
     scientific_capabilities: ScientificWorkloadCapabilityAuthority | None = None
@@ -408,6 +398,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             profiles=scientific_profiles,
             tools_image=settings.scientific_batch_tools_image,
             internal_api_url=settings.scientific_batch_internal_api_url,
+            internal_fallback_api_url=settings.scientific_batch_internal_fallback_api_url,
             capability_authority=scientific_capabilities,
             academic_tenant_id=settings.scientific_batch_academic_tenant_id,
             academic_authorization_receipt_sha256=(settings.scientific_batch_academic_authorization_receipt_sha256),
@@ -419,6 +410,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 identity: execution_resource_envelope(execution)
                 for identity, execution in scientific_renderer.executions.items()
             },
+            stage_shape_resources={
+                identity: execution_resource_envelope(execution)
+                for identity, execution in scientific_renderer.execution_shapes.items()
+            },
         )
         scientific_apps = ScientificAppsInventory(PostgresAppsRepository(store.pool))
         await scientific_apps.refresh()
@@ -427,8 +422,16 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_scheduling = AppScientificScheduling(scientific_scheduling, scientific_apps)
         if scientific_input_uploads is not None:
             scientific_input_uploads.profiles = scientific_profiles
+        pool_recovery = PoolRecoveryPolicy(
+            confirmation_seconds=settings.scientific_pool_failure_confirmation_seconds,
+            unscheduled_timeout_seconds=settings.scientific_admitted_unscheduled_timeout_seconds,
+            backoff_base_seconds=settings.scientific_pool_recovery_backoff_base_seconds,
+            backoff_max_seconds=settings.scientific_pool_recovery_backoff_max_seconds,
+        )
         scientific_batch_cluster = AppScientificCluster(
-            HttpScientificBatchCluster(
+            PoolRecoveryScientificCluster(
+                recovery_repository=scientific_repository,
+                recovery_policy=pool_recovery,
                 base_url=settings.scientific_batch_kubernetes_api_url,
                 token_file=settings.scientific_batch_kubernetes_token_file,
                 ca_file=settings.scientific_batch_kubernetes_ca_file,
@@ -448,8 +451,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             store=store,
             content_reader=artifact_content_reader,
             service=artifact_service,
+            lifecycle=lifecycle,
         )
-        scientific_controller = PolicyAwareScientificBatchController(
+        scientific_controller = PoolRecoveryScientificController(
+            recovery_policy=pool_recovery,
             repository=scientific_repository,
             cluster=scientific_batch_cluster,
             controller_id=settings.scientific_batch_controller_id or "scientific-batch-controller",
@@ -462,6 +467,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 operations=store,
                 cluster=settings.admin_context_cluster,
                 source_resolution_seconds=settings.scientific_batch_poll_seconds,
+                activity=ScientificActivityCapture(
+                    lifecycle=lifecycle,
+                    reader=HttpPrometheusScalarReader(base_url=settings.admin_prometheus_url),
+                ) if settings.admin_prometheus_url else None,
             ),
             lease_seconds=settings.scientific_batch_lease_seconds,
         )
@@ -500,6 +509,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         else None
     )
     request_debug_store = PostgresDebugStore(store.pool, store.cipher)
+    from .runtime_scheduling import RuntimeScheduling
+
     runtime_client = RuntimeClient(
         activation_timeout_seconds=settings.activation_timeout_seconds,
         runtime_timeout_seconds=settings.runtime_timeout_seconds,
@@ -507,6 +518,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         metadata_provider=runtime_metadata_provider,
         federation=federation,
         debug_store=request_debug_store if settings.request_debug_enabled else None,
+        speech_scheduling=RuntimeScheduling.load(settings.stt_scheduling_group_key_file,
+                                                settings.stt_gateway_token_file),
     )
 
     async def refresh_routes() -> bool:
@@ -561,6 +574,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
     )
+    from .scientific_admin_fit import ScientificNodeFitAdapter
+
     scientific_admin = postgres_scientific_admin_read_service(
         pool=store.pool,
         registry=registry,
@@ -570,6 +585,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_apps=scientific_apps,
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
+        placement=ScientificNodeFitAdapter(capacity.reader) if isinstance(capacity, KubernetesCapacityAdminAdapter)
+        else None,
     )
     configure_tracing(settings.otlp_endpoint)
     configuration_service: ConfigurationService | None = None
@@ -579,7 +596,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
 
         canonical_catalog = augment_native_catalog(
             load_catalog(settings.catalog_dir, repo_root=settings.repo_root),
-            settings.catalog_dir, repo_root=settings.repo_root,
+            settings.catalog_dir,
+            repo_root=settings.repo_root,
         )
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
@@ -652,7 +670,15 @@ async def build_app(settings: Settings) -> FastAPI:
 async def serve(settings: Settings) -> None:
     app = await build_app(settings)
     server = uvicorn.Server(
-        uvicorn.Config(app, host=settings.host, port=settings.port, log_level=settings.log_level.lower())
+        uvicorn.Config(
+            app,
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level.lower(),
+            ws_max_size=65536,
+            ws_max_queue=2,
+            timeout_graceful_shutdown=settings.shutdown_grace_seconds,
+        )
     )
     await server.serve()
 
@@ -724,6 +750,7 @@ def validate(settings: Settings) -> None:
         variant_promotions_file=settings.variant_promotions_file,
         lean_routes_file=settings.lean_routes_file,
         deployment_runtime_records_file=settings.deployment_runtime_records_file,
+        native_serverless_deployments_file=settings.native_serverless_deployments_file,
         repo_root=settings.repo_root,
         evidence_root=settings.evidence_root,
         trusted_attestors_loader=settings.trusted_route_attestors,

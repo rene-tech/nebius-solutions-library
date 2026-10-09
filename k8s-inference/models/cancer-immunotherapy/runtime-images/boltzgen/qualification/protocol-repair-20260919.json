@@ -1,0 +1,167 @@
+{
+  "schema": "fs2-serve.nebius.ai/boltzgen-protocol-repair-qualification/v1",
+  "state": "candidate-stage-qualified-public-replay-pending",
+  "source_commit": "80659b63800f11a4726635569b6a7c7f5b203784",
+  "inline_loader_source_commit": "15d4d8eb8cea297a70f3bef747a812742c959c06",
+  "runtime_recipe_sha256": "7f158d0081c8b7541ed169e543ab37934504d443b6a1dfd2115734c0716bb62e",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+  "upstream_source": {
+    "repository": "https://github.com/HannesStark/boltzgen",
+    "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+    "redesign_protocol": "src/boltzgen/cli/boltzgen.py:103; removes target-interface ranking metrics and retains whole-structure ptm"
+  },
+  "preserved": [
+    "Image, checkpoints and molecule dictionary",
+    "Public candidate counts/budgets, model diffusion settings and filters",
+    "CPU/memory/GPU requests and limits",
+    "Default 64 MiB shared memory",
+    "Original failed public operations and receipts"
+  ],
+  "changes": [
+    "Supported num_workers=0 avoids DataLoader worker POSIX-shared-memory transfer",
+    "Frozen protein-redesign protocol uses positive finite whole-structure ptm and permits a single chain",
+    "Other protocols retain positive target-interface confidence and two-chain checks; sequence, refold RMSD, output counts and finite-coordinate gates remain"
+  ],
+  "antibody_h100": {
+    "scope": "configure and exact original failing design stage only",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "driver_version": "580.159.04",
+      "alias": "candidate-h100-1"
+    },
+    "preemptible": true,
+    "pool": "h100-1x",
+    "region": "eu-north1",
+    "input_sha256": "c6b10129a94907e06da5b4888d827464147ab6ebe1c5de1d8985c03ae4e8c815",
+    "shared_memory_bytes": 67108864,
+    "requested_designs": 20,
+    "parsed_structures": 20,
+    "unique_structure_hashes": 20,
+    "all_coordinates_finite": true,
+    "configure_seconds": 3.2190110419978737,
+    "design_seconds": 290.137828152001,
+    "container_exit_code": 0,
+    "new_model_inference": true,
+    "output_hashes": [
+      {
+        "sha256": "d45875605b3c9dacf28ff3b97e205ec1e74d63a85797998a85e066a358b66737",
+        "size_bytes": 231515
+      },
+      {
+        "sha256": "0113fe08d68f471cc15f995526d07e2be4cc1e84443d0047e0b42e9179593394",
+        "size_bytes": 231369
+      },
+      {
+        "sha256": "2f23b3169612d937fcc8daf3152e465cda93160e806b4a7f2d8c6839d9afd44f",
+        "size_bytes": 232379
+      },
+      {
+        "sha256": "48ec73c82b802236e5551ced7dd49000736f1fdca033f2d0c2e738ed54f75868",
+        "size_bytes": 231816
+      },
+      {
+        "sha256": "bfa611b6102d6ae536dd86e88d0adc3c30fc78f1aab546a40cfc821987323dc0",
+        "size_bytes": 243430
+      },
+      {
+        "sha256": "5244ce80b90e8239b29b8cb9b1b0ae5642482e6aa02b9bb814e9187fb4144f71",
+        "size_bytes": 236161
+      },
+      {
+        "sha256": "264eba9d501395baced7c1e67bb463f79055e9d79f67ba11d50cfc92b10cf736",
+        "size_bytes": 235189
+      },
+      {
+        "sha256": "7b4294fb726a1697de0362e519d9fd086200817bca8d138e3f2b92a5cfd5f68c",
+        "size_bytes": 236817
+      },
+      {
+        "sha256": "1d55b678e138397026df0763128421d8e69b42e4df18ac4fe53e9b6b33f3b9be",
+        "size_bytes": 242095
+      },
+      {
+        "sha256": "b543d637372ead73ad9a87de4ac1f704a0a2e92d212e7bf2ad57c07a746bfa71",
+        "size_bytes": 233520
+      },
+      {
+        "sha256": "471e0404b63db7e3bcb1bd40122505b45af02665c68d3df9cda88b6ad06e05bc",
+        "size_bytes": 228882
+      },
+      {
+        "sha256": "2de802110bf0b0247f271b149caed2bb182f122f405e0001e4d2fddb5f263739",
+        "size_bytes": 234736
+      },
+      {
+        "sha256": "054894fc8a851e122db80e3c3d998f51524c1c209a93c7b64dcd4e7187b1beed",
+        "size_bytes": 233980
+      },
+      {
+        "sha256": "4c5ccdd955e317392f4b2a2ab58bda7ad8f983ecf8c45fb3df3a88b0d10383fc",
+        "size_bytes": 234914
+      },
+      {
+        "sha256": "17cc7d2f30889344c9869736152228b9b850b411995c181ae06cd278c8e0100f",
+        "size_bytes": 228115
+      },
+      {
+        "sha256": "b17068a1b6f7d5d04a09305e78f0e19e926465623f72c85805fc88cee7fe5866",
+        "size_bytes": 233258
+      },
+      {
+        "sha256": "cec627029f5270fdc7a07d144e9aad6d82cf0bed5323d257a945b457d3dc0ad6",
+        "size_bytes": 226354
+      },
+      {
+        "sha256": "e7a16240582f108e3eee87a3298334e7e89be557a0319fe00fef0b180645a04c",
+        "size_bytes": 236044
+      },
+      {
+        "sha256": "3f38a4d095e4086666c281616f30e7ee6675e5f5090a6371dc2f4aad4f45fede",
+        "size_bytes": 228259
+      },
+      {
+        "sha256": "d28b5d95cba7eff7fc03b48372c7247d6294181e4fd07cd8c7527fda2eb8ce25",
+        "size_bytes": 235019
+      }
+    ],
+    "protected_receipt_sha256": "b5717641f2431faf0b208927845a859a5500e1dd2f548c71a8ffec6eaf7a7b86",
+    "protected_archive_sha256": "e0e2e73a8a5141192a2cce74f393e252db27bf6bf9d18b07ed53b09cca039737",
+    "protected_pod_receipt_sha256": "727dcdbb8553c1c1c00f80e17261831b12e224aa6c2978778f886afd65193cff"
+  },
+  "redesign_retained_output": {
+    "scope": "Original GPU analysis artifact plus same-image local CPU filtering; no new GPU inference or public-success substitution",
+    "analysis_artifact_sha256": "555505c5314c977bfb78dd6719a613fcef14aeebb9270580370d5d30d3966260",
+    "prior_collector_error": "BoltzGen design has no meaningful target interface confidence",
+    "corrected_stage_and_final_validation": "passed",
+    "whole_structure_ptm": 0.75592,
+    "interface_iptm": 0.0,
+    "reported_refold_rmsd_angstrom": 1.53867,
+    "independent_fixed_ca_rmsd_angstrom": 1.4973022242727296,
+    "unchanged_fixed_ca_rmsd_limit_angstrom": 1.5,
+    "fixed_framework_and_length_match": true,
+    "basic_backbone_geometry_pass": true,
+    "protected_collector_receipt_sha256": "755f42f71f42b255eabcf595ba6cc7b5f82250f08babf71e6bcea25ddd13206f",
+    "protected_independent_receipt_sha256": "812c83c9878920c77b71c457a65868f01fc7d054b18589e4115f5ff2aafb05b0"
+  },
+  "configuration_parity": {
+    "scope": "Exact-image CPU configuration comparison across all six protocols, no model execution",
+    "only_resolved_difference": "prediction data loader workers1 to0",
+    "protected_receipt_sha256": "3c0c6bcfd5200a917deee1b77af2c5f51ae7ee55a61355b73d2e0f3c34c0e2c6"
+  },
+  "tests": {
+    "focused_and_existing_production_passed": 35,
+    "ruff": "passed",
+    "mypy": "passed",
+    "protected_pytest_log_sha256": "55bdcfd7f1da10604ccfd841184667382ec0d250ceef940901b59cc6e063ef36"
+  },
+  "cleanup": {
+    "task_owned_resources_remaining": 0,
+    "protected_receipt_sha256": "2733796a898163cdcd645631eb1cdcef209508677d2387eb60674a8b3c8fb02d"
+  },
+  "limitations": [
+    "Not a full antibody pipeline or public successor acceptance",
+    "Original failed operations remain failed; explicit new public replay is required after parent promotion",
+    "Finite atoms and model confidence do not establish binding, therapeutic efficacy or experimental quality",
+    "No timing is represented as measured device utilization or billable GPU time"
+  ]
+}

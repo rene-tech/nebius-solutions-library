@@ -1,0 +1,11 @@
+{
+  "kind": "browser-microphone",
+  "checks": [
+    "microphone permission, PCM capture and public WebSocket completed",
+    "recognized patient text and WAV retained with microphone provenance"
+  ],
+  "run_id": "39e53681-913a-4e1e-9d74-807adcac3cdf",
+  "transcript": "Good morning. The workshop starts at nine. Good morning. The workshop starts at nine",
+  "audio_url": "/v1/workshop/runs/39e53681-913a-4e1e-9d74-807adcac3cdf/audio/2",
+  "passed": true
+}

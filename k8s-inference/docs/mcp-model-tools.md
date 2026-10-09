@@ -20,7 +20,17 @@ The result contains `model_id`, a `contracts` array, and (for serving models)
 `active_runtime`. Each contract has `tool_name`, `protocol`, `input_schema`,
 `examples`, `source_refs` and canonical `model_ref`. Use the returned tool name;
 independent Apps of one model have separate public identities and settings.
-Omitting `protocol` returns the model's available contracts.
+Omitting both `protocol` and `tool_name` returns all authorized contracts,
+including serving and scientific batch when one App exposes both. Use
+`summary_only: true` to discover compact tool names before selecting one exact
+contract. For large single-cell studies, for example:
+
+```json
+{"model_id":"scvi-scanvi","tool_name":"submit_scvi_scanvi"}
+```
+
+The explicit batch protocol is `scientific-batch-v1`. Selecting a batch tool by
+name must not be rejected merely because the App also has a native serving tool.
 Legacy routes may have null runtime metadata; this is unknown information, not
 a claim that their worker is currently Ready.
 
@@ -31,6 +41,27 @@ examples are server-side assets and contain no bytes in discovery. Other sample
 artifact IDs are not already uploaded on your behalf.
 JSON-schema validity does not guarantee valid biology, imaging geometry, or a
 valid external asset; the model performs those additional checks.
+
+Scientific discovery also returns top-level `artifact_manifest_schema` and
+`input_artifact_contract`. Preserve both when selecting an item from `contracts`.
+The input contract identifies logical entry names, semantic types, payload MIME
+types, compression and byte bounds. Fixed-input Apps use `entry`; RFdiffusion
+selects from `operations`; LeRobot selects from `source_kinds`. For example,
+Protenix requires `protenix-input` / `protenix-input-json/v1` / `application/json`.
+The outer manifest uses `application/vnd.fs2.scientific-manifest+json`; that is
+not the MIME type of its nested model JSON payload. Experiment names belong in
+client context, not in place of the contracted logical entry name.
+
+Validate these roles before upload. A wrong role or payload MIME produces an
+actionable input error without admitting an operation; it is not an unavailable
+model or a capacity failure. Reuse verified payloads only when their immutable
+metadata matches. Do not silently change scientific bytes or artifact metadata.
+
+When onboarding a scientific App, publish its descriptor from the same constants
+used by its executable adapter in `scientific_batch/input_contracts.py`, and test
+both discovery and admission with a real client-shaped manifest. Include aliases,
+operation-dependent inputs and alternate supported compression formats. A typed
+parameter schema alone does not document how to construct the input artifacts.
 
 | Protocol family | Inputs and model behavior |
 |---|---|
@@ -58,11 +89,104 @@ for an identical intended submission. Serving tools also accept bounded
 `wait_seconds`; zero returns after durable acceptance without waiting for model
 execution. An accepted operation is **not** the final prediction.
 
+### GenMol mask length is not molecular size
+
+GenMol's `smiles` mask, for example `[*{10-20}]`, does **not** constrain the
+output to 10–20 heavy atoms. The hosted adapter takes the integer midpoint
+`floor((minimum + maximum) / 2)` and passes it as upstream `min_add_len`;
+this example reports `minimum_mask_tokens: 15`. The pinned sampler draws a
+SAFE-token length from its empirical distribution with that minimum. The mask's
+second endpoint is not a maximum token count or molecular-size limit. This is
+the existing sampler behavior, not a new generation setting.
+
+If your workflow requires a heavy-atom range, calculate it from the returned
+SMILES and filter explicitly; do not treat the requested mask as proof of that
+property. Retain the original requested and returned molecule counts separately
+from any post-filter count. See the [pinned NVIDIA sampler](https://github.com/NVIDIA-BioNeMo/genmol/blob/add09fc83b7255bd09c797e527c0f4b51f5fb7c1/src/genmol/sampler.py).
+
+### Cosmos media workflows
+
+Cosmos publishes separate tools for text-to-image, text-to-video,
+image-to-video, video-to-video, and controlled transfer video. The tool name
+fixes the mode and output transport; do not
+send `mode`, `output_format`, or `output_delivery` yourself. For example, a V2V
+submission using a finalized input artifact is:
+
+```json
+{
+  "prompt":"Preserve the robot motion while changing the lighting.",
+  "input_reference":{
+    "artifact_id":"<finalized artifact UUID>",
+    "sha256":"<64 lowercase hex characters>",
+    "size_bytes":123456,
+    "media_type":"video/mp4",
+    "compression":"none"
+  },
+  "condition_frame_indexes_vision":[0,1],
+  "condition_video_keep":"first",
+  "idempotency_key":"robot-pouring-v2v-0001",
+  "wait_seconds":0
+}
+```
+
+Call `cosmos3_nano_video_to_video` with those fields. `vision_path` remains a
+deprecated compatibility alias only for a final immutable HTTPS URL. A local
+path such as `/tmp/robot_pouring.mp4` cannot refer to a remote customer's file:
+upload it with the model-artifact tools and pass the finalized descriptor.
+After submission, poll `get_operation`, retrieve the completed envelope with
+`get_operation_result`, and pass its `artifact.artifact_id` to
+`download_model_artifact`. The short-lived download handle is used outside the
+agent context; verify its `sha256` and `size_bytes`. MP4 bytes are never returned
+as a tool argument or base64 tool result.
+
+`cosmos3_nano_transfer_video` accepts typed `controls` and a pinned `resolution`
+bucket of 256, 480, 704, or 720; depth, segmentation and WSM controls require
+their own image/video reference, while edge and blur may be derived from the
+main reference. Sound is limited to the text/image-to-video tools. Cosmos action
+forward dynamics, inverse dynamics, policy, and OpenPI are intentionally not
+published: the exact pinned H100 runtime did not pass real-GPU action fixtures.
+Do not route LeRobot dataset augmentation through an unqualified action path;
+use the separate LeRobot App, whose currently published child operations are
+V2V and transfer only.
+
 For compatibility, named serving tools still accept the old `payload` wrapper,
 and named scientific tools accept the old `request` wrapper. Controls remain
 outside these wrappers. Wrapped input is checked against the same concrete
 contract; unsupported fields do not gain a bypass. The generic `invoke_model`
 and `submit_scientific_run` envelopes remain available for existing clients.
+
+For generic `invoke_model`, place controls beside `payload`:
+
+```json
+{
+  "model_id":"openfold2",
+  "protocol":"native",
+  "payload":{
+    "input_id":"example-contract-only",
+    "sequence":"ACDEFGHIKLMNPQRSTVWY",
+    "selected_models":[1],
+    "relax_prediction":false
+  },
+  "idempotency_key":"example-openfold2-request-0001",
+  "wait_seconds":0
+}
+```
+
+The Stockholm envelope remediation also accepts legacy controls at the immediate
+top level of `invoke_model.payload`: it lifts them out before persistence and
+dispatch. Identical inner/outer duplicates are accepted. Conflicting duplicates
+return JSON-RPC `-32602` with `data.type: gateway_control_validation`,
+`durable_admission: false`, and an `issues` JSON-pointer location; no operation
+is created. Explicit outer `wait_seconds: 0` and `idempotency_key: null` count as
+supplied values and can conflict. Controls have the same bounds in both places:
+an 8–200 character key (or null) and a finite numeric wait within the deployment's
+limit. Numeric strings and booleans are rejected. Fields deeper inside model
+objects are preserved. This compatibility rule applies to generic serving calls;
+keep named tools flat and scientific `request` wrappers unchanged.
+
+This describes the remediation source contract, not a deployment receipt. The
+Stockholm release still needs exact-image and actual LibreChat/BioNeMo acceptance;
+see [the remediation handoff](stockholm-mcp-envelope-remediation-20260917.md).
 
 ## Core tools and workflow
 

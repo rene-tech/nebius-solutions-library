@@ -167,7 +167,7 @@ class AccessMeasurement(StrictModel):
 
 class AdminApiKeyUsage(StrictModel):
     terminal_operations: int = Field(ge=0)
-    estimated_gpu_seconds: AccessMeasurement
+    estimated_gpu_seconds: AccessMeasurement = Field(serialization_alias="conservative_attempted_gpu_seconds")
     input_tokens: AccessMeasurement
     output_tokens: AccessMeasurement
     token_reported_operations: int = Field(ge=0)
@@ -200,8 +200,8 @@ class AdminApiKey(StrictModel):
     request_budget: int | None = Field(default=None, ge=1)
     requests_used: int = Field(ge=0)
     gpu_seconds_budget: float | None = Field(default=None, gt=0)
-    gpu_seconds_used: float = Field(ge=0)
-    gpu_seconds_reserved: float = Field(ge=0)
+    gpu_seconds_used: float = Field(ge=0, serialization_alias="admission_budget_consumed_gpu_seconds")
+    gpu_seconds_reserved: float = Field(ge=0, serialization_alias="admission_budget_reserved_gpu_seconds")
     max_concurrency: int = Field(ge=1)
     rate_limit_requests: int | None = Field(default=None, ge=1)
     rate_window_seconds: int | None = Field(default=None, ge=1)

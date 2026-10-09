@@ -1,0 +1,18 @@
+# Build from the authorized combined private engine, never a public PMEMD image.
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber26-engine@sha256:cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends python3-jsonschema \
+    && rm -rf /var/lib/apt/lists/*
+COPY gromacs/runtime/fs2_gromacs /opt/fs2/runtime/fs2_gromacs
+COPY amber/runtime/fs2_amber /opt/fs2/runtime/fs2_amber
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.title="AMBER26 private academic native workflow worker" \
+      org.opencontainers.image.revision=${SOURCE_REVISION} \
+      org.opencontainers.image.licenses="LicenseRef-AMBER26-site-license" \
+      scientific-ai.nebius.com.license-required="AMBER26"
+ENV PYTHONPATH=/opt/fs2/runtime \
+    AMBERTOOLS_HOME=/opt/ambertools \
+    PYTHONUNBUFFERED=1
+USER 10001:10001
+WORKDIR /tmp
+ENTRYPOINT ["python3", "-m", "fs2_amber.worker"]

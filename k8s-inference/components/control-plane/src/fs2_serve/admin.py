@@ -397,8 +397,8 @@ def derive_operational_model_state(
     )
 
 
-def _available(value: float, unit: str, source: str) -> AdminMeasurement:
-    return AdminMeasurement(value=value, unit=unit, state=AdminValueState.AVAILABLE, source=source)
+def _available(value: float, unit: str, source: str, *, reason: str | None = None) -> AdminMeasurement:
+    return AdminMeasurement(value=value, unit=unit, state=AdminValueState.AVAILABLE, source=source, reason=reason)
 
 
 def _estimated(value: float, unit: str, source: str, *, reason: str | None = None) -> AdminMeasurement:
@@ -1004,9 +1004,19 @@ class AdminReadService:
                 ),
                 latency=self._latency(prom if prom_ready else None, usage if database_ready else None),
                 cold_start_seconds=(
-                    _available(usage.cold_start_seconds if usage is not None else 0.0, "seconds", "postgresql")
-                    if database_ready
-                    else _unavailable("seconds", "postgresql", "cold-start accounting is unavailable")
+                    _available(
+                        usage.cold_start_seconds, "seconds", "postgresql",
+                        reason=("Window total of recorded accepted-to-ready spans, including queue/dispatch; "
+                                "not per-start latency or pure cold start. "
+                                f"Recorded spans: {usage.accepted_to_ready_operations}."),
+                    )
+                    if database_ready and usage is not None and usage.accepted_to_ready_operations
+                    else _unavailable(
+                        "seconds", "postgresql",
+                        "No samples: no completed operations with a recorded accepted-to-ready span in this window."
+                        if database_ready and (usage is None or usage.accepted_to_ready_operations == 0)
+                        else "Accepted-to-ready sample accounting is unavailable.",
+                    )
                 ),
             ),
         )
@@ -1453,7 +1463,11 @@ class AdminReadService:
                     unavailable_reason="queue completion timestamp is not recorded yet",
                 ),
                 cold_start_seconds=(
-                    _available(record.cold_start_seconds, "seconds", "postgresql")
+                    _available(
+                        record.cold_start_seconds, "seconds", "postgresql",
+                        reason=("Legacy field: accepted-to-ready including queue/dispatch; "
+                                "overlaps queue, not pure cold start."),
+                    )
                     if record.cold_start_seconds is not None
                     else _unavailable("seconds", "postgresql", "cold-start timing is unavailable")
                 ),

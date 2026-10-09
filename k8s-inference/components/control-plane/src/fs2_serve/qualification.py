@@ -136,8 +136,9 @@ def _runtime_origin(catalog: Catalog, model_id: str, variant_id: object) -> dict
             or fallback.relationship != variant.relationship
         ):
             raise QualificationError(f"{model_id}: active variant relationship is contradictory")
+        is_nim = value.get("variant_kind") == "nim"
         return {
-            "kind": "independent-runtime",
+            "kind": "nvidia-nim" if is_nim else "independent-runtime",
             "variant_id": variant_id,
             "source_kind": value["source"]["kind"],
             "repository": value["source"]["repository"],

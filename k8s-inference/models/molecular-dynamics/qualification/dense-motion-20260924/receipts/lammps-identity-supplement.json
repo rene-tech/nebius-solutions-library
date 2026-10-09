@@ -1,0 +1,170 @@
+{
+  "schema": "fs2-dense-owned-identity-supplement/v1",
+  "status": "passed-with-explicit-capture-limitations",
+  "engine": "lammps",
+  "operation_id": "199127a9-c7be-4a57-b99c-c58c29499bce",
+  "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+  "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+  "native_validation_receipt": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/validation-01.json",
+    "sha256": "26b12a89a99d267bb8f7e06a9278594f0d658e0b1447030265b5d2ffd80a8ede"
+  },
+  "retained_lifecycle": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/lifecycle-01.json",
+    "sha256": "7396784ba72ee059882a80c9692e04fe076fc0378da83856b5507ae4ece9ec30"
+  },
+  "caller_scoped_runtime_discovery": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/preflight-01/scientific-models.json",
+    "sha256": "683ca04c5b732ddee73581171075174de8e9023f502ae5460245ba0da7986672",
+    "runtime_digest": "sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c"
+  },
+  "lifecycle": {
+    "schema": "fs2-md-lifecycle-observation/v1",
+    "observed_at": "2026-09-24T02:14:52.553390+00:00",
+    "operation_id": "199127a9-c7be-4a57-b99c-c58c29499bce",
+    "changes_made": false,
+    "workloads": [
+      {
+        "subject": {
+          "subject_id": "c3d7aed4-1a5d-5ac4-a280-b8e20e983494",
+          "operation_id": "199127a9-c7be-4a57-b99c-c58c29499bce",
+          "model_id": "lammps",
+          "model_revision": "d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+          "accepted_at": "2026-09-24T02:10:41.508745Z"
+        },
+        "rollup": {
+          "rollup_id": "7979ef35-7df4-4b11-9281-28e1edbd3b21",
+          "subject_id": "c3d7aed4-1a5d-5ac4-a280-b8e20e983494",
+          "generated_at": "2026-09-24T02:12:38.967382Z",
+          "event_watermark": 30584485,
+          "events_sha256": "a176aa46b97aa0f5b69fe16a313a3f6da6c2cd66c55256b22af6849e0602c442",
+          "terminal": true,
+          "outcome": "succeeded",
+          "quota_reserved_gpu_seconds": 116.201462,
+          "scheduler_occupied_gpu_seconds": 108,
+          "device_allocated_gpu_seconds": 107.843006,
+          "active_gpu_seconds": 98,
+          "occupied_idle_gpu_seconds": 10,
+          "phase_gpu_seconds": {
+            "warmup": 0,
+            "compile": 0,
+            "restore": 0,
+            "teardown": 0,
+            "image_pull": 0,
+            "unclassified": 2,
+            "artifact_load": 4,
+            "resident_idle": 4,
+            "workflow_wait": 0,
+            "active_compute": 98,
+            "cooldown_grace": 0,
+            "checkpoint_drain": 0
+          },
+          "reconciliation_delta_seconds": 0,
+          "device_scheduler_delta_seconds": 0.156994,
+          "tolerance_seconds": 2,
+          "reconciled": true,
+          "quality": "application_observed",
+          "data_gaps": [
+            "trace_context_missing"
+          ],
+          "output_shape": {}
+        },
+        "correlations": [
+          {
+            "correlation_key": "scientific:c3d7aed4-1a5d-5ac4-a280-b8e20e983494:pod:0cd840e4-9b17-483d-932a-00e478e16e85:node:faaaa6fd-b016-46b9-8733-bfb01029affd",
+            "subject_id": "c3d7aed4-1a5d-5ac4-a280-b8e20e983494",
+            "observed_at": "2026-09-24T02:10:43Z",
+            "source": "kubernetes",
+            "attempt": 1,
+            "cluster": "k8s-inference-h100",
+            "namespace": "fs2-models",
+            "queue_name": null,
+            "kueue_workload_name": null,
+            "kueue_workload_uid": null,
+            "job_name": "fs2-workflow-dense-motion-a1-3cb182a0290d",
+            "job_uid": "c43338c4-43ba-4f19-a6d5-e8e9b827712a",
+            "pod_name": "fs2-workflow-dense-motion-a1-3cb182a0290d-8lxrl",
+            "pod_uid": "0cd840e4-9b17-483d-932a-00e478e16e85",
+            "node_name": "computeinstance-e00wet1bnnk38nbxms",
+            "node_uid": "faaaa6fd-b016-46b9-8733-bfb01029affd",
+            "gpu_uuid": null,
+            "gpu_rank": null
+          },
+          {
+            "correlation_key": "scientific:c3d7aed4-1a5d-5ac4-a280-b8e20e983494:pod:0cd840e4-9b17-483d-932a-00e478e16e85:device:GPU-d144da30-c688-aed8-5999-f9d44cee79d0:0",
+            "subject_id": "c3d7aed4-1a5d-5ac4-a280-b8e20e983494",
+            "observed_at": "2026-09-24T02:10:43.156994Z",
+            "source": "kubelet",
+            "attempt": 1,
+            "cluster": "k8s-inference-h100",
+            "namespace": "fs2-models",
+            "queue_name": null,
+            "kueue_workload_name": null,
+            "kueue_workload_uid": null,
+            "job_name": "fs2-workflow-dense-motion-a1-3cb182a0290d",
+            "job_uid": "c43338c4-43ba-4f19-a6d5-e8e9b827712a",
+            "pod_name": "fs2-workflow-dense-motion-a1-3cb182a0290d-8lxrl",
+            "pod_uid": "0cd840e4-9b17-483d-932a-00e478e16e85",
+            "node_name": null,
+            "node_uid": null,
+            "gpu_uuid": "GPU-d144da30-c688-aed8-5999-f9d44cee79d0",
+            "gpu_rank": 0
+          }
+        ],
+        "signals": [
+          {
+            "occurred_at": "2026-09-24T02:10:43.156994Z",
+            "source": "kubelet",
+            "quality": "measured",
+            "phase": "gpu_allocation",
+            "edge": "start",
+            "gpu_uuid": "GPU-d144da30-c688-aed8-5999-f9d44cee79d0",
+            "gpu_rank": 0,
+            "detail": {}
+          },
+          {
+            "occurred_at": "2026-09-24T02:12:31Z",
+            "source": "kubernetes",
+            "quality": "application_observed",
+            "phase": "gpu_allocation",
+            "edge": "end",
+            "gpu_uuid": "GPU-d144da30-c688-aed8-5999-f9d44cee79d0",
+            "gpu_rank": 0,
+            "detail": {}
+          },
+          {
+            "occurred_at": "2026-09-24T02:12:29.909000Z",
+            "source": "dcgm",
+            "quality": "measured",
+            "phase": "gpu_allocation",
+            "edge": "instant",
+            "gpu_uuid": "GPU-d144da30-c688-aed8-5999-f9d44cee79d0",
+            "gpu_rank": 0,
+            "detail": {
+              "reason_code": "dcgm_sample_summary",
+              "dcgm_max_percent": "63.0",
+              "dcgm_min_percent": "0.0",
+              "dcgm_sample_count": "22",
+              "dcgm_zero_samples": "7",
+              "dcgm_phase_samples": "{\"active_compute\":20,\"artifact_load\":1,\"resident_idle\":1}",
+              "dcgm_allocation_end": "\"2026-09-24T02:12:31Z\"",
+              "dcgm_last_sample_at": "\"2026-09-24T02:12:29.909000Z\"",
+              "dcgm_samples_sha256": "\"72a4c570da1ed68f42665c020e04e045331506a32dbbaa88d9666082ed91528f\"",
+              "dcgm_first_sample_at": "\"2026-09-24T02:10:44.907000Z\"",
+              "dcgm_max_gap_seconds": "5.005",
+              "dcgm_allocation_start": "\"2026-09-24T02:10:43.156994Z\"",
+              "dcgm_positive_samples": "15",
+              "dcgm_phase_zero_samples": "{\"active_compute\":5,\"artifact_load\":1,\"resident_idle\":1}",
+              "dcgm_phase_positive_samples": "{\"active_compute\":15}"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "identity_limitations": [
+    "The native Pod was deleted before direct inspection. Retained kubelet records provide its actual GPU UUID and Kubernetes Pod/node identity; live per-Pod imageID and driver were not captured. No driver is inferred from another run."
+  ],
+  "scientific_validation_receipt_modified": false,
+  "additional_gpu_runs_submitted": false
+}

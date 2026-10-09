@@ -1,0 +1,230 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "molmim",
+  "variant_id": "molmim-exact-weights-portable",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "molmim",
+      "display_name": "MolMIM",
+      "family": "bionemo-nim",
+      "tested_lane": true,
+      "source": {
+        "kind": "git",
+        "repository": "github.com/NVIDIA/bionemo-framework",
+        "revision": "9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+        "license": {
+          "id": "NVIDIA-AI-Foundations-Model-Community-License",
+          "state": "verified",
+          "notes": "MolMIM weights retain NVIDIA AI Foundations Model Community License and R&D-only use; Apache-2.0 applies only to BioNeMo source code. See acceptance/h100-fleet/bionemo-structure/fragments/molmim.json."
+        },
+        "entitlement": {
+          "required": true,
+          "state": "verified",
+          "credential_contract": "platform-managed-ngc-credential/v1",
+          "notes": "Previously acquired exact weight artifact retained in the immutable image; no runtime NGC fetch."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "portable-h100-perceiver-cmaes-20260918",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:9df0b25cd79c86746f564ca060328811cd39792ce9e6d66ff9f3e1de6547a4cb",
+        "digest": "sha256:9df0b25cd79c86746f564ca060328811cd39792ce9e6d66ff9f3e1de6547a4cb",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "-m",
+        "uvicorn",
+        "server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 8000,
+      "memory_bytes": 25769803776,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "generate-molecule"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "gated",
+          "gate": "fresh-pod-restore-with-original-semantic-output",
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "This exact H100 portable runtime has not completed a fresh-pod GPU restore test. Earlier B300 timing results remain historical and do not qualify or disqualify this runtime."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "fs2-serve-localizer",
+      "shared_path": "/mnt/fs2-serve-cache/models/molmim",
+      "local_path": "/var/lib/fs2-serve/cache/models/molmim",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "a89d79a3d8487888427b78834ad5b3026b6ec6fa8a2894d9511c0c775ba32213",
+        "expanded_bytes": 281589760,
+        "minimum_bytes": 281589760,
+        "capacity_bound_bytes": 8589934592,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "molmim-fixed-budget-truthful-generation/v1",
+      "source_path": "k8s-inference/models/bionemo/molmim/qualify_http.py",
+      "source_sha256": "cc78edc837b16279d8e1a1f05f61755c24023ebb6e0fa561ff3b4f8da99075ad",
+      "fixture_path": "k8s-inference/models/bionemo/molmim/qualification-20260918-smoke.json",
+      "fixture_sha256": "2f810e868008377c65d9c8df266f438e713c8c97bf751fcc3b808d6380592a3c",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "Exact weights in an independently implemented runtime; NVIDIA NIM package/numerical parity is not claimed.",
+        "H100 runtime and distinct semantic requests passed; public route verification and optional snapshot qualification are tracked separately.",
+        "Exact repair has isolated H100 HTTP evidence only: 36 exact-count generations, 18 explicit finite-budget exhausted searches and four invalid-input rejections across 58 requests; not all requested generations succeeded.",
+        "The CMA-ES similarity contribution is a soft objective, while min_similarity is a hard final-output filter. Strict similarity, small budgets or decoder plateaus can produce HTTP422 GENERATION_EXHAUSTED; no seed substitution or underfilled success.",
+        "QED direction guides search and output ordering, not guaranteed improvement, efficacy or synthesizability. Seven of eight tested seed molecules reconstructed exactly; imatinib did not. NIM numerical parity is unverified.",
+        "The HTTP random stream is deterministic from canonical input; numeric RNG seed control is not exposed. Historical cold-start and snapshot receipts do not qualify this digest."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-historical",
+        "hardware": "NVIDIA H100 80GB HBM3",
+        "outcome": "conventional-fallback",
+        "source_commit": "7e3c84f1f7e5f3df4b04e17f9846d49b321f504b",
+        "summary": "The immutable conventional NIM and semantic fixture are reusable."
+      },
+      {
+        "classification": "negative",
+        "hardware": "NVIDIA H100 80GB HBM3",
+        "outcome": "snapshot-rejected",
+        "source_commit": "bc4e152900168eac7e3dac7b376aaa12e362701b",
+        "summary": "The separately published snapshot bundle remained unqualified and was slower than conventional."
+      },
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3; SM90; driver 580.159.04; preemptible",
+        "outcome": "live-qualified",
+        "source_commit": "86ef557213243d1f110f9100b50365dcc3dd6024",
+        "summary": "Isolated unchanged candidate: 58 HTTP requests across two identical replays, 36 complete generation successes (260 molecules), 18 truthful exhausted searches and four invalid-input rejections. Independent exact quantity, canonical uniqueness, novelty, QED, Morgan similarity, budget and ordering checks passed. Seven diverse seeds succeed with explicit population16/iterations8/maxQED/similarity0.3; original OHT similarity0.7 remains exhausted. Summary SHA256 1230ddb5fead2eeb959e21bd95e7b118f311e6b6553d2aa030165e07f6c5b49b. Not public or therapeutic qualification."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "7e3c84f1f7e5f3df4b04e17f9846d49b321f504b",
+        "tree": "d34e55849c14507e13811f685ca45322d6fe09ae",
+        "path": "nim-fast-start/faststart-v2/conventional-baselines/catalog.json",
+        "classification": "measured-handoff"
+      },
+      {
+        "commit": "bc4e152900168eac7e3dac7b376aaa12e362701b",
+        "tree": "3e0b4ca2d51d9dfdcc5b01c83bc5373485b4317c",
+        "path": "nim-fast-start/faststart-v2/bio_nims_snapshots/artifact-inventory.json",
+        "classification": "negative-evidence"
+      }
+    ]
+  },
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+      "runtime_image_digest": "sha256:9df0b25cd79c86746f564ca060328811cd39792ce9e6d66ff9f3e1de6547a4cb",
+      "service": {
+        "name": "molmim",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "e00b3acda36808f529dc32ec0db59041d7a716a0122e0fb7573dd217ccf9b694",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "1230ddb5fead2eeb959e21bd95e7b118f311e6b6553d2aa030165e07f6c5b49b"
+    },
+    "model_id": "molmim",
+    "policy": {
+      "license_id": "NVIDIA-AI-Foundations-Model-Community-License",
+      "non_clinical": false,
+      "commercial_use": "license-dependent"
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "molmim-exact-weights-portable",
+      "source_kind": "git",
+      "repository": "github.com/NVIDIA/bionemo-framework",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "unverified"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": false,
+      "elasticity_qualified": false
+    },
+    "variant_id": "molmim-exact-weights-portable"
+  }
+}

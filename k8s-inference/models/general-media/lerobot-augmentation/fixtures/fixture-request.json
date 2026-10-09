@@ -1,0 +1,48 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-request/v1",
+  "source": {
+    "kind": "huggingface",
+    "repo_id": "fs2/synthetic-cosmos3-lerobot",
+    "revision": "0000000000000000000000000000000000000000"
+  },
+  "selection": {
+    "episodes": [0],
+    "cameras": ["observation.images.front"]
+  },
+  "variants": {
+    "count": 2,
+    "seeds": [20260915, 20260916]
+  },
+  "augmentation": {
+    "mode": "video-to-video",
+    "prompt_template": "Preserve the robot motion and geometry for task '{task}'. Apply only these variations: {variation}.",
+    "negative_prompt": "changed robot motion, missing objects, temporal jitter, blur",
+    "dimensions": [
+      {
+        "name": "lighting",
+        "instruction": "warm late-afternoon side lighting while preserving object identity",
+        "strength": 0.7
+      },
+      {
+        "name": "background",
+        "instruction": "a clean laboratory bench with unchanged robot and manipulated object",
+        "strength": 0.5
+      }
+    ],
+    "conditioning": {
+      "keep": "first",
+      "frame_indexes": [0, 1],
+      "controls": []
+    },
+    "num_inference_steps": 35,
+    "guidance_scale": 6.0
+  },
+  "actions": {
+    "mode": "preserve"
+  },
+  "failure_policy": {
+    "mode": "fail-fast",
+    "max_attempts": 2
+  }
+}
+

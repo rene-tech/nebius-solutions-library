@@ -1,0 +1,175 @@
+# Private, bounded qualification Pod. Not a published platform App.
+# Uses existing node capacity and Secret references; creates no node, PVC or key.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cosmos-transfer25-canary-20260920
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/task: video-canary-20260920
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cosmos-transfer25-canary-20260920
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fs2-system
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cosmos-transfer25-canary-20260920-r2
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: cosmos-transfer25-canary-20260920
+    app.kubernetes.io/part-of: scientific-ai
+    fs2-serve.nebius.ai/task: video-canary-20260920
+  annotations:
+    fs2-serve.nebius.ai/qualification-state: candidate-unqualified
+    fs2-serve.nebius.ai/nim-manifest-sha256: 67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 7200
+  terminationGracePeriodSeconds: 60
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  nodeSelector:
+    kubernetes.io/hostname: computeinstance-e00jqs4xxntre6eycf
+    accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  imagePullSecrets:
+    - name: wan2-ngc-pull
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: nim
+      image: nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f
+      imagePullPolicy: IfNotPresent
+      # Preserve the pinned image's Entrypoint/Cmd after normalizing only the
+      # process-local credential. The shared Secret is never modified.
+      command:
+        - python3
+        - -c
+        - |
+          import os
+          credential = os.environ.get("NGC_API_KEY", "").strip()
+          if not credential or not credential.isascii() or any(ord(c) <= 32 or ord(c) == 127 for c in credential):
+              raise SystemExit("NGC credential format is invalid; value suppressed")
+          os.environ["NGC_API_KEY"] = credential
+          entrypoint = "/opt/nvidia/nvidia_entrypoint.sh"
+          os.execv(entrypoint, [entrypoint, "/bin/bash", "-c", "$SERVER_START_SCRIPT_PATH"])
+      env:
+        - name: NGC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wan2-ngc-api
+              key: NGC_API_KEY
+        - name: NIM_MODEL_PROFILE
+          value: e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672
+        - name: NIM_CACHE_PATH
+          value: /opt/nim/.cache
+        - name: NIM_HTTP_API_PORT
+          value: "8000"
+        - name: NIM_HTTP_MAX_WORKERS
+          value: "1"
+        - name: NIM_ALLOW_URL_INPUT
+          value: "0"
+        - name: NIM_ENABLE_WARMUP
+          value: "1"
+        - name: NIM_LOG_LEVEL
+          value: INFO
+      ports:
+        - name: http
+          containerPort: 8000
+      resources:
+        requests:
+          cpu: "8"
+          memory: 96Gi
+          ephemeral-storage: 108Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "20"
+          memory: 160Gi
+          ephemeral-storage: 112Gi
+          nvidia.com/gpu: "1"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+      startupProbe:
+        httpGet:
+          path: /v1/health/ready
+          port: http
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 270
+      readinessProbe:
+        httpGet:
+          path: /v1/health/ready
+          port: http
+        periodSeconds: 10
+        timeoutSeconds: 5
+      livenessProbe:
+        httpGet:
+          path: /v1/health/live
+          port: http
+        periodSeconds: 30
+        timeoutSeconds: 5
+        failureThreshold: 3
+      volumeMounts:
+        - name: cache
+          mountPath: /opt/nim/.cache
+        - name: temporary
+          mountPath: /tmp
+        - name: shared-memory
+          mountPath: /dev/shm
+  volumes:
+    - name: cache
+      emptyDir:
+        sizeLimit: 96Gi
+    - name: temporary
+      emptyDir:
+        sizeLimit: 8Gi
+    - name: shared-memory
+      emptyDir:
+        medium: Memory
+        sizeLimit: 32Gi

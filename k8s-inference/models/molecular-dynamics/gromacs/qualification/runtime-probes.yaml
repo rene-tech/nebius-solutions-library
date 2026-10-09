@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs2-gromacs-r20260923-h100-runtime
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: gromacs-qualification
+    scientific-ai.nebius.com/task: gromacs-r20260923
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 7200
+  automountServiceAccountToken: false
+  imagePullSecrets:
+    - name: wan2-ngc-pull
+  nodeSelector:
+    accelerator.fs2.nebius/pool-id: h100-ondemand-1x
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  containers:
+    - name: runtime
+      # Discovery only: record resolved imageID before pinning the release.
+      image: nvcr.io/nvidia/gromacs@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59
+      imagePullPolicy: IfNotPresent
+      command: [bash, -c]
+      args:
+        - |
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+          ls /usr/local/gromacs
+          /usr/local/gromacs/avx2_256/bin/gmx --version
+          /usr/local/gromacs/avx2_256/bin/gmx mdrun -h
+          command -v python3 curl wget tar || true
+          sleep 7200
+      resources:
+        requests:
+          cpu: "2"
+          memory: 4Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "2"
+          memory: 4Gi
+          nvidia.com/gpu: "1"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs2-gromacs-r20260923-l40s-runtime
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: gromacs-qualification
+    scientific-ai.nebius.com/task: gromacs-r20260923
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 7200
+  automountServiceAccountToken: false
+  imagePullSecrets:
+    - name: wan2-ngc-pull
+  nodeSelector:
+    accelerator.fs2.nebius/pool-id: l40s-1x
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  containers:
+    - name: runtime
+      image: nvcr.io/nvidia/gromacs@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59
+      imagePullPolicy: IfNotPresent
+      command: [bash, -c]
+      args:
+        - |
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+          ls /usr/local/gromacs
+          /usr/local/gromacs/avx2_256/bin/gmx --version
+          /usr/local/gromacs/avx2_256/bin/gmx mdrun -h
+          command -v python3 curl wget tar || true
+          sleep 7200
+      resources:
+        requests:
+          cpu: "2"
+          memory: 4Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "2"
+          memory: 4Gi
+          nvidia.com/gpu: "1"

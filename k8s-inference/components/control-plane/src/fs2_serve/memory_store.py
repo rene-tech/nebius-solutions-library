@@ -82,6 +82,7 @@ from .models import (
     TokenView,
 )
 from .runtime import sanitize_error_detail
+from .scientific_cpu import run_scientific_cpu
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -148,6 +149,7 @@ class MemoryStore:
         # Controller tests opt out and exercise real fenced intent transitions.
         self.auto_activate = auto_activate
         self._lock = asyncio.Lock()
+        self._scientific_admission_recovery_lock = asyncio.Lock()
         self._activation_mutation_locks: dict[str, asyncio.Lock] = {}
         self.tokens: dict[UUID, _Token] = {}
         self.operations: dict[UUID, _Operation] = {}
@@ -187,6 +189,15 @@ class MemoryStore:
         self.model_deployment_idempotency: dict[tuple[UUID, str, str], tuple[str, str, str, int]] = {}
         self.model_deployment_status_events: dict[tuple[str, str], list[ModelDeploymentStatusObservation]] = {}
         self.model_deployment_status_by_id: dict[UUID, ModelDeploymentStatusObservation] = {}
+
+    @asynccontextmanager
+    async def scientific_admission_recovery(self) -> AsyncIterator[bool]:
+        """Match the production recovery-only, nonblocking owner scope."""
+        if self._scientific_admission_recovery_lock.locked():
+            yield False
+            return
+        async with self._scientific_admission_recovery_lock:
+            yield True
 
     def _activation_event(self, intent: ActivationIntent, event: str) -> None:
         self.activation_events.append(
@@ -1383,6 +1394,8 @@ class MemoryStore:
         dynamic_fence: DynamicAdmissionFence | None = None,
         scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
     ) -> OperationView:
+        if admission.parent_operation_id is not None:
+            raise ValueError("scientific child delegation requires durable PostgreSQL attempt fencing")
         async with self._activation_mutation_lock(admission.model_id):
             return await self._append_operation(
                 principal=principal,
@@ -1437,7 +1450,7 @@ class MemoryStore:
                 ):
                     raise ConflictError("idempotency key is already bound to a different request")
                 operation = self._metadata(existing_row, reused=True)
-                self._stage_scientific_admission(operation, scientific_admission_factory)
+                await self._stage_scientific_admission(operation, scientific_admission_factory)
                 return operation
             if (dynamic_fence is None) != (dispatch_snapshot is None):
                 raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
@@ -1509,7 +1522,7 @@ class MemoryStore:
                 traceparent=admission.traceparent,
                 dispatch_snapshot=dispatch_snapshot,
             )
-            self._stage_scientific_admission(view, scientific_admission_factory)
+            await self._stage_scientific_admission(view, scientific_admission_factory)
             self.operations[operation_id] = row
             self.idempotency[key] = operation_id
             token.view = token.view.model_copy(
@@ -1533,7 +1546,7 @@ class MemoryStore:
             )
             return self._metadata(row)
 
-    def _stage_scientific_admission(
+    async def _stage_scientific_admission(
         self,
         operation: OperationView,
         factory: Callable[[OperationView], dict[str, object]] | None,
@@ -1548,7 +1561,10 @@ class MemoryStore:
             # The request identity has already matched. Preserve the accepted
             # payload across policy changes and pre-materialization restarts.
             return
-        payload = factory(operation)
+        # Freeze pure scientific metadata without monopolizing the API loop.
+        # The existing activation and admission locks remain held until this
+        # completes, including cancellation; no store state enters the worker.
+        payload = await run_scientific_cpu(factory, operation)
         pending = PendingScientificAdmission(
             operation_id=operation.id,
             payload=payload,
@@ -1601,7 +1617,23 @@ class MemoryStore:
                 result = {"base64": base64.b64encode(raw).decode()}
             return OperationResult(operation=metadata, result=result)
 
-    async def claim_operation(self, worker_id: str, *, lease_seconds: float) -> ClaimedOperation | None:
+    async def list_customer_operations(
+        self, principal: Principal, *, limit: int, before: tuple[datetime, UUID] | None = None
+    ) -> list[OperationView]:
+        if not 1 <= limit <= 201:
+            raise ValueError("operation history page is outside the bound")
+        async with self._lock:
+            rows = [row for row in self.operations.values()
+                    if row.view.tenant_id == principal.tenant_id
+                    and ("tenant.admin" in principal.scopes or (
+                        row.view.token_id == principal.token_id and row.view.principal_id == principal.principal_id))
+                    and (before is None or (row.view.accepted_at, row.view.id.int) < (before[0], before[1].int))]
+            rows.sort(key=lambda row: (row.view.accepted_at, row.view.id.int), reverse=True)
+            return [self._metadata(row) for row in rows[:limit]]
+
+    async def claim_operation(
+        self, worker_id: str, *, lease_seconds: float, stream_operation_id: UUID | None = None,
+    ) -> ClaimedOperation | None:
         async with self._lock:
             now = datetime.now(UTC)
             for row in sorted(
@@ -1611,6 +1643,10 @@ class MemoryStore:
                 if (
                     row.view.status != OperationStatus.QUEUED
                     or row.view.protocol in {"scientific-batch-v1", "scientific-artifact-upload-v1"}
+                    or (
+                        (row.view.protocol == "speech-stream-v1") if stream_operation_id is None
+                        else (row.view.id != stream_operation_id or row.view.protocol != "speech-stream-v1")
+                    )
                     or row.view.available_at > now
                     or row.view.attempt >= row.view.max_attempts
                 ):
@@ -1665,8 +1701,9 @@ class MemoryStore:
         *,
         tenant_id: str,
         principal_id: str,
+        verified: bool = True,
     ) -> OperationView:
-        """Close one verified customer upload without exposing a worker lease."""
+        """Close a verified or irrecoverably invalid upload without a worker lease."""
 
         async with self._lock:
             row = self.operations.get(operation_id)
@@ -1677,18 +1714,22 @@ class MemoryStore:
                 or row.view.protocol != "scientific-artifact-upload-v1"
             ):
                 raise NotFoundError("scientific artifact upload operation not found")
-            if row.view.status is OperationStatus.SUCCEEDED:
+            status = OperationStatus.SUCCEEDED if verified else OperationStatus.FAILED
+            outcome = "artifact_uploaded" if verified else "artifact_verification_failed"
+            if row.view.status is status:
                 return self._metadata(row, reused=True)
             if row.view.status is not OperationStatus.QUEUED:
                 raise ConflictError("scientific artifact upload operation is not writable")
             now = datetime.now(UTC)
             row.view = row.view.model_copy(
                 update={
-                    "status": OperationStatus.SUCCEEDED,
+                    "status": status,
                     "completed_at": now,
-                    "outcome": "artifact_uploaded",
-                    "semantic_outcome": "verified",
-                    "http_status": 201,
+                    "outcome": outcome,
+                    "semantic_outcome": "verified" if verified else "failed",
+                    "http_status": 201 if verified else 422,
+                    "error_code": None if verified else outcome,
+                    "error_detail": None if verified else "Stored bytes do not match the upload; start a new upload.",
                     "reserved_gpu_seconds": 0,
                 }
             )
@@ -1699,7 +1740,7 @@ class MemoryStore:
                 action="scientific_artifact.upload.complete",
                 target_type="operation",
                 target_id=str(operation_id),
-                outcome="succeeded",
+                outcome=status.value,
             )
             return self._metadata(row)
 
@@ -2409,6 +2450,14 @@ class MemoryStore:
             for row in self.operations.values():
                 if row.view.payload_expires_at is None or row.view.payload_expires_at > now:
                     continue
+                # Scientific jobs have their own frozen execution/queue budget.
+                # A generic request-payload TTL must not expire their owning
+                # Operation mid-simulation or between preempted attempts.
+                if not row.view.status.terminal and (
+                    row.view.id in self.scientific_admission_outbox
+                    or row.view.id in self.scientific_admissions_completed
+                ):
+                    continue
                 if row.request is not None or row.response is not None:
                     count += 1
                 row.request = None
@@ -2522,9 +2571,12 @@ class MemoryStore:
             return [row.model_copy(deep=True) for row in rows[:limit]]
 
     async def queue_counts(self) -> dict[tuple[str, str], int]:
+        """Model-runtime demand; CPU uploads retain their separate outcome ledger."""
         async with self._lock:
             result: dict[tuple[str, str], int] = {}
             for row in self.operations.values():
+                if row.view.protocol == "scientific-artifact-upload-v1":
+                    continue
                 key = (row.view.model_id, str(row.view.status))
                 result[key] = result.get(key, 0) + 1
             return result
@@ -2648,6 +2700,7 @@ class MemoryStore:
                         "gpu": 0.0,
                         "duration": 0.0,
                         "cold": 0.0,
+                        "accepted_to_ready_operations": 0,
                         "input_tokens": 0,
                         "output_tokens": 0,
                         "token_reported_operations": 0,
@@ -2660,6 +2713,8 @@ class MemoryStore:
                 latency = max(0.0, (operation.completed_at - operation.accepted_at).total_seconds())
                 value["duration"] = float(value["duration"]) + latency
                 value["cold"] = float(value["cold"]) + (operation.cold_start_seconds or 0.0)
+                if operation.cold_start_seconds is not None:
+                    value["accepted_to_ready_operations"] = int(value["accepted_to_ready_operations"]) + 1
                 value["input_tokens"] = int(value["input_tokens"]) + (operation.input_tokens or 0)
                 value["output_tokens"] = int(value["output_tokens"]) + (operation.output_tokens or 0)
                 if operation.input_tokens is not None and operation.output_tokens is not None:
@@ -2677,6 +2732,7 @@ class MemoryStore:
                         estimated_gpu_seconds=float(value["gpu"]),
                         duration_seconds=float(value["duration"]),
                         cold_start_seconds=float(value["cold"]),
+                        accepted_to_ready_operations=int(value["accepted_to_ready_operations"]),
                         input_tokens=int(value["input_tokens"]),
                         output_tokens=int(value["output_tokens"]),
                         token_reported_operations=int(value["token_reported_operations"]),

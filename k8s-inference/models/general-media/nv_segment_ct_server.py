@@ -21,6 +21,7 @@ import nibabel as nib
 import numpy as np
 import torch
 from huggingface_hub import snapshot_download
+from vista_compat import transform_points_numpy
 
 MODEL_ID = os.environ.get("FS2_MODEL_ID", "nv-segment-ct")
 MODEL_REPOSITORY = os.environ.get("FS2_MODEL_REPOSITORY", "nvidia/NV-Segment-CT")
@@ -60,6 +61,9 @@ class Runtime:
             device=torch.device("cuda:0"),
             metadata_path=str(self.snapshot / "metadata.json"),
         )
+        # Pinned upstream _forward calls torch.from_numpy on this result.
+        # Explicit NumPy operands preserve its math across Torch array dispatch.
+        self.pipeline.transform_points = transform_points_numpy
         self.ready = True
         print(
             json.dumps(

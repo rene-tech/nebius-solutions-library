@@ -467,6 +467,11 @@ Prometheus series.
 
 ## Lifecycle accounting
 
+Admitted-but-unscheduled scientific GPU attempts use the bounded, health-aware
+[pool recovery policy](scientific-pool-recovery.md). It preserves the long initial
+loading allowance and original qualified pool/resource contract, while separating
+confirmed capacity failure from startup and exposing durable retry evidence.
+
 The application/controller implementation should emit timestamps for:
 
 ```text

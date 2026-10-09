@@ -1,0 +1,1003 @@
+{
+  "schema": "fs2-serve.nebius.ai/amber-native-qualification/v1",
+  "model_id": "amber",
+  "recorded_at": "2026-09-23T17:09:35.509982+00:00",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+  "engine_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber26-engine@sha256:cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+  "pmemd_source_sha256": "0478ccce892f3525e995e9c85458d552c6060b73dd28acd03c366e61ecf23a14",
+  "status": "passed",
+  "declared_cohort": {
+    "pools": [
+      "h100-ondemand-1x",
+      "l40s-1x"
+    ],
+    "cases": [
+      "dhfr-nve",
+      "myoglobin-gb8",
+      "complex-ti-mbar-nearby"
+    ],
+    "repetitions_per_case": 1
+  },
+  "tests": [
+    {
+      "case": "dhfr-nve",
+      "repetition": 1,
+      "status": "passed",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "pod_uid": "240b6e68-21e7-4f87-be8c-97551f1c4d07",
+      "node": "computeinstance-e00cjp2bfywsenpzzv",
+      "input_sha256": "c5db49586a02640fcb57144aafcd5ee387af065f56ffee6030463f519ca28ccf",
+      "request_sha256": "7ee99ef011c5bd51923f16e756e2b420978c2549fcd4e886a7b837f112528264",
+      "result_sha256": "5ff5236d3419f6d856da85447c6007a8891a8ac3bdf205368e8a54db731c9623",
+      "validation_sha256": "f20489c977d258943c29c01f0ef9ebeec07c15e4f9a6259e0c3a753512f5e7c7",
+      "validation_path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-core-v3/dhfr-nve-r1/workspace/validation.json",
+      "original_qualification": {
+        "status": "passed",
+        "sha256": "b3214e4ee796fdbcd525668731210516c355c53a197e730689f7942d368bce01",
+        "original_validation_sha256": "f20489c977d258943c29c01f0ef9ebeec07c15e4f9a6259e0c3a753512f5e7c7",
+        "unchanged_artifacts_revalidated": false
+      },
+      "protocol": {
+        "fixture": "dhfr-nve",
+        "backend": "cuda-spfp",
+        "production_steps": 600000,
+        "production_segments": 3,
+        "trajectory_interval": 1000,
+        "timestep_ps": 0.001,
+        "ensemble": "NVE",
+        "preparation": false,
+        "sources": [
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/dhfr/prmtop",
+            "sha256": "d7e4003b3442b810ef5576060d287f6049c12dcd2ed730644ebf0545bdeaa918",
+            "target": "system.prmtop"
+          },
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/dhfr/md12.x",
+            "sha256": "c7d317e389f7ce696676a6b01b716fafd7818c08a9bd29b179912aa01a7ebf3c",
+            "target": "start.rst7"
+          }
+        ],
+        "changes_from_upstream_short_regression": "longer explicit stage lengths, output cadence, clean-stage restarts; DHFR NPT uses explicit Langevin/Monte Carlo; TI lambda0.30 with11 MBAR states and explicit100-step MBAR output; full native MDIN files are the authoritative protocol",
+        "scientific_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false
+      },
+      "scientific_validation": {
+        "status": "passed",
+        "fixture": "dhfr-nve",
+        "atoms": 22930,
+        "production_steps": 600000,
+        "production_ns": 0.6,
+        "native_elapsed_seconds": 107.2,
+        "ns_per_day": 483.58208955223876,
+        "ensemble": "NVE",
+        "relative_total_energy_span": 0.00010439560272113856,
+        "temperature_mean_k": 298.13376666666665,
+        "temperature_min_k": 293.8,
+        "temperature_max_k": 304.04,
+        "restart_boundaries": [
+          {
+            "time_ps": 712.0499999952234,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          },
+          {
+            "time_ps": 912.049999990494,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          }
+        ],
+        "trajectories": [
+          {
+            "path": "data/production-001.nc",
+            "frames": 200,
+            "atoms": 22930,
+            "native_ns_day": 483.15,
+            "native_elapsed_seconds": 35.77
+          },
+          {
+            "path": "data/production-002.nc",
+            "frames": 200,
+            "atoms": 22930,
+            "native_ns_day": 479.05,
+            "native_elapsed_seconds": 36.07
+          },
+          {
+            "path": "data/production-003.nc",
+            "frames": 200,
+            "atoms": 22930,
+            "native_ns_day": 488.62,
+            "native_elapsed_seconds": 35.36
+          }
+        ],
+        "rmsd_frames": 600,
+        "rmsd_max_angstrom": 38.8729,
+        "gpu_samples": 112,
+        "gpu_utilization_mean_percent": 81.42857142857143,
+        "gpu_memory_peak_mib": 699.0,
+        "scientific_convergence_claimed": false,
+        "free_energy_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "gpu_process_snapshot": false
+      },
+      "timing": {
+        "command": [
+          "python3",
+          "-m",
+          "fs2_amber.worker",
+          "--request",
+          "/mnt/fs2-scientific/h100-core-v3-dhfr-nve-r1/request.json",
+          "--workspace",
+          "/mnt/fs2-scientific/h100-core-v3-dhfr-nve-r1",
+          "--job-id",
+          "dhfr-nve",
+          "--operation-id",
+          "a0620000-0923-4026-8000-000000000001",
+          "--checkpoint-mode",
+          "local"
+        ],
+        "worker_wall_seconds": 112.08710945400526,
+        "exit_code": 0,
+        "cpu_user_seconds": 107.888705,
+        "cpu_system_seconds": 3.62216,
+        "max_rss_kib": 547148,
+        "gpu_monitor_included_in_child_cpu_usage": true,
+        "input_copy_seconds": 2.2077320851385593,
+        "output_copy_seconds": 6.761095827445388,
+        "artifact_inventory_bytes": 174856898,
+        "boundary": "single native worker; input/output copies via kubectl, not hosted customer storage"
+      },
+      "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-core-v3/dhfr-nve-r1"
+    },
+    {
+      "case": "myoglobin-gb8",
+      "repetition": 1,
+      "status": "passed",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "pod_uid": "240b6e68-21e7-4f87-be8c-97551f1c4d07",
+      "node": "computeinstance-e00cjp2bfywsenpzzv",
+      "input_sha256": "f2fa2e5a0fdf5644a0227d1dfda176eb996bdc2c4b2c338c343349366932acf2",
+      "request_sha256": "34519f25ec81e62812a3561b3032ce00b858db3a56ae7f2339ee9d9a28511163",
+      "result_sha256": "7d2c4d48f12981f4abb65b99860e0a1445fa066c3b53abf47a61222022e03db3",
+      "validation_sha256": "342e9829e39d4988767890605f8a2ad1f1e02fdd83dd360e9bc9faf9b8fdf984",
+      "validation_path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-core-v3/myoglobin-gb8-r1/workspace/validation.json",
+      "original_qualification": {
+        "status": "passed",
+        "sha256": "3f892b7afa3b6e4652cd5ab82ec4014f4c97c27e46848d1adeabc8f11477bb78",
+        "original_validation_sha256": "342e9829e39d4988767890605f8a2ad1f1e02fdd83dd360e9bc9faf9b8fdf984",
+        "unchanged_artifacts_revalidated": false
+      },
+      "protocol": {
+        "fixture": "myoglobin-gb8",
+        "backend": "cuda-spfp",
+        "production_steps": 600000,
+        "production_segments": 3,
+        "trajectory_interval": 1000,
+        "timestep_ps": 0.002,
+        "ensemble": "NVE",
+        "preparation": false,
+        "sources": [
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/myoglobin/prmtop.igb78",
+            "sha256": "e9593f2e4f88b7a6aef3669b40108567aa255d531de8c420bb811b8fedfce0ce",
+            "target": "system.prmtop"
+          },
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/myoglobin/inpcrd",
+            "sha256": "28c47b1fd8ed26b886b4f228473af43f82b6f753a4e8f5bf2c71c219eccedccb",
+            "target": "start.rst7"
+          }
+        ],
+        "changes_from_upstream_short_regression": "longer explicit stage lengths, output cadence, clean-stage restarts; DHFR NPT uses explicit Langevin/Monte Carlo; TI lambda0.30 with11 MBAR states and explicit100-step MBAR output; full native MDIN files are the authoritative protocol",
+        "scientific_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false
+      },
+      "scientific_validation": {
+        "status": "passed",
+        "fixture": "myoglobin-gb8",
+        "atoms": 2492,
+        "production_steps": 600000,
+        "production_ns": 1.2,
+        "native_elapsed_seconds": 201.08999999999997,
+        "ns_per_day": 515.5900343129942,
+        "ensemble": "NVE",
+        "relative_total_energy_span": 0.007354657849832158,
+        "temperature_mean_k": 310.09018333333336,
+        "temperature_min_k": 298.13,
+        "temperature_max_k": 322.29,
+        "restart_boundaries": [
+          {
+            "time_ps": 405.5000000012081,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          },
+          {
+            "time_ps": 805.4999999947762,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          }
+        ],
+        "trajectories": [
+          {
+            "path": "data/production-001.nc",
+            "frames": 200,
+            "atoms": 2492,
+            "native_ns_day": 508.01,
+            "native_elapsed_seconds": 68.03
+          },
+          {
+            "path": "data/production-002.nc",
+            "frames": 200,
+            "atoms": 2492,
+            "native_ns_day": 519.35,
+            "native_elapsed_seconds": 66.55
+          },
+          {
+            "path": "data/production-003.nc",
+            "frames": 200,
+            "atoms": 2492,
+            "native_ns_day": 519.6,
+            "native_elapsed_seconds": 66.51
+          }
+        ],
+        "rmsd_frames": 600,
+        "rmsd_max_angstrom": 7.7786,
+        "gpu_samples": 205,
+        "gpu_utilization_mean_percent": 96.78048780487805,
+        "gpu_memory_peak_mib": 611.0,
+        "scientific_convergence_claimed": false,
+        "free_energy_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "gpu_process_snapshot": false
+      },
+      "timing": {
+        "command": [
+          "python3",
+          "-m",
+          "fs2_amber.worker",
+          "--request",
+          "/mnt/fs2-scientific/h100-core-v3-myoglobin-gb8-r1/request.json",
+          "--workspace",
+          "/mnt/fs2-scientific/h100-core-v3-myoglobin-gb8-r1",
+          "--job-id",
+          "myoglobin-gb8",
+          "--operation-id",
+          "a0620000-0923-4026-8000-000000000001",
+          "--checkpoint-mode",
+          "local"
+        ],
+        "worker_wall_seconds": 205.06915527800447,
+        "exit_code": 0,
+        "cpu_user_seconds": 201.183132,
+        "cpu_system_seconds": 3.099938,
+        "max_rss_kib": 479168,
+        "gpu_monitor_included_in_child_cpu_usage": true,
+        "input_copy_seconds": 2.0524175856262445,
+        "output_copy_seconds": 2.403171744197607,
+        "artifact_inventory_bytes": 19968018,
+        "boundary": "single native worker; input/output copies via kubectl, not hosted customer storage"
+      },
+      "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-core-v3/myoglobin-gb8-r1"
+    },
+    {
+      "case": "complex-ti-mbar-nearby",
+      "repetition": 1,
+      "status": "passed",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "pod_uid": "240b6e68-21e7-4f87-be8c-97551f1c4d07",
+      "node": "computeinstance-e00cjp2bfywsenpzzv",
+      "input_sha256": "94f5f91f3e0b54a9b15efa64c2789bf7892acd1a89de43e241d1b7145179cdc8",
+      "request_sha256": "7786c92a7b84760cb189c34ecd7eef8fa959ded4d7c9fa214ba8634d909b7a72",
+      "result_sha256": "37917995acf674c5a4706e6221cacfb61d8583dd81158f21993634a5c54e9f64",
+      "validation_sha256": "15ee438251fa4bc32ff3b77de15d690d196c76dd3d57c21c0e7969204dc83df0",
+      "validation_path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-core-v3/complex-ti-mbar-nearby-r1/workspace/validation.json",
+      "original_qualification": {
+        "status": "passed",
+        "sha256": "d4565b7a89996bb2de3128ffdf536c8d9bb3a1a35111a766481ceb059ca02ed0",
+        "original_validation_sha256": "15ee438251fa4bc32ff3b77de15d690d196c76dd3d57c21c0e7969204dc83df0",
+        "unchanged_artifacts_revalidated": false
+      },
+      "protocol": {
+        "fixture": "complex-ti-mbar-nearby",
+        "backend": "cuda-dpfp",
+        "production_steps": 100000,
+        "production_segments": 2,
+        "trajectory_interval": 1000,
+        "timestep_ps": 0.001,
+        "ensemble": "NVT-TI",
+        "preparation": false,
+        "sources": [
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/gti/complex/prmtop",
+            "sha256": "4ca66150004ef4834f23aa675c6b03b9e8fcbbcd70f48b47ab8af56278f37a71",
+            "target": "system.prmtop"
+          },
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/gti/complex/inpcrd",
+            "sha256": "235eec643f1e17e7e9bf1e00d04e23c76097ecd8984dabe6574af6c2f29d8688",
+            "target": "start.rst7"
+          },
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/gti/complex/Run.SC_NVT_MBAR",
+            "sha256": "cbacf0052a05bd730227bf931c927881cc016a04274e1eba12c7961c6d189cc2",
+            "selection": "native MDIN heredoc"
+          }
+        ],
+        "changes_from_upstream_short_regression": "longer explicit stage lengths, output cadence, clean-stage restarts; DHFR NPT uses explicit Langevin/Monte Carlo; TI lambda0.30 with11 MBAR states and explicit100-step MBAR output; full native MDIN files are the authoritative protocol; separately named nearby-state control uses only MBAR lambda0.2/0.3/0.4 around sampled0.3; original full0..1-grid failure is retained, not reclassified",
+        "scientific_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "mbar_lambdas": [
+          0.2,
+          0.3,
+          0.4
+        ]
+      },
+      "scientific_validation": {
+        "status": "passed",
+        "fixture": "complex-ti-mbar-nearby",
+        "atoms": 41625,
+        "production_steps": 100000,
+        "production_ns": 0.1,
+        "native_elapsed_seconds": 68.21000000000001,
+        "ns_per_day": 126.66764404046327,
+        "ensemble": "NVT-TI",
+        "relative_total_energy_span": 0.0013365090441165412,
+        "temperature_mean_k": 299.9189,
+        "temperature_min_k": 296.49,
+        "temperature_max_k": 302.64,
+        "restart_boundaries": [
+          {
+            "time_ps": 51.99999999996951,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          }
+        ],
+        "trajectories": [
+          {
+            "path": "data/production-001.nc",
+            "frames": 50,
+            "atoms": 41625,
+            "native_ns_day": 126.31,
+            "native_elapsed_seconds": 34.2,
+            "alchemical": {
+              "step": "production-001",
+              "lambda": 0.3,
+              "mbar_states": [
+                0.2,
+                0.3,
+                0.4
+              ],
+              "mbar_calculation_interval_steps": 100,
+              "mbar_print_interval_steps": 1000,
+              "mbar_energy_blocks": 50,
+              "mbar_energy_values": 150,
+              "mbar_energy_min_kcal_mol": -126164.62441304,
+              "mbar_energy_max_kcal_mol": -125705.00274246,
+              "dvdl_samples_including_native_summaries": 105,
+              "dvdl_mean_kcal_mol": -1.8676276190476189,
+              "free_energy_convergence_claimed": false
+            }
+          },
+          {
+            "path": "data/production-002.nc",
+            "frames": 50,
+            "atoms": 41625,
+            "native_ns_day": 127.01,
+            "native_elapsed_seconds": 34.01,
+            "alchemical": {
+              "step": "production-002",
+              "lambda": 0.3,
+              "mbar_states": [
+                0.2,
+                0.3,
+                0.4
+              ],
+              "mbar_calculation_interval_steps": 100,
+              "mbar_print_interval_steps": 1000,
+              "mbar_energy_blocks": 50,
+              "mbar_energy_values": 150,
+              "mbar_energy_min_kcal_mol": -126208.55297955,
+              "mbar_energy_max_kcal_mol": -125759.08179094,
+              "dvdl_samples_including_native_summaries": 105,
+              "dvdl_mean_kcal_mol": -4.794799047619048,
+              "free_energy_convergence_claimed": false
+            }
+          }
+        ],
+        "rmsd_frames": 100,
+        "rmsd_max_angstrom": 37.2176,
+        "gpu_samples": 74,
+        "gpu_utilization_mean_percent": 86.36486486486487,
+        "gpu_memory_peak_mib": 821.0,
+        "scientific_convergence_claimed": false,
+        "free_energy_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "gpu_process_snapshot": false
+      },
+      "timing": {
+        "command": [
+          "python3",
+          "-m",
+          "fs2_amber.worker",
+          "--request",
+          "/mnt/fs2-scientific/h100-core-v3-complex-ti-mbar-nearby-r1/request.json",
+          "--workspace",
+          "/mnt/fs2-scientific/h100-core-v3-complex-ti-mbar-nearby-r1",
+          "--job-id",
+          "complex-ti-mbar-nearby",
+          "--operation-id",
+          "a0620000-0923-4026-8000-000000000001",
+          "--checkpoint-mode",
+          "local"
+        ],
+        "worker_wall_seconds": 74.15916246498819,
+        "exit_code": 0,
+        "cpu_user_seconds": 71.118828,
+        "cpu_system_seconds": 2.7513069999999997,
+        "max_rss_kib": 625024,
+        "gpu_monitor_included_in_child_cpu_usage": true,
+        "input_copy_seconds": 2.329219026491046,
+        "output_copy_seconds": 3.7894922327250242,
+        "artifact_inventory_bytes": 68379026,
+        "boundary": "single native worker; input/output copies via kubectl, not hosted customer storage"
+      },
+      "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-core-v3/complex-ti-mbar-nearby-r1"
+    },
+    {
+      "case": "dhfr-nve",
+      "repetition": 1,
+      "status": "passed",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "pod_uid": "cab20212-b8db-4f76-a3a4-da1445e887bf",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "c5db49586a02640fcb57144aafcd5ee387af065f56ffee6030463f519ca28ccf",
+      "request_sha256": "7ee99ef011c5bd51923f16e756e2b420978c2549fcd4e886a7b837f112528264",
+      "result_sha256": "a493f7e20631ed22639b6e76bc3ead76f0ef3034748204db01ff1f12e749fba1",
+      "validation_sha256": "8b9fe58ad9db994dcfa2eacf435589473561129260d978227e569b87c4594f7c",
+      "validation_path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/l40s-core-v3/dhfr-nve-r1/workspace/validation.json",
+      "original_qualification": {
+        "status": "passed",
+        "sha256": "3e3896a1be2a3a246cf7e7d91702a3529d87194daf1364ca471ee719c706a6f0",
+        "original_validation_sha256": "8b9fe58ad9db994dcfa2eacf435589473561129260d978227e569b87c4594f7c",
+        "unchanged_artifacts_revalidated": false
+      },
+      "protocol": {
+        "fixture": "dhfr-nve",
+        "backend": "cuda-spfp",
+        "production_steps": 600000,
+        "production_segments": 3,
+        "trajectory_interval": 1000,
+        "timestep_ps": 0.001,
+        "ensemble": "NVE",
+        "preparation": false,
+        "sources": [
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/dhfr/prmtop",
+            "sha256": "d7e4003b3442b810ef5576060d287f6049c12dcd2ed730644ebf0545bdeaa918",
+            "target": "system.prmtop"
+          },
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/dhfr/md12.x",
+            "sha256": "c7d317e389f7ce696676a6b01b716fafd7818c08a9bd29b179912aa01a7ebf3c",
+            "target": "start.rst7"
+          }
+        ],
+        "changes_from_upstream_short_regression": "longer explicit stage lengths, output cadence, clean-stage restarts; DHFR NPT uses explicit Langevin/Monte Carlo; TI lambda0.30 with11 MBAR states and explicit100-step MBAR output; full native MDIN files are the authoritative protocol",
+        "scientific_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false
+      },
+      "scientific_validation": {
+        "status": "passed",
+        "fixture": "dhfr-nve",
+        "atoms": 22930,
+        "production_steps": 600000,
+        "production_ns": 0.6,
+        "native_elapsed_seconds": 122.21000000000001,
+        "ns_per_day": 424.1878733327878,
+        "ensemble": "NVE",
+        "relative_total_energy_span": 0.00010439560272113856,
+        "temperature_mean_k": 298.13376666666665,
+        "temperature_min_k": 293.8,
+        "temperature_max_k": 304.04,
+        "restart_boundaries": [
+          {
+            "time_ps": 712.0499999952234,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          },
+          {
+            "time_ps": 912.049999990494,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          }
+        ],
+        "trajectories": [
+          {
+            "path": "data/production-001.nc",
+            "frames": 200,
+            "atoms": 22930,
+            "native_ns_day": 424.24,
+            "native_elapsed_seconds": 40.73
+          },
+          {
+            "path": "data/production-002.nc",
+            "frames": 200,
+            "atoms": 22930,
+            "native_ns_day": 423.82,
+            "native_elapsed_seconds": 40.77
+          },
+          {
+            "path": "data/production-003.nc",
+            "frames": 200,
+            "atoms": 22930,
+            "native_ns_day": 424.43,
+            "native_elapsed_seconds": 40.71
+          }
+        ],
+        "rmsd_frames": 600,
+        "rmsd_max_angstrom": 38.8729,
+        "gpu_samples": 127,
+        "gpu_utilization_mean_percent": 84.4015748031496,
+        "gpu_memory_peak_mib": 589.0,
+        "scientific_convergence_claimed": false,
+        "free_energy_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "gpu_process_snapshot": false
+      },
+      "timing": {
+        "command": [
+          "python3",
+          "-m",
+          "fs2_amber.worker",
+          "--request",
+          "/mnt/fs2-scientific/l40s-core-v3-dhfr-nve-r1/request.json",
+          "--workspace",
+          "/mnt/fs2-scientific/l40s-core-v3-dhfr-nve-r1",
+          "--job-id",
+          "dhfr-nve",
+          "--operation-id",
+          "a0620000-0923-4026-8000-000000000001",
+          "--checkpoint-mode",
+          "local"
+        ],
+        "worker_wall_seconds": 127.09719249699265,
+        "exit_code": 0,
+        "cpu_user_seconds": 123.052569,
+        "cpu_system_seconds": 3.547925,
+        "max_rss_kib": 529976,
+        "gpu_monitor_included_in_child_cpu_usage": true,
+        "input_copy_seconds": 2.2717112693935633,
+        "output_copy_seconds": 8.370468158274889,
+        "artifact_inventory_bytes": 174856857,
+        "boundary": "single native worker; input/output copies via kubectl, not hosted customer storage"
+      },
+      "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/l40s-core-v3/dhfr-nve-r1"
+    },
+    {
+      "case": "myoglobin-gb8",
+      "repetition": 1,
+      "status": "passed",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "pod_uid": "cab20212-b8db-4f76-a3a4-da1445e887bf",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "f2fa2e5a0fdf5644a0227d1dfda176eb996bdc2c4b2c338c343349366932acf2",
+      "request_sha256": "34519f25ec81e62812a3561b3032ce00b858db3a56ae7f2339ee9d9a28511163",
+      "result_sha256": "f0659f5b0ffe5d94feee060bef30630400746b6a18bcabc5b6a9c6767f45ca2d",
+      "validation_sha256": "6cec9a6f62c375a25f789dedec28f97e03e9b06c8e33462de272c8ecf734945a",
+      "validation_path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/l40s-core-v3/myoglobin-gb8-r1/workspace/validation.json",
+      "original_qualification": {
+        "status": "passed",
+        "sha256": "12fa8a83d815ab2be734e7cfbf78a4803c83b5a30a23283fedae402f26f5c09a",
+        "original_validation_sha256": "6cec9a6f62c375a25f789dedec28f97e03e9b06c8e33462de272c8ecf734945a",
+        "unchanged_artifacts_revalidated": false
+      },
+      "protocol": {
+        "fixture": "myoglobin-gb8",
+        "backend": "cuda-spfp",
+        "production_steps": 600000,
+        "production_segments": 3,
+        "trajectory_interval": 1000,
+        "timestep_ps": 0.002,
+        "ensemble": "NVE",
+        "preparation": false,
+        "sources": [
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/myoglobin/prmtop.igb78",
+            "sha256": "e9593f2e4f88b7a6aef3669b40108567aa255d531de8c420bb811b8fedfce0ce",
+            "target": "system.prmtop"
+          },
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/myoglobin/inpcrd",
+            "sha256": "28c47b1fd8ed26b886b4f228473af43f82b6f753a4e8f5bf2c71c219eccedccb",
+            "target": "start.rst7"
+          }
+        ],
+        "changes_from_upstream_short_regression": "longer explicit stage lengths, output cadence, clean-stage restarts; DHFR NPT uses explicit Langevin/Monte Carlo; TI lambda0.30 with11 MBAR states and explicit100-step MBAR output; full native MDIN files are the authoritative protocol",
+        "scientific_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false
+      },
+      "scientific_validation": {
+        "status": "passed",
+        "fixture": "myoglobin-gb8",
+        "atoms": 2492,
+        "production_steps": 600000,
+        "production_ns": 1.2,
+        "native_elapsed_seconds": 195.64,
+        "ns_per_day": 529.9529748517685,
+        "ensemble": "NVE",
+        "relative_total_energy_span": 0.007354657849832158,
+        "temperature_mean_k": 310.09018333333336,
+        "temperature_min_k": 298.13,
+        "temperature_max_k": 322.29,
+        "restart_boundaries": [
+          {
+            "time_ps": 405.5000000012081,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          },
+          {
+            "time_ps": 805.4999999947762,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          }
+        ],
+        "trajectories": [
+          {
+            "path": "data/production-001.nc",
+            "frames": 200,
+            "atoms": 2492,
+            "native_ns_day": 525.48,
+            "native_elapsed_seconds": 65.77
+          },
+          {
+            "path": "data/production-002.nc",
+            "frames": 200,
+            "atoms": 2492,
+            "native_ns_day": 532.6,
+            "native_elapsed_seconds": 64.89
+          },
+          {
+            "path": "data/production-003.nc",
+            "frames": 200,
+            "atoms": 2492,
+            "native_ns_day": 531.84,
+            "native_elapsed_seconds": 64.98
+          }
+        ],
+        "rmsd_frames": 600,
+        "rmsd_max_angstrom": 7.7786,
+        "gpu_samples": 199,
+        "gpu_utilization_mean_percent": 97.05527638190955,
+        "gpu_memory_peak_mib": 499.0,
+        "scientific_convergence_claimed": false,
+        "free_energy_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "gpu_process_snapshot": false
+      },
+      "timing": {
+        "command": [
+          "python3",
+          "-m",
+          "fs2_amber.worker",
+          "--request",
+          "/mnt/fs2-scientific/l40s-core-v3-myoglobin-gb8-r1/request.json",
+          "--workspace",
+          "/mnt/fs2-scientific/l40s-core-v3-myoglobin-gb8-r1",
+          "--job-id",
+          "myoglobin-gb8",
+          "--operation-id",
+          "a0620000-0923-4026-8000-000000000001",
+          "--checkpoint-mode",
+          "local"
+        ],
+        "worker_wall_seconds": 199.1699911709875,
+        "exit_code": 0,
+        "cpu_user_seconds": 195.825773,
+        "cpu_system_seconds": 2.585361,
+        "max_rss_kib": 467248,
+        "gpu_monitor_included_in_child_cpu_usage": true,
+        "input_copy_seconds": 2.0054252184927464,
+        "output_copy_seconds": 2.412776678800583,
+        "artifact_inventory_bytes": 19967977,
+        "boundary": "single native worker; input/output copies via kubectl, not hosted customer storage"
+      },
+      "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/l40s-core-v3/myoglobin-gb8-r1"
+    },
+    {
+      "case": "complex-ti-mbar-nearby",
+      "repetition": 1,
+      "status": "passed",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+      "pod_uid": "cab20212-b8db-4f76-a3a4-da1445e887bf",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "94f5f91f3e0b54a9b15efa64c2789bf7892acd1a89de43e241d1b7145179cdc8",
+      "request_sha256": "7786c92a7b84760cb189c34ecd7eef8fa959ded4d7c9fa214ba8634d909b7a72",
+      "result_sha256": "7992362b730e244335c5f13af3c6ffe6f60059a0b6db3c15361e82e5dac8d952",
+      "validation_sha256": "e0ef6df0204d852e31805fefeda5c1e15af312b5b631974f073f8a32a5102c3d",
+      "validation_path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/l40s-core-v3/complex-ti-mbar-nearby-r1/workspace/validation.json",
+      "original_qualification": {
+        "status": "passed",
+        "sha256": "a766355c464965b7de4a7012e78d1178f88fcd8dc7145a10f425f595d82a183f",
+        "original_validation_sha256": "e0ef6df0204d852e31805fefeda5c1e15af312b5b631974f073f8a32a5102c3d",
+        "unchanged_artifacts_revalidated": false
+      },
+      "protocol": {
+        "fixture": "complex-ti-mbar-nearby",
+        "backend": "cuda-dpfp",
+        "production_steps": 100000,
+        "production_segments": 2,
+        "trajectory_interval": 1000,
+        "timestep_ps": 0.001,
+        "ensemble": "NVT-TI",
+        "preparation": false,
+        "sources": [
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/gti/complex/prmtop",
+            "sha256": "4ca66150004ef4834f23aa675c6b03b9e8fcbbcd70f48b47ab8af56278f37a71",
+            "target": "system.prmtop"
+          },
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/gti/complex/inpcrd",
+            "sha256": "235eec643f1e17e7e9bf1e00d04e23c76097ecd8984dabe6574af6c2f29d8688",
+            "target": "start.rst7"
+          },
+          {
+            "source": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/pmemd26_src/test/cuda/gti/complex/Run.SC_NVT_MBAR",
+            "sha256": "cbacf0052a05bd730227bf931c927881cc016a04274e1eba12c7961c6d189cc2",
+            "selection": "native MDIN heredoc"
+          }
+        ],
+        "changes_from_upstream_short_regression": "longer explicit stage lengths, output cadence, clean-stage restarts; DHFR NPT uses explicit Langevin/Monte Carlo; TI lambda0.30 with11 MBAR states and explicit100-step MBAR output; full native MDIN files are the authoritative protocol; separately named nearby-state control uses only MBAR lambda0.2/0.3/0.4 around sampled0.3; original full0..1-grid failure is retained, not reclassified",
+        "scientific_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "mbar_lambdas": [
+          0.2,
+          0.3,
+          0.4
+        ]
+      },
+      "scientific_validation": {
+        "status": "passed",
+        "fixture": "complex-ti-mbar-nearby",
+        "atoms": 41625,
+        "production_steps": 100000,
+        "production_ns": 0.1,
+        "native_elapsed_seconds": 422.49,
+        "ns_per_day": 20.450188170134204,
+        "ensemble": "NVT-TI",
+        "relative_total_energy_span": 0.0013721970929801786,
+        "temperature_mean_k": 299.9129,
+        "temperature_min_k": 297.26,
+        "temperature_max_k": 302.77,
+        "restart_boundaries": [
+          {
+            "time_ps": 51.99999999996951,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          }
+        ],
+        "trajectories": [
+          {
+            "path": "data/production-001.nc",
+            "frames": 50,
+            "atoms": 41625,
+            "native_ns_day": 20.45,
+            "native_elapsed_seconds": 211.23,
+            "alchemical": {
+              "step": "production-001",
+              "lambda": 0.3,
+              "mbar_states": [
+                0.2,
+                0.3,
+                0.4
+              ],
+              "mbar_calculation_interval_steps": 100,
+              "mbar_print_interval_steps": 1000,
+              "mbar_energy_blocks": 50,
+              "mbar_energy_values": 150,
+              "mbar_energy_min_kcal_mol": -126168.63783536,
+              "mbar_energy_max_kcal_mol": -125735.73906826,
+              "dvdl_samples_including_native_summaries": 105,
+              "dvdl_mean_kcal_mol": -3.2751695238095238,
+              "free_energy_convergence_claimed": false
+            }
+          },
+          {
+            "path": "data/production-002.nc",
+            "frames": 50,
+            "atoms": 41625,
+            "native_ns_day": 20.45,
+            "native_elapsed_seconds": 211.26,
+            "alchemical": {
+              "step": "production-002",
+              "lambda": 0.3,
+              "mbar_states": [
+                0.2,
+                0.3,
+                0.4
+              ],
+              "mbar_calculation_interval_steps": 100,
+              "mbar_print_interval_steps": 1000,
+              "mbar_energy_blocks": 50,
+              "mbar_energy_values": 150,
+              "mbar_energy_min_kcal_mol": -126137.03970778,
+              "mbar_energy_max_kcal_mol": -125728.49402509,
+              "dvdl_samples_including_native_summaries": 105,
+              "dvdl_mean_kcal_mol": -2.4883838095238096,
+              "free_energy_convergence_claimed": false
+            }
+          }
+        ],
+        "rmsd_frames": 100,
+        "rmsd_max_angstrom": 37.4795,
+        "gpu_samples": 435,
+        "gpu_utilization_mean_percent": 97.86666666666666,
+        "gpu_memory_peak_mib": 709.0,
+        "scientific_convergence_claimed": false,
+        "free_energy_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "gpu_process_snapshot": false
+      },
+      "timing": {
+        "command": [
+          "python3",
+          "-m",
+          "fs2_amber.worker",
+          "--request",
+          "/mnt/fs2-scientific/l40s-core-v3-complex-ti-mbar-nearby-r1/request.json",
+          "--workspace",
+          "/mnt/fs2-scientific/l40s-core-v3-complex-ti-mbar-nearby-r1",
+          "--job-id",
+          "complex-ti-mbar-nearby",
+          "--operation-id",
+          "a0620000-0923-4026-8000-000000000001",
+          "--checkpoint-mode",
+          "local"
+        ],
+        "worker_wall_seconds": 435.10643275501207,
+        "exit_code": 0,
+        "cpu_user_seconds": 432.738814,
+        "cpu_system_seconds": 2.497894,
+        "max_rss_kib": 605480,
+        "gpu_monitor_included_in_child_cpu_usage": true,
+        "input_copy_seconds": 2.3597206231206656,
+        "output_copy_seconds": 3.960939761251211,
+        "artifact_inventory_bytes": 68378995,
+        "boundary": "single native worker; input/output copies via kubectl, not hosted customer storage"
+      },
+      "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/l40s-core-v3/complex-ti-mbar-nearby-r1"
+    }
+  ],
+  "performance_summary": [
+    {
+      "pool": "h100-ondemand-1x",
+      "case": "dhfr-nve",
+      "repetitions": 1,
+      "ns_per_day_median": 483.58208955223876,
+      "ns_per_day_min": 483.58208955223876,
+      "ns_per_day_max": 483.58208955223876,
+      "matched_upstream_performance_claimed": false
+    },
+    {
+      "pool": "h100-ondemand-1x",
+      "case": "myoglobin-gb8",
+      "repetitions": 1,
+      "ns_per_day_median": 515.5900343129942,
+      "ns_per_day_min": 515.5900343129942,
+      "ns_per_day_max": 515.5900343129942,
+      "matched_upstream_performance_claimed": false
+    },
+    {
+      "pool": "h100-ondemand-1x",
+      "case": "complex-ti-mbar-nearby",
+      "repetitions": 1,
+      "ns_per_day_median": 126.66764404046327,
+      "ns_per_day_min": 126.66764404046327,
+      "ns_per_day_max": 126.66764404046327,
+      "matched_upstream_performance_claimed": false
+    },
+    {
+      "pool": "l40s-1x",
+      "case": "dhfr-nve",
+      "repetitions": 1,
+      "ns_per_day_median": 424.1878733327878,
+      "ns_per_day_min": 424.1878733327878,
+      "ns_per_day_max": 424.1878733327878,
+      "matched_upstream_performance_claimed": false
+    },
+    {
+      "pool": "l40s-1x",
+      "case": "myoglobin-gb8",
+      "repetitions": 1,
+      "ns_per_day_median": 529.9529748517685,
+      "ns_per_day_min": 529.9529748517685,
+      "ns_per_day_max": 529.9529748517685,
+      "matched_upstream_performance_claimed": false
+    },
+    {
+      "pool": "l40s-1x",
+      "case": "complex-ti-mbar-nearby",
+      "repetitions": 1,
+      "ns_per_day_median": 20.450188170134204,
+      "ns_per_day_min": 20.450188170134204,
+      "ns_per_day_max": 20.450188170134204,
+      "matched_upstream_performance_claimed": false
+    }
+  ],
+  "upstream_regressions": [
+    {
+      "path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-upstream-v2/regression.json",
+      "sha256": "1def3ee102396d124839ac52e71e53eeed5631778124c02185e0ad260beb874e",
+      "status": "failed",
+      "counts_as_sustained_scientific_acceptance": false
+    }
+  ],
+  "preserved_failures": [
+    {
+      "path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/advanced-worker-v3/result.json",
+      "sha256": "5bf3d2c2f83199708700830365e2c77f6528796e41f26e259306cea1c336ba8c",
+      "status": "failed"
+    },
+    {
+      "path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-canonical-fresh-v3/failed-donor/interrupted/result.json",
+      "sha256": "2ac65a0f55b430c6e0878a6b36ff95cfb8e6b5ab04d07334c6020689c0d33e4a",
+      "status": "failed"
+    }
+  ],
+  "customer_ready": false,
+  "customer_path_tested": false,
+  "persistent_gpu_snapshot_tested": false,
+  "limitations": [
+    "Only the explicitly completed scientific cohort is accepted; upstream comparison failures remain failures at unchanged native tolerances.",
+    "SPFP sodium TI NVE has an upstream printed-temperature tolerance exception; the sustained alchemical case explicitly uses DPFP.",
+    "Preparation and native fresh-worker recovery are separate receipts, not inferred from production cohorts.",
+    "Single-window TI/MBAR and bounded classical dynamics do not establish free-energy or molecular convergence.",
+    "Closed-stage restart does not imply preservation of an exact stochastic random stream or a persistent CUDA process image.",
+    "Original eleven-state complex MBAR has a distant-lambda printed overflow; the separately named nearby-state control is not full-grid FEP acceptance."
+  ],
+  "excluded_case_evidence": [
+    {
+      "case": "alanine-opc-full",
+      "repetition": 1,
+      "status": "passed",
+      "qualification_sha256": "af449bce3b01c9ed726077260afc412de60e41bc484946a0dee862daf689b0b3",
+      "result_sha256": "daaeca97a84be5ad5c5bdff3247e327969561f196bc26ae2f21e30ba9289b8a8",
+      "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-core-v3/alanine-opc-full-r1",
+      "reason": "separate explicitly excluded case, not relabeled as a passing member of the declared cohort"
+    }
+  ]
+}

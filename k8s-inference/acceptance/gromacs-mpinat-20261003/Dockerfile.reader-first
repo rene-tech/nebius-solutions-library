@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1.12@sha256:93bfd3b68c109427185cd78b4779fc82b484b0b7618e36d0f104d4d801e66d25
+# Transitional rollout: deploy the shape-aware durable reader to every API
+# replica while keeping the exact legacy catalog and existing mounted maps.
+# Only after all old replicas exit may the final image publish new shapes.
+# Do not use this image as a permanent release or as the scientific tools image.
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:6a2876b380f43717ea37cb21dd4504af5884c9a305c486562a42ef103420f946 AS legacy
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:d789a4b7e3d8a95ca296f25e1498714729def18b70de6a91f63cf70d5aafed68
+USER 0:0
+# Remove only the image's packaged catalog; a union copy could retain a new
+# schema file absent from the legacy tree. No customer data is in this image.
+RUN rm -rf /opt/fs2/catalog
+COPY --from=legacy --chown=65532:65532 /opt/fs2/catalog /opt/fs2/catalog
+USER 65532:65532
+LABEL ai.nebius.fs2.release-phase="reader-first-legacy-catalog" \
+      ai.nebius.fs2.reader-source-commit="a815c0b6794ed51567d9f6e678286b5ca2fc092f" \
+      ai.nebius.fs2.catalog-source-image="sha256:6a2876b380f43717ea37cb21dd4504af5884c9a305c486562a42ef103420f946"
+RUN python -I -c "from pathlib import Path; from fs2_serve_catalog.loader import load_catalog; r=Path('/opt/fs2/catalog'); c=load_catalog(r, repo_root=r/'packaged-repository'); assert c.digest == '3e62475ce484705dfb28f0f568b5d6311956c645cc51a4f10030cbb9716c9ecc'; import json; p=json.loads((r/'contracts/scientific-workload-profiles.json').read_text()); assert len(p['profiles']) == 16; assert not any(s.get('execution_shapes') for v in p['profiles'] for s in v['workload']['stages'])"

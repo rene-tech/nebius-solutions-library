@@ -1,0 +1,57 @@
+# Separate upstream Torch NNPot build: not NVIDIA's NGC engine binary.
+ARG CUDA_BUILD_IMAGE=nvidia/cuda:13.0.2-devel-ubuntu22.04@sha256:1c517d4fb96528c8999e14e6e6b16d7e2ff9ae8d194fd788d60fdc88e693e982
+ARG NNPOT_ENGINE_IMAGE=build
+FROM ${CUDA_BUILD_IMAGE} AS build
+ARG BUILD_JOBS=16
+ARG GROMACS_REVISION=da9e013175bae98b31b34384f6b4864ff29f65a5
+ARG LIBTORCH_SHA256=7ca9216c5eecc39d61ef550cd50988f651bbe3982a2dcf4fd5982dc5dfce4ca0
+RUN apt-get update && apt-get install --yes --no-install-recommends \
+      build-essential gcc-12 g++-12 git curl ca-certificates unzip libfftw3-dev python3 python3-pip \
+    && python3 -m pip install --no-cache-dir cmake==3.31.6 ninja==1.11.1.4 \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL --retry 3 'https://download.pytorch.org/libtorch/cu130/libtorch-shared-with-deps-2.10.0%2Bcu130.zip' -o /tmp/torch.zip \
+    && echo "${LIBTORCH_SHA256}  /tmp/torch.zip" | sha256sum -c - \
+    && unzip -q /tmp/torch.zip -d /opt && rm /tmp/torch.zip
+RUN apt-get update && apt-get install --yes --no-install-recommends python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN git init /src/gromacs && cd /src/gromacs \
+    && git remote add origin https://gitlab.com/gromacs/gromacs.git \
+    && git fetch --depth 1 origin "${GROMACS_REVISION}" && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "${GROMACS_REVISION}" \
+    && cmake -S . -B /build/gromacs -G Ninja \
+         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/gromacs-nnpot \
+         -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 \
+         -DCMAKE_PREFIX_PATH=/opt/libtorch -DGMX_NNPOT=TORCH \
+         -DGMX_GPU=CUDA -DGMX_SIMD=AVX2_256 \
+         -DGMX_CUDA_TARGET_SM="80;86;89;90;100;120" -DGMX_CUDA_TARGET_COMPUTE="90;100;120" \
+         -DGMX_USE_COLVARS=internal -DGMX_USE_PLUMED=ON \
+         -DGMX_BUILD_UNITTESTS=ON -DGMXAPI=OFF -DGMX_INSTALL_NBLIB_API=OFF \
+    && cmake --build /build/gromacs -j "${BUILD_JOBS}" \
+    && cmake --install /build/gromacs \
+    && mkdir -p /opt/gromacs-nnpot/share/fs2-provenance \
+    && cp COPYING* /opt/gromacs-nnpot/share/fs2-provenance/ \
+    && git rev-parse HEAD > /opt/gromacs-nnpot/share/fs2-provenance/source-revision
+
+FROM ${NNPOT_ENGINE_IMAGE} AS engine
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs-ngc@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.title="Scientific AI GROMACS 2026.2 Torch NNPot CUDA worker" \
+      org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
+      org.opencontainers.image.revision=${SOURCE_REVISION}
+COPY --from=engine /opt/libtorch /opt/libtorch
+COPY --from=engine /opt/gromacs-nnpot /opt/gromacs-nnpot
+ENV PATH=/opt/gromacs-nnpot/bin:${PATH} \
+    LD_LIBRARY_PATH=/opt/gromacs-nnpot/lib:/opt/libtorch/lib:${LD_LIBRARY_PATH} \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/opt/fs2/gromacs \
+    FS2_GROMACS_BINARY=/opt/gromacs-nnpot/bin/gmx \
+    FS2_GROMACS_ENGINE_ID=gromacs/2026.2-torch2.10-cu130@da9e013175bae98b31b34384f6b4864ff29f65a5
+COPY requirements.lock /opt/fs2/requirements.lock
+RUN apt-get update && apt-get install --yes --no-install-recommends python3 python3-pip libfftw3-single3 libgomp1 \
+    && python3 -m pip install --no-cache-dir --require-hashes -r /opt/fs2/requirements.lock \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 fs2 && useradd --uid 10001 --gid 10001 --no-create-home fs2 \
+    && mkdir -p /mnt/fs2-scientific && chown 10001:10001 /mnt/fs2-scientific
+COPY fs2_gromacs /opt/fs2/gromacs/fs2_gromacs
+USER 10001:10001
+WORKDIR /mnt/fs2-scientific
+ENTRYPOINT ["python3", "-m", "fs2_gromacs.worker"]

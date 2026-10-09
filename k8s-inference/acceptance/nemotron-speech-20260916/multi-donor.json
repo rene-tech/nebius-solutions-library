@@ -1,0 +1,233 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-speech-snapshot-multi-speech-multi-0916-r1",
+    "namespace": "fs2-models",
+    "labels": {
+      "fs2.nebius.ai/test-only": "true",
+      "snapshot.fs2.nebius/task": "fs2-h100-fleet-snapshot-options-r20260907",
+      "snapshot.fs2.nebius/model": "nemotron-speech-multilingual-0.6b",
+      "workload.fs2.nebius/owner": "nemotron-speech-20260916"
+    }
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "automountServiceAccountToken": false,
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00fkt1bsa4ec657sn"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "securityContext": {
+      "runAsUser": 10001,
+      "runAsGroup": 10001,
+      "supplementalGroups": [
+        10001
+      ]
+    },
+    "containers": [
+      {
+        "name": "speech",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-speech-runtime@sha256:8e44d3a277a88ffb25d8656654e5e82a7d9378c75542751ec9faa43a823743bb",
+        "env": [
+          {
+            "name": "OMP_NUM_THREADS",
+            "value": "2"
+          },
+          {
+            "name": "FS2_SPEECH_PROFILE_JSON",
+            "value": "{\"model\":\"nemotron-speech-multilingual-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+          },
+          {
+            "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+            "value": "storage.eu-north1.nebius.cloud"
+          },
+          {
+            "name": "FS2_SNAPSHOT_RUNTIME_IMAGE",
+            "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-speech-runtime@sha256:8e44d3a277a88ffb25d8656654e5e82a7d9378c75542751ec9faa43a823743bb"
+          },
+          {
+            "name": "FS2_SNAPSHOT_TOOLS_IMAGE",
+            "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+          },
+          {
+            "name": "FS2_MODEL_REVISION",
+            "value": "ea30d66debe3740a08b573244286791d423d6b3e"
+          },
+          {
+            "name": "FS2_RUNTIME_ID",
+            "value": "nemotron-speech-multilingual-0.6b"
+          },
+          {
+            "name": "PATH",
+            "value": "/tools/usr/sbin:/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "2",
+            "memory": "16Gi",
+            "ephemeral-storage": "16Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "limits": {
+            "cpu": "4",
+            "memory": "32Gi",
+            "ephemeral-storage": "24Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/cache",
+            "subPath": "speech-multi-0916-r1/runtime-cache"
+          },
+          {
+            "name": "snapshot-tools",
+            "mountPath": "/tools"
+          },
+          {
+            "name": "snapshot-source",
+            "mountPath": "/snapshot-source",
+            "readOnly": true
+          },
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/checkpoints"
+          },
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/tmp",
+            "subPath": "speech-multi-0916-r1/tmp"
+          }
+        ],
+        "command": [
+          "/opt/conda/bin/python3",
+          "/snapshot-source/serving_supervisor.py",
+          "--directory",
+          "/checkpoints/speech-multi-0916-r1",
+          "--request-mode",
+          "server",
+          "--fallback",
+          "fail",
+          "--request-uid",
+          "10001",
+          "--request-gid",
+          "10001",
+          "--allow-device-remap",
+          "donor",
+          "--",
+          "python3",
+          "/snapshot-source/working_directory_launcher.py",
+          "--directory",
+          "/opt/fs2-speech",
+          "--uid",
+          "10001",
+          "--gid",
+          "10001",
+          "--",
+          "python",
+          "-m",
+          "fs2_speech.server"
+        ],
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "runAsNonRoot": false,
+          "capabilities": {
+            "add": [
+              "SYS_ADMIN",
+              "SYS_PTRACE",
+              "CHECKPOINT_RESTORE",
+              "NET_ADMIN",
+              "SYS_TIME",
+              "SYS_RESOURCE"
+            ]
+          },
+          "seccompProfile": {
+            "type": "Unconfined"
+          },
+          "appArmorProfile": {
+            "type": "Unconfined"
+          }
+        }
+      }
+    ],
+    "volumes": [
+      {
+        "name": "cache",
+        "emptyDir": {
+          "sizeLimit": "20Gi"
+        }
+      },
+      {
+        "name": "snapshot-tools",
+        "emptyDir": {}
+      },
+      {
+        "name": "snapshot-source",
+        "configMap": {
+          "name": "fs2-fleet-snapshot-serving-workdir-v8",
+          "defaultMode": 292
+        }
+      },
+      {
+        "name": "snapshot-checkpoints",
+        "persistentVolumeClaim": {
+          "claimName": "fs2-fleet-snapshots-rwx-r20260907"
+        }
+      },
+      {
+        "name": "snapshot-network-source",
+        "configMap": {
+          "name": "fs2-fleet-snapshot-net-tools-v1",
+          "defaultMode": 365
+        }
+      }
+    ],
+    "initContainers": [
+      {
+        "name": "snapshot-tools",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+        "command": [
+          "/bin/sh",
+          "-c",
+          "cp -a /snapshot-binaries/. /tools/ && cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && mkdir -p \"$1/cache\" \"$1/runtime-cache\" \"$1/tmp\" && if [ -n \"$2\" ]; then chown \"$2:$2\" \"$1/runtime-cache\" \"$1/tmp\"; fi && mkdir -p /tools/usr/sbin /tools/usr/lib/x86_64-linux-gnu && cp -L /usr/sbin/xtables-nft-multi /tools/usr/sbin/ && cp -L /usr/lib/x86_64-linux-gnu/libxtables.so.12 /usr/lib/x86_64-linux-gnu/libmnl.so.0 /usr/lib/x86_64-linux-gnu/libnftnl.so.11 /tools/usr/lib/x86_64-linux-gnu/ && cp -a /usr/lib/x86_64-linux-gnu/xtables /tools/usr/lib/x86_64-linux-gnu/ && for tool in iptables ip6tables; do cp /snapshot-network-source/iptables /tools/usr/sbin/$tool; chmod 0555 /tools/usr/sbin/$tool; done",
+          "snapshot-tools",
+          "/checkpoints/speech-multi-0916-r1",
+          "10001"
+        ],
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "runAsNonRoot": false
+        },
+        "volumeMounts": [
+          {
+            "name": "snapshot-tools",
+            "mountPath": "/tools"
+          },
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/checkpoints"
+          },
+          {
+            "name": "snapshot-network-source",
+            "mountPath": "/snapshot-network-source",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "terminationGracePeriodSeconds": 30,
+    "activeDeadlineSeconds": 7200
+  }
+}

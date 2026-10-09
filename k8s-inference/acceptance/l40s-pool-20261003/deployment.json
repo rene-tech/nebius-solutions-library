@@ -1,0 +1,19 @@
+{
+  "captured_at": "2026-10-03T10:49:16.094537+00:00",
+  "context": "nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a",
+  "pool": "l40s-4x",
+  "new_sha256": "10e4fbdbd1b66719e391c2a0ee917c27f7d4f48f1b091b39cca1c0bb5e368dcb",
+  "old_sha256": "a99526bda8db235b0ff0138a1209511b06d77caeb85b115cb7075ce5b2d3f69d",
+  "old_configmap": "fs2-r927c465c6d-scientific-scheduling-a99526bda8db",
+  "new_configmap": "fs2-scientific-scheduling-10e4fbdbd1b6",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:6a2876b380f43717ea37cb21dd4504af5884c9a305c486562a42ef103420f946",
+  "model": "gromacs",
+  "activation_source_commit": "e85e00674eff99f3183cf61c298b29b4efdd32ca",
+  "api_replicas_ready": 3,
+  "unrelated_deployment_spec_unchanged": true,
+  "all_prior_queue_quotas_unchanged": true,
+  "clusterqueue_active": true,
+  "immutable_contract_verified": true,
+  "resource_flavor": "inference-l40s-4x",
+  "cloud_quota_or_node_limit_changed": false
+}

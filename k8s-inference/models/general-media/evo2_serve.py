@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import threading
+from socketserver import ThreadingMixIn
 from typing import Sequence
 
 from evo2_deep.runtime import (
@@ -16,7 +17,35 @@ from evo2_deep.runtime import (
     RuntimeFailure,
     model_path_from_environment,
 )
-from evo2_deep.server import Evo2HTTPServer, LoadingBackend
+from evo2_deep.server import Evo2HTTPServer, Evo2Handler, LoadingBackend
+from evo2_prefill import ModelMemoryExhausted
+
+
+class MemoryAwareHandler(Evo2Handler):
+    def do_POST(self):
+        # The complete upstream admission/generation path stays serial: its
+        # request-ID check/add is atomic, and only one request touches model RNG
+        # or GPU state. Read-only health/runtime GETs do not take this lock.
+        with self.evo_server.generation_lock:
+            try:
+                super().do_POST()
+            except ModelMemoryExhausted as error:
+                detail = {
+                    "code": "MODEL_MEMORY_EXHAUSTED", "input_length": error.input_length,
+                    "num_tokens": error.num_tokens, "retryable": False,
+                    "message": "The model runtime exhausted GPU memory for this accepted request shape.",
+                }
+                print(json.dumps({"event": "evo2-request-memory-exhausted", **detail}), flush=True)
+                self._send(500, {"detail": detail})
+
+
+class MemoryAwareHTTPServer(ThreadingMixIn, Evo2HTTPServer):
+    daemon_threads = True
+
+    def __init__(self, address, backend):
+        self.generation_lock = threading.Lock()
+        super().__init__(address, backend)
+        self.RequestHandlerClass = MemoryAwareHandler
 
 
 def emit_startup_phase(name: str) -> None:
@@ -66,7 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return loaded
 
         backend = LoadingBackend(load_and_warm_backend)
-        server = Evo2HTTPServer((args.host, args.port), backend)
+        server = MemoryAwareHTTPServer((args.host, args.port), backend)
     except (OSError, RuntimeFailure) as exc:
         print(f"fs2-evo2-server: FAIL: {exc}", file=sys.stderr)
         return 2

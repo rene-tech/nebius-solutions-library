@@ -1,0 +1,699 @@
+{
+  "schema": "fs2-serve.nebius.ai/lammps-native-qualification/v1",
+  "model_id": "lammps",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+  "recorded_at": "2026-09-23T16:03:05.556467+00:00",
+  "status": "passed",
+  "customer_ready": false,
+  "customer_path_tested": false,
+  "persistent_gpu_snapshot_tested": false,
+  "tests": [
+    {
+      "case": "lj",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA L40S, GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187, 580.173.02, 8.9, 46068 MiB, 00000000:8D:00.0",
+      "pod_uid": "f90c1c30-839f-4652-8442-642727dacf77",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "3d877e2e328d6ce3b40a5b2c85a638371a2835a94e957521455c47a62c8d721f",
+      "input_manifest_sha256": "7ffde4c81b4c490398e9b9d36a9e55cda905125321624140081ab03825ada8e7",
+      "request_sha256": "a4788ef394e405d1aa5aa73a17691469ea0ba069f3b71f6acec305fcf2d8d861",
+      "result_sha256": "dec37c2e630e764d4527d55a6c3df98eaab2ea3834da3876f9812e077d212cdc",
+      "validation_sha256": "682f5a47e1e5f82a6721bdb26361a07bd2766db156c9620ef768c34ee3674550",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-lj-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-lj-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-lj-r1/validation-final-682f5a47e1e5f82a6721bdb26361a07bd2766db156c9620ef768c34ee3674550.json",
+      "scientific_validation": {
+        "fixture": "lj",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 131072,
+        "production_steps": 300000,
+        "units": "lj",
+        "timestep": 0.005,
+        "ensemble": "NVE",
+        "native_loop_seconds": 178.1807,
+        "native_timing_seconds": {
+          "Pair": 4.8378,
+          "Neigh": 13.802800000000001,
+          "Comm": 142.522,
+          "Output": 7.506499999999999,
+          "Modify": 7.5868,
+          "Other": 1.9251
+        },
+        "atom_timesteps_per_second": 220683833.88324323,
+        "ns_per_day": null,
+        "reduced_time_per_day": 727351.503277291,
+        "temperature_min": 0.682372729923558,
+        "temperature_max": 0.699727091507623,
+        "temperature_mean": 0.6906971300016483,
+        "temperature_stdev": 0.0040766193602417965,
+        "relative_total_energy_span": 0.007873961182040685,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": null,
+        "neighbor_checking_enabled": false,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 102600,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 102500
+          },
+          {
+            "step": 203300,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 203000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 30,
+        "native_segments": 3,
+        "gpu_samples": 188,
+        "gpu_utilization_mean_percent": 82.88829787234043,
+        "gpu_memory_peak_mib": 595.0,
+        "gpu_power_mean_watts": 179.0601595744681,
+        "warnings": [
+          "Kokkos::Cuda::initialize WARNING: running kernels compiled for compute capability 8.6 on device with compute capability 8.9 , this will likely reduce potential performance.",
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-lj-r1/validation.json",
+          "sha256": "34dd36478b1e15c0160993f972657b981d1ff826a88d8987ca484d3cc78277d8",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 183.8125029130606,
+        "worker_wall_seconds": 188.06559740996454,
+        "worker_noncommand_overhead_seconds": 4.253094496903941,
+        "input_copy_seconds": 1.83214994892478,
+        "output_copy_seconds": 15.151650469750166,
+        "cpu_user_seconds": 182.548526,
+        "cpu_system_seconds": 3.700479,
+        "max_rss_kib": 299816,
+        "all_data_inventory_bytes": 485078604,
+        "output_io_native_seconds": 7.506499999999999,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "eam",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA L40S, GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187, 580.173.02, 8.9, 46068 MiB, 00000000:8D:00.0",
+      "pod_uid": "f90c1c30-839f-4652-8442-642727dacf77",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "33977f53d20879d725dac38a303c40adfd69531e4da1394094662669698a2c55",
+      "input_manifest_sha256": "2621e79da1aa5ca8b76c8b8e57f4c572a1dd93c925cc1c2b44c754ec1f6897cc",
+      "request_sha256": "8aca654cf772ae74d9d8087d878e4a55f7a19795fb02079c833366655c1ecc3b",
+      "result_sha256": "66abdb87637a9df5b4da9f24998ee2190824365783b82e2bc2948b18ef2b2fa4",
+      "validation_sha256": "19addb5c01d85f5ac2ee28a8ab4a45a5f186b88a49d6118b1f3734bcf6365087",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-eam-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-eam-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-eam-r1/validation-final-19addb5c01d85f5ac2ee28a8ab4a45a5f186b88a49d6118b1f3734bcf6365087.json",
+      "scientific_validation": {
+        "fixture": "eam",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 150000,
+        "units": "metal",
+        "timestep": 0.005,
+        "ensemble": "NVE",
+        "native_loop_seconds": 130.0095,
+        "native_timing_seconds": {
+          "Pair": 68.298,
+          "Neigh": 8.654729999999999,
+          "Comm": 46.139599999999994,
+          "Output": 0.927435,
+          "Modify": 3.26921,
+          "Other": 2.7211
+        },
+        "atom_timesteps_per_second": 36920378.89538842,
+        "ns_per_day": 498.4251150877436,
+        "reduced_time_per_day": null,
+        "temperature_min": 792.195332305846,
+        "temperature_max": 809.971907078677,
+        "temperature_mean": 798.9714311841841,
+        "temperature_stdev": 2.586683920325889,
+        "relative_total_energy_span": 0.00016933640768744914,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 11,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 71200,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 71000
+          },
+          {
+            "step": 140200,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 140000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 15,
+        "native_segments": 3,
+        "gpu_samples": 138,
+        "gpu_utilization_mean_percent": 57.71739130434783,
+        "gpu_memory_peak_mib": 529.0,
+        "gpu_power_mean_watts": 124.91717391304348,
+        "warnings": [
+          "Kokkos::Cuda::initialize WARNING: running kernels compiled for compute capability 8.6 on device with compute capability 8.9 , this will likely reduce potential performance.",
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-eam-r1/validation.json",
+          "sha256": "634ac0bc750d128b4daeab4638c61ea9eb14467c983e13be4d2760a9c7bf1d98",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 135.23391082009766,
+        "worker_wall_seconds": 138.11545629007742,
+        "worker_noncommand_overhead_seconds": 2.8815454699797556,
+        "input_copy_seconds": 1.7636643759906292,
+        "output_copy_seconds": 3.6642967984080315,
+        "cpu_user_seconds": 133.308486,
+        "cpu_system_seconds": 2.765291,
+        "max_rss_kib": 226812,
+        "all_data_inventory_bytes": 62744750,
+        "output_io_native_seconds": 0.927435,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "tersoff",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA L40S, GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187, 580.173.02, 8.9, 46068 MiB, 00000000:8D:00.0",
+      "pod_uid": "f90c1c30-839f-4652-8442-642727dacf77",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "182648ad40edf883b983f46c9490620553e4b5adab629d5e35cc172974193083",
+      "input_manifest_sha256": "aac3f77cb5947816a4a0fd3bd39694bd3e2f48168c91986b3a5dc175c7bdaf25",
+      "request_sha256": "1be4a07809383dbe37b5c35b9f1a77ac44e508537b58078913a322c5bea422a7",
+      "result_sha256": "b66726c9f24ad8b053415913823693c402863e26b084cf8a5f2534379c856064",
+      "validation_sha256": "503d1e0bb75f43c7bca3ba7fe953ab450f3f1c4c7e22e81e4db96335ba8fe32a",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-tersoff-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-tersoff-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-tersoff-r1/validation-final-503d1e0bb75f43c7bca3ba7fe953ab450f3f1c4c7e22e81e4db96335ba8fe32a.json",
+      "scientific_validation": {
+        "fixture": "tersoff",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 300000,
+        "units": "metal",
+        "timestep": 0.001,
+        "ensemble": "NVE",
+        "native_loop_seconds": 132.9473,
+        "native_timing_seconds": {
+          "Pair": 9.41979,
+          "Neigh": 3.1694999999999998,
+          "Comm": 104.389,
+          "Output": 1.867,
+          "Modify": 6.18453,
+          "Other": 7.917199999999999
+        },
+        "atom_timesteps_per_second": 72209063.29049179,
+        "ns_per_day": 194.96447088432782,
+        "reduced_time_per_day": null,
+        "temperature_min": 482.453757213032,
+        "temperature_max": 493.488377777923,
+        "temperature_mean": 487.30990423969416,
+        "temperature_stdev": 1.6894025739614713,
+        "relative_total_energy_span": 5.446100654698445e-07,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 137500,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 0.0,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          },
+          {
+            "step": 272500,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 0.0,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 30,
+        "native_segments": 3,
+        "gpu_samples": 139,
+        "gpu_utilization_mean_percent": 82.12230215827338,
+        "gpu_memory_peak_mib": 529.0,
+        "gpu_power_mean_watts": 135.0169784172662,
+        "warnings": [
+          "Kokkos::Cuda::initialize WARNING: running kernels compiled for compute capability 8.6 on device with compute capability 8.9 , this will likely reduce potential performance.",
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-tersoff-r1/validation.json",
+          "sha256": "fefb98c4280db4074b1ec52703182d01ddfec8b8ad8a0d7e0a54846418338d5c",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 136.9349660280859,
+        "worker_wall_seconds": 139.0521616450278,
+        "worker_noncommand_overhead_seconds": 2.117195616941899,
+        "input_copy_seconds": 1.7646851819008589,
+        "output_copy_seconds": 5.229686314240098,
+        "cpu_user_seconds": 135.446255,
+        "cpu_system_seconds": 2.760738,
+        "max_rss_kib": 227348,
+        "all_data_inventory_bytes": 116065510,
+        "output_io_native_seconds": 1.867,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "snap",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA L40S, GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187, 580.173.02, 8.9, 46068 MiB, 00000000:8D:00.0",
+      "pod_uid": "f90c1c30-839f-4652-8442-642727dacf77",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "4a0fed24e34e9fd10999a07e318f17239ebed37bc7459d94a8c2b2a06d178039",
+      "input_manifest_sha256": "ae7301c057f75446f95d5c6748ec2668e71eb39b23e871f4208704af42ed939a",
+      "request_sha256": "6adeb206229850a239639d59f8c15e46ab9cb20b2205f85532cd0365761b0cad",
+      "result_sha256": "487c2c7f06099e034ded21fc79f52fb83da4005e0d42f301aa2adc85933d957f",
+      "validation_sha256": "64d8b2914513c207cc8a2ddfea320a8e7ddd5c0d859df97bf072744a6da4ec0a",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-snap-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-snap-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-snap-r1/validation-final-64d8b2914513c207cc8a2ddfea320a8e7ddd5c0d859df97bf072744a6da4ec0a.json",
+      "scientific_validation": {
+        "fixture": "snap",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 2000,
+        "production_steps": 150000,
+        "units": "metal",
+        "timestep": 0.001,
+        "ensemble": "NVE",
+        "native_loop_seconds": 212.2595,
+        "native_timing_seconds": {
+          "Pair": 199.67199999999997,
+          "Neigh": 0.0,
+          "Comm": 5.4718,
+          "Output": 0.078847,
+          "Modify": 2.96722,
+          "Other": 4.0696
+        },
+        "atom_timesteps_per_second": 1413364.3017155887,
+        "ns_per_day": 61.05733783411343,
+        "reduced_time_per_day": null,
+        "temperature_min": 133.191451377175,
+        "temperature_max": 161.232028857105,
+        "temperature_mean": 148.60604553175654,
+        "temperature_stdev": 3.7413101684999046,
+        "relative_total_energy_span": 4.3095729313528214e-08,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 44500,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 0.0,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          },
+          {
+            "step": 86900,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 86500
+          },
+          {
+            "step": 129300,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 129000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 15,
+        "native_segments": 4,
+        "gpu_samples": 221,
+        "gpu_utilization_mean_percent": 89.68778280542986,
+        "gpu_memory_peak_mib": 589.0,
+        "gpu_power_mean_watts": 151.2683257918552,
+        "warnings": [
+          "Kokkos::Cuda::initialize WARNING: running kernels compiled for compute capability 8.6 on device with compute capability 8.9 , this will likely reduce potential performance.",
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-snap-r1/validation.json",
+          "sha256": "623292ce69345997592c558eaa2b2446b590ed57018f0e936cf984c29feac704",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 218.47780515591148,
+        "worker_wall_seconds": 221.10682856000494,
+        "worker_noncommand_overhead_seconds": 2.6290234040934592,
+        "input_copy_seconds": 1.7907197438180447,
+        "output_copy_seconds": 2.0148566719144583,
+        "cpu_user_seconds": 216.210286,
+        "cpu_system_seconds": 3.141582,
+        "max_rss_kib": 219176,
+        "all_data_inventory_bytes": 4006177,
+        "output_io_native_seconds": 0.078847,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "reaxff",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA L40S, GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187, 580.173.02, 8.9, 46068 MiB, 00000000:8D:00.0",
+      "pod_uid": "f90c1c30-839f-4652-8442-642727dacf77",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "ac36185aebb8648cafcb81f86342a03b141a92a18eb0c74a0e10bc5d0d7bb8e2",
+      "input_manifest_sha256": "44e5657462953ec39b7dc32c6b643673a019349e212e1f8c414d9679da0d362c",
+      "request_sha256": "793dd6f770ae69d80bb9cadc4399b08e9a17d9694f71e5016bd7f1984b92685c",
+      "result_sha256": "2168a9f2a33ecc39a4fc7228f9208e1837b1e85916832b62626a8a75d11c296b",
+      "validation_sha256": "bf3f5f1e217789fb67f4a4b4db22105e838678324adbd8731d5a578536e0ed01",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-reaxff-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-reaxff-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-reaxff-r1/validation-final-bf3f5f1e217789fb67f4a4b4db22105e838678324adbd8731d5a578536e0ed01.json",
+      "scientific_validation": {
+        "fixture": "reaxff",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 8000,
+        "production_steps": 20000,
+        "units": "real",
+        "timestep": 0.1,
+        "ensemble": "NVE",
+        "native_loop_seconds": 959.0504,
+        "native_timing_seconds": {
+          "Pair": 824.894,
+          "Neigh": 0.0,
+          "Comm": 15.64051,
+          "Output": 0.035830028,
+          "Modify": 117.78710000000001,
+          "Other": 0.69286
+        },
+        "atom_timesteps_per_second": 166831.6910143617,
+        "ns_per_day": 0.1801782262955107,
+        "reduced_time_per_day": null,
+        "temperature_min": 1192.35230483391,
+        "temperature_max": 1224.30572042282,
+        "temperature_mean": 1210.9523410701472,
+        "temperature_stdev": 7.036216691101598,
+        "relative_total_energy_span": 1.9525697905077027e-06,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 3300,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 3000
+          },
+          {
+            "step": 4600,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 4500
+          },
+          {
+            "step": 5900,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 5500
+          },
+          {
+            "step": 7200,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 7000
+          },
+          {
+            "step": 8500,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 1.3235018124160323e-12,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          },
+          {
+            "step": 9800,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 9500
+          },
+          {
+            "step": 11100,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 11000
+          },
+          {
+            "step": 12400,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 12000
+          },
+          {
+            "step": 13700,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 13500
+          },
+          {
+            "step": 15000,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 2.214799791640519e-12,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          },
+          {
+            "step": 16300,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 16000
+          },
+          {
+            "step": 17600,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 17500
+          },
+          {
+            "step": 18900,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 18500
+          },
+          {
+            "step": 20200,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 20000
+          },
+          {
+            "step": 21500,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 3.788131002775e-12,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 2,
+        "native_segments": 16,
+        "gpu_samples": 1070,
+        "gpu_utilization_mean_percent": 92.63084112149532,
+        "gpu_memory_peak_mib": 1073.0,
+        "gpu_power_mean_watts": 128.69166355140186,
+        "warnings": [
+          "Kokkos::Cuda::initialize WARNING: running kernels compiled for compute capability 8.6 on device with compute capability 8.9 , this will likely reduce potential performance.",
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-reaxff-r1/validation.json",
+          "sha256": "1ab09dd71a89d807aa744445c7a61eb348a5a62a92c5d34dddc795a08601febb",
+          "status": "failed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 1063.2112670999486,
+        "worker_wall_seconds": 1070.256213764078,
+        "worker_noncommand_overhead_seconds": 7.044946664129384,
+        "input_copy_seconds": 1.7696032486855984,
+        "output_copy_seconds": 2.033440228551626,
+        "cpu_user_seconds": 1056.239136,
+        "cpu_system_seconds": 10.197761,
+        "max_rss_kib": 245500,
+        "all_data_inventory_bytes": 4456197,
+        "output_io_native_seconds": 0.035830028,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "rhodo",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "l40s-1x",
+      "gpu_name": "NVIDIA L40S",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA L40S, GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187, 580.173.02, 8.9, 46068 MiB, 00000000:8D:00.0",
+      "pod_uid": "f90c1c30-839f-4652-8442-642727dacf77",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "input_sha256": "4435ada355ee78ba6cc55f17b5520f2661bf7d727d51bf6a3029125e0afae3a4",
+      "input_manifest_sha256": "6b69b6a309e9a4bba919364e8e9842ec6a3a09c6ea4a49505c236e4f47790e13",
+      "request_sha256": "99630c62cf35cde23962f87ad50e68105a3c7ddbe2d664596be6a1499056466e",
+      "result_sha256": "21b9cf91fd0ad99231cebfb79635d4704fa800cdbb8d3b19467c1b4173988474",
+      "validation_sha256": "1f27e7afcb9fa72a8affdc34b437d91a27259a0266637176d85705e762151281",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-rhodo-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-rhodo-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-rhodo-r1/validation-final-1f27e7afcb9fa72a8affdc34b437d91a27259a0266637176d85705e762151281.json",
+      "scientific_validation": {
+        "fixture": "rhodo",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 50000,
+        "units": "real",
+        "timestep": 2.0,
+        "ensemble": "NPT",
+        "native_loop_seconds": 315.7919,
+        "native_timing_seconds": {
+          "Pair": 156.242,
+          "Bond": 10.36463,
+          "Kspace": 83.9119,
+          "Neigh": 26.7246,
+          "Comm": 9.10212,
+          "Output": 0.314785,
+          "Modify": 26.8919,
+          "Other": 2.2402
+        },
+        "atom_timesteps_per_second": 5066627.738076879,
+        "ns_per_day": 27.359789785615146,
+        "reduced_time_per_day": null,
+        "temperature_min": 296.872521588878,
+        "temperature_max": 303.283180289753,
+        "temperature_mean": 300.01793609842235,
+        "temperature_stdev": 1.5332701721441224,
+        "relative_total_energy_span": 0.03631272290093697,
+        "energy_span_gate": null,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 11200,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 11000
+          },
+          {
+            "step": 20400,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 20000
+          },
+          {
+            "step": 29700,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 29500
+          },
+          {
+            "step": 38900,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 38500
+          },
+          {
+            "step": 48100,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 48000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 5,
+        "native_segments": 6,
+        "gpu_samples": 355,
+        "gpu_utilization_mean_percent": 78.31549295774649,
+        "gpu_memory_peak_mib": 993.0,
+        "gpu_power_mean_watts": 146.01428169014085,
+        "warnings": [
+          "Kokkos::Cuda::initialize WARNING: running kernels compiled for compute capability 8.6 on device with compute capability 8.9 , this will likely reduce potential performance.",
+          "WARNING: Using default KISS FFT with Kokkos GPU backends may give suboptimal performance (src/KOKKOS/pppm_kokkos.cpp:110)",
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/l40s-confirm-v3/l40s-confirm-v3-rhodo-r1/validation.json",
+          "sha256": "1f463a549bd2931391d4bd6dea172189f30efad86d7a8fe670e2c2c7e4cdbf4f",
+          "status": "failed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 351.3271380790975,
+        "worker_wall_seconds": 355.13487723795697,
+        "worker_noncommand_overhead_seconds": 3.8077391588594764,
+        "input_copy_seconds": 2.3545237351208925,
+        "output_copy_seconds": 3.2547722943127155,
+        "cpu_user_seconds": 345.464266,
+        "cpu_system_seconds": 7.312335,
+        "max_rss_kib": 470180,
+        "all_data_inventory_bytes": 46523454,
+        "output_io_native_seconds": 0.314785,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    }
+  ],
+  "preserved_failures": [],
+  "limitations": [
+    "Native KOKKOS single-GPU acceptance only; not hosted REST/MCP/customer-bucket qualification.",
+    "Finite numerical/trajectory and broad NVE energy-span checks are not scientific convergence or potential suitability validation.",
+    "Closed complete workspace/native binary restart is not a persistent GPU process snapshot.",
+    "Wall-time segment boundaries may differ; chaotic trajectories are not required to remain bitwise identical."
+  ],
+  "declared_cohort": {
+    "pools": [
+      "l40s-1x"
+    ],
+    "cases": [
+      "lj",
+      "eam",
+      "tersoff",
+      "snap",
+      "reaxff",
+      "rhodo"
+    ],
+    "repetitions_per_case": 1,
+    "all_six_cases_required": true
+  },
+  "campaign_incomplete": true
+}

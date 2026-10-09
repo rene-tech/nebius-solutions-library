@@ -20,6 +20,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from .registry import OperationalModel
+from .speech_models import LIVE_SPEECH_PATHS
 
 FEDERATION_ROUTES_SCHEMA = "fs2-serve.nebius.ai/federation-routes/v1"
 _MAX_DOCUMENT_BYTES = 1024 * 1024
@@ -30,6 +31,7 @@ _MODEL_ID = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,126}[a-z0-9])?$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 _REQUIREMENT_ID = re.compile(r"^fs2-models/([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)$")
 _RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+_SPEECH_PATHS = LIVE_SPEECH_PATHS
 
 
 class FederationConfigError(ValueError):
@@ -160,6 +162,16 @@ class _Idempotency(BaseModel):
     header: Literal["Idempotency-Key"]
 
 
+class _SpeechPolicy(BaseModel):
+    """Explicit opt-in; ordinary federation retains its original short limits."""
+
+    model_config = ConfigDict(extra="forbid")
+    stream_path: Literal["/v1/audio/stream", "/v1/voice/stream"]
+    max_session_seconds: float = Field(gt=0, le=7500, allow_inf_nan=False)
+    file_deadline_seconds: float = Field(gt=0, le=7500, allow_inf_nan=False)
+    file_retry: Literal["never"]
+
+
 class _RouteValue(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -171,6 +183,7 @@ class _RouteValue(BaseModel):
     idempotency: _Idempotency
     retry: _Retry
     circuit_breaker: _CircuitBreaker
+    speech: _SpeechPolicy | None = None
 
 
 class _Document(BaseModel):
@@ -201,6 +214,7 @@ class FederatedRoute:
     circuit_breaker: _CircuitBreaker
     secret_root: Path
     ssl_context: ssl.SSLContext = field(repr=False, compare=False)
+    speech: _SpeechPolicy | None = None
 
     @property
     def credential_slug(self) -> str:
@@ -408,6 +422,19 @@ class FederationRouter:
             )
             if not exact:
                 raise FederationConfigError("federation route differs from the exact signed binding")
+            try:
+                cls._native_destination(model, value.destination)
+            except FederationTransportError:
+                raise FederationConfigError("federation destination differs from signed native deployment") from None
+            source_model = (model.dynamic_policy.publication.source_model_ref
+                            if model.dynamic_policy is not None else model.id)
+            if value.speech is not None and (
+                binding.backend_class != "federated-serverless"
+                or _SPEECH_PATHS.get(source_model) != value.speech.stream_path
+                or binding.endpoints.get("native") != "/generate"
+                or model.max_attempts != 1
+            ):
+                raise FederationConfigError("speech transport differs from the registered native contract")
             context = _ssl_context(value, secret_root)
             routes[model_id] = FederatedRoute(
                 model_id=model_id,
@@ -421,11 +448,79 @@ class FederationRouter:
                 circuit_breaker=value.circuit_breaker,
                 secret_root=secret_root,
                 ssl_context=context,
+                speech=value.speech,
             )
         return cls(routes, client_factory=client_factory)
 
     def has_route(self, model: OperationalModel) -> bool:
         return model.id in self.routes
+
+    @staticmethod
+    def _native_destination(model: OperationalModel, destination: _Destination) -> None:
+        qualification = model.gateway.qualification
+        native = qualification.get("native_serverless") if isinstance(qualification, Mapping) else None
+        if native is None:
+            return
+        actual_origin = f"https://{destination.host}"
+        if destination.port != 443 or native.get("endpoint_origin") != actual_origin:
+            raise FederationTransportError("registered native deployment destination differs")
+
+    def _speech_route(self, model: OperationalModel) -> FederatedRoute:
+        route = self.routes.get(model.id)
+        binding = model.binding
+        source = model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
+        if (route is None or route.speech is None or binding.backend_class != "federated-serverless"
+                or _SPEECH_PATHS.get(source) != route.speech.stream_path
+                or binding.endpoints.get("native") != "/generate"
+                or model.max_attempts != 1
+                or route.backend.model_digest != binding.model_digest
+                or route.backend.runtime_image_digest != binding.backend_runtime_image_digest
+                or route.backend.endpoint_identity_sha256 != binding.backend_endpoint_identity_sha256
+                or route.backend.trust_bundle_sha256 != binding.backend_trust_bundle_sha256
+                or route.backend.credential_requirement_id != binding.backend_credential_requirement_id):
+            raise FederationTransportError("registered speech route is unavailable or stale")
+        self._native_destination(model, route.destination)
+        return route
+
+    def validate_speech_route(self, model: OperationalModel) -> None:
+        """Pre-admission check only; execution rechecks the signed binding."""
+        self._speech_route(model)
+
+
+    @asynccontextmanager
+    async def speech_file(self, model, *, operation_id, content, content_type, timeout_seconds,
+                          scheduling_group=None):
+        """Exactly one POST: uncertain acceptance is never retried here."""
+        route = self._speech_route(model)
+        if not 0 < timeout_seconds <= 7500:
+            raise FederationTransportError("invalid speech file deadline")
+        circuit = self.circuits[model.id]
+        await circuit.assert_available()
+        token = route.bearer_token() if route.credential_mode == "bearer" else None
+        headers = self._headers(route, operation_id, content_type=content_type, bearer_token=token)
+        if scheduling_group is not None:
+            if _DIGEST.fullmatch(scheduling_group) is None:
+                raise FederationTransportError("invalid opaque scheduling group")
+            headers["x-fs2-scheduling-group"] = scheduling_group
+        limit = min(timeout_seconds, route.speech.file_deadline_seconds)
+        try:
+            async with asyncio.timeout(limit):
+                async with self._client(model.id, route).stream(
+                    "POST", route.url("/generate", 0), headers=headers, content=content,
+                    timeout=httpx.Timeout(connect=route.timeouts.connect_seconds, read=limit,
+                                          write=route.timeouts.write_seconds, pool=route.timeouts.pool_seconds),
+                    follow_redirects=False, extensions={"sni_hostname": route.destination.host},
+                ) as response:
+                    if response.status_code >= 500:
+                        await circuit.failed()
+                    else:
+                        await circuit.succeeded()
+                    yield response
+        except asyncio.CancelledError:
+            raise
+        except (httpx.HTTPError, OSError, TimeoutError):
+            await circuit.failed()
+            raise FederationTransportError("registered speech file transport failed; acceptance unknown") from None
 
     async def close(self) -> None:
         await asyncio.gather(*(client.aclose() for client in self.clients.values()))
@@ -498,6 +593,7 @@ class FederationRouter:
             circuit = self.circuits[model.id]
         except KeyError:
             raise FederationTransportError("federated route is unavailable") from None
+        self._native_destination(model, route.destination)
         await circuit.assert_available()
         retry_statuses = set(route.retry.retry_status_codes)
         deadline = time.monotonic() + min(timeout_seconds, route.timeouts.total_seconds)

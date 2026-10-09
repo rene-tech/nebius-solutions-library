@@ -1,0 +1,10 @@
+**
+!gromacs/
+!gromacs/runtime/
+!gromacs/runtime/fs2_gromacs/
+!gromacs/runtime/fs2_gromacs/*.py
+!amber/
+!amber/runtime/
+!amber/runtime/fs2_amber/
+!amber/runtime/fs2_amber/*.py
+!amber/runtime/fs2_amber/py.typed

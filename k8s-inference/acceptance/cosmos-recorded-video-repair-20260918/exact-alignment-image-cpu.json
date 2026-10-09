@@ -1,0 +1,127 @@
+{
+  "status": "passed",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:41a01714ed6d89b90a5b4a4527e2eb9907433f7932970544d2a712333996de04",
+  "source_commit": "0600b3f1321216261ff5356277ad65ebb162be87",
+  "source_tree_sha256": "fe9d371bb56d51424ff5ef70139aa58e1f1a35ad7c774635484cd4c3447e387b",
+  "positive_unchanged": [
+    {
+      "name": "positive-0.mp4",
+      "sha256": "d2bdc251addd72dc07bfaaa7fba0517d1a392661eb0704977beddd012d420387",
+      "geometry": "640x480/64frames/25FPS",
+      "unchanged": true
+    },
+    {
+      "name": "positive-1.mp4",
+      "sha256": "1ebffaf26d7de4d668364fe74970c13d30db3776686bea78c143fdfe47c2a25b",
+      "geometry": "640x480/64frames/25FPS",
+      "unchanged": true
+    }
+  ],
+  "rejected_mismatched_geometry": [
+    {
+      "name": "negative-0.mp4",
+      "sha256": "e5a3f4c6ee203822ce540c8f21e94812a1991d3d96155fadaecc793f45316977",
+      "code": "COSMOS_MEDIA_ALIGNMENT_INVALID"
+    },
+    {
+      "name": "negative-1.mp4",
+      "sha256": "a46832e380fcee706d25469aeeb504e4855722ee4404b6c37a3e69e1bff9341f",
+      "code": "COSMOS_MEDIA_ALIGNMENT_INVALID"
+    }
+  ],
+  "validation": {
+    "reader": "lerobot==0.6.1",
+    "status": "passed",
+    "episodes": 2,
+    "frames": 128,
+    "cameras": 2,
+    "decoded_frames_each": 256,
+    "nonvideo_values_compared": 6144,
+    "nonvideo_values_exact": true,
+    "unselected_pixels_bit_exact": false,
+    "unselected_max_frame_mae_limit": 6.0,
+    "visual_comparison": [
+      {
+        "episode_index": 0,
+        "camera": "observation.images.cam_high",
+        "selected": true,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 35.18056492134929,
+        "max_frame_mean_absolute_pixel_difference": 52.97672653198242,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 0,
+        "camera": "observation.images.cam_right_wrist",
+        "selected": false,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 1.298381669446826,
+        "max_frame_mean_absolute_pixel_difference": 1.5057562589645386,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 1,
+        "camera": "observation.images.cam_high",
+        "selected": true,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 42.71151342615485,
+        "max_frame_mean_absolute_pixel_difference": 54.758697509765625,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 1,
+        "camera": "observation.images.cam_right_wrist",
+        "selected": false,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 1.2629009177908301,
+        "max_frame_mean_absolute_pixel_difference": 1.6621863842010498,
+        "changed_frames": 63
+      }
+    ],
+    "physical_alignment_verified": false
+  },
+  "scientific_scope": {
+    "mode": "transfer",
+    "action_values": "preserved",
+    "physical_action_alignment_verified": false,
+    "policy_training_validity_verified": false,
+    "reference_usage": "full_sequence_spatial_controls",
+    "controls": [
+      "edge"
+    ],
+    "limitation": "Controls guide all source frames but do not guarantee robot contacts, object identity or action alignment."
+  },
+  "payload": {
+    "mode": "transfer-video",
+    "prompt": "cool lighting",
+    "negative_prompt": "",
+    "size": "640x480",
+    "num_frames": 64,
+    "fps": 25,
+    "seed": 1,
+    "num_inference_steps": 35,
+    "guidance_scale": 6.0,
+    "input_reference": {
+      "artifact_id": "fixture"
+    },
+    "output_format": "mp4",
+    "output_delivery": "artifact",
+    "resolution": 480,
+    "controls": [
+      {
+        "control_type": "edge",
+        "control_weight": 1.0
+      }
+    ],
+    "num_video_frames_per_chunk": 64,
+    "num_conditional_frames": 1,
+    "num_first_chunk_conditional_frames": 0,
+    "share_vision_temporal_positions": true,
+    "emphasize_control_in_prompt": true
+  },
+  "output_artifact": {
+    "sha256": "640a784c00cfcb9befbded2556b001120e915ddd42a1cfd631e2efd53175fd21",
+    "size_bytes": 2045759
+  },
+  "qualification_scope": "Exact CPU coordinator image plus retained real H100 child bytes; no new GPU call, no public transfer proof."
+}

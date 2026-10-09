@@ -1,0 +1,448 @@
+{
+  "started_at": "2026-09-16T11:57:13.911556+00:00",
+  "scope": "drain-apps",
+  "complete_customer_acceptance": false,
+  "measurements": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "before": {
+        "namespace": "fs2-models",
+        "name": "nemotron-speech-en-0-6b",
+        "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+        "revision": 2,
+        "etag": "sha256:5366a4bde7c0e640a995ffbeaf633ec02cdc27401291941a080d4df2bccbf882",
+        "spec": {
+          "modelRef": "nemotron-speech-en-0-6b",
+          "app": null,
+          "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+          "lifecycle": {
+            "desiredState": "Enabled"
+          },
+          "artifact": {
+            "revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+            "manifestDigest": "sha256:e99e16f47b043778b8aa646f0baacbc8526bd4ade0b0ca0e365bc1164560b601",
+            "storageRef": null
+          },
+          "runtime": {
+            "profile": "custom",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+            "templateRef": {
+              "name": "nemotron-speech-en-0-6b.legacy-v1",
+              "digest": "sha256:1c98e13b2cadf872eb2b5b5640e45b64e5e82ffea12e171e9f8584f34bdc8b40"
+            }
+          },
+          "placement": {
+            "poolRefs": [
+              "h100-1x",
+              "h100-reserved-8x"
+            ],
+            "acceleratorsPerReplica": 1,
+            "topologyPolicy": "SingleNode"
+          },
+          "availability": {
+            "minReplicas": 1,
+            "maxReplicas": 2,
+            "idleSeconds": 300,
+            "targetQueueDepth": 1,
+            "pollingIntervalSeconds": 5,
+            "cooldownSeconds": 300,
+            "startupTimeoutSeconds": null,
+            "warmWindows": []
+          },
+          "cache": {
+            "tier": "Disabled",
+            "snapshotPreference": "Never",
+            "snapshotRef": null,
+            "mechanism": null
+          },
+          "queue": {
+            "localQueue": "inference-models",
+            "priorityClass": "standard",
+            "maxQueueSeconds": 7200
+          },
+          "rollout": {
+            "strategy": "Recreate",
+            "maxUnavailable": 1,
+            "maxSurge": 0,
+            "progressDeadlineSeconds": 7200
+          },
+          "exposure": {
+            "openAI": false,
+            "openAIAliases": [],
+            "mcp": true,
+            "mcpToolName": "infer_nemotron_speech_en_0_6b"
+          },
+          "policy": {
+            "visibility": "Tenant",
+            "policyRef": "tenant-default.v1",
+            "allowedPrincipalIds": [],
+            "ratePolicyRef": null
+          },
+          "adoption": {
+            "mode": "None",
+            "receiptRef": null
+          },
+          "fastStart": {
+            "mode": "Fixed",
+            "level": "Off",
+            "minimumLevel": null,
+            "maximumLevel": null,
+            "fallbackPolicy": "AllowLowerLevel"
+          }
+        },
+        "action": "update",
+        "created_at": "2026-09-16T11:27:55.590350Z",
+        "created_by": "bootstrap-admin",
+        "previous_revision": 1
+      },
+      "drain": {
+        "meta": {
+          "schema_version": "fs2.admin-api/v1",
+          "generated_at": "2026-09-16T11:57:14.447033Z",
+          "context": {
+            "project": "project-e00rene",
+            "cluster": "k8s-inference-h100",
+            "region": "eu-north1",
+            "from_at": "2026-09-16T10:57:14.446998Z",
+            "to_at": "2026-09-16T11:57:14.446998Z",
+            "timezone": "UTC"
+          },
+          "sources": [
+            {
+              "id": "postgresql",
+              "state": "available",
+              "observed_at": "2026-09-16T11:57:14.447033Z",
+              "age_seconds": 0.0,
+              "reason": null
+            }
+          ],
+          "warnings": []
+        },
+        "data": {
+          "revision": {
+            "namespace": "fs2-models",
+            "name": "nemotron-speech-en-0-6b",
+            "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+            "revision": 3,
+            "etag": "sha256:1eeb61b650f4730a06dfccc69115375183680f738f0457b53a7141825258b08f",
+            "spec": {
+              "modelRef": "nemotron-speech-en-0-6b",
+              "app": null,
+              "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+              "lifecycle": {
+                "desiredState": "Draining"
+              },
+              "artifact": {
+                "revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+                "manifestDigest": "sha256:e99e16f47b043778b8aa646f0baacbc8526bd4ade0b0ca0e365bc1164560b601",
+                "storageRef": null
+              },
+              "runtime": {
+                "profile": "custom",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+                "templateRef": {
+                  "name": "nemotron-speech-en-0-6b.legacy-v1",
+                  "digest": "sha256:1c98e13b2cadf872eb2b5b5640e45b64e5e82ffea12e171e9f8584f34bdc8b40"
+                }
+              },
+              "placement": {
+                "poolRefs": [
+                  "h100-1x",
+                  "h100-reserved-8x"
+                ],
+                "acceleratorsPerReplica": 1,
+                "topologyPolicy": "SingleNode"
+              },
+              "availability": {
+                "minReplicas": 0,
+                "maxReplicas": 2,
+                "idleSeconds": 300,
+                "targetQueueDepth": 1,
+                "pollingIntervalSeconds": 5,
+                "cooldownSeconds": 300,
+                "startupTimeoutSeconds": null,
+                "warmWindows": []
+              },
+              "cache": {
+                "tier": "Disabled",
+                "snapshotPreference": "Never",
+                "snapshotRef": null,
+                "mechanism": null
+              },
+              "queue": {
+                "localQueue": "inference-models",
+                "priorityClass": "standard",
+                "maxQueueSeconds": 7200
+              },
+              "rollout": {
+                "strategy": "Recreate",
+                "maxUnavailable": 1,
+                "maxSurge": 0,
+                "progressDeadlineSeconds": 7200
+              },
+              "exposure": {
+                "openAI": false,
+                "openAIAliases": [],
+                "mcp": true,
+                "mcpToolName": "infer_nemotron_speech_en_0_6b"
+              },
+              "policy": {
+                "visibility": "Tenant",
+                "policyRef": "tenant-default.v1",
+                "allowedPrincipalIds": [],
+                "ratePolicyRef": null
+              },
+              "adoption": {
+                "mode": "None",
+                "receiptRef": null
+              },
+              "fastStart": {
+                "mode": "Fixed",
+                "level": "Off",
+                "minimumLevel": null,
+                "maximumLevel": null,
+                "fallbackPolicy": "AllowLowerLevel"
+              }
+            },
+            "action": "update",
+            "created_at": "2026-09-16T11:57:14.410212Z",
+            "created_by": "bootstrap-admin",
+            "previous_revision": 2
+          },
+          "idempotent_replay": false,
+          "projection": "applied",
+          "receipt": {
+            "namespace": "fs2-models",
+            "name": "nemotron-speech-en-0-6b",
+            "uid": "7d03ec94-52b1-42b3-b494-95ea8226ac7e",
+            "resource_version": "44451539",
+            "generation": 3,
+            "spec_digest": "sha256:1eeb61b650f4730a06dfccc69115375183680f738f0457b53a7141825258b08f"
+          },
+          "reason": null
+        }
+      }
+    },
+    {
+      "model": "nemotron-speech-multilingual-0-6b",
+      "before": {
+        "namespace": "fs2-models",
+        "name": "nemotron-speech-multilingual-0-6b",
+        "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+        "revision": 2,
+        "etag": "sha256:d6ee37506a17e644b59b17b2d7b09b5b2111d51ec9f845062f104a886f714b4e",
+        "spec": {
+          "modelRef": "nemotron-speech-multilingual-0-6b",
+          "app": null,
+          "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+          "lifecycle": {
+            "desiredState": "Enabled"
+          },
+          "artifact": {
+            "revision": "ea30d66debe3740a08b573244286791d423d6b3e",
+            "manifestDigest": "sha256:6fa1880f21800909855af0fa13a76b4fe042e33aae4c97b766bc3fa49dcdefd3",
+            "storageRef": null
+          },
+          "runtime": {
+            "profile": "custom",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+            "templateRef": {
+              "name": "nemotron-speech-multilingual-0-6b.legacy-v1",
+              "digest": "sha256:ecec8c6ac976b2aa35f8796a3662ed33a53bedb74cd4e7a9b9120752fc7feb54"
+            }
+          },
+          "placement": {
+            "poolRefs": [
+              "h100-1x",
+              "h100-reserved-8x"
+            ],
+            "acceleratorsPerReplica": 1,
+            "topologyPolicy": "SingleNode"
+          },
+          "availability": {
+            "minReplicas": 1,
+            "maxReplicas": 2,
+            "idleSeconds": 300,
+            "targetQueueDepth": 1,
+            "pollingIntervalSeconds": 5,
+            "cooldownSeconds": 300,
+            "startupTimeoutSeconds": null,
+            "warmWindows": []
+          },
+          "cache": {
+            "tier": "Disabled",
+            "snapshotPreference": "Never",
+            "snapshotRef": null,
+            "mechanism": null
+          },
+          "queue": {
+            "localQueue": "inference-models",
+            "priorityClass": "standard",
+            "maxQueueSeconds": 7200
+          },
+          "rollout": {
+            "strategy": "Recreate",
+            "maxUnavailable": 1,
+            "maxSurge": 0,
+            "progressDeadlineSeconds": 7200
+          },
+          "exposure": {
+            "openAI": false,
+            "openAIAliases": [],
+            "mcp": true,
+            "mcpToolName": "infer_nemotron_speech_multilingual_0_6b"
+          },
+          "policy": {
+            "visibility": "Tenant",
+            "policyRef": "tenant-default.v1",
+            "allowedPrincipalIds": [],
+            "ratePolicyRef": null
+          },
+          "adoption": {
+            "mode": "None",
+            "receiptRef": null
+          },
+          "fastStart": {
+            "mode": "Fixed",
+            "level": "Off",
+            "minimumLevel": null,
+            "maximumLevel": null,
+            "fallbackPolicy": "AllowLowerLevel"
+          }
+        },
+        "action": "update",
+        "created_at": "2026-09-16T11:27:55.860273Z",
+        "created_by": "bootstrap-admin",
+        "previous_revision": 1
+      },
+      "drain": {
+        "meta": {
+          "schema_version": "fs2.admin-api/v1",
+          "generated_at": "2026-09-16T11:57:14.707279Z",
+          "context": {
+            "project": "project-e00rene",
+            "cluster": "k8s-inference-h100",
+            "region": "eu-north1",
+            "from_at": "2026-09-16T10:57:14.707245Z",
+            "to_at": "2026-09-16T11:57:14.707245Z",
+            "timezone": "UTC"
+          },
+          "sources": [
+            {
+              "id": "postgresql",
+              "state": "available",
+              "observed_at": "2026-09-16T11:57:14.707279Z",
+              "age_seconds": 0.0,
+              "reason": null
+            }
+          ],
+          "warnings": []
+        },
+        "data": {
+          "revision": {
+            "namespace": "fs2-models",
+            "name": "nemotron-speech-multilingual-0-6b",
+            "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+            "revision": 3,
+            "etag": "sha256:1feac95c131746fd71a099a8bfeae776ef6cdb48ab274dc50147f01c93f656e7",
+            "spec": {
+              "modelRef": "nemotron-speech-multilingual-0-6b",
+              "app": null,
+              "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+              "lifecycle": {
+                "desiredState": "Draining"
+              },
+              "artifact": {
+                "revision": "ea30d66debe3740a08b573244286791d423d6b3e",
+                "manifestDigest": "sha256:6fa1880f21800909855af0fa13a76b4fe042e33aae4c97b766bc3fa49dcdefd3",
+                "storageRef": null
+              },
+              "runtime": {
+                "profile": "custom",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                "templateRef": {
+                  "name": "nemotron-speech-multilingual-0-6b.legacy-v1",
+                  "digest": "sha256:ecec8c6ac976b2aa35f8796a3662ed33a53bedb74cd4e7a9b9120752fc7feb54"
+                }
+              },
+              "placement": {
+                "poolRefs": [
+                  "h100-1x",
+                  "h100-reserved-8x"
+                ],
+                "acceleratorsPerReplica": 1,
+                "topologyPolicy": "SingleNode"
+              },
+              "availability": {
+                "minReplicas": 0,
+                "maxReplicas": 2,
+                "idleSeconds": 300,
+                "targetQueueDepth": 1,
+                "pollingIntervalSeconds": 5,
+                "cooldownSeconds": 300,
+                "startupTimeoutSeconds": null,
+                "warmWindows": []
+              },
+              "cache": {
+                "tier": "Disabled",
+                "snapshotPreference": "Never",
+                "snapshotRef": null,
+                "mechanism": null
+              },
+              "queue": {
+                "localQueue": "inference-models",
+                "priorityClass": "standard",
+                "maxQueueSeconds": 7200
+              },
+              "rollout": {
+                "strategy": "Recreate",
+                "maxUnavailable": 1,
+                "maxSurge": 0,
+                "progressDeadlineSeconds": 7200
+              },
+              "exposure": {
+                "openAI": false,
+                "openAIAliases": [],
+                "mcp": true,
+                "mcpToolName": "infer_nemotron_speech_multilingual_0_6b"
+              },
+              "policy": {
+                "visibility": "Tenant",
+                "policyRef": "tenant-default.v1",
+                "allowedPrincipalIds": [],
+                "ratePolicyRef": null
+              },
+              "adoption": {
+                "mode": "None",
+                "receiptRef": null
+              },
+              "fastStart": {
+                "mode": "Fixed",
+                "level": "Off",
+                "minimumLevel": null,
+                "maximumLevel": null,
+                "fallbackPolicy": "AllowLowerLevel"
+              }
+            },
+            "action": "update",
+            "created_at": "2026-09-16T11:57:14.663163Z",
+            "created_by": "bootstrap-admin",
+            "previous_revision": 2
+          },
+          "idempotent_replay": false,
+          "projection": "applied",
+          "receipt": {
+            "namespace": "fs2-models",
+            "name": "nemotron-speech-multilingual-0-6b",
+            "uid": "52c3375f-079d-4a65-bcb4-7b3a542b3222",
+            "resource_version": "44451549",
+            "generation": 3,
+            "spec_digest": "sha256:1feac95c131746fd71a099a8bfeae776ef6cdb48ab274dc50147f01c93f656e7"
+          },
+          "reason": null
+        }
+      }
+    }
+  ],
+  "finished_at": "2026-09-16T11:57:14.757766+00:00"
+}

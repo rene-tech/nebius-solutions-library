@@ -1,0 +1,32 @@
+{
+  "deployment": {
+    "endpoint_id": "aiendpoint-e00axdvs33j7ycdqt1",
+    "url": "https://port3080-qxnvfnk6ancxhd3.tunnel.applications.eu-north1.nebius.cloud",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:243ba1dc462ea8e9dc72d620509cc09add24df325297d591e7cb5e4b62438eff",
+    "login": true,
+    "preserved_chats": 2,
+    "apps": 16,
+    "preserved_message_count": 6,
+    "workspace_preserved": true,
+    "model_operations_submitted": 0
+  },
+  "operation": {
+    "id": "b765b3d1-692c-4a2f-9184-410b01bec163",
+    "state": "succeeded",
+    "created_at": "2026-10-07T12:07:04.663144Z",
+    "updated_at": "2026-10-07T12:14:31.146246Z",
+    "error_code": null
+  },
+  "schema": "fs2-workbench-catalog-upgrade/v1",
+  "source_revision": "fd9ca0c",
+  "source_main_integration": "95337c9",
+  "preserved_account_and_credentials": true,
+  "preserved_bucket": "fs2-whitelab-951ca2389f78c7ca",
+  "preserved_state_filesystem": "computefilesystem-e00zpv5gnsct0hhat1",
+  "deleted_task_qa_endpoints": [
+    "aiendpoint-e00ga9q5ax94r5qqwz",
+    "aiendpoint-e00xy7xfm7mxte1mmg"
+  ],
+  "predecessor_retained_stopped": "aiendpoint-e00zzbdhd3hkmaxtnc",
+  "runtime_qualification_scope": "Catalog discovery and state-preserving client upgrade; not all-model inference qualification"
+}

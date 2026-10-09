@@ -186,10 +186,40 @@ app.kubernetes.io/component: model-controller
 {{- end -}}
 
 {{- define "fs2-serve.runtimeEnv" -}}
+- name: FS2_WORKBENCH_EXECUTOR_ENABLED
+  value: {{ .Values.workbenches.executorEnabled | quote }}
+- name: FS2_WORKBENCH_RELEASES
+  value: {{ .Values.workbenches.releases | toJson | quote }}
+- name: FS2_WORKBENCH_PROTECTED_ENDPOINTS
+  value: {{ .Values.workbenches.protectedEndpoints | toJson | quote }}
 {{ include "fs2-serve.databaseEnv" . }}
 {{ include "fs2-serve.cryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}
 {{- include "fs2-serve.scientificArtifactsEnv" . }}
+{{- if .Values.customerStorage.enabled }}
+- name: FS2_USER_STORAGE_ENABLED
+  value: "true"
+- name: FS2_USER_STORAGE_PROJECT_ID
+  value: {{ required "customerStorage.projectId is required" .Values.customerStorage.projectId | quote }}
+- name: FS2_USER_STORAGE_REGION
+  value: {{ required "customerStorage.region is required" .Values.customerStorage.region | quote }}
+- name: FS2_USER_STORAGE_DEFAULT_MODE
+  value: {{ .Values.customerStorage.defaultMode | quote }}
+- name: FS2_USER_STORAGE_QUOTA_BYTES
+  value: {{ .Values.customerStorage.quotaBytes | int64 | quote }}
+- name: FS2_USER_STORAGE_EXCLUDED_TENANTS
+  value: {{ .Values.customerStorage.excludedTenants | toJson | quote }}
+- name: FS2_USER_STORAGE_CREDENTIALS_FILE
+  value: /var/run/secrets/fs2-serve/customer-storage/credentials.json
+{{- if .Values.customerStorage.starterPack.enabled }}
+- name: FS2_USER_STORAGE_STARTER_PACK_DIR
+  value: /opt/fs2/starter-pack
+- name: FS2_USER_STORAGE_STARTER_PACK_SHA256
+  value: {{ required "customerStorage.starterPack.manifestSha256 is required" .Values.customerStorage.starterPack.manifestSha256 | quote }}
+- name: FS2_USER_STORAGE_STARTER_PACK_TENANTS
+  value: {{ .Values.customerStorage.starterPack.tenants | toJson | quote }}
+{{- end }}
+{{- end }}
 - name: FS2_CATALOG_DIR
   value: {{ ternary .Values.catalog.imagePath "/etc/fs2-serve/catalog" (eq .Values.catalog.delivery "image") | quote }}
 {{- if eq .Values.catalog.delivery "image" }}
@@ -210,6 +240,10 @@ app.kubernetes.io/component: model-controller
 {{- end }}
 - name: FS2_EVIDENCE_ROOT
   value: /etc/fs2-serve/evidence
+{{- if .Values.catalog.customerReadinessConfigMapName }}
+- name: FS2_CUSTOMER_READINESS_VERDICTS_FILE
+  value: /etc/fs2-serve/customer-readiness/verdict-index.json
+{{- end }}
 - name: FS2_FEDERATION_ROUTES_FILE
   value: /var/run/secrets/fs2-serve/federation/{{ .Values.federation.routesKey }}
 - name: FS2_FEDERATION_SECRET_DIR
@@ -232,6 +266,14 @@ app.kubernetes.io/component: model-controller
 {{- end }}
 - name: FS2_PUBLIC_BASE_URL
   value: {{ .Values.config.publicBaseUrl | quote }}
+{{- with .Values.mindguard.model4bEndpoint }}
+- name: FS2_MINDGUARD_4B_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.mindguard.model8bEndpoint }}
+- name: FS2_MINDGUARD_8B_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
 - name: FS2_PUBLIC_AUTHORITY_MODE
   value: {{ .Values.config.publicAuthorityMode | quote }}
 - name: FS2_AUTHORIZATION_SERVER_URL
@@ -360,8 +402,10 @@ app.kubernetes.io/component: model-controller
 - name: FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE
   value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.executionMapKey }}
 - name: FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE
-  value: {{ include "fs2-serve.image" . }}
+  value: {{ .Values.scientificBatch.toolsImage | default (include "fs2-serve.image" .) | quote }}
 - name: FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL
+  value: http://{{ include "fs2-serve.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+- name: FS2_SCIENTIFIC_BATCH_INTERNAL_FALLBACK_API_URL
   value: http://{{ include "fs2-serve.fullname" . }}-scientific-artifacts.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
 - name: FS2_SCIENTIFIC_BATCH_WORKERS
   value: {{ .Values.scientificBatch.workers | quote }}
@@ -371,6 +415,15 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.scientificBatch.leaseSeconds | quote }}
 - name: FS2_SCIENTIFIC_BATCH_API_TIMEOUT_SECONDS
   value: {{ .Values.scientificBatch.apiTimeoutSeconds | quote }}
+{{- $recovery := .Values.scientificBatch.poolRecovery | default dict }}
+- name: FS2_SCIENTIFIC_POOL_FAILURE_CONFIRMATION_SECONDS
+  value: {{ $recovery.failureConfirmationSeconds | default 120 | quote }}
+- name: FS2_SCIENTIFIC_ADMITTED_UNSCHEDULED_TIMEOUT_SECONDS
+  value: {{ $recovery.admittedUnscheduledTimeoutSeconds | default 7200 | quote }}
+- name: FS2_SCIENTIFIC_POOL_RECOVERY_BACKOFF_BASE_SECONDS
+  value: {{ $recovery.backoffBaseSeconds | default 15 | quote }}
+- name: FS2_SCIENTIFIC_POOL_RECOVERY_BACKOFF_MAX_SECONDS
+  value: {{ $recovery.backoffMaxSeconds | default 300 | quote }}
 {{- end }}
 - name: FS2_ADMIN_ADAPTER_TIMEOUT_SECONDS
   value: {{ .Values.adminReadAdapters.adapterTimeoutSeconds | quote }}
@@ -434,6 +487,11 @@ app.kubernetes.io/component: model-controller
 {{- end -}}
 
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
+{{- if .Values.customerStorage.enabled }}
+- name: customer-storage
+  mountPath: /var/run/secrets/fs2-serve/customer-storage
+  readOnly: true
+{{ end }}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
 {{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
@@ -458,6 +516,11 @@ app.kubernetes.io/component: model-controller
 - name: evidence
   mountPath: /etc/fs2-serve/evidence
   readOnly: true
+{{- if .Values.catalog.customerReadinessConfigMapName }}
+- name: customer-readiness
+  mountPath: /etc/fs2-serve/customer-readiness
+  readOnly: true
+{{- end }}
 - name: token-pepper
   mountPath: /var/run/secrets/fs2-serve/token-pepper
   subPath: token-pepper.json
@@ -537,6 +600,12 @@ app.kubernetes.io/component: model-controller
 {{- end -}}
 
 {{- define "fs2-serve.runtimeVolumes" -}}
+{{- if .Values.customerStorage.enabled }}
+- name: customer-storage
+  secret:
+    secretName: {{ required "customerStorage.secretName is required" .Values.customerStorage.secretName | quote }}
+    defaultMode: 0440
+{{ end }}
 {{ include "fs2-serve.cryptoVolumes" . }}
 {{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}
@@ -573,6 +642,14 @@ app.kubernetes.io/component: model-controller
   persistentVolumeClaim:
     claimName: {{ required "catalog.evidencePersistentVolumeClaimName is required" .Values.catalog.evidencePersistentVolumeClaimName }}
     readOnly: true
+{{- end }}
+{{- if .Values.catalog.customerReadinessConfigMapName }}
+- name: customer-readiness
+  configMap:
+    name: {{ .Values.catalog.customerReadinessConfigMapName }}
+    items:
+      - key: {{ .Values.catalog.customerReadinessKey }}
+        path: verdict-index.json
 {{- end }}
 - name: token-pepper
   secret:

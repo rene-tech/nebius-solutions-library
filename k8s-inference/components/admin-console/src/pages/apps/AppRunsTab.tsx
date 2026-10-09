@@ -93,7 +93,7 @@ export function AppRunsTab({ appId }: { appId: string }) {
                     <th>User</th>
                     <th>Accepted</th>
                     <th>Queue</th>
-                    <th>Startup</th>
+                    <th>Accepted to ready</th>
                     <th>Execution</th>
                     <th>Total</th>
                   </tr>

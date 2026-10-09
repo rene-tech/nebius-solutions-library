@@ -1,0 +1,32 @@
+FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+
+LABEL org.opencontainers.image.title="fs2 LeRobot augmentation worker" \
+      org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library/tree/main/k8s-inference/models/general-media/lerobot-augmentation" \
+      ai.nebius.fs2.lerobot.version="0.6.1" \
+      ai.nebius.fs2.cosmos.revision="7a312c868bcce8e40b3eb40861300a9d0ba3fde1" \
+      ai.nebius.fs2.vllm-omni.revision="eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ffmpeg=7:7.1.5-0+deb13u1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/fs2/lerobot-augmentation
+COPY pyproject.toml ./
+COPY uv.lock ./
+COPY src ./src
+RUN python -m pip install --no-cache-dir uv==0.11.7 \
+    && uv sync --frozen --no-dev \
+    && rm -rf /root/.cache/uv
+
+RUN groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/fs2 fs2 \
+    && mkdir -p /mnt/fs2-scientific \
+    && chown -R 10001:10001 /mnt/fs2-scientific /home/fs2
+
+USER 10001:10001
+ENTRYPOINT ["/opt/fs2/lerobot-augmentation/.venv/bin/fs2-augment-lerobot"]

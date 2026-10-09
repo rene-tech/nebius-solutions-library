@@ -20,8 +20,8 @@ from typing import Any, cast
 from uuid import UUID
 
 from .adapters.primitives import ScientificParameterError
-from .capability import ScientificWorkloadCapabilityAuthority
-from .catalog_adapter import CatalogProfileAdapterError
+from .capability import CapabilityArtifact, ScientificWorkloadCapabilityAuthority
+from .catalog_adapter import CatalogProfileAdapterError, _stage_contract, select_stage_shape
 from .companion import RUNTIME_LOCALIZATION_SCHEMA
 from .models import (
     COLLECTION_DEADLINE_MARGIN_SECONDS,
@@ -35,13 +35,18 @@ from .models import (
     RuntimeArtifactMount,
     RuntimeArtifactTreeKind,
     ScientificInputArtifact,
+    ScientificStagePlan,
     StageExecutionBinding,
     StageInvocation,
+    StageRdmaBinding,
     StageVolumeBinding,
     WorkloadKind,
     WorkloadResource,
 )
+from .placement import execution_resource_envelope
 from .profile_catalog import ScientificProfileCatalog, ScientificRequestError, ScientificWorkloadProfile
+from .stage_descriptor import RELATIVE_PATH as STAGE_DESCRIPTOR_PATH
+from .stage_descriptor import descriptor_bytes
 from .startup import StageStartupPolicy, apply_startup_policy, select_startup_policy, validate_bundle
 
 EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v3"
@@ -160,6 +165,24 @@ def _quantity_bytes(value: str) -> int:
     raise ScientificExecutionMapError("scientific byte quantity is invalid")
 
 
+def _execution_resources(raw: object) -> dict[str, str]:
+    resources = _object(raw, "scientific execution resources")
+    if set(resources) != {"requests", "limits"}:
+        raise ScientificExecutionMapError("scientific execution resource fields differ")
+    parsed: dict[str, str] = {}
+    for kind, prefix in (("requests", "request"), ("limits", "limit")):
+        values = _object(resources[kind], f"scientific execution resource {kind}")
+        if set(values) != {"cpu", "memory", "ephemeral_storage"}:
+            raise ScientificExecutionMapError(f"scientific execution resource {kind} fields differ")
+        for name in ("cpu", "memory", "ephemeral_storage"):
+            value = _bounded_string(values[name], f"scientific {kind} {name}", maximum=32)
+            pattern = r"[1-9][0-9]*(?:m)?" if name == "cpu" else r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)"
+            if re.fullmatch(pattern, value) is None:
+                raise ScientificExecutionMapError(f"scientific {kind} {name} quantity is invalid")
+            parsed[f"{prefix}_{name}"] = value
+    return parsed
+
+
 @dataclass(frozen=True, slots=True)
 class StageMount:
     name: str
@@ -193,6 +216,7 @@ class StageExecution:
     image_role: str = "model-runtime"
     model_runtime_image_digest: str | None = None
     startup_policy: StageStartupPolicy = StageStartupPolicy()
+    rdma: StageRdmaBinding | None = None
 
 
 def _invocation_json(invocation: StageInvocation) -> str:
@@ -273,6 +297,7 @@ class FileScientificManifestRenderer:
         profiles: ScientificProfileCatalog,
         tools_image: str | None = None,
         internal_api_url: str | None = None,
+        internal_fallback_api_url: str | None = None,
         capability_authority: ScientificWorkloadCapabilityAuthority | None = None,
         academic_tenant_id: str | None = None,
         academic_authorization_receipt_sha256: str | None = None,
@@ -287,7 +312,7 @@ class FileScientificManifestRenderer:
         root = _object(value, "scientific execution map")
         if (
             not {"schema", "models"}.issubset(root)
-            or set(root) - {"schema", "models", "snapshot_bundles"}
+            or set(root) - {"schema", "models", "snapshot_bundles", "qualification_baselines"}
             or root["schema"] != EXECUTION_SCHEMA
         ):
             raise ScientificExecutionMapError("scientific execution map schema is unsupported")
@@ -306,9 +331,13 @@ class FileScientificManifestRenderer:
         # identity while freezing the complete selected bundle separately.
         qualified_raw = (
             raw
-            if "snapshot_bundles" not in root
+            if not {"snapshot_bundles", "qualification_baselines"}.intersection(root)
             else json.dumps(
-                {key: value for key, value in root.items() if key != "snapshot_bundles"},
+                {
+                    key: value
+                    for key, value in root.items()
+                    if key not in {"snapshot_bundles", "qualification_baselines"}
+                },
                 sort_keys=True,
                 separators=(",", ":"),
                 allow_nan=False,
@@ -318,7 +347,40 @@ class FileScientificManifestRenderer:
         models = root["models"]
         if not isinstance(models, list) or len(models) > 256:
             raise ScientificExecutionMapError("scientific execution models are not bounded")
+        # Historical whole-map receipts remain valid only for an exactly
+        # preserved ordered baseline. New models/optional snapshot registries
+        # cannot invalidate siblings, nor can this metadata authorize changing
+        # or removing any measured legacy row. Runtime receipts still freeze
+        # the complete CURRENT map/configuration above.
+        baselines = _object(root.get("qualification_baselines", {}), "qualification baselines")
+        if len(baselines) > 32:
+            raise ScientificExecutionMapError("qualification baselines exceed the bound")
+        baseline_models: dict[str, frozenset[str]] = {}
+        for digest, ids in baselines.items():
+            if (
+                re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                or not isinstance(ids, list)
+                or not 1 <= len(ids) <= 256
+                or not all(isinstance(model_id, str) for model_id in ids)
+                or len(set(ids)) != len(ids)
+            ):
+                raise ScientificExecutionMapError("qualification baseline identity is invalid")
+            selected = []
+            for model_id in ids:
+                rows = [row for row in models if isinstance(row, dict) and row.get("model_id") == model_id]
+                if len(rows) != 1:
+                    raise ScientificExecutionMapError("qualification baseline model is missing or duplicated")
+                selected.append(rows[0])
+            projection = {"schema": root["schema"], "models": selected}
+            projected_digest = hashlib.sha256(
+                json.dumps(projection, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+            ).hexdigest()
+            if projected_digest != digest:
+                raise ScientificExecutionMapError("qualification baseline execution fields changed")
+            baseline_models[f"sha256:{digest}"] = frozenset(ids)
+        self.qualification_baselines = MappingProxyType(baseline_models)
         executions: dict[tuple[str, str], StageExecution] = {}
+        execution_shapes: dict[tuple[str, str, str], StageExecution] = {}
         runtime_artifacts: dict[tuple[str, str], RuntimeArtifactLocalization] = {}
         variants: dict[str, str] = {}
         workload_namespaces: dict[str, str] = {}
@@ -508,7 +570,11 @@ class FileScientificManifestRenderer:
                     "environment",
                     "required_node_labels",
                 }
-                if not allowed.issubset(stage) or set(stage) - allowed - {"image_role", "startup_policy"}:
+                if not allowed.issubset(stage) or set(stage) - allowed - {
+                    "image_role",
+                    "startup_policy",
+                    "execution_shapes",
+                }:
                     raise ScientificExecutionMapError("scientific execution stage fields differ")
                 stage_id = stage["stage_id"]
                 if not isinstance(stage_id, str) or (model_id, stage_id) in executions:
@@ -760,7 +826,7 @@ class FileScientificManifestRenderer:
                     limit_memory=limit_memory,
                     limit_ephemeral_storage=limit_ephemeral_storage,
                     active_deadline_seconds=_positive_integer(
-                        stage["active_deadline_seconds"], "scientific active deadline", maximum=7 * 24 * 3600
+                        stage["active_deadline_seconds"], "scientific active deadline", maximum=14 * 24 * 3600 + 1800
                     ),
                     termination_grace_seconds=_positive_integer(
                         stage["termination_grace_seconds"],
@@ -771,6 +837,54 @@ class FileScientificManifestRenderer:
                     required_node_labels=cast(Mapping[str, str], required_node_labels),
                     startup_policy=self._select_startup_policy(profile, stage_id, image, stage.get("startup_policy")),
                 )
+                shapes = stage.get("execution_shapes", [])
+                if not isinstance(shapes, list) or len(shapes) > 32:
+                    raise ScientificExecutionMapError("execution-map shapes are not a bounded array")
+                for raw_shape in shapes:
+                    shape = _object(raw_shape, "execution-map shape")
+                    if set(shape) - {"rdma"} != {"id", "resources"}:
+                        raise ScientificExecutionMapError("execution-map shape fields differ")
+                    shape_id = _bounded_string(shape["id"], "execution-map shape ID", maximum=63)
+                    shape_key = (model_id, stage_id, shape_id)
+                    if shape_key in execution_shapes:
+                        raise ScientificExecutionMapError("execution-map shape is duplicated")
+                    profile_stage = next(item for item in profile.value["workload"]["stages"] if item["id"] == stage_id)
+                    selected_shape = select_stage_shape(profile_stage, shape_id)
+                    _, envelope = _stage_contract(selected_shape, "execution-map shape")
+                    shape_resources = _execution_resources(shape["resources"])
+                    try:
+                        rdma = None if "rdma" not in shape else StageRdmaBinding.from_value(shape["rdma"])
+                        profile_rdma = (
+                            None if "rdma" not in selected_shape
+                            else StageRdmaBinding.from_value(selected_shape["rdma"])
+                        )
+                    except ValueError as exc:
+                        raise ScientificExecutionMapError("invalid execution shape RDMA binding") from exc
+                    if rdma != profile_rdma or (rdma is not None and model_id != "gromacs-mpi"):
+                        raise ScientificExecutionMapError(
+                            "execution-map RDMA binding differs from the qualified catalog"
+                        )
+                    shape_execution = replace(
+                        executions[(model_id, stage_id)],
+                        request_cpu=shape_resources["request_cpu"],
+                        request_memory=shape_resources["request_memory"],
+                        request_ephemeral_storage=shape_resources["request_ephemeral_storage"],
+                        limit_cpu=shape_resources["limit_cpu"],
+                        limit_memory=shape_resources["limit_memory"],
+                        limit_ephemeral_storage=shape_resources["limit_ephemeral_storage"],
+                        environment={
+                            **executions[(model_id, stage_id)].environment,
+                            "FS2_EXECUTION_SHAPE_ID": shape_id,
+                        },
+                        rdma=rdma,
+                        required_node_labels={
+                            **executions[(model_id, stage_id)].required_node_labels,
+                            **({} if rdma is None else rdma.node_labels),
+                        },
+                    )
+                    if execution_resource_envelope(shape_execution) != envelope:
+                        raise ScientificExecutionMapError("execution-map shape resources differ from the catalog")
+                    execution_shapes[shape_key] = shape_execution
         # Every serialized model, including a fail-closed candidate, must cover
         # its own profile DAG exactly.  Separately, every runnable profile must
         # be serialized.  This permits pre-promotion Job validation without
@@ -806,6 +920,7 @@ class FileScientificManifestRenderer:
             if len(declared) != len(stages) or serialized != declared:
                 raise ScientificExecutionMapError("execution map must cover each serialized profile stage exactly")
         self.executions = executions
+        self.execution_shapes = execution_shapes
         self._startup_profiles = profiles
         self.variants = MappingProxyType(variants)
         self.workload_namespaces = MappingProxyType(workload_namespaces)
@@ -814,6 +929,7 @@ class FileScientificManifestRenderer:
         self.runtime_artifacts = MappingProxyType(runtime_artifacts)
         self.tools_image = tools_image
         self.internal_api_url = internal_api_url
+        self.internal_fallback_api_url = internal_fallback_api_url
         self.capability_authority = capability_authority
         if (
             academic_authorization_receipt_sha256 is not None
@@ -822,6 +938,11 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("academic deployment authorization digest is invalid")
         self.academic_tenant_id = academic_tenant_id
         self.academic_authorization_receipt_sha256 = academic_authorization_receipt_sha256
+
+    def qualification_matches(self, model_id: str, digest: str) -> bool:
+        return model_id in self.variants and (
+            digest == self.execution_map_sha256 or model_id in self.qualification_baselines.get(digest, frozenset())
+        )
 
     def access_context(self, profile: ScientificWorkloadProfile, *, tenant_id: str) -> ArtifactAccessContext:
         """Resolve platform asset authorization, retaining the caller's data owner.
@@ -895,7 +1016,9 @@ class FileScientificManifestRenderer:
                 input_artifacts=input_artifacts,
             )
         except ScientificParameterError as error:
-            raise ScientificRequestError("model parameters violate the executable scientific contract") from error
+            raise ScientificRequestError(
+                "model parameters violate the executable scientific contract", public_detail=error.public_detail
+            ) from error
         except (AttributeError, ImportError, KeyError, TypeError, ValueError) as error:
             raise ScientificExecutionMapError(
                 "scientific plan adapter is unavailable or rejected the request"
@@ -936,7 +1059,7 @@ class FileScientificManifestRenderer:
                 )
             )
         stage_bindings = tuple(
-            self._freeze_stage_execution(stage.stage_id, self.executions[(profile.model_id, stage.stage_id)])
+            self._freeze_stage_execution(stage.stage_id, self._execution_for_stage(profile.model_id, stage))
             for stage in plan.controller_plan.stages
         )
         bound_plan = replace(
@@ -948,7 +1071,7 @@ class FileScientificManifestRenderer:
         for stage in bound_plan.controller_plan.stages:
             if stage.resources is None:
                 continue
-            execution = self.executions[(profile.model_id, stage.stage_id)]
+            execution = self._execution_for_stage(profile.model_id, stage)
             rendered_requests = (
                 _cpu_millis(execution.request_cpu),
                 _quantity_bytes(execution.request_memory),
@@ -990,6 +1113,17 @@ class FileScientificManifestRenderer:
                     raise ScientificExecutionMapError("BindCraft PYTHONPATH bypasses the reviewed PyRosetta tree")
         return bound_plan
 
+    def _execution_for_stage(self, model_id: str, stage: ScientificStagePlan) -> StageExecution:
+        if stage.execution_shape is None:
+            return self.executions[(model_id, stage.stage_id)]
+        key = (model_id, stage.stage_id, stage.execution_shape.shape_id)
+        execution = self.execution_shapes.get(key)
+        if execution is None:
+            raise ScientificExecutionMapError("execution shape is absent from the immutable execution map")
+        if execution_resource_envelope(execution) != stage.resources or execution.rdma != stage.execution_shape.rdma:
+            raise ScientificExecutionMapError("execution shape resources differ from the frozen plan")
+        return execution
+
     def _freeze_stage_execution(self, stage_id: str, execution: StageExecution) -> StageExecutionBinding:
         image = execution.image
         model_runtime_image_digest = execution.model_runtime_image_digest
@@ -1003,6 +1137,7 @@ class FileScientificManifestRenderer:
             image=image,
             model_runtime_image_digest=model_runtime_image_digest,
             startup_policy=execution.startup_policy,
+            rdma=execution.rdma,
             collector_id=execution.collector_id,
             validator_id=execution.validator_id,
             mounts=tuple(
@@ -1042,6 +1177,7 @@ class FileScientificManifestRenderer:
             image=binding.image,
             model_runtime_image_digest=binding.model_runtime_image_digest,
             startup_policy=binding.startup_policy,
+            rdma=binding.rdma,
             collector_id=binding.collector_id,
             validator_id=binding.validator_id,
             mounts=tuple(
@@ -1093,7 +1229,7 @@ class FileScientificManifestRenderer:
     def startup_policy_options(self, model_id: str) -> dict[str, list[str]]:
         """Qualified per-stage bundle IDs; full metadata lives in snapshot_bundles."""
         profile = self._startup_profiles.get(model_id, runnable=False)
-        options = {}
+        options: dict[str, list[str]] = {}
         for (model, stage), execution in self.executions.items():
             if model != model_id:
                 continue
@@ -1101,12 +1237,15 @@ class FileScientificManifestRenderer:
             for bundle in self.snapshot_bundles.values():
                 try:
                     selected = self._select_startup_policy(
-                        profile, stage, execution.image,
+                        profile,
+                        stage,
+                        execution.image,
                         {"backend": "cuda-criu", "bundle_id": bundle["bundle_id"]},
                     )
                 except ScientificExecutionMapError:
                     continue
-                options[stage].append(selected.bundle_id)
+                if selected.bundle_id is not None:
+                    options[stage].append(selected.bundle_id)
         return options
 
     def validate_startup_policy_overrides(
@@ -1425,7 +1564,7 @@ class FileScientificManifestRenderer:
             # the verified mounts so the durable v8 state is self-contained.
             invocations.append(replace(invocation, runtime_mounts=tuple(mounted), runtime_trees=()))
         stage_bindings = execution_plan.stage_bindings or tuple(
-            self._freeze_stage_execution(stage.stage_id, self.executions[(profile.model_id, stage.stage_id)])
+            self._freeze_stage_execution(stage.stage_id, self._execution_for_stage(profile.model_id, stage))
             for stage in execution_plan.controller_plan.stages
         )
         bound = replace(
@@ -1483,6 +1622,11 @@ class FileScientificManifestRenderer:
                 raise ScientificExecutionMapError("GPU scheduling has no accelerator resource")
             limits[accelerator_resource] = str(gpu_count)
             requests[accelerator_resource] = str(gpu_count)
+        if execution.rdma is not None:
+            if resource.model_id != "gromacs-mpi" or gpu_count != 8 or resource.gang_size != 2:
+                raise ScientificExecutionMapError("RDMA execution requires its qualified two full-node gang")
+            requests[execution.rdma.resource_name] = str(execution.rdma.count)
+            limits[execution.rdma.resource_name] = str(execution.rdma.count)
         runtime_marker = {
             "schema": RUNTIME_LOCALIZATION_SCHEMA,
             "operation_id": str(resource.operation_id),
@@ -1537,7 +1681,7 @@ class FileScientificManifestRenderer:
         # from a potentially changed profile or tools-image setting.
         stage_image_digest = execution.image.rsplit("@", 1)[1]
         runtime_image_digest = execution.model_runtime_image_digest or stage_image_digest
-        env = [
+        env: list[dict[str, Any]] = [
             {"name": key, "value": value}
             for key, value in sorted(
                 {
@@ -1657,11 +1801,99 @@ class FileScientificManifestRenderer:
         if self.tools_image is None or self.internal_api_url is None or self.capability_authority is None:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")
         capability = self.capability_authority.issue(resource)
+        if resource.model_id == "gromacs-mpi":
+            # UCX/Open MPI intra-Pod traffic needs more than the container
+            # runtime's default 64Mi shm. tmpfs remains charged to this Pod's
+            # frozen memory limit; no host IPC or extra device is exposed.
+            volumes.append({"name": "mpi-shared-memory", "emptyDir": {"medium": "Memory", "sizeLimit": "1Gi"}})
+            volume_mounts.append({"name": "mpi-shared-memory", "mountPath": "/dev/shm"})  # noqa: S108 - private Pod tmpfs
+            nodes = resource.gang_size if resource.kind is WorkloadKind.JOB_SET else 1
+            if nodes is None or gpu_count not in {1, 2, 4, 8} or nodes * gpu_count > 16:
+                raise ScientificExecutionMapError("GROMACS MPI shape exceeds its admitted GPU bound")
+            request_document = next(
+                (item for item in invocation.workspace_documents if item.relative_path == ".fs2/request.json"), None
+            )
+            if request_document is None:
+                raise ScientificExecutionMapError("GROMACS MPI lacks its frozen request")
+            request_shape = json.loads(request_document.canonical_json)
+            if request_shape.get("nodes", 2) != nodes or request_shape.get("gpus_per_node", 1) != gpu_count:
+                raise ScientificExecutionMapError("GROMACS MPI request differs from its frozen allocation")
+            shape_env = {
+                "FS2_GROMACS_MPI_NODES": str(nodes),
+                "FS2_GROMACS_MPI_GPUS_PER_NODE": str(gpu_count),
+                "FS2_GROMACS_MPI_RANKS_PER_NODE": str(gpu_count),
+                "FS2_GROMACS_MPI_TOTAL_RANKS": str(nodes * gpu_count),
+                "FS2_GROMACS_MPI_TRANSPORT": (
+                    "ucx-rdma" if execution.rdma is not None else "ucx-local" if nodes == 1 else "tcp-host-staged"
+                ),
+            }
+            if any(item["name"] in shape_env or item["name"].startswith("FS2_MPI_") for item in env):
+                raise ScientificExecutionMapError("GROMACS MPI allocation environment cannot be overridden")
+            env.extend({"name": name, "value": value} for name, value in shape_env.items())
+            if nodes == 1:
+                env.extend([{"name": "FS2_MPI_RANK", "value": "0"}, {"name": "FS2_MPI_HOSTS", "value": "localhost"}])
+            else:
+                env.extend(self._mpi_gang_environment(resource, capability))
+        if (resource.model_id, invocation.stage_id, invocation.collector_id) in {
+            ("cosmos3-lerobot-augmentation", "augment-dataset", "cosmos3-lerobot-v3-0-6-1"),
+            ("physical-ai-video-augmentation", "augment-videos", "paidf-video-v1"),
+        }:
+            env.extend(
+                [
+                    {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
+                    {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
+                ]
+            )
+        if (resource.model_id, invocation.stage_id, invocation.collector_id) == (
+            "physical-ai-video-augmentation",
+            "augment-videos",
+            "paidf-video-v1",
+        ):
+            env.append(
+                {
+                    "name": "PAIDF_PROVIDER_API_KEY",
+                    "valueFrom": {
+                        "secretKeyRef": {
+                            "name": "fs2-video-augmentation-provider",
+                            "key": "api-key",
+                            "optional": False,
+                        }
+                    },
+                }
+            )
         workspace_mount = next(mount for mount in volume_mounts if mount["mountPath"] == "/mnt/fs2-scientific")
+        # GROMACS continuations accumulate thousands of native segments. Both
+        # a single environment value and the total exec argv have OS limits;
+        # fetch this exact admitted descriptor once and use a private file.
+        remote_descriptor = resource.model_id in {"gromacs", "gromacs-mpi"}
+        descriptor_env = [{"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)}]
+        if remote_descriptor:
+            content = descriptor_bytes(
+                invocation,
+                tuple(
+                    CapabilityArtifact(
+                        logical_artifact_id=item.logical_artifact_id,
+                        artifact_id=item.artifact_id,
+                        digest=item.digest,
+                        size_bytes=item.size_bytes,
+                        media_type=item.media_type,
+                        compression=item.compression,
+                    )
+                    for item in resource.materializations
+                ),
+            )
+            descriptor_env = [
+                {
+                    "name": "FS2_STAGE_DESCRIPTOR_FILE",
+                    "value": f"{invocation.working_directory}/{STAGE_DESCRIPTOR_PATH}",
+                },
+                {"name": "FS2_STAGE_DESCRIPTOR_SHA256", "value": hashlib.sha256(content).hexdigest()},
+            ]
         companion_env = [
+            {"name": "FS2_ATTEMPT_ID", "value": str(resource.attempt_id)},
             {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
             {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
-            {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
+            *descriptor_env,
             {"name": "FS2_RUNTIME_IMAGE_DIGEST", "value": runtime_image_digest},
             {"name": "FS2_STAGE_IMAGE_DIGEST", "value": stage_image_digest},
             # Helm binds tools_image to this same immutable control-plane
@@ -1669,6 +1901,13 @@ class FileScientificManifestRenderer:
             # workload Pods do not mount the gateway's optional catalog PVC.
             {"name": "FS2_CATALOG_DIR", "value": PACKAGED_TOOLS_CATALOG_DIR},
         ]
+        if self.internal_fallback_api_url:
+            companion_env.append(
+                {
+                    "name": "FS2_SCIENTIFIC_INTERNAL_FALLBACK_API_URL",
+                    "value": self.internal_fallback_api_url,
+                }
+            )
         companion_security = {
             "allowPrivilegeEscalation": False,
             "capabilities": {"drop": ["ALL"]},
@@ -1689,7 +1928,7 @@ class FileScientificManifestRenderer:
                 ],
                 "env": [
                     {"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json},
-                    {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
+                    *(companion_env if remote_descriptor else descriptor_env),
                 ],
                 "volumeMounts": [workspace_mount],
                 "resources": {
@@ -1760,7 +1999,12 @@ class FileScientificManifestRenderer:
                     "securityContext": companion_security,
                 }
             )
-        if len(materializer_containers) > 1:
+        if remote_descriptor and materializer_containers:
+            materializer = materializer_containers[0]
+            materializer["name"] = "materialize-inputs"
+            materializer["command"] = ["fs2-serve", "scientific-materialize-many"]
+            init_containers.append(materializer)
+        elif len(materializer_containers) > 1:
             materializer = materializer_containers[0]
             materializer["name"] = "materialize-inputs"
             # Keep each argument small. A batch must not turn previously valid
@@ -1879,8 +2123,12 @@ class FileScientificManifestRenderer:
                     "volumeMounts": volume_mounts,
                     "resources": {"requests": requests, "limits": limits},
                     "securityContext": {
-                        "allowPrivilegeEscalation": False,
-                        "capabilities": {"drop": ["ALL"]},
+                        # The qualified RDMA image has fixed, root-owned
+                        # IPC_LOCK-only copies of its native executables.
+                        # No root process/host limit changes; every older
+                        # local/TCP shape and all companions stay drop-ALL.
+                        "allowPrivilegeEscalation": execution.rdma is not None,
+                        "capabilities": {"drop": ["ALL"], **({"add": ["IPC_LOCK"]} if execution.rdma else {})},
                         "runAsUser": execution.workspace_uid,
                         "runAsGroup": execution.workspace_gid,
                     },
@@ -1936,12 +2184,19 @@ class FileScientificManifestRenderer:
                 },
             }
         assert resource.gang_size is not None
+        if resource.model_id == "gromacs-mpi":
+            self._configure_mpi_pod(pod, resource)
         return {
             "apiVersion": "jobset.x-k8s.io/v1alpha2",
             "kind": "JobSet",
             "metadata": metadata,
             "spec": {
                 "failurePolicy": {"maxRestarts": 0},
+                **(
+                    {"network": {"enableDNSHostnames": True, "publishNotReadyAddresses": True}}
+                    if resource.model_id == "gromacs-mpi"
+                    else {}
+                ),
                 "replicatedJobs": [
                     {
                         "name": "gang",
@@ -1957,3 +2212,54 @@ class FileScientificManifestRenderer:
                 ],
             },
         }
+
+    @staticmethod
+    def _mpi_gang_environment(resource: WorkloadResource, capability: str) -> list[dict[str, Any]]:
+        assert resource.gang_size is not None
+        # The MPI process receives no reusable platform API credential.
+        seed = hashlib.sha256(b"fs2-mpi-ssh-v1\0" + capability.encode()).hexdigest()
+        return [
+            {"name": "FS2_MPI_SSH_SEED", "value": seed},
+            {
+                "name": "FS2_MPI_RANK",
+                "valueFrom": {"fieldRef": {"fieldPath": "metadata.labels['jobset.sigs.k8s.io/job-index']"}},
+            },
+            {
+                "name": "FS2_MPI_HOSTS",
+                "value": ",".join(
+                    f"{resource.name}-gang-{index}-0.{resource.name}" for index in range(resource.gang_size)
+                ),
+            },
+        ]
+
+    @staticmethod
+    def _configure_mpi_pod(pod: dict[str, Any], resource: WorkloadResource) -> None:
+        """Configure one Pod per node, with a single output/checkpoint owner."""
+        assert resource.invocation is not None
+        spec = pod["spec"]
+        spec.setdefault("affinity", {})["podAntiAffinity"] = {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+                {
+                    "labelSelector": {"matchLabels": {"jobset.sigs.k8s.io/jobset-name": resource.name}},
+                    "topologyKey": "kubernetes.io/hostname",
+                }
+            ],
+        }
+        collector = next(item for item in spec["containers"] if item["name"] == COLLECTOR_CONTAINER_NAME)
+        original = collector["command"]
+        collector["command"] = [
+            "python",
+            "-m",
+            "fs2_gromacs.mpi",
+            "--workspace",
+            resource.invocation.working_directory,
+            "--peer-collector",
+            "--collector-command",
+            *original,
+        ]
+        collector["env"].append(
+            {
+                "name": "FS2_MPI_RANK",
+                "valueFrom": {"fieldRef": {"fieldPath": "metadata.labels['jobset.sigs.k8s.io/job-index']"}},
+            }
+        )

@@ -48,7 +48,10 @@ traffic.
 
 Expanded details show source, request/operation IDs, operation and upstream attempt
 numbers, precise timestamps, tenant/principal/key ID, model/tool, method/endpoint,
-actual HTTP status, disconnect/error details, query string, headers and bodies.
+actual HTTP status, customer-visible semantic outcome, JSON-RPC error code,
+normalized semantic error type, admission stage, disconnect/error details, query
+string, headers and bodies. HTTP status remains transport evidence; it is never
+used as a substitute for the MCP/tool outcome.
 Duplicate header entries are preserved. An API key **ID** is attribution, not its
 secret value. Operation attempts and upstream HTTP retries are different counters.
 
@@ -82,9 +85,10 @@ continue within the same window; it is pagination, not a request count. The UI
 resets cursor paging when its selected request window changes.
 
 List `data` is `{items: DebugExchangeSummary[], next_cursor: string | null}`.
-Summaries include identities, endpoint/method/status/error type, source, attempt
-numbers, observed byte counts and completeness/redaction flags. They intentionally
-omit bodies, headers, query strings and error-detail text.
+Summaries include identities, endpoint/method/HTTP status, semantic outcome,
+JSON-RPC code, normalized error type, admission stage, source, attempt numbers,
+observed byte counts and completeness/redaction flags. They intentionally omit
+bodies, headers, query strings and error-detail text.
 
 Detail `data` is one `DebugExchange`, adding `query_string`, header-pair lists,
 `error_detail`, `request_body` and `response_body`. Each body contains:
@@ -96,7 +100,26 @@ content_type: observed value or null
 observed_bytes: number of body bytes actually observed before redaction
 complete: whether the observed capture reached a complete body
 redacted: whether sensitive content was replaced
+capture_mode: inline (also the default for historical rows) | artifact_reference
+artifact_reference: optional immutable object identity and transfer evidence
 ```
+
+Successful `/v1/artifacts/{id}/content` downloads use `artifact_reference` mode.
+The exact payload already exists in tenant-authorized Object Storage. The API
+hashes each streamed chunk and records the object ID, expected SHA-256/size,
+observed SHA-256, delivered byte count and verification result. It does **not**
+accumulate the trajectory in RAM or duplicate it into the PostgreSQL debug row.
+`data` is an explanatory reference message in this mode, not the original file;
+the console labels it accordingly and copies reference metadata. Use the normal
+authorized artifact endpoint to retrieve the actual bytes. Artifact retention is
+the storage owner's lifecycle, not a second permanent copy in the debug store.
+Errors on the artifact route still retain their inline error body. Interrupted
+transfers retain their partial count/checksum with `verified=false`; a complete
+HTTP response alone does not make a size/digest mismatch verified.
+`delivered_bytes` means bytes accepted by the ASGI server's send operation, not
+bytes acknowledged or consumed by the remote client. An interrupted reader can
+consume fewer bytes than the API handed to the proxy before disconnect; both
+boundaries must be reported honestly when testing interrupted transfers.
 
 Nullable identities/statuses are not invented. A request without a durable
 operation shows **No operation**; an unavailable status is **Not observed**, not
@@ -109,6 +132,10 @@ HTTP 0 or success.
   runtime response bounds. An oversized upstream response may retain only its
   bounded prefix and report incomplete capture. This is not an unlimited packet
   recorder or a new model payload-size allowance.
+- Stored-artifact responses are the explicit reference-mode exception above.
+  This keeps large-file transfers bounded in memory without disabling request
+  attribution or discarding the original files. Ordinary model/MCP request and
+  response capture is unchanged.
 - A rejected request body may never have been consumed by the application. The
   public middleware does not drain it merely to fill a log. Interrupted, unread,
   failed or limit-exceeded streams remain explicitly partial/incomplete. An empty

@@ -1,0 +1,113 @@
+{
+  "observed_at": "2026-09-16T16:20:28.903582+00:00",
+  "context": "fs2-storage-h100",
+  "namespace": "fs2-models",
+  "region": "eu-north1",
+  "capacity_type": "regular",
+  "preemptible": false,
+  "capacity_reason": "Existing free L40S; preemptible H100 nodes were NotReady at scheduling.",
+  "model_id": "mindguard-4b",
+  "cache_state": "cold-image-cold-weights",
+  "pod_name": "fs2-mindguard-r20260916-4b-587d54cd5c-85mbz",
+  "pod_uid": "68be7fc9-5b34-4f91-b0c3-1a1e8d132c95",
+  "node": "computeinstance-e00sa78kng1kwhej6q",
+  "model_revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+  "runtime_args": [
+    "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+    "--served-model-name",
+    "mindguard-4b",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8000",
+    "--dtype",
+    "bfloat16",
+    "--max-model-len",
+    "4096",
+    "--tensor-parallel-size",
+    "1",
+    "--gpu-memory-utilization",
+    "0.80",
+    "--generation-config",
+    "vllm",
+    "--chat-template",
+    "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2/chat_template.jinja",
+    "--enforce-eager"
+  ],
+  "requested_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+  "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+  "gpu_csv_fields": "name,uuid,memory.total,memory.used,utilization.gpu,driver_version",
+  "gpu_csv": "NVIDIA L40S, GPU-5fad413e-4ffa-5ca2-281f-f532c1df2bae, 46068 MiB, 37259 MiB, 0 %, 580.173.02",
+  "software": {
+    "vllm": "0.28.0",
+    "torch": "2.13.0+cu130",
+    "transformers": "5.15.1",
+    "cuda": "13.0"
+  },
+  "clocks": {
+    "pod_created_at": "2026-09-16T16:13:52Z",
+    "ready_at": "2026-09-16T16:18:53Z",
+    "hydrate_started_at": "2026-09-16T16:16:40Z",
+    "hydrate_finished_at": "2026-09-16T16:17:18Z",
+    "runtime_started_at": "2026-09-16T16:17:22Z",
+    "pod_to_ready_seconds": 301.0,
+    "hydrate_seconds": 38.0,
+    "runtime_to_ready_seconds": 91.0
+  },
+  "events": [
+    {
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/fs2-mindguard-r20260916-4b-587d54cd5c-85mbz to computeinstance-e00sa78kng1kwhej6q",
+      "first_at": "2026-09-16T16:13:53Z",
+      "last_at": "2026-09-16T16:13:53Z"
+    },
+    {
+      "reason": "Pulling",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\"",
+      "first_at": "2026-09-16T16:13:53Z",
+      "last_at": "2026-09-16T16:13:53Z"
+    },
+    {
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" in 2m46.085s (2m46.085s including waiting). Image size: 8634306308 bytes.",
+      "first_at": "2026-09-16T16:16:39Z",
+      "last_at": "2026-09-16T16:16:39Z"
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "first_at": "2026-09-16T16:16:40Z",
+      "last_at": "2026-09-16T16:16:40Z"
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "first_at": "2026-09-16T16:16:40Z",
+      "last_at": "2026-09-16T16:16:40Z"
+    },
+    {
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635\" already present on machine and can be accessed by the pod",
+      "first_at": "2026-09-16T16:17:22Z",
+      "last_at": "2026-09-16T16:17:22Z"
+    },
+    {
+      "reason": "Created",
+      "message": "Container created",
+      "first_at": "2026-09-16T16:17:22Z",
+      "last_at": "2026-09-16T16:17:22Z"
+    },
+    {
+      "reason": "Started",
+      "message": "Container started",
+      "first_at": "2026-09-16T16:17:22Z",
+      "last_at": "2026-09-16T16:17:22Z"
+    },
+    {
+      "reason": "Unhealthy",
+      "message": "Startup probe failed: Get \"http://10.6.109.94:8000/health\": dial tcp 10.6.109.94:8000: connect: connection refused",
+      "first_at": "2026-09-16T16:17:23Z",
+      "last_at": "2026-09-16T16:18:43Z"
+    }
+  ]
+}

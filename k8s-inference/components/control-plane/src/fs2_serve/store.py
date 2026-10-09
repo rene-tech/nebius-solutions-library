@@ -300,6 +300,8 @@ class Store(Protocol):
 
     async def list_scientific_admissions(self, *, limit: int = 100) -> list[PendingScientificAdmission]: ...
 
+    def scientific_admission_recovery(self) -> AbstractAsyncContextManager[bool]: ...
+
     async def complete_scientific_admission(self, operation_id: UUID) -> None: ...
 
     async def complete_scientific_artifact_upload(
@@ -308,13 +310,20 @@ class Store(Protocol):
         *,
         tenant_id: str,
         principal_id: str,
+        verified: bool = True,
     ) -> OperationView: ...
 
     async def get_operation(self, operation_id: UUID, *, tenant_id: str | None = None) -> OperationView: ...
 
+    async def list_customer_operations(
+        self, principal: Principal, *, limit: int, before: tuple[datetime, UUID] | None = None
+    ) -> list[OperationView]: ...
+
     async def get_operation_result(self, operation_id: UUID, *, tenant_id: str) -> OperationResult: ...
 
-    async def claim_operation(self, worker_id: str, *, lease_seconds: float) -> ClaimedOperation | None: ...
+    async def claim_operation(
+        self, worker_id: str, *, lease_seconds: float, stream_operation_id: UUID | None = None,
+    ) -> ClaimedOperation | None: ...
 
     async def ensure_activation_intent(
         self,

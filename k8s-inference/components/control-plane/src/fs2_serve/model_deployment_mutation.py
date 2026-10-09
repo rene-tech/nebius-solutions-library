@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol
 from urllib.parse import quote
@@ -67,8 +68,9 @@ from .model_deployment_records import (
     ModelDeploymentRevisionAction,
     ModelDeploymentRuntimePhase,
 )
+from .model_retirement import ModelRetirementRequest, retire_model
 from .models import IdempotencyKey, StrictModel
-from .store import ConflictError
+from .store import ConflictError, NotFoundError
 
 DESIRED_FIELD_MANAGER = "fs2-admin-model-desired"
 
@@ -96,6 +98,8 @@ class DesiredWriteReceipt(StrictModel):
 
 class ModelDeploymentDesiredWriter(Protocol):
     async def apply(self, revision: ModelDeploymentRevision) -> DesiredWriteReceipt: ...
+    async def check_retirement(self, revision: ModelDeploymentRevision) -> None: ...
+    async def retire(self, revision: ModelDeploymentRevision) -> None: ...
 
 
 class HttpKubernetesDesiredWriter:
@@ -209,6 +213,67 @@ class HttpKubernetesDesiredWriter:
             resource_version=self._metadata(value, "resourceVersion"),
             generation=generation,
             spec_digest=revision.etag,
+        )
+
+    async def _retirement_document(self, revision: ModelDeploymentRevision) -> dict[str, Any] | None:
+        if revision.namespace != self.namespace or revision.spec.lifecycle.desired_state is DesiredState.ENABLED:
+            raise DesiredWriteError("only a drained owned model can be retired")
+        response = await self._request("GET", self._path(revision.name), allow_not_found=True)
+        if response.status_code == 404:
+            return None
+        current = response.json()
+        self._receipt(current, revision)
+        pods = await self._request(
+            "GET",
+            f"/api/v1/namespaces/{quote(self.namespace, safe='')}/pods",
+            params={"labelSelector": "fs2-serve.nebius.ai/model-id=" + revision.spec.public_model_id},
+        )
+        items = pods.json().get("items")
+        if not isinstance(items, list) or any(
+            item.get("status", {}).get("phase") not in {"Succeeded", "Failed"} for item in items
+        ):
+            raise DesiredWriteError("model still has nonterminal Pods or Pod inventory is unavailable")
+        return current
+
+    async def check_retirement(self, revision: ModelDeploymentRevision) -> None:
+        current = await self._retirement_document(revision)
+        if current is None:
+            raise DesiredWriteError("fresh drained controller observation is required before archival")
+        status = current.get("status", {})
+        replicas = status.get("replicas", {})
+        publication = status.get("publication", {})
+        try:
+            observed = datetime.fromisoformat(status["lastReconcileTime"].replace("Z", "+00:00"))
+            age = (datetime.now(UTC) - observed).total_seconds()
+        except (KeyError, ValueError, TypeError):
+            raise DesiredWriteError("controller observation timestamp is unavailable") from None
+        if (
+            status.get("phase") != "Cold"
+            or status.get("specDigest") != revision.etag
+            or status.get("observedGeneration") != current["metadata"]["generation"]
+            or not 0 <= age <= 120
+            or any(replicas.get(key) != 0 for key in ("desired", "ready", "available"))
+            or any(publication.get(key) is not False for key in ("mcp", "openAI"))
+        ):
+            raise DesiredWriteError("model retirement requires fresh observed cold, unpublished, zero-replica state")
+
+    async def retire(self, revision: ModelDeploymentRevision) -> None:
+        current = await self._retirement_document(revision)
+        if current is None:
+            return
+        await self._request(
+            "DELETE",
+            self._path(revision.name),
+            allow_not_found=True,
+            json={
+                "apiVersion": "v1",
+                "kind": "DeleteOptions",
+                "propagationPolicy": "Foreground",
+                "preconditions": {
+                    "uid": self._metadata(current, "uid"),
+                    "resourceVersion": self._metadata(current, "resourceVersion"),
+                },
+            },
         )
 
     async def apply(self, revision: ModelDeploymentRevision) -> DesiredWriteReceipt:
@@ -1250,6 +1315,28 @@ def model_deployment_mutation_router(
                 configuration_options=service.configuration_options(),
             )
         )
+
+    @router.post(
+        "/admin/api/v1/model-deployments/{name}:retire",
+        responses=problem_responses,
+    )
+    async def retire(
+        request: Request,
+        body: ModelRetirementRequest,
+        name: Annotated[str, ApiPath(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)],
+    ) -> Any:
+        actor = identity(request)
+        await access.authorize_global(actor, OperatorRole.ADMIN, action="model_deployment.retire")
+        try:
+            return envelope(await retire_model(service, name, body, actor.subject))
+        except NotFoundError:
+            raise AdminProblemError(404, "model_deployment_not_found", "model deployment was not found") from None
+        except ConflictError as exc:
+            raise AdminProblemError(409, "model_retirement_conflict", str(exc)) from None
+        except DesiredWriteError as exc:
+            raise AdminProblemError(409, "model_retirement_not_quiescent", str(exc)) from None
+        except ValueError as exc:
+            raise AdminProblemError(503, "model_retirement_unavailable", str(exc)) from None
 
     @router.post(
         "/admin/api/v1/model-deployments:apply",

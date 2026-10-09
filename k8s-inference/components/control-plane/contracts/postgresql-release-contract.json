@@ -1,6 +1,6 @@
 {
   "canonicalization": "utf8-json-sort-keys-no-whitespace",
-  "contract_payload_sha256": "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e",
+  "contract_payload_sha256": "98996da86d1a85fdb397558cd38a3b046c4cb07fc43e207b638fcc50a7b80ba1",
   "migration_set": {
     "algorithm": "sha256",
     "ordered_migrations": [
@@ -148,9 +148,54 @@
         "ordinal": 29,
         "sha256": "a02fe7eb59ea664c4cb4972158a59d52b5df22aa937eb83cd9a287939a90438a",
         "version": "0029_request_debug.sql"
+      },
+      {
+        "ordinal": 30,
+        "sha256": "25228cd592492009f0d8b6c43be64c5075e2c454f6407d078f8b4add7c98f3f3",
+        "version": "0030_mcp_semantic_outcomes.sql"
+      },
+      {
+        "ordinal": 31,
+        "sha256": "c3c97b15e58ddc165a4c03c262a878189e2245293cf571e96eb4eaa516f23030",
+        "version": "0031_user_storage.sql"
+      },
+      {
+        "ordinal": 32,
+        "sha256": "dc22191ef0162488ad06fb1f9971c530d8380a64e2ad26e76cb39cbb60cac215",
+        "version": "0032_scientific_child_delegation.sql"
+      },
+      {
+        "ordinal": 33,
+        "sha256": "d45ea62fe285915afcad8302f4a53563b5439692eab1f3e9f756a9c29f1f5601",
+        "version": "0033_customer_starter_packs.sql"
+      },
+      {
+        "ordinal": 34,
+        "sha256": "87c4f70bf7c84bb3b5b85b3e771866246cc842944a558d1828510ad4c68cdca8",
+        "version": "0034_retired_event_tenants.sql"
+      },
+      {
+        "ordinal": 35,
+        "sha256": "eb614e35d3091a6ba10eaf150f65b230a755eb17eb9493dc7585bd7a3bd512af",
+        "version": "0035_benchmark_campaigns.sql"
+      },
+      {
+        "ordinal": 36,
+        "sha256": "5506eb0d119b6c1fa4f366e36f530a0a6f20808730942579b9cc0c9db2bf7470",
+        "version": "0036_model_retirement.sql"
+      },
+      {
+        "ordinal": 37,
+        "sha256": "8f1c3d4a634894cdb37f3955892224c576d9a04465cc1eb924f13241e29ccbe1",
+        "version": "0037_customer_workbenches.sql"
+      },
+      {
+        "ordinal": 38,
+        "sha256": "fed73c3987c65954c165f1359c1be2c8e79025d64d6006c2b728bc7c94aa7f91",
+        "version": "0038_scientific_claimable_index.sql"
       }
     ],
-    "sha256": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2"
+    "sha256": "f5569a923378a5cd4fee62a6e25936df6310fc9adb2ee057a1dc1448340472d3"
   },
   "namespace_role_ownership": {
     "credential_secrets": [
@@ -263,9 +308,9 @@
   "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
   "required_release_receipt_inputs": {
     "first_migration_version": "0001_initial.sql",
-    "last_migration_version": "0029_request_debug.sql",
-    "migration_count": 29,
-    "migration_set_sha256": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2",
+    "last_migration_version": "0038_scientific_claimable_index.sql",
+    "migration_count": 38,
+    "migration_set_sha256": "f5569a923378a5cd4fee62a6e25936df6310fc9adb2ee057a1dc1448340472d3",
     "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"
   },
   "schema": "fs2-serve.nebius.ai/postgresql-release-contract/v1"

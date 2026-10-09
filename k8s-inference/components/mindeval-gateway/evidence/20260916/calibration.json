@@ -1,0 +1,209 @@
+{
+  "created_at": "2026-09-16T16:28:55.414121+00:00",
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "candidates": {
+    "NousResearch/Hermes-4-405B": {
+      "selection": {
+        "n": 24,
+        "valid": 24,
+        "mae": 0.4628472222222222,
+        "bias": 0.178125,
+        "rmse": 0.5510538094650339,
+        "by_axis": {
+          "Clinical Accuracy & Competence": {
+            "mae": 0.4479166666666667,
+            "bias": 0.375
+          },
+          "Ethical & Professional Conduct": {
+            "mae": 0.46354166666666663,
+            "bias": 0.039930555555555615
+          },
+          "Assessment & Response": {
+            "mae": 0.3854166666666667,
+            "bias": 0.21875
+          },
+          "Therapeutic Relationship & Alliance": {
+            "mae": 0.4861111111111111,
+            "bias": -0.08680555555555558
+          },
+          "AI-Specific Communication Quality": {
+            "mae": 0.53125,
+            "bias": 0.34375
+          }
+        },
+        "within_profile_pairwise_accuracy": 1.0,
+        "pairs": 1
+      },
+      "validation": {
+        "n": 24,
+        "valid": 24,
+        "mae": 0.5767361111111111,
+        "bias": 0.34479166666666666,
+        "rmse": 0.7105256107407519,
+        "by_axis": {
+          "Clinical Accuracy & Competence": {
+            "mae": 0.6145833333333334,
+            "bias": 0.5416666666666666
+          },
+          "Ethical & Professional Conduct": {
+            "mae": 0.5555555555555556,
+            "bias": 0.1006944444444444
+          },
+          "Assessment & Response": {
+            "mae": 0.5729166666666666,
+            "bias": 0.5
+          },
+          "Therapeutic Relationship & Alliance": {
+            "mae": 0.4635416666666666,
+            "bias": -0.012152777777777754
+          },
+          "AI-Specific Communication Quality": {
+            "mae": 0.6770833333333334,
+            "bias": 0.59375
+          }
+        },
+        "within_profile_pairwise_accuracy": null,
+        "pairs": 0
+      }
+    },
+    "google/gemma-3-27b-it": {
+      "selection": {
+        "n": 24,
+        "valid": 24,
+        "mae": 0.4392361111111111,
+        "bias": 0.134375,
+        "rmse": 0.5466252736700113,
+        "by_axis": {
+          "Clinical Accuracy & Competence": {
+            "mae": 0.328125,
+            "bias": 0.09895833333333333
+          },
+          "Ethical & Professional Conduct": {
+            "mae": 0.37499999999999994,
+            "bias": 0.04513888888888895
+          },
+          "Assessment & Response": {
+            "mae": 0.3802083333333333,
+            "bias": 0.328125
+          },
+          "Therapeutic Relationship & Alliance": {
+            "mae": 0.5086805555555555,
+            "bias": -0.23784722222222224
+          },
+          "AI-Specific Communication Quality": {
+            "mae": 0.6041666666666666,
+            "bias": 0.4375
+          }
+        },
+        "within_profile_pairwise_accuracy": 1.0,
+        "pairs": 1
+      },
+      "validation": {
+        "n": 24,
+        "valid": 24,
+        "mae": 0.45694444444444443,
+        "bias": 0.1125,
+        "rmse": 0.5792515924944941,
+        "by_axis": {
+          "Clinical Accuracy & Competence": {
+            "mae": 0.4791666666666667,
+            "bias": 0.07291666666666667
+          },
+          "Ethical & Professional Conduct": {
+            "mae": 0.3993055555555556,
+            "bias": 0.059027777777777735
+          },
+          "Assessment & Response": {
+            "mae": 0.421875,
+            "bias": 0.359375
+          },
+          "Therapeutic Relationship & Alliance": {
+            "mae": 0.47395833333333326,
+            "bias": -0.3142361111111111
+          },
+          "AI-Specific Communication Quality": {
+            "mae": 0.5104166666666666,
+            "bias": 0.3854166666666667
+          }
+        },
+        "within_profile_pairwise_accuracy": null,
+        "pairs": 0
+      }
+    }
+  },
+  "selected_model": "google/gemma-3-27b-it",
+  "selection_rule": "minimum selection-set MAE with 100% valid judgments",
+  "profile_split": {
+    "selection": [
+      "Alexander",
+      "Angela",
+      "Barbara",
+      "Dorothy",
+      "Mark",
+      "William"
+    ],
+    "validation": [
+      "Brian",
+      "David",
+      "Elizabeth",
+      "Emma",
+      "Jessica",
+      "Ronald",
+      "Tyler"
+    ]
+  },
+  "excluded_in_context_annotation_ids": [
+    "1de535d9-a0d6-4af5-84f7-1f6800d85647",
+    "799bd8ba-ea2c-48bb-a7c8-6d6b28b929ab",
+    "5b5c1169-5040-472a-b50d-f01893e2d0c8",
+    "213b42ca-b2f1-45eb-a41f-d8956bd5fe3a",
+    "b84a6a6a-8335-4971-b1c9-cbb483c6ad0f",
+    "3f2dc9a8-9b76-4b69-9d5b-a62981dce051",
+    "245141b8-cd0f-443d-ac2e-999aead95ccd",
+    "b6a96d89-22b0-4f47-952c-040164a78b5a",
+    "954182de-82b4-4524-9259-2a26f98e972e",
+    "84b12e0c-0e5e-4a92-8b18-abc819a76686",
+    "39c23252-89be-4d7a-add9-9c70795dc37d",
+    "b718d324-212a-438e-9d50-69693bb4e132"
+  ],
+  "human_field_mapping": {
+    "Clinical Accuracy & Competence": [
+      "criterion_1",
+      "criterion_2"
+    ],
+    "Ethical & Professional Conduct": [
+      "criterion_3",
+      "criterion_4"
+    ],
+    "Assessment & Response": [
+      "criterion_6",
+      "criterion_7"
+    ],
+    "Therapeutic Relationship & Alliance": [
+      "criterion_8",
+      "criterion_9"
+    ],
+    "AI-Specific Communication Quality": [
+      "criterion_10"
+    ]
+  },
+  "bias_boundary": "Pilot on published synthetic conversations, not clinical validation. Family exclusion reduces self-preference but does not remove training-data or patient-family bias. No post-hoc score offsets. Human zero ratings excluded as out of scale; undocumented criterion11 excluded."
+}

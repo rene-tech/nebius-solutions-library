@@ -868,6 +868,7 @@ locals {
   root_budgeted_resource_names = sort(distinct(concat(
     local.root_accelerator_resource_names,
     local.root_core_admission_enabled ? ["cpu", "memory"] : [],
+    length(var.managed_rdma_pools) > 0 ? ["rdma.fs2.nebius/hca"] : [],
   )))
 
   root_serving_lanes = {
@@ -1052,6 +1053,7 @@ locals {
   }
 
   foundation_variables = {
+    managed_rdma_pools       = var.managed_rdma_pools
     grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
     jobset = {
       enabled            = var.deployment.scientific_batch.enabled
@@ -1120,6 +1122,8 @@ locals {
   }
 
   workloads_variables = {
+    managed_rdma_pools              = var.managed_rdma_pools
+    customer_storage                = var.deployment.storage.customer_buckets
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
     model_image_overrides           = local.effective_model_images
@@ -1178,6 +1182,7 @@ locals {
       enabled                  = var.deployment.scientific_batch.enabled
       writes_enabled           = var.deployment.scientific_batch.writes_enabled
       namespace                = var.deployment.scientific_batch.namespace
+      tools_image              = var.deployment.scientific_batch.tools_image
       runtime_cache            = var.deployment.scientific_batch.runtime_cache
       execution_map            = local.scientific_execution_map
       gpu_snapshots            = local.normalized_snapshot_settings.scientific
@@ -1211,6 +1216,8 @@ locals {
       digest     = var.deployment.applications.control_plane.digest
     }
     control_plane_autoscaling = var.deployment.applications.control_plane.autoscaling
+    benchmark_workers         = var.deployment.applications.control_plane.benchmark_workers
+    gpu_observer_image        = var.deployment.applications.control_plane.gpu_observer_image
     control_plane_rollout     = var.deployment.applications.control_plane.rollout
     catalog_rollout_digest    = var.deployment.applications.control_plane.catalog_rollout_digest
     admin_console = {
@@ -1248,6 +1255,7 @@ locals {
       handoff_receipt                            = var.deployment.dynamic_models.handoff_receipt
       gpu_snapshots                              = local.normalized_snapshot_settings.serving
       fast_start_evidence_file                   = var.deployment.dynamic_models.fast_start_evidence_file
+      retained_registration_file                 = var.deployment.dynamic_models.retained_registration_file
       fast_start_environment_qualifications_file = var.deployment.dynamic_models.fast_start_environment_qualifications_file
       fast_start_measurement_contracts_file      = var.deployment.dynamic_models.fast_start_measurement_contracts_file
       fast_start_mechanisms_file                 = var.deployment.dynamic_models.fast_start_mechanisms_file

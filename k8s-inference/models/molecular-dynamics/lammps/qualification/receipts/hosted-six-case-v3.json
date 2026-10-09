@@ -1,0 +1,682 @@
+{
+  "model_id": "lammps",
+  "operation_id": "6ce558e6-3d85-4626-8d4f-366c9f8834c3",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+  "runtime_identity_source": "parent operation/Pod evidence; separately verify exact deployed image",
+  "engine_id": "nvcr.io/nvidia/lammps@sha256:d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+  "recorded_at": "2026-09-23T15:51:05.058384+00:00",
+  "status": "passed",
+  "request_sha256": "e2c43c84f20f492eb46516cd89dc3e8763a932c47bbe758e1ce8a9fd8bf7cc41",
+  "input_sha256": "2b4adc1464162d2d6c042031b7bd1687578ce08a42dcaed5c435d8441f49df98",
+  "tests": [
+    {
+      "case": "lj",
+      "status": "passed",
+      "result_sha256": "d0dfc59e1c796b4aeb252b9f3fae4f1e0702a941b046c0711ad0464bdee6be71",
+      "input_sha256": "2b4adc1464162d2d6c042031b7bd1687578ce08a42dcaed5c435d8441f49df98",
+      "validation_sha256": "e15fc5c1e67f3c3df56af16738f9a6a706099df5bb2b4cb156dedd61a6146530",
+      "validation_path": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/lj/hosted-scientific-validation-e15fc5c1e67f3c3df56af16738f9a6a706099df5bb2b4cb156dedd61a6146530.json",
+      "raw_evidence": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/lj",
+      "validation": {
+        "fixture": "lj",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 131072,
+        "production_steps": 300000,
+        "units": "lj",
+        "timestep": 0.005,
+        "ensemble": "NVE",
+        "native_loop_seconds": 93.8565,
+        "native_timing_seconds": {
+          "Pair": 4.1786,
+          "Neigh": 3.7512999999999996,
+          "Comm": 70.565,
+          "Output": 5.9921,
+          "Modify": 7.5536,
+          "Other": 1.8153
+        },
+        "atom_timesteps_per_second": 418954467.7246648,
+        "ns_per_day": null,
+        "reduced_time_per_day": 1380831.375557367,
+        "temperature_min": 0.681353327187285,
+        "temperature_max": 0.699723016943996,
+        "temperature_mean": 0.6907347973445551,
+        "temperature_stdev": 0.004088614623840132,
+        "relative_total_energy_span": 0.007853208218443432,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": null,
+        "neighbor_checking_enabled": false,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 193500,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 0.0,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectories": [
+          {
+            "name": "trajectory.1.lammpstrj",
+            "frames": 19,
+            "first_step": 10000,
+            "last_step": 190000
+          },
+          {
+            "name": "trajectory.2.lammpstrj",
+            "frames": 11,
+            "first_step": 200000,
+            "last_step": 300000
+          }
+        ],
+        "trajectory_frames": 30,
+        "native_segments": 2,
+        "native_loops": [
+          {
+            "seconds": 59.7767,
+            "ranks": 1,
+            "steps": 191500,
+            "atoms": 131072
+          },
+          {
+            "seconds": 34.0798,
+            "ranks": 1,
+            "steps": 108500,
+            "atoms": 131072
+          }
+        ],
+        "gpu_samples": 0,
+        "gpu_utilization_mean_percent": null,
+        "gpu_memory_peak_mib": null,
+        "gpu_power_mean_watts": null,
+        "warnings": [
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "final_thermodynamics": [
+          302000.0,
+          131072.0,
+          0.684602792232548,
+          -5.68345147024457,
+          1.02689635369162,
+          -4.65655511655295,
+          0.656583126325609,
+          155261.786306562
+        ],
+        "immutable_input_parity": true,
+        "verified_input_files": 43,
+        "result_inventory_parity": true,
+        "recipe_parity": true
+      }
+    },
+    {
+      "case": "eam",
+      "status": "passed",
+      "result_sha256": "ce1d84aba7fa61c12ea6ee075b8e6df22dd2734344e7965e98d6fe1464b84b0f",
+      "input_sha256": "2b4adc1464162d2d6c042031b7bd1687578ce08a42dcaed5c435d8441f49df98",
+      "validation_sha256": "31739965bd49b5a9cb4f7e88b41b5143ca2b1b8ccb8fdd19232736efe8bb1000",
+      "validation_path": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/eam/hosted-scientific-validation-31739965bd49b5a9cb4f7e88b41b5143ca2b1b8ccb8fdd19232736efe8bb1000.json",
+      "raw_evidence": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/eam",
+      "validation": {
+        "fixture": "eam",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 150000,
+        "units": "metal",
+        "timestep": 0.005,
+        "ensemble": "NVE",
+        "native_loop_seconds": 100.58940000000001,
+        "native_timing_seconds": {
+          "Pair": 64.075,
+          "Neigh": 3.4838,
+          "Comm": 25.860999999999997,
+          "Output": 0.78106,
+          "Modify": 3.5282999999999998,
+          "Other": 2.8609999999999998
+        },
+        "atom_timesteps_per_second": 47718745.712768935,
+        "ns_per_day": 644.2030671223806,
+        "reduced_time_per_day": null,
+        "temperature_min": 791.342906641631,
+        "temperature_max": 806.355560382253,
+        "temperature_mean": 798.7265934254182,
+        "temperature_stdev": 2.6501013159301476,
+        "relative_total_energy_span": 0.0001569308171404576,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 5,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 90900,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 90500
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectories": [
+          {
+            "name": "trajectory.1.lammpstrj",
+            "frames": 9,
+            "first_step": 10000,
+            "last_step": 90000
+          },
+          {
+            "name": "trajectory.2.lammpstrj",
+            "frames": 6,
+            "first_step": 100000,
+            "last_step": 150000
+          }
+        ],
+        "trajectory_frames": 15,
+        "native_segments": 2,
+        "native_loops": [
+          {
+            "seconds": 59.8937,
+            "ranks": 1,
+            "steps": 88900,
+            "atoms": 32000
+          },
+          {
+            "seconds": 40.6957,
+            "ranks": 1,
+            "steps": 61100,
+            "atoms": 32000
+          }
+        ],
+        "gpu_samples": 0,
+        "gpu_utilization_mean_percent": null,
+        "gpu_memory_peak_mib": null,
+        "gpu_power_mean_watts": null,
+        "warnings": [
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "final_thermodynamics": [
+          152000.0,
+          32000.0,
+          796.198626155222,
+          -109916.641120071,
+          3293.23307895013,
+          -106623.408041121,
+          51782.0831280942,
+          377933.067
+        ],
+        "immutable_input_parity": true,
+        "verified_input_files": 43,
+        "result_inventory_parity": true,
+        "recipe_parity": true
+      }
+    },
+    {
+      "case": "tersoff",
+      "status": "passed",
+      "result_sha256": "d2f661e192d0e8ae2efd4474b995f66953340257d55132156dad621911088a05",
+      "input_sha256": "2b4adc1464162d2d6c042031b7bd1687578ce08a42dcaed5c435d8441f49df98",
+      "validation_sha256": "dbd96eb846e1f404250e3018a8243f2a5d666013497de340e73ff206c09aa0db",
+      "validation_path": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/tersoff/hosted-scientific-validation-dbd96eb846e1f404250e3018a8243f2a5d666013497de340e73ff206c09aa0db.json",
+      "raw_evidence": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/tersoff",
+      "validation": {
+        "fixture": "tersoff",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 300000,
+        "units": "metal",
+        "timestep": 0.001,
+        "ensemble": "NVE",
+        "native_loop_seconds": 56.9322,
+        "native_timing_seconds": {
+          "Pair": 10.065,
+          "Neigh": 1.6493,
+          "Comm": 29.027,
+          "Output": 1.3111,
+          "Modify": 6.3617,
+          "Other": 8.518
+        },
+        "atom_timesteps_per_second": 168621623.61545837,
+        "ns_per_day": 455.2783837617377,
+        "reduced_time_per_day": null,
+        "temperature_min": 482.669584291473,
+        "temperature_max": 493.248552870564,
+        "temperature_mean": 487.48171674420047,
+        "temperature_stdev": 1.6160257141809917,
+        "relative_total_energy_span": 5.359327502876615e-07,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectories": [
+          {
+            "name": "trajectory.1.lammpstrj",
+            "frames": 30,
+            "first_step": 10000,
+            "last_step": 300000
+          }
+        ],
+        "trajectory_frames": 30,
+        "native_segments": 1,
+        "native_loops": [
+          {
+            "seconds": 56.9322,
+            "ranks": 1,
+            "steps": 300000,
+            "atoms": 32000
+          }
+        ],
+        "gpu_samples": 0,
+        "gpu_utilization_mean_percent": null,
+        "gpu_memory_peak_mib": null,
+        "gpu_power_mean_watts": null,
+        "warnings": [],
+        "final_thermodynamics": [
+          302000.0,
+          32000.0,
+          486.023664161398,
+          -146044.480398897,
+          2010.28883420457,
+          -144034.191564692,
+          -3090.57394732029,
+          640765.911964
+        ],
+        "immutable_input_parity": true,
+        "verified_input_files": 43,
+        "result_inventory_parity": true,
+        "recipe_parity": true
+      }
+    },
+    {
+      "case": "snap",
+      "status": "passed",
+      "result_sha256": "889db4a10a450d86c0a63deb5e3695f4adca7f073f70c48cadb79a95f0f864bf",
+      "input_sha256": "2b4adc1464162d2d6c042031b7bd1687578ce08a42dcaed5c435d8441f49df98",
+      "validation_sha256": "c0d9e729ad2f0f0818b0efe2e9444c575928dcc7be44a23b905db3bd669bf8a3",
+      "validation_path": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/snap/hosted-scientific-validation-c0d9e729ad2f0f0818b0efe2e9444c575928dcc7be44a23b905db3bd669bf8a3.json",
+      "raw_evidence": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/snap",
+      "validation": {
+        "fixture": "snap",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 2000,
+        "production_steps": 150000,
+        "units": "metal",
+        "timestep": 0.001,
+        "ensemble": "NVE",
+        "native_loop_seconds": 64.92724,
+        "native_timing_seconds": {
+          "Pair": 50.5791,
+          "Neigh": 0.0,
+          "Comm": 6.56927,
+          "Output": 0.0554986,
+          "Modify": 3.20079,
+          "Other": 4.5229
+        },
+        "atom_timesteps_per_second": 4620556.795576095,
+        "ns_per_day": 199.60805356888727,
+        "reduced_time_per_day": null,
+        "temperature_min": 133.191451377183,
+        "temperature_max": 161.232028857101,
+        "temperature_mean": 148.60368939006335,
+        "temperature_stdev": 3.7348282828867716,
+        "relative_total_energy_span": 4.3095729313528214e-08,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 140400,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 140000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectories": [
+          {
+            "name": "trajectory.1.lammpstrj",
+            "frames": 14,
+            "first_step": 10000,
+            "last_step": 140000
+          },
+          {
+            "name": "trajectory.2.lammpstrj",
+            "frames": 1,
+            "first_step": 150000,
+            "last_step": 150000
+          }
+        ],
+        "trajectory_frames": 15,
+        "native_segments": 2,
+        "native_loops": [
+          {
+            "seconds": 60.0078,
+            "ranks": 1,
+            "steps": 138400,
+            "atoms": 2000
+          },
+          {
+            "seconds": 4.91944,
+            "ranks": 1,
+            "steps": 11600,
+            "atoms": 2000
+          }
+        ],
+        "gpu_samples": 0,
+        "gpu_utilization_mean_percent": null,
+        "gpu_memory_peak_mib": null,
+        "gpu_power_mean_watts": null,
+        "warnings": [
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "final_thermodynamics": [
+          152000.0,
+          2000.0,
+          153.239517301421,
+          -23665.2132385286,
+          39.5957166899974,
+          -23625.6175218386,
+          1367.87295775221,
+          36462.258496
+        ],
+        "immutable_input_parity": true,
+        "verified_input_files": 43,
+        "result_inventory_parity": true,
+        "recipe_parity": true
+      }
+    },
+    {
+      "case": "reaxff",
+      "status": "passed",
+      "result_sha256": "81f69da8e3e927b1ffcb3f28c3df709120bec6d5749c7adf945c71f217543cf5",
+      "input_sha256": "2b4adc1464162d2d6c042031b7bd1687578ce08a42dcaed5c435d8441f49df98",
+      "validation_sha256": "f1664a9f9ae6a77dbb67640e6842825defbf7bd0b400d59345d0194bcf2f447c",
+      "validation_path": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/reaxff/hosted-scientific-validation-f1664a9f9ae6a77dbb67640e6842825defbf7bd0b400d59345d0194bcf2f447c.json",
+      "raw_evidence": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/reaxff",
+      "validation": {
+        "fixture": "reaxff",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 8000,
+        "production_steps": 20000,
+        "units": "real",
+        "timestep": 0.1,
+        "ensemble": "NVE",
+        "native_loop_seconds": 299.6385,
+        "native_timing_seconds": {
+          "Pair": 165.648,
+          "Neigh": 0.0,
+          "Comm": 9.6725,
+          "Output": 0.03070372,
+          "Modify": 123.615,
+          "Other": 0.6728
+        },
+        "atom_timesteps_per_second": 533976.7753476271,
+        "ns_per_day": 0.5766949173754374,
+        "reduced_time_per_day": null,
+        "temperature_min": 1185.47932039552,
+        "temperature_max": 1229.56624337433,
+        "temperature_mean": 1209.0389793648342,
+        "temperature_stdev": 8.784280870102622,
+        "relative_total_energy_span": 1.013444503284527e-06,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 6100,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 6000
+          },
+          {
+            "step": 10100,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 10000
+          },
+          {
+            "step": 14100,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 14000
+          },
+          {
+            "step": 18100,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 18000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectories": [
+          {
+            "name": "trajectory.1.lammpstrj",
+            "frames": 0,
+            "first_step": null,
+            "last_step": null
+          },
+          {
+            "name": "trajectory.2.lammpstrj",
+            "frames": 1,
+            "first_step": 10000,
+            "last_step": 10000
+          },
+          {
+            "name": "trajectory.3.lammpstrj",
+            "frames": 0,
+            "first_step": null,
+            "last_step": null
+          },
+          {
+            "name": "trajectory.4.lammpstrj",
+            "frames": 0,
+            "first_step": null,
+            "last_step": null
+          },
+          {
+            "name": "trajectory.5.lammpstrj",
+            "frames": 1,
+            "first_step": 20000,
+            "last_step": 20000
+          }
+        ],
+        "trajectory_frames": 2,
+        "native_segments": 5,
+        "native_loops": [
+          {
+            "seconds": 61.0902,
+            "ranks": 1,
+            "steps": 4100,
+            "atoms": 8000
+          },
+          {
+            "seconds": 59.8985,
+            "ranks": 1,
+            "steps": 4000,
+            "atoms": 8000
+          },
+          {
+            "seconds": 60.5857,
+            "ranks": 1,
+            "steps": 4000,
+            "atoms": 8000
+          },
+          {
+            "seconds": 59.8964,
+            "ranks": 1,
+            "steps": 4000,
+            "atoms": 8000
+          },
+          {
+            "seconds": 58.1677,
+            "ranks": 1,
+            "steps": 3900,
+            "atoms": 8000
+          }
+        ],
+        "gpu_samples": 0,
+        "gpu_utilization_mean_percent": null,
+        "gpu_memory_peak_mib": null,
+        "gpu_power_mean_watts": null,
+        "warnings": [
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "final_thermodynamics": [
+          22000.0,
+          8000.0,
+          1226.25323934806,
+          -1510135.04328605,
+          29238.1686095703,
+          -1480896.87467648,
+          2705369.16787334,
+          45384.685263
+        ],
+        "immutable_input_parity": true,
+        "verified_input_files": 43,
+        "result_inventory_parity": true,
+        "recipe_parity": true
+      }
+    },
+    {
+      "case": "rhodo",
+      "status": "passed",
+      "result_sha256": "66da03b78e3661aad7d20510dbb46779c00e54dc3236317ade0a3b94258ecbf5",
+      "input_sha256": "2b4adc1464162d2d6c042031b7bd1687578ce08a42dcaed5c435d8441f49df98",
+      "validation_sha256": "4049b5287c05d27755b88a36c066de4558a045014cd694f3db2ba60e79cd1695",
+      "validation_path": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/rhodo/hosted-scientific-validation-4049b5287c05d27755b88a36c066de4558a045014cd694f3db2ba60e79cd1695.json",
+      "raw_evidence": "/home/tux/secure-handoff/fs2-md-engines-20260923/lammps-hosted-six-case-02-materialized/rhodo",
+      "validation": {
+        "fixture": "rhodo",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 50000,
+        "units": "real",
+        "timestep": 2.0,
+        "ensemble": "NPT",
+        "native_loop_seconds": 219.3912,
+        "native_timing_seconds": {
+          "Pair": 64.492,
+          "Bond": 7.9298,
+          "Kspace": 92.794,
+          "Neigh": 17.2075,
+          "Comm": 8.6387,
+          "Output": 0.25929,
+          "Modify": 26.3335,
+          "Other": 1.7365
+        },
+        "atom_timesteps_per_second": 7292908.74018648,
+        "ns_per_day": 39.38170719700699,
+        "reduced_time_per_day": null,
+        "temperature_min": 295.963255508048,
+        "temperature_max": 303.675168777306,
+        "temperature_mean": 300.0674637433771,
+        "temperature_stdev": 1.6526314020283202,
+        "relative_total_energy_span": 0.03624421012435627,
+        "energy_span_gate": null,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 15200,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 15000
+          },
+          {
+            "step": 28500,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 6.360454865218405e-08,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          },
+          {
+            "step": 41800,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 41500
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectories": [
+          {
+            "name": "trajectory.1.lammpstrj",
+            "frames": 1,
+            "first_step": 10000,
+            "last_step": 10000
+          },
+          {
+            "name": "trajectory.2.lammpstrj",
+            "frames": 1,
+            "first_step": 20000,
+            "last_step": 20000
+          },
+          {
+            "name": "trajectory.3.lammpstrj",
+            "frames": 2,
+            "first_step": 30000,
+            "last_step": 40000
+          },
+          {
+            "name": "trajectory.4.lammpstrj",
+            "frames": 1,
+            "first_step": 50000,
+            "last_step": 50000
+          }
+        ],
+        "trajectory_frames": 5,
+        "native_segments": 4,
+        "native_loops": [
+          {
+            "seconds": 58.131,
+            "ranks": 1,
+            "steps": 13200,
+            "atoms": 32000
+          },
+          {
+            "seconds": 58.3867,
+            "ranks": 1,
+            "steps": 13300,
+            "atoms": 32000
+          },
+          {
+            "seconds": 58.3745,
+            "ranks": 1,
+            "steps": 13300,
+            "atoms": 32000
+          },
+          {
+            "seconds": 44.499,
+            "ranks": 1,
+            "steps": 10200,
+            "atoms": 32000
+          }
+        ],
+        "gpu_samples": 0,
+        "gpu_utilization_mean_percent": null,
+        "gpu_memory_peak_mib": null,
+        "gpu_power_mean_watts": null,
+        "warnings": [
+          "WARNING: Using default KISS FFT with Kokkos GPU backends may give suboptimal performance (src/KOKKOS/pppm_kokkos.cpp:110)",
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "final_thermodynamics": [
+          52000.0,
+          32000.0,
+          299.955864987604,
+          -46830.4454659529,
+          21510.5334303767,
+          -25319.9120355762,
+          -179.419072415233,
+          307083.577064119
+        ],
+        "immutable_input_parity": true,
+        "verified_input_files": 43,
+        "result_inventory_parity": true,
+        "recipe_parity": true
+      }
+    }
+  ],
+  "customer_ready": false,
+  "scientific_convergence_claimed": false,
+  "gpu_snapshot_qualified": false
+}

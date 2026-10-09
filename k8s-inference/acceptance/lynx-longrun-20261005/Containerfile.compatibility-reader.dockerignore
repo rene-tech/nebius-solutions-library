@@ -1,0 +1,12 @@
+**
+!k8s-inference/
+!k8s-inference/components/
+!k8s-inference/components/control-plane/
+!k8s-inference/components/control-plane/src/
+!k8s-inference/components/control-plane/src/fs2_serve/
+!k8s-inference/components/control-plane/src/fs2_serve/scientific_batch/
+!k8s-inference/components/control-plane/src/fs2_serve/scientific_batch/codec.py
+!k8s-inference/components/control-plane/src/fs2_serve/scientific_batch/models.py
+!k8s-inference/acceptance/
+!k8s-inference/acceptance/lynx-longrun-20261005/
+!k8s-inference/acceptance/lynx-longrun-20261005/install_compatibility_guard.py

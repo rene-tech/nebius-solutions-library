@@ -1,4 +1,13 @@
 /** Actual retained exchanges, separate from logical operations and their results. */
+export interface DebugArtifactReference {
+  artifact_id: string;
+  sha256: string;
+  size_bytes: number;
+  observed_sha256: string;
+  delivered_bytes: number;
+  verified: boolean;
+}
+
 export interface DebugBody {
   encoding: "utf-8" | "base64";
   data: string;
@@ -6,6 +15,9 @@ export interface DebugBody {
   observed_bytes: number;
   complete: boolean;
   redacted: boolean;
+  /** Older rows omit these fields and retain their original inline behavior. */
+  capture_mode?: "inline" | "artifact_reference";
+  artifact_reference?: DebugArtifactReference | null;
 }
 
 export interface DebugExchangeSummary {
@@ -27,6 +39,22 @@ export interface DebugExchangeSummary {
   http_status: number | null;
   error_type: string | null;
   disconnected: boolean;
+  semantic_outcome:
+    | "succeeded"
+    | "accepted"
+    | "failed"
+    | "cancelled"
+    | "timed_out"
+    | "unknown"
+    | null;
+  jsonrpc_error_code: number | null;
+  semantic_error_type: string | null;
+  admission_stage:
+    | "pre_admission"
+    | "admitted"
+    | "not_applicable"
+    | "unknown"
+    | null;
   request_observed_bytes: number;
   response_observed_bytes: number;
   request_complete: boolean;

@@ -1,0 +1,121 @@
+# Runtime image and CPSAM v2 weights are immutable. The platform controller owns replicas.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cellpose-cpsam-v2
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: cellpose-cpsam-v2
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: cellpose-cpsam-v2
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cellpose-cpsam-v2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/name: cellpose-cpsam-v2
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: cellpose-cpsam-v2
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: runtime
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/cellpose-cpsam-v2@sha256:d3048aca99d4c278002fa88e42417dd42d1a40fb2689af1688d239799fc59a5e
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+            - name: XDG_CACHE_HOME
+              value: /tmp/cache
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: "4"
+              memory: 12Gi
+              ephemeral-storage: 4Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 24Gi
+              ephemeral-storage: 12Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cellpose-cpsam-v2
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: cellpose-cpsam-v2
+    fs2-serve.nebius.ai/model-id: cellpose-cpsam-v2
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: cellpose-cpsam-v2
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

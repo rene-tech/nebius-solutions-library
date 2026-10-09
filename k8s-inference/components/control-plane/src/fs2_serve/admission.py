@@ -37,6 +37,7 @@ from .lifecycle import (
     reproducibility_metadata,
     trace_identity,
 )
+from .model_delivery_contracts import admission_model
 from .models import (
     ActivationIntentStatus,
     AdmissionRequest,
@@ -48,13 +49,23 @@ from .models import (
     RuntimeIdentity,
     RuntimeLifecycleObservation,
     RuntimeObservationSource,
+    RuntimeResult,
 )
 from .registry import ModelRouteUnavailableError, OperationalModel, Registry
-from .runtime import ActivationError, PreemptedError, RouteUnavailableError, RuntimeClient, RuntimeOperationError
+from .runtime import (
+    ActivationError,
+    PreemptedError,
+    RouteUnavailableError,
+    RuntimeBusyError,
+    RuntimeClient,
+    RuntimeNoReplayError,
+    RuntimeOperationError,
+)
 from .store import ConflictError, StaleLeaseError, Store
 from .telemetry import Metrics
 
 LOGGER = logging.getLogger(__name__)
+RuntimeInvocation = Callable[[OperationalModel, ClaimedOperation, bytes], Awaitable[RuntimeResult]]
 
 
 def _publication_surface(*, protocol: str, required_scope: str) -> str:
@@ -111,6 +122,7 @@ class AdmissionService:
         self._stop_claiming = asyncio.Event()
         self._stop_maintenance = asyncio.Event()
         self._workers: list[asyncio.Task[None]] = []
+        self._stream_tasks: set[asyncio.Task[Any]] = set()
         self._maintenance_task: asyncio.Task[None] | None = None
         self._inflight: dict[str, ClaimedOperation] = {}
         self._worker_health: dict[str, bool] = {}
@@ -147,11 +159,12 @@ class AdmissionService:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._maintenance_task
             self._maintenance_task = None
-        if self._workers:
-            _, pending = await asyncio.wait(self._workers, timeout=self.shutdown_grace_seconds)
+        active_tasks = [*self._workers, *self._stream_tasks]
+        if active_tasks:
+            _, pending = await asyncio.wait(active_tasks, timeout=self.shutdown_grace_seconds)
             for task in pending:
                 task.cancel()
-            await asyncio.gather(*self._workers, return_exceptions=True)
+            await asyncio.gather(*active_tasks, return_exceptions=True)
         self._workers.clear()
         self._worker_health.clear()
 
@@ -191,6 +204,7 @@ class AdmissionService:
         admission: AdmissionRequest,
         *,
         required_scope: str = "inference.invoke",
+        streaming: bool = False,
     ) -> OperationView:
         principal.require(required_scope)
         routes_fresh = True
@@ -213,6 +227,20 @@ class AdmissionService:
             raise PermissionError("operation is outside model policy")
         if admission.protocol not in model.gateway.protocols:
             raise ValueError("model does not implement requested protocol")
+        # Bind the operation's delivery limit before both budget reservation and
+        # durable route serialization. It is never a caller/model-payload field.
+        model = admission_model(model, protocol=admission.protocol, operation=admission.operation)
+        if streaming:
+            # Live audio uses the same published native App and policy, but a
+            # connection-owning executor, never a background HTTP worker.
+            from .model_input_contracts import contract_for
+
+            source = contract_for(model, admission.protocol).model_ref
+            if (source not in {"nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+                               "parakeet-realtime-eou-120m-v1", "magpie-tts-multilingual-357m",
+                               "diar-streaming-sortformer-4spk-v2-1"}
+                    or admission.protocol != "native" or model.binding.backend_class != "local-kubernetes"):
+                raise ValueError("model does not implement live speech")
         request_body = admission.request_body
         trace_carrier: dict[str, str] = {}
         TraceContextTextMapPropagator().inject(trace_carrier)
@@ -244,10 +272,11 @@ class AdmissionService:
                 "model_id": model.id,
                 "request_body": request_body,
                 "traceparent": continued_traceparent,
+                "protocol": "speech-stream-v1" if streaming else admission.protocol,
             }
         )
         dynamic_policy = model.dynamic_policy
-        if dynamic_policy is not None:
+        if dynamic_policy is not None and not streaming:
             queue_deadline = datetime.now(UTC) + timedelta(seconds=dynamic_policy.max_queue_seconds)
             if canonical_admission.deadline_at is None or canonical_admission.deadline_at > queue_deadline:
                 canonical_admission = canonical_admission.model_copy(update={"deadline_at": queue_deadline})
@@ -256,7 +285,10 @@ class AdmissionService:
             admission=canonical_admission,
             model_revision=model.model_revision,
             reserved_gpu_seconds=model.gpu_seconds_reservation,
-            max_attempts=model.max_attempts,
+            # A lost live connection cannot be silently replayed from an empty
+            # audio buffer. Lease expiry is terminal and the client decides
+            # whether to start a new operation with retained audio.
+            max_attempts=1 if streaming else model.max_attempts,
             dispatch_snapshot=self.registry.dispatch_snapshot(model),
             dynamic_fence=(
                 None
@@ -311,6 +343,43 @@ class AdmissionService:
         )
         self._wake.set()
         return operation
+
+    async def execute_stream(self, operation: OperationView, invoke: RuntimeInvocation) -> OperationView:
+        """Pin one admitted live operation to its connection-owning executor.
+
+        Reuses the exact model activation, fencing, heartbeat, cancellation,
+        encrypted result persistence, usage and lifecycle path of file jobs.
+        """
+        if operation.protocol != "speech-stream-v1" or operation.reused:
+            raise ConflictError("a live connection cannot replay or attach to an existing operation")
+        task = asyncio.current_task()
+        assert task is not None
+        self._stream_tasks.add(task)
+        try:
+            model = self.registry.get(operation.model_id)
+            queue_seconds = model.dynamic_policy.max_queue_seconds if model.dynamic_policy is not None else 300
+            queue_deadline = operation.accepted_at + timedelta(seconds=queue_seconds)
+            worker_id = f"{socket.gethostname()}:speech:{operation.id}"
+            while not self._stop_claiming.is_set():
+                current = await self.store.get_operation(operation.id, tenant_id=operation.tenant_id)
+                if current.status is not OperationStatus.QUEUED:
+                    raise ConflictError("live operation is no longer queued for this connection")
+                if datetime.now(UTC) >= queue_deadline:
+                    raise ConflictError("live speech queue deadline elapsed")
+                claimed = await self.store.claim_operation(
+                    worker_id, lease_seconds=self.lease_seconds, stream_operation_id=operation.id,
+                )
+                if claimed is not None:
+                    break
+                # A durable operation may not yet be available to claim.
+                # Remain visibly queued without replaying a live connection.
+                await asyncio.sleep(self.wait_poll_initial_seconds)
+            else:
+                raise ConflictError("gateway is draining")
+            await self._run_claim(worker_id, claimed, invoke=invoke)
+            return await self.store.get_operation(operation.id, tenant_id=operation.tenant_id)
+        finally:
+            self._stream_tasks.discard(task)
 
     async def wait(self, operation_id: UUID, *, tenant_id: str, seconds: float) -> OperationView:
         """Wait within a bounded per-replica slot using exponentially backed-off reads.
@@ -416,7 +485,9 @@ class AdmissionService:
             )
             return False
 
-    async def _run_claim(self, worker_id: str, claimed: ClaimedOperation) -> None:
+    async def _run_claim(
+        self, worker_id: str, claimed: ClaimedOperation, *, invoke: RuntimeInvocation | None = None,
+    ) -> None:
         self._inflight[worker_id] = claimed
         clear_claim = False
         try:
@@ -437,7 +508,7 @@ class AdmissionService:
                 span.set_attribute("fs2.model.revision", claimed.model_revision)
                 span.set_attribute("fs2.attempt.number", claimed.attempt)
                 await self._record_claim(claimed)
-                await self._execute(claimed)
+                await self._execute(claimed, invoke=invoke)
             clear_claim = True
         except StaleLeaseError:
             clear_claim = True
@@ -546,8 +617,8 @@ class AdmissionService:
                 lease_seconds=self.lease_seconds,
             )
 
-    async def _execute(self, claimed: ClaimedOperation) -> None:
-        work = asyncio.create_task(self._execute_claim(claimed), name=f"fs2-operation-{claimed.id}")
+    async def _execute(self, claimed: ClaimedOperation, *, invoke: RuntimeInvocation | None = None) -> None:
+        work = asyncio.create_task(self._execute_claim(claimed, invoke=invoke), name=f"fs2-operation-{claimed.id}")
         heartbeat = asyncio.create_task(self._heartbeat(claimed), name=f"fs2-heartbeat-{claimed.id}")
         try:
             done, _ = await asyncio.wait({work, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
@@ -580,6 +651,8 @@ class AdmissionService:
         return datetime.now(UTC) + timedelta(seconds=bounded * jitter)
 
     async def _retry(self, model: OperationalModel, claimed: ClaimedOperation, exc: RuntimeOperationError) -> bool:
+        if isinstance(exc, RuntimeNoReplayError):
+            return False
         if claimed.attempt >= claimed.max_attempts:
             return False
         available_at = self._retry_at(model, claimed)
@@ -638,7 +711,7 @@ class AdmissionService:
             fencing_token=claimed.fencing_token,
         )
 
-    async def _execute_claim(self, claimed: ClaimedOperation) -> None:
+    async def _execute_claim(self, claimed: ClaimedOperation, *, invoke: RuntimeInvocation | None = None) -> None:
         model: OperationalModel | None = None
         result_body: bytes | None = None
         result_content_type: str | None = None
@@ -660,13 +733,6 @@ class AdmissionService:
             )
             try:
                 model = await self._current_model(claimed)
-                if self.artifact_inputs is not None:
-                    request_body = await self.artifact_inputs.materialize(
-                        model,
-                        claimed.protocol,
-                        tenant_id=claimed.tenant_id,
-                        request_body=request_body,
-                    )
                 invocation_started = datetime.now(UTC)
                 with self._tracer.start_as_current_span("fs2.runtime.invoke", kind=SpanKind.CLIENT) as span:
                     span.set_attribute("fs2.operation.id", str(claimed.id))
@@ -679,7 +745,15 @@ class AdmissionService:
                     span.set_attribute("fs2.model.revision", claimed.model_revision)
                     span.set_attribute("fs2.attempt.number", claimed.attempt)
                     span.set_attribute("fs2.protocol", claimed.protocol)
-                    result = await self.runtime.invoke(model, claimed, request_body)
+                    if invoke is None:
+                        result, invocation_started = await self._invoke_when_capacity_available(
+                            model, claimed, request_body,
+                        )
+                    else:
+                        result = await invoke(model, claimed, request_body)
+                    if invoke is not None:
+                        identity, observation = await self.runtime.observe(model, claimed)
+                        result = result.model_copy(update={"runtime": identity, "lifecycle": observation})
                     span.set_attribute("fs2.runtime.http_status", result.status_code)
                     span.set_attribute("fs2.runtime.semantic_outcome", result.semantic_outcome)
                 invocation_finished = datetime.now(UTC)
@@ -692,7 +766,9 @@ class AdmissionService:
                 )
             finally:
                 del request_body
-            if result.status_code >= 500:
+            if result.status_code >= 500 and result.failure_code not in {
+                "generation_exhausted", "model_memory_exhausted"
+            }:
                 failure = RuntimeOperationError("upstream returned a retryable status")
                 if await self._retry(model, claimed, failure):
                     return
@@ -720,7 +796,7 @@ class AdmissionService:
                 response_body=result.body if success else None,
                 response_content_type=result.content_type if success else None,
                 error_code=None if success else result.failure_code or "upstream_failure",
-                error_detail=None,
+                error_detail=None if success else result.failure_detail,
                 runtime=result.runtime,
                 worker_id=claimed.worker_id,
                 fencing_token=claimed.fencing_token,
@@ -754,6 +830,41 @@ class AdmissionService:
             ),
         )
         self.metrics.observe_worker_latency(final)
+
+    async def _invoke_when_capacity_available(
+        self, model: OperationalModel, claimed: ClaimedOperation, request_body: bytes,
+    ) -> tuple[RuntimeResult, datetime]:
+        """Wait only for an explicit no-work-accepted speech busy response.
+
+        Keep the same fenced operation; cancellation/deadline and lease renewal
+        remain owned by _run_claim. A busy poll is not a failed GPU inference
+        attempt. Rematerialize short-lived audio handles after every wait so a
+        long live session cannot leave a queued file with an expired URL.
+        """
+        queue_seconds = model.dynamic_policy.max_queue_seconds if model.dynamic_policy is not None else 300
+        deadline = claimed.accepted_at + timedelta(seconds=queue_seconds)
+        if claimed.deadline_at is not None:
+            deadline = min(deadline, claimed.deadline_at)
+        delay = 0.5
+        waits = 0
+        while True:
+            payload = request_body
+            if self.artifact_inputs is not None:
+                payload = await self.artifact_inputs.materialize(
+                    model, claimed.protocol, tenant_id=claimed.tenant_id, request_body=request_body,
+                )
+            started = datetime.now(UTC)
+            try:
+                result = await self.runtime.invoke(model, claimed, payload)
+                return result, started
+            except RuntimeBusyError:
+                remaining = (deadline - datetime.now(UTC)).total_seconds()
+                if remaining <= 0:
+                    raise ActivationError("speech capacity wait deadline elapsed") from None
+                waits += 1
+                LOGGER.info("speech_capacity_wait operation_id=%s model_id=%s poll=%s", claimed.id, model.id, waits)
+                await asyncio.sleep(min(delay, remaining))
+                delay = min(delay * 1.5, 5)
 
     async def _record_claim(self, claimed: ClaimedOperation) -> None:
         occurred_at = claimed.activation_started_at or datetime.now(UTC)
@@ -1127,4 +1238,9 @@ class AdmissionService:
                 )
             except (KeyError, RuntimeError, ValueError):
                 raise RouteUnavailableError("canonical route evidence is unavailable") from None
+        if model.qualification_policy is not None:
+            try:
+                self.registry.authorize_qualification_dispatch(model, claimed.tenant_id, claimed.principal_id)
+            except (KeyError, RuntimeError, PermissionError):
+                raise RouteUnavailableError("qualification route is outside the current tenant policy") from None
         return model

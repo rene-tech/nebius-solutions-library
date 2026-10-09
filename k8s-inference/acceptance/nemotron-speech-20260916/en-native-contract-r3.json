@@ -1,0 +1,700 @@
+{
+  "scope": "private resident worker HTTP/WebSocket; not public gateway acceptance",
+  "started_at": "2026-09-16T10:29:20.958654+00:00",
+  "pod": "fs2-speech-restore-en-0916-r2",
+  "pod_uid": "033fe834-a0d2-459e-9f56-08b4b883cdf2",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+  "model": "nemotron-speech-en-0.6b",
+  "measurements": [
+    {
+      "case": "speech-fixture-observatory",
+      "input_sha256": "4e4c366ed1a52fb0c1c56bbf51c38edee395960a95990660e59380f78ef6da30",
+      "request_payload_sha256": "d9d23e4e11d4e8e0160aa544f06d3821bdbc9d53237cc72d2c23dbaab7b59fcf",
+      "started_at": "2026-09-16T10:29:24.484014+00:00",
+      "mode": "http-file",
+      "wall_seconds": 0.7370751350026694,
+      "ready": {
+        "ready": true,
+        "active_sessions": 0,
+        "model": "nemotron-speech-en-0.6b",
+        "profile": {
+          "model": "nemotron-speech-en-0.6b",
+          "chunk_size_ms": 560,
+          "strip_language_tags": true,
+          "decoding": "greedy_batch",
+          "beam_size": 4,
+          "precision": "float32",
+          "confidence": false,
+          "cuda_graphs": false
+        },
+        "backend_id": "fs2-speech-restore-en-0916-r2"
+      },
+      "result": {
+        "text": "The research team is testing speech recognition. Please retain the complete recording, including the final word, the final word is telescope.",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "5261dc3e-9219-4017-bdad-62d22f94543a",
+            "sequence": 17,
+            "segment_id": 0,
+            "revision": 17,
+            "text": " The research team is testing speech recognition. Please retain the complete recording, including the final word, the final word is telescope.",
+            "granularity": "word",
+            "items": [
+              {
+                "text": " The",
+                "start_seconds": 0.56,
+                "end_seconds": 0.64,
+                "confidence": null
+              },
+              {
+                "text": "research",
+                "start_seconds": 0.64,
+                "end_seconds": 0.8,
+                "confidence": null
+              },
+              {
+                "text": "team",
+                "start_seconds": 0.8,
+                "end_seconds": 1.12,
+                "confidence": null
+              },
+              {
+                "text": "is",
+                "start_seconds": 1.12,
+                "end_seconds": 1.2,
+                "confidence": null
+              },
+              {
+                "text": "testing",
+                "start_seconds": 1.2,
+                "end_seconds": 1.28,
+                "confidence": null
+              },
+              {
+                "text": "speech",
+                "start_seconds": 2.24,
+                "end_seconds": 2.4,
+                "confidence": null
+              },
+              {
+                "text": "recognition.",
+                "start_seconds": 2.4,
+                "end_seconds": 2.8,
+                "confidence": null
+              },
+              {
+                "text": "Please",
+                "start_seconds": 3.44,
+                "end_seconds": 3.52,
+                "confidence": null
+              },
+              {
+                "text": "retain",
+                "start_seconds": 3.92,
+                "end_seconds": 4.16,
+                "confidence": null
+              },
+              {
+                "text": "the",
+                "start_seconds": 4.16,
+                "end_seconds": 4.48,
+                "confidence": null
+              },
+              {
+                "text": "complete",
+                "start_seconds": 4.48,
+                "end_seconds": 4.56,
+                "confidence": null
+              },
+              {
+                "text": "recording,",
+                "start_seconds": 5.04,
+                "end_seconds": 5.6,
+                "confidence": null
+              },
+              {
+                "text": "including",
+                "start_seconds": 6.16,
+                "end_seconds": 6.4,
+                "confidence": null
+              },
+              {
+                "text": "the",
+                "start_seconds": 6.4,
+                "end_seconds": 6.72,
+                "confidence": null
+              },
+              {
+                "text": "final",
+                "start_seconds": 6.72,
+                "end_seconds": 6.8,
+                "confidence": null
+              },
+              {
+                "text": "word,",
+                "start_seconds": 7.28,
+                "end_seconds": 7.36,
+                "confidence": null
+              },
+              {
+                "text": "the",
+                "start_seconds": 8.24,
+                "end_seconds": 8.32,
+                "confidence": null
+              },
+              {
+                "text": "final",
+                "start_seconds": 8.32,
+                "end_seconds": 8.56,
+                "confidence": null
+              },
+              {
+                "text": "word",
+                "start_seconds": 8.56,
+                "end_seconds": 8.64,
+                "confidence": null
+              },
+              {
+                "text": "is",
+                "start_seconds": 8.96,
+                "end_seconds": 9.04,
+                "confidence": null
+              },
+              {
+                "text": "telescope.",
+                "start_seconds": 9.52,
+                "end_seconds": 9.68,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "audio_seconds": 10.1434375,
+        "processing_seconds": 0.5814743779992568,
+        "model": "nemotron-speech-en-0.6b",
+        "language": "en-US",
+        "model_revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50"
+      }
+    },
+    {
+      "case": "speech-fixture-observatory",
+      "input_sha256": "4e4c366ed1a52fb0c1c56bbf51c38edee395960a95990660e59380f78ef6da30",
+      "request_payload_sha256": "d9d23e4e11d4e8e0160aa544f06d3821bdbc9d53237cc72d2c23dbaab7b59fcf",
+      "started_at": "2026-09-16T10:29:24.484014+00:00",
+      "mode": "websocket-unpaced",
+      "wall_seconds": 0.5490552629999002,
+      "first_partial_seconds": 0.059753625999292126,
+      "result": {
+        "text": "The research team is testing speech recognition. Please retain the complete recording, including the final word, the final word is telescope.",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "a15dccff-53e8-4d9f-b469-904045a0fcc4",
+            "sequence": 17,
+            "segment_id": 0,
+            "revision": 17,
+            "text": " The research team is testing speech recognition. Please retain the complete recording, including the final word, the final word is telescope.",
+            "granularity": "word",
+            "items": [
+              {
+                "text": " The",
+                "start_seconds": 0.56,
+                "end_seconds": 0.64,
+                "confidence": null
+              },
+              {
+                "text": "research",
+                "start_seconds": 0.64,
+                "end_seconds": 0.8,
+                "confidence": null
+              },
+              {
+                "text": "team",
+                "start_seconds": 0.8,
+                "end_seconds": 1.12,
+                "confidence": null
+              },
+              {
+                "text": "is",
+                "start_seconds": 1.12,
+                "end_seconds": 1.2,
+                "confidence": null
+              },
+              {
+                "text": "testing",
+                "start_seconds": 1.2,
+                "end_seconds": 1.28,
+                "confidence": null
+              },
+              {
+                "text": "speech",
+                "start_seconds": 2.24,
+                "end_seconds": 2.4,
+                "confidence": null
+              },
+              {
+                "text": "recognition.",
+                "start_seconds": 2.4,
+                "end_seconds": 2.8,
+                "confidence": null
+              },
+              {
+                "text": "Please",
+                "start_seconds": 3.44,
+                "end_seconds": 3.52,
+                "confidence": null
+              },
+              {
+                "text": "retain",
+                "start_seconds": 3.92,
+                "end_seconds": 4.16,
+                "confidence": null
+              },
+              {
+                "text": "the",
+                "start_seconds": 4.16,
+                "end_seconds": 4.48,
+                "confidence": null
+              },
+              {
+                "text": "complete",
+                "start_seconds": 4.48,
+                "end_seconds": 4.56,
+                "confidence": null
+              },
+              {
+                "text": "recording,",
+                "start_seconds": 5.04,
+                "end_seconds": 5.6,
+                "confidence": null
+              },
+              {
+                "text": "including",
+                "start_seconds": 6.16,
+                "end_seconds": 6.4,
+                "confidence": null
+              },
+              {
+                "text": "the",
+                "start_seconds": 6.4,
+                "end_seconds": 6.72,
+                "confidence": null
+              },
+              {
+                "text": "final",
+                "start_seconds": 6.72,
+                "end_seconds": 6.8,
+                "confidence": null
+              },
+              {
+                "text": "word,",
+                "start_seconds": 7.28,
+                "end_seconds": 7.36,
+                "confidence": null
+              },
+              {
+                "text": "the",
+                "start_seconds": 8.24,
+                "end_seconds": 8.32,
+                "confidence": null
+              },
+              {
+                "text": "final",
+                "start_seconds": 8.32,
+                "end_seconds": 8.56,
+                "confidence": null
+              },
+              {
+                "text": "word",
+                "start_seconds": 8.56,
+                "end_seconds": 8.64,
+                "confidence": null
+              },
+              {
+                "text": "is",
+                "start_seconds": 8.96,
+                "end_seconds": 9.04,
+                "confidence": null
+              },
+              {
+                "text": "telescope.",
+                "start_seconds": 9.52,
+                "end_seconds": 9.68,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "type": "session.completed",
+        "session_id": "a15dccff-53e8-4d9f-b469-904045a0fcc4",
+        "audio_seconds": 10.1434375,
+        "last_sequence": 17
+      },
+      "matches_file_text": true
+    },
+    {
+      "case": "speech-fixture-workshop",
+      "input_sha256": "ae5c5c1e90f2d30e30f5acc5842396359b1ca5628d00f50c5280a202b8d6b578",
+      "request_payload_sha256": "ba90f872468e584b377f1d8bbbf2e80ad7f9eb9d1067cc3737057390b4638b7c",
+      "started_at": "2026-09-16T10:29:27.762398+00:00",
+      "mode": "http-file",
+      "wall_seconds": 0.6697809399993275,
+      "ready": {
+        "ready": true,
+        "active_sessions": 0,
+        "model": "nemotron-speech-en-0.6b",
+        "profile": {
+          "model": "nemotron-speech-en-0.6b",
+          "chunk_size_ms": 560,
+          "strip_language_tags": true,
+          "decoding": "greedy_batch",
+          "beam_size": 4,
+          "precision": "float32",
+          "confidence": false,
+          "cuda_graphs": false
+        },
+        "backend_id": "fs2-speech-restore-en-0916-r2"
+      },
+      "result": {
+        "text": "This is a different recording for the scientific platformWe compare complete file transcription with live audio. The final word is microscope",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "c18b3fbc-6f9e-49cc-bd95-bca876963146",
+            "sequence": 7,
+            "segment_id": 0,
+            "revision": 7,
+            "text": " This is a different recording for the scientific platform",
+            "granularity": "word",
+            "items": [
+              {
+                "text": " This",
+                "start_seconds": 0.16,
+                "end_seconds": 0.32,
+                "confidence": null
+              },
+              {
+                "text": "is",
+                "start_seconds": 0.32,
+                "end_seconds": 0.64,
+                "confidence": null
+              },
+              {
+                "text": "a",
+                "start_seconds": 0.64,
+                "end_seconds": 0.72,
+                "confidence": null
+              },
+              {
+                "text": "different",
+                "start_seconds": 0.72,
+                "end_seconds": 0.8,
+                "confidence": null
+              },
+              {
+                "text": "recording",
+                "start_seconds": 1.2,
+                "end_seconds": 1.28,
+                "confidence": null
+              },
+              {
+                "text": "for",
+                "start_seconds": 1.68,
+                "end_seconds": 1.76,
+                "confidence": null
+              },
+              {
+                "text": "the",
+                "start_seconds": 1.76,
+                "end_seconds": 1.84,
+                "confidence": null
+              },
+              {
+                "text": "scientific",
+                "start_seconds": 2.24,
+                "end_seconds": 2.32,
+                "confidence": null
+              },
+              {
+                "text": "platform",
+                "start_seconds": 2.8,
+                "end_seconds": 2.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "c18b3fbc-6f9e-49cc-bd95-bca876963146",
+            "sequence": 17,
+            "segment_id": 1,
+            "revision": 10,
+            "text": "We compare complete file transcription with live audio. The final word is microscope",
+            "granularity": "word",
+            "items": [
+              {
+                "text": "We",
+                "start_seconds": 4.0,
+                "end_seconds": 4.16,
+                "confidence": null
+              },
+              {
+                "text": "compare",
+                "start_seconds": 4.16,
+                "end_seconds": 4.24,
+                "confidence": null
+              },
+              {
+                "text": "complete",
+                "start_seconds": 4.56,
+                "end_seconds": 4.88,
+                "confidence": null
+              },
+              {
+                "text": "file",
+                "start_seconds": 5.6,
+                "end_seconds": 5.76,
+                "confidence": null
+              },
+              {
+                "text": "transcription",
+                "start_seconds": 5.76,
+                "end_seconds": 6.32,
+                "confidence": null
+              },
+              {
+                "text": "with",
+                "start_seconds": 6.32,
+                "end_seconds": 6.4,
+                "confidence": null
+              },
+              {
+                "text": "live",
+                "start_seconds": 7.12,
+                "end_seconds": 7.44,
+                "confidence": null
+              },
+              {
+                "text": "audio.",
+                "start_seconds": 7.44,
+                "end_seconds": 7.6,
+                "confidence": null
+              },
+              {
+                "text": "The",
+                "start_seconds": 8.24,
+                "end_seconds": 8.48,
+                "confidence": null
+              },
+              {
+                "text": "final",
+                "start_seconds": 8.48,
+                "end_seconds": 8.56,
+                "confidence": null
+              },
+              {
+                "text": "word",
+                "start_seconds": 8.56,
+                "end_seconds": 8.8,
+                "confidence": null
+              },
+              {
+                "text": "is",
+                "start_seconds": 8.8,
+                "end_seconds": 8.88,
+                "confidence": null
+              },
+              {
+                "text": "microscope",
+                "start_seconds": 9.2,
+                "end_seconds": 9.68,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "audio_seconds": 10.0586875,
+        "processing_seconds": 0.5708364659985818,
+        "model": "nemotron-speech-en-0.6b",
+        "language": "en-US",
+        "model_revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50"
+      }
+    },
+    {
+      "case": "speech-fixture-workshop",
+      "input_sha256": "ae5c5c1e90f2d30e30f5acc5842396359b1ca5628d00f50c5280a202b8d6b578",
+      "request_payload_sha256": "ba90f872468e584b377f1d8bbbf2e80ad7f9eb9d1067cc3737057390b4638b7c",
+      "started_at": "2026-09-16T10:29:27.762398+00:00",
+      "mode": "websocket-unpaced",
+      "wall_seconds": 0.5376442970009521,
+      "first_partial_seconds": 0.032888469999306835,
+      "result": {
+        "text": "This is a different recording for the scientific platformWe compare complete file transcription with live audio. The final word is microscope",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "0117e19e-f6f0-4f4f-832c-c4ab6c034f71",
+            "sequence": 7,
+            "segment_id": 0,
+            "revision": 7,
+            "text": " This is a different recording for the scientific platform",
+            "granularity": "word",
+            "items": [
+              {
+                "text": " This",
+                "start_seconds": 0.16,
+                "end_seconds": 0.32,
+                "confidence": null
+              },
+              {
+                "text": "is",
+                "start_seconds": 0.32,
+                "end_seconds": 0.64,
+                "confidence": null
+              },
+              {
+                "text": "a",
+                "start_seconds": 0.64,
+                "end_seconds": 0.72,
+                "confidence": null
+              },
+              {
+                "text": "different",
+                "start_seconds": 0.72,
+                "end_seconds": 0.8,
+                "confidence": null
+              },
+              {
+                "text": "recording",
+                "start_seconds": 1.2,
+                "end_seconds": 1.28,
+                "confidence": null
+              },
+              {
+                "text": "for",
+                "start_seconds": 1.68,
+                "end_seconds": 1.76,
+                "confidence": null
+              },
+              {
+                "text": "the",
+                "start_seconds": 1.76,
+                "end_seconds": 1.84,
+                "confidence": null
+              },
+              {
+                "text": "scientific",
+                "start_seconds": 2.24,
+                "end_seconds": 2.32,
+                "confidence": null
+              },
+              {
+                "text": "platform",
+                "start_seconds": 2.8,
+                "end_seconds": 2.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "0117e19e-f6f0-4f4f-832c-c4ab6c034f71",
+            "sequence": 17,
+            "segment_id": 1,
+            "revision": 10,
+            "text": "We compare complete file transcription with live audio. The final word is microscope",
+            "granularity": "word",
+            "items": [
+              {
+                "text": "We",
+                "start_seconds": 4.0,
+                "end_seconds": 4.16,
+                "confidence": null
+              },
+              {
+                "text": "compare",
+                "start_seconds": 4.16,
+                "end_seconds": 4.24,
+                "confidence": null
+              },
+              {
+                "text": "complete",
+                "start_seconds": 4.56,
+                "end_seconds": 4.88,
+                "confidence": null
+              },
+              {
+                "text": "file",
+                "start_seconds": 5.6,
+                "end_seconds": 5.76,
+                "confidence": null
+              },
+              {
+                "text": "transcription",
+                "start_seconds": 5.76,
+                "end_seconds": 6.32,
+                "confidence": null
+              },
+              {
+                "text": "with",
+                "start_seconds": 6.32,
+                "end_seconds": 6.4,
+                "confidence": null
+              },
+              {
+                "text": "live",
+                "start_seconds": 7.12,
+                "end_seconds": 7.44,
+                "confidence": null
+              },
+              {
+                "text": "audio.",
+                "start_seconds": 7.44,
+                "end_seconds": 7.6,
+                "confidence": null
+              },
+              {
+                "text": "The",
+                "start_seconds": 8.24,
+                "end_seconds": 8.48,
+                "confidence": null
+              },
+              {
+                "text": "final",
+                "start_seconds": 8.48,
+                "end_seconds": 8.56,
+                "confidence": null
+              },
+              {
+                "text": "word",
+                "start_seconds": 8.56,
+                "end_seconds": 8.8,
+                "confidence": null
+              },
+              {
+                "text": "is",
+                "start_seconds": 8.8,
+                "end_seconds": 8.88,
+                "confidence": null
+              },
+              {
+                "text": "microscope",
+                "start_seconds": 9.2,
+                "end_seconds": 9.68,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "type": "session.completed",
+        "session_id": "0117e19e-f6f0-4f4f-832c-c4ab6c034f71",
+        "audio_seconds": 10.0586875,
+        "last_sequence": 17
+      },
+      "matches_file_text": true
+    }
+  ],
+  "status": "passed",
+  "test_objects_deleted": 2
+}

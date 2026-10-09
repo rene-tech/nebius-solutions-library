@@ -1,0 +1,309 @@
+{
+  "audit": {
+    "canary_budget": {
+      "admission_budget_consumed_gpu_seconds": 18000.0,
+      "admission_budget_reserved_gpu_seconds": 0.0,
+      "expires_at": "2026-09-22T01:13:04.428152Z",
+      "gpu_seconds_budget": 25200.0,
+      "models": [
+        "cosmos3-nano"
+      ],
+      "request_budget": 8,
+      "requests_used": 8
+    },
+    "cosmos_generation": 24,
+    "customer_ready": false,
+    "hosted_parent_activated": false,
+    "native_operations": [
+      {
+        "accepted_at": "2026-09-20T01:18:01.468387Z",
+        "attempt": 2,
+        "completed_at": "2026-09-20T01:29:30.110148Z",
+        "id": "0e44bd08-dd54-447b-be4f-fefbf0fc1ae4",
+        "max_attempts": 3,
+        "runtime": {
+          "gpu_count": 0,
+          "gpu_uuids": [],
+          "node_uid": null,
+          "pod_uid": null,
+          "preemptible": null
+        },
+        "started_at": "2026-09-20T01:28:54.867324Z",
+        "status": "cancelled"
+      },
+      {
+        "accepted_at": "2026-09-20T01:30:58.443466Z",
+        "attempt": 1,
+        "completed_at": "2026-09-20T01:32:06.182953Z",
+        "id": "737b3f4a-e90a-4755-a79a-858da2f2271e",
+        "max_attempts": 3,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-316b82ec-b309-c18d-4e2e-836498e1e036"
+          ],
+          "node_uid": "37d7c857-ec84-4792-ae1c-b90e992ee777",
+          "pod_uid": "50712735-08ff-4184-8a9a-c0d5570bf0e8",
+          "preemptible": true
+        },
+        "started_at": "2026-09-20T01:31:47.314007Z",
+        "status": "succeeded"
+      },
+      {
+        "accepted_at": "2026-09-20T01:38:53.165850Z",
+        "attempt": 1,
+        "completed_at": "2026-09-20T01:40:04.917072Z",
+        "id": "c316cd6f-38f5-40cb-aa43-23e6affce26e",
+        "max_attempts": 3,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-1bdbdb30-4e41-5144-ef59-8b93002148dc"
+          ],
+          "node_uid": "2026493b-3226-4c1c-bc25-a56de38cc9d5",
+          "pod_uid": "9b0f5835-36c9-4a7e-9445-1a5f326ecf32",
+          "preemptible": true
+        },
+        "started_at": "2026-09-20T01:39:47.067168Z",
+        "status": "succeeded"
+      },
+      {
+        "accepted_at": "2026-09-20T01:32:13.649685Z",
+        "attempt": 1,
+        "completed_at": "2026-09-20T01:32:31.587122Z",
+        "id": "cefaf729-5db3-4504-9cc4-d8c4245e3478",
+        "max_attempts": 3,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-316b82ec-b309-c18d-4e2e-836498e1e036"
+          ],
+          "node_uid": "37d7c857-ec84-4792-ae1c-b90e992ee777",
+          "pod_uid": "50712735-08ff-4184-8a9a-c0d5570bf0e8",
+          "preemptible": true
+        },
+        "started_at": "2026-09-20T01:32:14.006627Z",
+        "status": "succeeded"
+      }
+    ],
+    "recorded_at": "2026-09-20T01:41:37.289871+00:00",
+    "release_revision": "190",
+    "shared_cosmos_spec_unchanged": true,
+    "shared_helm_values_unchanged": true,
+    "workbench_login_http_status": 200
+  },
+  "cases": [
+    {
+      "counts": {
+        "accepted": 0,
+        "failed": 1,
+        "rejected": 0
+      },
+      "id": "gpu-prerequisite-r1",
+      "items": [
+        {
+          "checks": null,
+          "error_code": "VIDEO_AUGMENTATION_FAILED",
+          "error_detail": "pipeline did not publish bounded evaluation evidence",
+          "input": null,
+          "output": null,
+          "recipe_sha256": "fe27d847c2d57ab5598e6b4ee146a1852bed0fc6a2cd0ca6af6cfb0838c44b3e",
+          "source_sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863",
+          "status": "failed"
+        }
+      ],
+      "result_present": true
+    },
+    {
+      "id": "gpu-prerequisite-r2",
+      "result_present": false
+    },
+    {
+      "counts": {
+        "accepted": 0,
+        "failed": 0,
+        "rejected": 1
+      },
+      "id": "gpu-prerequisite-r3-small",
+      "items": [
+        {
+          "checks": {
+            "attribute_verification": {
+              "attempt": null,
+              "passed": null,
+              "score": null,
+              "seed_used": null,
+              "threshold": null
+            },
+            "hallucination_check": {
+              "attempt": 2,
+              "passed": false,
+              "score": 0.537617711452443,
+              "seed_used": 43,
+              "threshold": 0.682
+            }
+          },
+          "error_code": null,
+          "error_detail": null,
+          "input": {
+            "audio": [],
+            "duration_seconds": 2.0,
+            "fps": 16,
+            "frames": 32,
+            "height": 480,
+            "sha256": "748b75259042a1169be0721eb5e90a74cb163cb11b9be618b16c5951865ce748",
+            "size_bytes": 415971,
+            "width": 640
+          },
+          "output": {
+            "audio": [],
+            "duration_seconds": 2.0,
+            "fps": 16,
+            "frames": 32,
+            "height": 480,
+            "sha256": "0395234f04d7e13c7fed9bf78f24828fb0c4c926b66c76a83da6c410fdacdcea",
+            "size_bytes": 1404652,
+            "width": 640
+          },
+          "recipe_sha256": "fe27d847c2d57ab5598e6b4ee146a1852bed0fc6a2cd0ca6af6cfb0838c44b3e",
+          "source_sha256": "748b75259042a1169be0721eb5e90a74cb163cb11b9be618b16c5951865ce748",
+          "status": "rejected"
+        }
+      ],
+      "result_present": true
+    },
+    {
+      "counts": {
+        "accepted": 0,
+        "failed": 1,
+        "rejected": 0
+      },
+      "id": "gpu-prerequisite-r4-guidance3",
+      "items": [
+        {
+          "checks": null,
+          "error_code": "VIDEO_AUGMENTATION_FAILED",
+          "error_detail": "pipeline did not publish bounded evaluation evidence",
+          "input": null,
+          "output": null,
+          "recipe_sha256": "bb48cdcb7fd4d2aaf7988d04888094dff96fbacbe4f51ad624f76aee4d68607c",
+          "source_sha256": "748b75259042a1169be0721eb5e90a74cb163cb11b9be618b16c5951865ce748",
+          "status": "failed"
+        }
+      ],
+      "result_present": true
+    },
+    {
+      "counts": {
+        "accepted": 0,
+        "failed": 0,
+        "rejected": 1
+      },
+      "id": "gpu-prerequisite-r5-guidance3",
+      "items": [
+        {
+          "checks": {
+            "attribute_verification": {
+              "attempt": 1,
+              "passed": false,
+              "score": null,
+              "seed_used": 42,
+              "threshold": null
+            },
+            "hallucination_check": {
+              "attempt": 1,
+              "passed": true,
+              "score": 0.8697918209008262,
+              "seed_used": 42,
+              "threshold": 0.682
+            }
+          },
+          "error_code": null,
+          "error_detail": null,
+          "input": {
+            "audio": [],
+            "duration_seconds": 2.0,
+            "fps": 16,
+            "frames": 32,
+            "height": 480,
+            "sha256": "748b75259042a1169be0721eb5e90a74cb163cb11b9be618b16c5951865ce748",
+            "size_bytes": 415971,
+            "width": 640
+          },
+          "output": {
+            "audio": [],
+            "duration_seconds": 2.0,
+            "fps": 16,
+            "frames": 32,
+            "height": 480,
+            "sha256": "1f25c38bfcd70c8bbad2d2b3e149365578d884e66dade8da80b0ac311e2103d1",
+            "size_bytes": 937229,
+            "width": 640
+          },
+          "recipe_sha256": "bb48cdcb7fd4d2aaf7988d04888094dff96fbacbe4f51ad624f76aee4d68607c",
+          "source_sha256": "748b75259042a1169be0721eb5e90a74cb163cb11b9be618b16c5951865ce748",
+          "status": "rejected"
+        }
+      ],
+      "result_present": true
+    }
+  ],
+  "customer_ready": false,
+  "hosted_parent_activated": false,
+  "live_gpu_generation_tested": true,
+  "motion_validation_passed": false,
+  "oci_attestations": {
+    "workbench": {
+      "attestation_manifest_digest": "sha256:9376ef639829963a25f484babe7337b24816c97aa8469ad608e6f8c0ef9cdadf",
+      "attestation_predicates": [
+        "https://slsa.dev/provenance/v1",
+        "https://spdx.dev/Document"
+      ],
+      "attestation_statement_types": [
+        "https://in-toto.io/Statement/v0.1"
+      ],
+      "image_manifest_digest": "sha256:3e5df6c2ec9318128b7f9cfde1b236cee8b0273befe84198860fb34b5de50f35"
+    },
+    "worker": {
+      "attestation_manifest_digest": "sha256:43e8acb6383819ef90493ee7f0374d1f7ec81e5e76d83d91c5b2ce1e592eb7f7",
+      "attestation_predicates": [
+        "https://slsa.dev/provenance/v1",
+        "https://spdx.dev/Document"
+      ],
+      "attestation_statement_types": [
+        "https://in-toto.io/Statement/v0.1"
+      ],
+      "image_manifest_digest": "sha256:3500d15d8a04d74966377350e8a9cdf9546b3280dc63c1474b1b64251b8b488c"
+    }
+  },
+  "protected_receipt_sha256": {
+    "final-audit.json": "6f5e5e50a2ea9e69e1fb9d1c1417e74d02e6f565818247b825b81c0881cda544",
+    "gpu-prerequisite-r2/transport.private.json": "295176c7e47cc483db19e0a16235bceaa1ba3e9c12d549014f38d0706bc6870d",
+    "gpu-prerequisite-r3-small/result.json": "573551520723e9e613f6cd832b10f6ba519fbfdfdfa505d9dced567ae6424925",
+    "gpu-prerequisite-r5-guidance3/result.json": "d18eadd01e3a0933f4d7e5ac6c22f8440c3630dbd6a98cc5fb90e4b968d2a06c",
+    "live-workspace-upload.json": "dc2a018343b3622abbdd938e337c82b5fc156fa9ac7112fae2937648d234ad93",
+    "oci-attestation-verification.json": "9d9fe2becea08645b64c711cc128d9d528c951bad51dfe1c000b8217131c3651",
+    "review-r3/guidance3-output-16.png": "9f5b6168cea1af906136118d8af3978d37fdf6dac6a3aca0860ef90d88d5e095",
+    "review-r3/output-16.png": "035d1abc53075c504a035d18ade6435a2e780480fa4dbda606c46252b9851c9f",
+    "review-r3/source-16.png": "3488c2e0314e56374706668a5507498ad81125f7f0d4e47d53b86491ec0abd38"
+  },
+  "recorded_at": "2026-09-20T01:41:37.289871+00:00",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-video-augmentation@sha256:3500d15d8a04d74966377350e8a9cdf9546b3280dc63c1474b1b64251b8b488c",
+  "schema": "fs2-serve.nebius.ai/video-canary-evidence/v1",
+  "transport_scope": "Exact local worker with loopback protocol translation to the ordinary canary key's public native Cosmos API; not hosted parent/delegation or chat generation acceptance.",
+  "weather_validation_passed": false,
+  "workbench_endpoint_id": "aiendpoint-e00m58m8ym56ky5f4m",
+  "workbench_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:3e5df6c2ec9318128b7f9cfde1b236cee8b0273befe84198860fb34b5de50f35",
+  "workbench_source_commit": "94fed505a83de28609b4797bf050ceb305d1a16f",
+  "workbench_upload": {
+    "browser_uploaded_object": "video-uploads/094c8c6b-e7b6-4a54-888b-83736c1f1924/video-0000.mp4",
+    "bucket_name": "fs2-video-canary-2026092-video-canary-20260920-4d85eceb0e0ae26b",
+    "generated_video_tested": false,
+    "s3_bytes_match_browser_source": true,
+    "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863",
+    "size_bytes": 2183869,
+    "unauthenticated_video_api_status": 401
+  },
+  "worker_runtime_tested": true,
+  "worker_source_commit": "f9812bcfea8b97c02fea5886431cd58eea78cde6"
+}

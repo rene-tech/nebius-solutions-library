@@ -1,0 +1,189 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "ctoxpred2",
+      "display_name": "CToxPred2",
+      "family": "toxicology",
+      "tested_lane": true,
+      "source": {
+        "kind": "git",
+        "repository": "github.com/issararab/CToxPred2",
+        "revision": "2a31aa119e27b6b69a5588d18a01f2a27fef4524",
+        "license": {
+          "id": "MIT",
+          "state": "verified",
+          "notes": "Public upstream MIT repository and its distributed pretrained inference artifacts; exact inventory retained. Dataset provenance is not a clinical or regulatory validation."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "No gated model entitlement is required."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "2a31aa119e27b6b69a5588d18a01f2a27fef4524",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/toxicology/ctoxpred2@sha256:d7579452d45024fa159a8e25929f112fe4cf5569d6bcd17dec956655cba8aa2c",
+        "digest": "sha256:d7579452d45024fa159a8e25929f112fe4cf5569d6bcd17dec956655cba8aa2c",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "-m",
+        "uvicorn",
+        "toxicology.server:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 2000,
+      "memory_bytes": 2147483648,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "CPU",
+        "count": 0,
+        "topology": "cpu-only",
+        "placement": null,
+        "b300_state": "not-applicable",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/predict"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 60
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "screen-molecules"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "allowed"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "Qualified CPU inference has no CUDA process state; GPU snapshotting is not applicable. Weights are baked into the regional image."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/ctoxpred2",
+      "local_path": "/var/lib/fs2-serve/cache/models/ctoxpred2",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "8ed9d8e3dd87b898a45885bc27b7d5fbfe0889b079ec6ee449465dcb5a496d67",
+        "expanded_bytes": 171636219,
+        "minimum_bytes": 171636219,
+        "capacity_bound_bytes": 171636219,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "ctoxpred2-pretrained-cpu-inference/v1",
+      "source_path": "k8s-inference/models/toxicology/qualify_runtime.py",
+      "source_sha256": "61f50d192958acd36c5b7ad34483d4e774c9f97f6520300c47d01fe2bc5b24ec",
+      "fixture_path": "k8s-inference/models/toxicology/fixtures.py",
+      "fixture_sha256": "c2ded1f5f70aa23b5b0b6413aa9ef678ec20d73657dda95c78476bda471ad9df",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Cardiac ion-channel screening, not a clinical arrhythmia prediction.",
+        "Model probabilities and dropout dispersion are not calibrated human-safety confidence.",
+        "No validated applicability-domain estimate is supplied.",
+        "Computational runtime qualification only; hosted HTTP/MCP, concurrency and elasticity have independent release gates.",
+        "CPU runtime only. No CUDA, GPU snapshot or new-node cold-start claim."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "Linux amd64 CPU container, two CPU cores",
+        "outcome": "live-qualified",
+        "source_commit": "66f94843bd0bc268add6ff37c9791fc6c579bd78",
+        "summary": "Exact-image computational parity and bounded batch qualification; receipt SHA256 1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d. This does not qualify hosted access, clinical accuracy or GPU execution."
+      }
+    ],
+    "provenance": [
+      {
+        "url": "https://github.com/issararab/CToxPred2/tree/2a31aa119e27b6b69a5588d18a01f2a27fef4524",
+        "revision": "2a31aa119e27b6b69a5588d18a01f2a27fef4524",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "variant_id": "ctoxpred2-cpu-v1",
+  "runtime_architecture": "cpu",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-canonical-json-no-newline/v1",
+    "invocation": {
+      "operation": "screen-molecules",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/v1/predict"
+    },
+    "requests": [
+      {
+        "id": "toxicity-panel-0",
+        "payload_sha256": "43cdcd193b5b8eeaf9452b884c90ea5497aa87758eb673dcf2d1071bb89f3de9"
+      },
+      {
+        "id": "toxicity-panel-1",
+        "payload_sha256": "e9dbee424625d82204f4c277ca6982d795fc2037d12a55db22b0fdf2a8e109c3"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "../deployment-runtimes/artifacts/ctoxpred2-8ed9d8e3dd87b898a45885bc27b7d5fbfe0889b079ec6ee449465dcb5a496d67.json",
+    "sha256": "8ed9d8e3dd87b898a45885bc27b7d5fbfe0889b079ec6ee449465dcb5a496d67"
+  }
+}

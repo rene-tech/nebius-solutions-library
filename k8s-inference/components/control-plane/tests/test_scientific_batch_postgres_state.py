@@ -78,7 +78,7 @@ async def store() -> PostgresStore:
         await connected.close()
 
 
-async def principal_of(store: PostgresStore, *, max_concurrency: int = 1) -> Principal:
+async def principal_of(store: PostgresStore, *, max_concurrency: int = 1, model_id: str = "rfdiffusion") -> Principal:
     token_id = uuid4()
     prefix = f"fs2_pat_{token_id.hex[:12]}"
     await store.issue_token(
@@ -90,7 +90,7 @@ async def principal_of(store: PostgresStore, *, max_concurrency: int = 1) -> Pri
             principal_id="scientist-ada",
             tenant_id=TENANT,
             scopes={Scope.INFERENCE_INVOKE},
-            models={"rfdiffusion"},
+            models={model_id},
             max_concurrency=max_concurrency,
         ),
         created_by="researcher-ada",
@@ -101,7 +101,7 @@ async def principal_of(store: PostgresStore, *, max_concurrency: int = 1) -> Pri
         principal_id="scientist-ada",
         tenant_id=TENANT,
         scopes=frozenset({Scope.INFERENCE_INVOKE.value}),
-        models=frozenset({"rfdiffusion"}),
+        models=frozenset({model_id}),
         max_concurrency=max_concurrency,
     )
 

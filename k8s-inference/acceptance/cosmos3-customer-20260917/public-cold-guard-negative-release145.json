@@ -1,0 +1,94 @@
+{
+  "schema": "fs2-cosmos-public-cold-preflight-negative/v1",
+  "customer_ready": false,
+  "inference_submitted": false,
+  "upload_finalized": true,
+  "control_plane_image_digest": "sha256:849020eabbcf07d07112bcebae4032639e8e995a9eda078410ccf4879a188ee8",
+  "case": "cold-http-https-video-to-video",
+  "state": "failed",
+  "started_at": "2026-09-17T15:43:35.784010+00:00",
+  "failure_type": "GuardError",
+  "failure_code": "cold_request_not_scale_from_zero",
+  "operation_id": null,
+  "pods_before": [
+    {
+      "containers": [
+        {
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "name": "bounded-json-adapter",
+          "ready": false,
+          "restarts": 0
+        },
+        {
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "name": "vllm-omni",
+          "ready": false,
+          "restarts": 0
+        }
+      ],
+      "name": "cosmos3-nano-burst-h100-1x-db6b8d998-gzq8n",
+      "node": "computeinstance-e00z1ze11kq6qm7se7",
+      "phase": "Running",
+      "uid": "cf1be502-33d7-4b6c-b336-487b2952842b"
+    },
+    {
+      "containers": [
+        {
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "name": "bounded-json-adapter",
+          "ready": false,
+          "restarts": 0
+        },
+        {
+          "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "name": "vllm-omni",
+          "ready": false,
+          "restarts": 0
+        }
+      ],
+      "name": "cosmos3-nano-burst-h100-1x-db6b8d998-hx8bm",
+      "node": "computeinstance-e00xjw1nfcbqs4geg5",
+      "phase": "Running",
+      "uid": "e9366750-8ca4-48e4-a6d8-d92f453be71c"
+    }
+  ],
+  "serving_before": [
+    {
+      "name": "cosmos3-nano-burst-h100-1x",
+      "ready": 0,
+      "replicas": 2,
+      "runtime_images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
+      ],
+      "snapshot": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+      "spec_digest": "sha256:96bacd2bcce5f6061f71c70613c4ee1d0fa9cb359cf5e00caf992779f6cc7b15"
+    }
+  ],
+  "prior_observation": "Desired0 and no Pods immediately before cohort setup; natural reactivation occurred during upload/discovery.",
+  "hpa_observation": {
+    "last_scale_time": "2026-09-17T15:43:37Z",
+    "operation_demand_average": 0,
+    "startup_average": 1,
+    "desired_replicas": 2,
+    "reason": "ScalingActive selected s1-prometheus startup metric"
+  },
+  "scaledobject_later_observation": {
+    "last_active_time": "2026-09-17T15:44:16Z",
+    "operation_trigger_active": false,
+    "startup_trigger_active": false,
+    "state": "ScalerCooldown"
+  },
+  "diagnosis_status": "Confirmed upload-only operation was counted as model GPU demand; a coincident CP scrape caused activation despite no generation admission. The release owner is preparing a narrow classification fix.",
+  "upload_operation_id": "3960f141-a8c6-447f-9e36-de270edc4b09",
+  "upload_accepted_at": "2026-09-17T15:43:32.949480Z",
+  "upload_completed_at": "2026-09-17T15:43:33.868694Z",
+  "overlapping_control_plane_scrape": "2026-09-17T15:43:33.418Z",
+  "operation_demand_one_observed_at": "2026-09-17T15:43:35Z",
+  "operation_demand_zero_observed_at": "2026-09-17T15:43:40Z",
+  "fresh_preupload_ksm_zero_samples": ["2026-09-17T15:42:20.604Z", "2026-09-17T15:42:50.604Z", "2026-09-17T15:43:20.609Z"],
+  "diagnosis_receipt_sha256": "61765432eef07a19b4f3b4a48e10332f1b2180d49e5d2ecbce940b502fa22c0e",
+  "raw_scaling_readback_sha256": "d820e2c57f925131f51fa9bdca348b79eb3b6a22df9caf7183ae476f30251c26",
+  "mutations": "No forced scale, placement, Pod deletion, customer key/policy or source configuration change.",
+  "private_evidence_directory": "/home/tux/secure-handoff/cosmos-public-media-20260917-aiumy1sU/cohort5-release145"
+}

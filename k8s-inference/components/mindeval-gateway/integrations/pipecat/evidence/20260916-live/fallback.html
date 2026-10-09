@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>PRERECORDED — Scientific AI MindEval fallback</title>
+  <style>
+    :root{font-family:system-ui,sans-serif;color:#e8edf6;background:#101725;color-scheme:dark}
+    body{max-width:920px;margin:auto;padding:28px 22px 56px;line-height:1.55}
+    .banner{background:#ffd166;color:#29200a;padding:14px 18px;border-radius:8px;font-weight:800;letter-spacing:.08em}
+    h1{font-size:clamp(1.6rem,4vw,2.3rem);line-height:1.2;margin-bottom:10px}h2{font-size:1.25rem;margin:0 0 8px}
+    .muted{color:#b5c2d7}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+    section,.panel{background:#1a263a;border:1px solid #34445e;border-radius:12px;padding:20px;margin-top:20px}
+    .tag{font-size:.85rem;font-weight:700;color:#91ded1}audio{width:100%;margin:12px 0}
+    button{background:#81d9ce;color:#102c2b;border:0;padding:12px 18px;border-radius:7px;font:inherit;font-weight:700;cursor:pointer}
+    button.secondary{background:#34445e;color:#fff;margin-left:8px}button:focus-visible,a:focus-visible{outline:3px solid #ffd166;outline-offset:4px}
+    summary{cursor:pointer;font-weight:600}blockquote{margin:14px 0;border-left:3px solid #81d9ce;padding-left:14px}
+    code{overflow-wrap:anywhere;font-size:.9em}a{color:#a8d8ff}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:9px 4px;border-bottom:1px solid #34445e}
+    .warning{border-left:4px solid #ffd166;padding-left:14px}.status{min-height:1.6em}footer{margin-top:28px;font-size:.9rem}
+  </style>
+</head>
+<body>
+  <div class="banner">PRERECORDED · OFFLINE EVENT FALLBACK</div>
+  <h1>A recorded two-voice MindEval round</h1>
+  <p>This is a saved synthetic conversation, <strong>not live inference</strong>. It makes no API calls, requires no key, and does not demonstrate current service availability.</p>
+  <p class="muted">Recorded 16 September 2026, 17:18:23–17:18:58 UTC. Source report finalized at 17:18:58.676 UTC. Profile <code>profile-000</code>: Dennis, age 47, a fictional MindEval patient.</p>
+  <button id="sequence" type="button">Play prerecorded sequence</button>
+  <button id="stop" type="button" class="secondary">Stop</button>
+  <p id="status" class="status muted" role="status" aria-live="polite">Ready. Two recorded clips: clinician, then patient.</p>
+
+  <div class="grid">
+    <section aria-labelledby="clinician-title">
+      <div class="tag">CLIP 1 · PRERECORDED</div>
+      <h2 id="clinician-title">Clinician · Jason</h2>
+      <p class="muted">1.997 seconds · Magpie voice Jason</p>
+      <audio id="clinician" controls preload="metadata" aria-label="Prerecorded clinician Jason">
+        <source src="001-clinician-Jason.wav" type="audio/wav">
+        Your browser cannot play this WAV. Download it using the link below.
+      </audio>
+      <p><a href="001-clinician-Jason.wav" download>Download Jason WAV</a></p>
+      <blockquote>Hey Dennis, how's your week been?</blockquote>
+      <p class="muted">Nemotron transcript matched the normalized generated text: 0% word error rate.</p>
+    </section>
+    <section aria-labelledby="patient-title">
+      <div class="tag">CLIP 2 · PRERECORDED</div>
+      <h2 id="patient-title">Patient · Sofia</h2>
+      <p class="muted">25.170 seconds · Magpie voice Sofia</p>
+      <audio id="patient" controls preload="metadata" aria-label="Prerecorded patient Sofia">
+        <source src="002-patient-Sofia.wav" type="audio/wav">
+        Your browser cannot play this WAV. Download it using the link below.
+      </audio>
+      <p><a href="002-patient-Sofia.wav" download>Download Sofia WAV</a></p>
+      <details>
+        <summary>Original generated patient text</summary>
+        <blockquote>Not great. I woke up at 3 a.m. again, like always, and just lay there staring at the ceiling. My mind started running through all the things I might’ve messed up at work yesterday. I keep thinking about that patient who left early—did I forget to schedule their follow-up? Or did I misread the chart? It’s like the thoughts just keep piling on, even when I’m trying to focus on something else. I ended up checking the schedule three times this morning.</blockquote>
+      </details>
+      <details>
+        <summary>Recognized text — errors retained (4.55% WER)</summary>
+        <p>Not great. I woke up at eight A then again like always and just lay there staring at the ceiling. My mind started running through all the things I might have messed up at work yesterday. I keep thinking about that patient who left early it I forget to schedule their follow up or did I misread the chart? It's like the thoughts just keep piling on even when I'm trying to focus on something else I ended up checking the schedule three times this morning.</p>
+      </details>
+    </section>
+  </div>
+
+  <section aria-labelledby="provenance-title">
+    <h2 id="provenance-title">What was actually run</h2>
+    <p>One canonical round, seeded by patient “Hello”: two generated turns, two real speech syntheses, two speech-recognition operations, and one fixed judge call. The seed has no audio clip.</p>
+    <table>
+      <tbody>
+        <tr><th scope="row">Clinician</th><td><code>Qwen/Qwen3-235B-A22B-Instruct-2507</code></td></tr>
+        <tr><th scope="row">Patient</th><td><code>Qwen/Qwen3-30B-A3B-Instruct-2507</code></td></tr>
+        <tr><th scope="row">Fixed judge</th><td><code>google/gemma-3-27b-it</code></td></tr>
+        <tr><th scope="row">Speech / recognition</th><td><code>magpie-tts-multilingual-357m</code> / <code>nemotron-speech-en-0-6b</code></td></tr>
+        <tr><th scope="row">Framework</th><td>Pipecat 1.10.0 · RTVI 2.1.0 · in-process protocol integration</td></tr>
+        <tr><th scope="row">Run ID</th><td><code>fs2-pipecat-live-20260916</code></td></tr>
+        <tr><th scope="row">MindEval revision</th><td><code>1c17f9e66c092d9480c4bda5a2bebc80b7f84961</code></td></tr>
+        <tr><th scope="row">Magpie image digest</th><td><code>sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead</code></td></tr>
+      </tbody>
+    </table>
+    <p><a href="report.json">Original machine-readable report</a> · <a href="README.md">Recording and hardware provenance</a> · <a href="fallback.README.md">Offline bundle instructions and limitations</a></p>
+  </section>
+
+  <section aria-labelledby="scores-title">
+    <h2 id="scores-title">Recorded judge output · scale 1–6</h2>
+    <table><tbody>
+      <tr><th scope="row">Clinical Accuracy &amp; Competence</th><td>3.25</td></tr>
+      <tr><th scope="row">Ethical &amp; Professional Conduct</th><td>4.25</td></tr>
+      <tr><th scope="row">Assessment &amp; Response</th><td>3.50</td></tr>
+      <tr><th scope="row">Therapeutic Relationship &amp; Alliance</th><td>2.75</td></tr>
+      <tr><th scope="row">AI-Specific Communication Quality</th><td>3.25</td></tr>
+    </tbody></table>
+    <p class="warning">A short synthetic demonstration, not clinical validation, therapeutic advice, a model-ranking result, or proof of safety. Scores are the saved model judgment, not human expert labels.</p>
+  </section>
+  <footer class="muted">This page is entirely local. No microphone, live turn-taking, intervention, streaming connection, browser RTVI transport, or current queue is being demonstrated. Audio playback is prerecorded even if the production workshop is unavailable.</footer>
+  <script>
+    const clips = [document.getElementById('clinician'), document.getElementById('patient')];
+    const status = document.getElementById('status');
+    let sequence = false;
+    function stop() { sequence = false; clips.forEach(clip => { clip.pause(); clip.currentTime = 0; }); }
+    function play(index) {
+      status.textContent = `Playing prerecorded ${index === 0 ? 'clinician Jason' : 'patient Sofia'} — no live inference.`;
+      clips[index].play().catch(() => { sequence = false; status.textContent = 'Playback was blocked. Use the individual audio controls or download the WAV files.'; });
+    }
+    document.getElementById('sequence').addEventListener('click', () => { stop(); sequence = true; play(0); });
+    document.getElementById('stop').addEventListener('click', () => { stop(); status.textContent = 'Stopped. These are prerecorded clips.'; });
+    clips.forEach((clip, index) => {
+      clip.addEventListener('play', () => clips.forEach(other => { if (other !== clip) other.pause(); }));
+      clip.addEventListener('ended', () => { if (sequence && index === 0) play(1); else { sequence = false; status.textContent = 'Prerecorded playback finished — no live inference was performed.'; } });
+      clip.addEventListener('error', () => { sequence = false; status.textContent = 'Audio file unavailable. Extract the entire bundle and keep its files together.'; });
+    });
+  </script>
+</body>
+</html>

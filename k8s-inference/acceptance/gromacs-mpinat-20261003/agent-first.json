@@ -1,0 +1,6 @@
+{
+  "cases": [{
+    "case_id": "mpinat-benchmem",
+    "prompt": "Run the public Max Planck GROMACS benchMEM performance benchmark on Scientific AI. My inputs are in /workspace/inputs/mpinat/benchmem: original.tpr is the unchanged upstream system, input.tar.gz is its prepared bundle, parameters.json defines three repetitions of 10,000 steps with timing reset halfway. Use the installed GROMACS skill and the hosted GROMACS MCP workflow, not local MD. Check the live schema and supplied protocol, retain the TPR physics (all-bonds constraints require CPU update), and use the supplied parameters. These repeated identical starts are performance repetitions, not independent scientific replicas. Put receipts, logs and verified outputs under {output}; use a stable unique idempotency key and a runs/fs2-mpinat-agent-20261003/benchmem customer-bucket prefix. Complete the workflow, retrieve and verify the artifacts, and report the operation ID, success or exact failure, each repetition's measured ns/day and wall time, requested versus completed steps, and usable links to the raw results. Do not suppress errors, change scientific settings or silently switch engines. If it fails, retain the evidence and explain the failure rather than claiming completion."
+  }]
+}

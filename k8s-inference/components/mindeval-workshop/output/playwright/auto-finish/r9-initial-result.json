@@ -1,0 +1,22 @@
+{
+  "kind": "browser-automatic-microphone-finish",
+  "started_at": "2026-09-16T18:03:04.777Z",
+  "checks": ["browser fake microphone captured PCM", "automatic input finish without manual Finish click", "human transcript and WAV reference retained"],
+  "policy_events": [
+    {"type": "voice_policy.speech_start", "source": "silero_vad", "audio_offset_seconds": 0.256, "automatic_speech": false, "probability": 0.9998455047607422},
+    {"type": "voice_policy.speech_end", "source": "parakeet_model_eou", "audio_offset_seconds": 1.792, "automatic_speech": false, "model_eou": true},
+    {"type": "voice_policy.input_finish", "automatic": true}
+  ],
+  "model_events": [{"type": "turn.eou", "segment": 0, "source": "model_token", "probability": 1, "audio_offset_seconds": 1.792}],
+  "finish_button_clicks": 0,
+  "run_id": "caa2614b-94a9-436a-8245-5050b3c31d17",
+  "takeover_role": "clinician",
+  "transcript": "starts at nine",
+  "audio_url": "/v1/workshop/runs/caa2614b-94a9-436a-8245-5050b3c31d17/audio/1",
+  "end_source": "parakeet_model_eou",
+  "passed": false,
+  "error": "Retained WAV failed replay",
+  "cleanup_status": "aborted",
+  "intervened": true,
+  "finished_at": "2026-09-16T18:03:13.462Z"
+}

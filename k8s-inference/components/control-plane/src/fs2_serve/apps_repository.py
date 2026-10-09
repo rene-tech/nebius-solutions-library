@@ -32,8 +32,18 @@ class PostgresAppsRepository:
 
     async def list_records(self) -> list[AppRecord]:
         async with self.pool.acquire() as connection:
-            rows = await connection.fetch("SELECT * FROM fs2_apps ORDER BY created_at,app_id")
+            rows = await connection.fetch("""SELECT app.* FROM fs2_apps app WHERE NOT EXISTS (
+                SELECT 1 FROM fs2_model_deployments deployment WHERE deployment.namespace=app.namespace
+                AND deployment.name=app.deployment_name AND deployment.retired_at IS NOT NULL)
+                ORDER BY app.created_at,app.app_id""")
         return [AppRecord.model_validate(dict(row)) for row in rows]
+
+    async def retired_public_model_ids(self) -> set[str]:
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch("""SELECT app.public_model_id FROM fs2_apps app
+                JOIN fs2_model_deployments deployment ON deployment.namespace=app.namespace
+                AND deployment.name=app.deployment_name WHERE deployment.retired_at IS NOT NULL""")
+        return {row["public_model_id"] for row in rows}
 
     async def list_discoverable_records(self) -> list[AppRecord]:
         """Exclude scientific Apps held by any explicit operator pause.
@@ -45,16 +55,24 @@ class PostgresAppsRepository:
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
                 """SELECT app.* FROM fs2_apps app
-                WHERE app.execution_mode<>'scientific' OR NOT EXISTS (
+                WHERE NOT EXISTS (SELECT 1 FROM fs2_model_deployments deployment
+                    WHERE deployment.namespace=app.namespace AND deployment.name=app.deployment_name
+                    AND deployment.retired_at IS NOT NULL)
+                AND (app.execution_mode<>'scientific' OR NOT EXISTS (
                     SELECT 1 FROM fs2_scientific_model_policies policy
                     WHERE policy.model_id=app.public_model_id AND policy.paused
-                ) ORDER BY app.created_at,app.app_id"""
+                )) ORDER BY app.created_at,app.app_id"""
             )
         return [AppRecord.model_validate(dict(row)) for row in rows]
 
     async def get(self, app_id: UUID) -> AppRecord | None:
         async with self.pool.acquire() as connection:
-            row = await connection.fetchrow("SELECT * FROM fs2_apps WHERE app_id=$1", app_id)
+            row = await connection.fetchrow(
+                """SELECT app.* FROM fs2_apps app WHERE app_id=$1 AND NOT EXISTS (
+                SELECT 1 FROM fs2_model_deployments deployment WHERE deployment.namespace=app.namespace
+                AND deployment.name=app.deployment_name AND deployment.retired_at IS NOT NULL)""",
+                app_id,
+            )
         return AppRecord.model_validate(dict(row)) if row else None
 
     async def seed(self, record: AppRecord) -> AppRecord:
@@ -112,16 +130,25 @@ class PostgresAppsRepository:
                 """UPDATE fs2_apps SET deployment_name=$5,updated_at=GREATEST(updated_at,$6),revision=revision+1
                 WHERE app_id=$1 AND model_ref=$2 AND public_model_id=$3 AND namespace=$4
                     AND execution_mode='serving' AND deployment_name IS NULL""",
-                record.app_id, record.model_ref, record.public_model_id, record.namespace, name, record.updated_at,
+                record.app_id,
+                record.model_ref,
+                record.public_model_id,
+                record.namespace,
+                name,
+                record.updated_at,
             )
             row = await connection.fetchrow("SELECT * FROM fs2_apps WHERE app_id=$1", record.app_id)
         if row is None:
             raise AppConflictError("app disappeared before deployment registration")
         current = AppRecord.model_validate(dict(row))
-        if (current.execution_mode != "serving" or current.deployment_name != name or any(
-            getattr(current, field) != getattr(record, field)
-            for field in ("model_ref", "public_model_id", "namespace")
-        )):
+        if (
+            current.execution_mode != "serving"
+            or current.deployment_name != name
+            or any(
+                getattr(current, field) != getattr(record, field)
+                for field in ("model_ref", "public_model_id", "namespace")
+            )
+        ):
             raise AppConflictError("app identity already belongs to a different deployment")
         return current
 
@@ -135,8 +162,26 @@ class PostgresAppsRepository:
                         AND protocol<>'scientific-artifact-upload-v1'
                 ), attempts AS (
                     SELECT s.operation_id,r.* FROM fs2_telemetry_subjects s JOIN operations o ON o.id=s.operation_id
-                    LEFT JOIN fs2_reporting_lifecycle_latest r USING(subject_id)
+                    LEFT JOIN LATERAL (
+                        SELECT rollup.* FROM fs2_lifecycle_rollups rollup
+                        WHERE rollup.subject_id=s.subject_id
+                        ORDER BY event_watermark DESC,generated_at DESC,rollup_id DESC LIMIT 1
+                    ) r ON true
                     WHERE s.workload_kind='scientific_batch'
+                ), phase_usage AS (
+                    SELECT *,
+                        coalesce((phase_gpu_seconds->>'active_compute')::double precision,0) AS active,
+                        coalesce((phase_gpu_seconds->>'resident_idle')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'workflow_wait')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'cooldown_grace')::double precision,0) AS idle,
+                        coalesce((phase_gpu_seconds->>'image_pull')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'artifact_load')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'restore')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'compile')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'warmup')::double precision,0) AS startup,
+                        coalesce((phase_gpu_seconds->>'checkpoint_drain')::double precision,0)
+                            +coalesce((phase_gpu_seconds->>'teardown')::double precision,0) AS other
+                    FROM attempts
                 ), users AS (
                     SELECT tenant_id,principal_id,count(*) AS logical_runs FROM operations
                     GROUP BY tenant_id,principal_id
@@ -164,11 +209,19 @@ class PostgresAppsRepository:
                     (SELECT coalesce(jsonb_object_agg(class,total),'{}') FROM classes) AS status_classes,
                     (SELECT CASE WHEN count(*) > 0 AND count(DISTINCT operation_id)=(
                             SELECT count(*) FROM operations WHERE protocol='scientific-batch-v1')
-                        AND bool_and(coalesce(terminal AND reconciled
-                            AND cardinality(data_gaps)=0,false)) THEN jsonb_build_object(
+                        AND bool_and(coalesce(terminal AND reconciled AND quality<>'unavailable'
+                            AND NOT ('scheduler_occupancy_clock_missing'=ANY(data_gaps)),false))
+                        THEN jsonb_build_object(
                         'occupied_seconds',sum(scheduler_occupied_gpu_seconds),
-                        'active_compute_seconds',sum(active_gpu_seconds),
-                        'occupied_idle_seconds',sum(occupied_idle_gpu_seconds)) END FROM attempts) AS scientific_gpu
+                        'active_compute_seconds',sum(active),
+                        'occupied_idle_seconds',sum(idle),
+                        'startup_seconds',sum(startup),'other_seconds',sum(other),
+                        'unknown_seconds',sum(greatest(0,scheduler_occupied_gpu_seconds-active-idle-startup-other)),
+                        'phases_complete',bool_and(cardinality(data_gaps)=0)
+                            AND sum(greatest(0,scheduler_occupied_gpu_seconds-active-idle-startup-other))<=0.001,
+                        'quality',CASE WHEN bool_or(quality='estimated') THEN 'estimated'
+                            WHEN bool_or(quality='application_observed') THEN 'application_observed' ELSE 'measured' END
+                        ) END FROM phase_usage) AS scientific_gpu
                 FROM operations""",
                 model_id,
                 context.from_at,
@@ -185,6 +238,26 @@ class PostgresAppsRepository:
         for user in values["users"]:
             user["user_id"] = str(owner_id(user["tenant_id"], user["principal_id"]))
         return values
+
+    async def usage_summary(self, model_id: str, context: AdminContext, tenant_id: str | None) -> dict[str, Any]:
+        """Read only the two usage fields exposed by the App summary.
+
+        Count is windowed; last-used remains lifetime. Full lifecycle/user/time
+        series and request telemetry belong to the separate usage endpoint.
+        """
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """SELECT count(*) FILTER(WHERE accepted_at >= $2 AND accepted_at < $3) AS logical_runs,
+                    max(accepted_at) AS last_used_at
+                FROM fs2_operations WHERE model_id=$1 AND ($4::text IS NULL OR tenant_id=$4)
+                    AND protocol<>'scientific-artifact-upload-v1'""",
+                model_id,
+                context.from_at,
+                context.to_at,
+                tenant_id,
+            )
+        assert row is not None
+        return dict(row)
 
     async def last_used(self, model_id: str, tenant_id: str | None) -> Any:
         async with self.pool.acquire() as connection:
@@ -249,18 +322,27 @@ class MemoryAppsRepository:
         current = self.records.get(record.app_id)
         if current is None:
             raise AppConflictError("app disappeared before deployment registration")
-        if (current.execution_mode != "serving" or any(
-            getattr(current, field) != getattr(record, field)
-            for field in ("model_ref", "public_model_id", "namespace")
-        ) or current.deployment_name not in {None, name}):
+        if (
+            current.execution_mode != "serving"
+            or any(
+                getattr(current, field) != getattr(record, field)
+                for field in ("model_ref", "public_model_id", "namespace")
+            )
+            or current.deployment_name not in {None, name}
+        ):
             raise AppConflictError("app identity already belongs to a different deployment")
         if current.deployment_name is None:
-            if any(item.app_id != record.app_id and (item.namespace, item.deployment_name) == (record.namespace, name)
-                   for item in self.records.values()):
+            if any(
+                item.app_id != record.app_id and (item.namespace, item.deployment_name) == (record.namespace, name)
+                for item in self.records.values()
+            ):
                 raise AppConflictError("deployment already belongs to another app")
-            current = current.model_copy(update={
-                "deployment_name": name, "updated_at": max(current.updated_at, record.updated_at),
-                "revision": current.revision + 1,
-            })
+            current = current.model_copy(
+                update={
+                    "deployment_name": name,
+                    "updated_at": max(current.updated_at, record.updated_at),
+                    "revision": current.revision + 1,
+                }
+            )
             self.records[record.app_id] = current
         return current

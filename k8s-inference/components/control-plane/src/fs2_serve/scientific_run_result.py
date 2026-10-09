@@ -367,7 +367,10 @@ def utc_isoformat(value: datetime) -> str:
 
 
 SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA: Final = "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
-MAX_MANIFEST_ENTRIES = 10000
+# 14 days at a five-minute native checkpoint cadence produce 4032 segments.
+# Reserve four files/segment plus initial inputs and final artifacts, while
+# retaining a finite metadata bound for admission, export and recovery.
+MAX_MANIFEST_ENTRIES = 32768
 
 EntryName = Annotated[str, StringConstraints(max_length=128, pattern=r"^[a-z][a-z0-9_.-]*$")]
 SemanticType = Annotated[str, StringConstraints(max_length=128, pattern=r"^[a-z][a-z0-9_.-]*/v[1-9][0-9]*$")]

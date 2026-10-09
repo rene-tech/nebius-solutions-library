@@ -7,7 +7,14 @@ locals {
     for pool_id, pool in local.selected_gpu_pools : pool_id => pool
     if pool.provider.driver.owner == "provider-managed"
   }
-  network_operator_required = length(local.gpu_cluster_pools) > 0
+  # Managed GPU images already supply the InfiniBand components; automatically
+  # installing another OFED owner is unnecessary for ordinary managed pools.
+  # https://docs.nebius.com/kubernetes/gpu/set-up (checked 2026-10-05).
+  # Preserve the separately qualified NVLink-rack bootstrap contract.
+  network_operator_required = anytrue([
+    for pool in values(local.gpu_cluster_pools) :
+    pool.provider.driver.owner == "gpu-operator" || pool.node.topology == "nvlink_rack"
+  ])
   operator_mig_strategies = distinct([
     for pool in values(local.operator_gpu_pools) : pool.features.mig.mode
   ])

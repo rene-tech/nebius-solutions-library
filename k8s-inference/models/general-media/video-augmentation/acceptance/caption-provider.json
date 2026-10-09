@@ -1,0 +1,31 @@
+{
+  "scope": "live VLM+LLM source caption and weather prompt only; no Cosmos inference or output-quality claim",
+  "input_sha256": "2b0d1e14f59f69278c79a49804f154718ca33e981dae35a43d0e729d49a38e79",
+  "recipe": {
+    "schema": "fs2-serve.nebius.ai/video-augmentation-recipe/v1",
+    "parameters": {
+      "backend": "cosmos3-nano-transfer",
+      "weather": "overcast",
+      "instruction": "Change only the weather; preserve the scene and recorded motion.",
+      "seed": 42,
+      "num_inference_steps": 35,
+      "guidance_scale": 7.0,
+      "control_weight": 1.0,
+      "control_guidance": 1.5,
+      "motion_threshold": 0.682,
+      "max_retries": 1,
+      "audio": "preserve"
+    },
+    "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+    "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+    "serving_revision": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+    "vlm_model": "MiniMaxAI/MiniMax-M3",
+    "llm_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    "provider_url": "https://api.tokenfactory.nebius.com/v1",
+    "evaluation_frames": 5,
+    "prompt_template_version": "weather-v1",
+    "sha256": "459bde1a36dc209ceb8d4839911f937f0369f9197550487ee2b0278effb9b257"
+  },
+  "elapsed_seconds": 7.631375312805176,
+  "prompt": "The video presents a static, elevated, high-angle view of a city intersection under overcast weather conditions, with the same scene layout, objects, and vehicle movements preserved as in the original sunny daylight; the bright shadows are gone, replaced by diffused lighting typical of an overcast sky, while all architectural features, road markings, pedestrian crosswalks, bollards, tree shading, and traffic patterns remain unchanged."
+}

@@ -1,0 +1,11 @@
+{
+  "checked_at": "2026-09-16T18:10:22.627980+00:00",
+  "repository": "swordhealth/MindGuard-testset",
+  "revision": "0724945e3e2f175ef85745dfcb564e538e86d229",
+  "file": "data/train-00000-of-00001.parquet",
+  "method": "HEAD",
+  "authenticated": true,
+  "downloaded_dataset_body": false,
+  "status": 403,
+  "error_code": "GatedRepo"
+}

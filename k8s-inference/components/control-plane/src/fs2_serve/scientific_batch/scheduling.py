@@ -9,7 +9,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from .catalog_adapter import CatalogProfileAdapterError, _stage_contract, select_stage_shape, stage_execution_shape
 from .models import (
+    ExecutionMode,
     PreemptionMode,
     ResourceClass,
     SchedulingSnapshot,
@@ -58,9 +60,11 @@ class SchedulingContractResolver:
         *,
         raw_contract_sha256: str | None = None,
         stage_resources: Mapping[tuple[str, str], StageResourceEnvelope] | None = None,
+        stage_shape_resources: Mapping[tuple[str, str, str], StageResourceEnvelope] | None = None,
     ) -> None:
         self.contract = dict(contract)
         self.stage_resources = dict(stage_resources or {})
+        self.stage_shape_resources = dict(stage_shape_resources or {})
         if self.contract.get("schema") != SCHEDULING_SCHEMA:
             raise SchedulingContractError("Kueue scheduling contract schema is unsupported")
         canonical = json.dumps(self.contract, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
@@ -112,9 +116,15 @@ class SchedulingContractResolver:
         *,
         expected_sha256: str | None = None,
         stage_resources: Mapping[tuple[str, str], StageResourceEnvelope] | None = None,
+        stage_shape_resources: Mapping[tuple[str, str, str], StageResourceEnvelope] | None = None,
     ) -> SchedulingContractResolver:
         contract, digest = _read(path, expected_sha256=expected_sha256)
-        return cls(contract, raw_contract_sha256=digest, stage_resources=stage_resources)
+        return cls(
+            contract,
+            raw_contract_sha256=digest,
+            stage_resources=stage_resources,
+            stage_shape_resources=stage_shape_resources,
+        )
 
     def freeze(
         self,
@@ -183,6 +193,23 @@ class SchedulingContractResolver:
         decisions: list[StageSchedulingDecision] = []
         for stage in plan.stages:
             raw_stage = _object(profile_stages.get(stage.stage_id), "scientific profile stage")
+            if stage.execution_shape is not None:
+                if self.pod_placement.legacy_unverified:
+                    raise SchedulingContractError("execution shapes require verified per-node accelerator capacity")
+                try:
+                    raw_stage = select_stage_shape(raw_stage, stage.execution_shape.shape_id)
+                    placement_contract, resource_contract = _stage_contract(raw_stage, "execution shape")
+                    if (
+                        stage_execution_shape(raw_stage, stage.execution_shape.shape_id) != stage.execution_shape
+                        or placement_contract != stage.placement_class
+                        or resource_contract != stage.resources
+                        or raw_stage["admission_mode"] != stage.mode.value
+                        or raw_stage["min_parallelism"] != stage.min_parallelism
+                        or raw_stage["max_parallelism"] != stage.max_parallelism
+                    ):
+                        raise CatalogProfileAdapterError("frozen execution shape differs from the catalog")
+                except (ValueError, KeyError) as error:
+                    raise SchedulingContractError("frozen execution shape differs from the catalog") from error
             raw_placement = raw_stage.get("placement")
             placement = None if raw_placement is None else _object(raw_placement, "scientific stage placement")
             desired_queue = None if placement is None else placement.get("local_queue")
@@ -361,8 +388,38 @@ class SchedulingContractResolver:
                 if stage_accelerator is not None and stage_accelerator.get("resource_name") != accelerator_resource:
                     raise SchedulingContractError("profile stage accelerator resource differs from Kueue")
                 accelerator_count = stage_gpu_count
-                if not self.pod_placement.legacy_unverified:
-                    execution_resources = self.stage_resources.get((model_id, stage.stage_id))
+                rdma = None if stage.execution_shape is None else stage.execution_shape.rdma
+                if rdma is not None:
+                    node_selector = tuple(sorted(rdma.node_labels.items()))
+                    queue = _object(self.cluster_queues.get(cluster_queue_name), "RDMA ClusterQueue")
+                    groups = _object(queue.get("spec"), "RDMA ClusterQueue spec").get("resourceGroups", [])
+                    # GPU and HCA must share the same flavor assignment, not
+                    # independent flavors that could refer to different nodes.
+                    budgeted = set()
+                    for group in groups:
+                        if not isinstance(group, Mapping) or not {accelerator_resource, rdma.resource_name}.issubset(
+                            group.get("coveredResources", [])
+                        ):
+                            continue
+                        for flavor in group.get("flavors", []):
+                            for amount in flavor.get("resources", []):
+                                quantity = str(amount.get("nominalQuota", ""))
+                                if (amount.get("name") == rdma.resource_name
+                                        and quantity.isdecimal() and int(quantity) >= 2):
+                                    budgeted.add(flavor.get("name"))
+                    resolved_pools = tuple(
+                        pool for pool in resolved_pools if self.pools[pool]["resource_flavor"] in budgeted
+                    )
+                    if not resolved_pools:
+                        raise SchedulingContractError("RDMA requires a joint GPU/HCA flavor reservation for both nodes")
+                if not self.pod_placement.legacy_unverified or rdma is not None:
+                    execution_resources = (
+                        self.stage_resources.get((model_id, stage.stage_id))
+                        if stage.execution_shape is None
+                        else self.stage_shape_resources.get((model_id, stage.stage_id, stage.execution_shape.shape_id))
+                    )
+                    if stage.execution_shape is not None and execution_resources is None:
+                        raise SchedulingContractError("execution shape is absent from the qualified execution map")
                     if (
                         stage.resources is not None
                         and execution_resources is not None
@@ -378,9 +435,11 @@ class SchedulingContractResolver:
                         requested_resources,
                         accelerator_resource=accelerator_resource,
                         accelerator_count=accelerator_count,
+                        extended_resources=() if rdma is None else ((rdma.resource_name, rdma.count),),
                     )
                     resolved_pools = self.pod_placement.eligible_pools(
-                        resolved_pools, pod_request, accelerator_resource
+                        resolved_pools, pod_request, accelerator_resource,
+                        required_labels=None if rdma is None else rdma.node_labels,
                     )
                     if not resolved_pools:
                         raise SchedulingContractError(
@@ -392,6 +451,18 @@ class SchedulingContractResolver:
                         self.pools[pool_id]["resource_flavor"] == requested_flavor for pool_id in resolved_pools
                     ):
                         raise SchedulingContractError("requested ResourceFlavor cannot fit the whole scientific Pod")
+                if model_id == "gromacs-mpi" and stage.mode is ExecutionMode.TRUE_GANG:
+                    # The MPI renderer requires one Pod per distinct hostname.
+                    # GPU quota and per-Pod fit alone cannot prove that a pool
+                    # has enough configured hosts (two 1-GPU Pods cannot share a
+                    # single 4-GPU host). Do not impose this on other gangs whose
+                    # renderer does not require distinct hosts.
+                    assert stage.gang_size is not None
+                    resolved_pools = self._pools_with_distinct_hosts(resolved_pools, stage.gang_size)
+                    if requested_flavor is not None and not any(
+                        self.pools[pool_id]["resource_flavor"] == requested_flavor for pool_id in resolved_pools
+                    ):
+                        raise SchedulingContractError("requested ResourceFlavor cannot fit the MPI distinct-host gang")
 
             decisions.append(
                 StageSchedulingDecision(
@@ -434,6 +505,29 @@ class SchedulingContractResolver:
             stages=tuple(decisions),
             raw_contract_sha256=self.raw_contract_sha256,
         )
+
+    def _pools_with_distinct_hosts(self, pools: tuple[str, ...], count: int) -> tuple[str, ...]:
+        """Use configured maximum hosts, not live availability or queue quota.
+
+        The workloads Terraform producer defines pool.capacity as
+        gpus_per_node * max_nodes. Its independently verified per-node GPU
+        count therefore recovers the configured host maximum. A zero hot
+        floor or temporarily unavailable/preempted hosts do not change it.
+        """
+        if self.pod_placement.legacy_unverified:
+            raise SchedulingContractError("MPI distinct-host gangs require verified per-node accelerator capacity")
+        eligible = []
+        for pool_id in pools:
+            capacity = self.pools[pool_id].get("capacity")
+            node = self.pod_placement.capacities.get(pool_id)
+            if (type(capacity) is not int or capacity < 0 or node is None
+                    or capacity % node.accelerator_count):
+                raise SchedulingContractError("MPI distinct-host gang has invalid configured maximum pool capacity")
+            if capacity // node.accelerator_count >= count:
+                eligible.append(pool_id)
+        if not eligible:
+            raise SchedulingContractError(f"MPI gang requires {count} distinct hosts beyond compatible pool maxima")
+        return tuple(eligible)
 
     def _resolve_route(
         self,

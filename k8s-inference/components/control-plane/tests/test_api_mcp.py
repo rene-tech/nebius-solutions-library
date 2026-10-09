@@ -433,6 +433,9 @@ def test_api_auth_model_list_openai_admission_revoke_and_nonleak(registry, ciphe
         )
         assert ext.status_code == 200
         assert ext.headers["x-fs2-principal"] == "rene"
+        assert "inference.invoke" in json.loads(ext.headers["x-fs2-scopes"])
+        assert json.loads(ext.headers["x-fs2-models"]) == ["qwen3-8b"]
+        assert int(ext.headers["x-fs2-max-concurrency"]) >= 1
 
         token_id = next(iter(runtime.store.tokens))  # type: ignore[attr-defined]
         assert (
@@ -668,7 +671,8 @@ def test_ip_public_authority_is_enforced_on_v1_mcp_and_both_metadata_paths(regis
 
 def test_terminal_metrics_project_cancel_and_revoke_exactly_once(registry, cipher, hasher) -> None:
     runtime = build_runtime(registry, cipher, hasher)
-    with TestClient(create_app(runtime)) as client:
+    app = create_app(runtime)
+    with TestClient(app) as client:
         token = issue(client, principal="terminal-accounting", scopes=["inference.invoke"])
         headers = {"authorization": f"Bearer {token}", "x-fs2-wait-seconds": "0"}
         first = client.post(
@@ -689,6 +693,12 @@ def test_terminal_metrics_project_cancel_and_revoke_exactly_once(registry, ciphe
             client.delete(f"/admin/v1/tokens/{token_id}", headers={"authorization": f"Bearer {'a' * 32}"}).status_code
             == 200
         )
+        # The first scrape starts a bounded background historical observation;
+        # terminal counts remain exactly-once even though they are not live queue state.
+        client.get("/metrics")
+        async def wait_for_history():
+            await asyncio.wait_for(app.state.historical_metrics._task, 1)
+        client.portal.call(wait_for_history)
         first_scrape = client.get("/metrics").text
         second_scrape = client.get("/metrics").text
 

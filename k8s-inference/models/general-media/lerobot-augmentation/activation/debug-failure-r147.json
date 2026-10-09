@@ -1,0 +1,62 @@
+{
+  "schema": "fs2-serve.nebius.ai/lerobot-public-debug-negative/v1",
+  "observed_at": "2026-09-18T00:20:46Z",
+  "state": "failed",
+  "qualified": false,
+  "helm_revision": 147,
+  "control_plane_image_digest": "sha256:58a6ccc0c7a9882e6155c1aefda1798d8f8777aa86faebf7d583bf007e339390",
+  "worker_image_digest": "sha256:71047b62303a21d2feec6127a4531b2ad4333f157bdb52cf67d2756dd7ead8c1",
+  "execution_identity_sha256": "b308acf83988e4af68ff08f555896013d226b3bd84953cb2f2b49b2180e4b890",
+  "execution_map_sha256": "daf297e2ced794b910df757acd7a4dadba3bb17c863c0b38b0c9497601b0cf5d",
+  "parent": {
+    "operation_id": "842b4692-6587-4dfc-8c1b-0d7f77047962",
+    "attempt_id": "dcce4ea8-8d04-5fc4-82c9-073519f7478e",
+    "protocol": "typed MCP submit_cosmos3_lerobot_augmentation",
+    "request_sha256": "7138eb51c0bf01733eff168f09f21d510048e8b90fbac288c25c412aca9f0afe",
+    "accepted_at": "2026-09-18T00:19:39.492065Z",
+    "completed_at": "2026-09-18T00:20:45.747370Z",
+    "status": "failed",
+    "http_status": 422,
+    "error_code": "Error",
+    "failure_kind": "application",
+    "max_concurrency": 1,
+    "attempt_resource_released": true
+  },
+  "children": [
+    {
+      "operation_id": "62b72f84-fd72-4784-8fa5-f64bc07b9d04",
+      "operation": "upload",
+      "status": "succeeded",
+      "http_status": 201,
+      "same_parent_token_principal_tenant": true
+    },
+    {
+      "operation_id": "1de73efe-3784-4338-84f8-3f748813f3ce",
+      "operation": "generate-media",
+      "status": "cancelled",
+      "error_code": "cancelled_by_caller",
+      "started_at": null,
+      "completed_at": "2026-09-18T00:20:44.035449Z",
+      "same_parent_token_principal_tenant": true
+    }
+  ],
+  "diagnosis": {
+    "scope": "Source-contract reproduction using the actual child id and operation fields; not a retained raw invoke response or worker-log assertion.",
+    "cause": "Worker _operation_id treated bare OperationView.operation='generate-media' as a nested object after the child was successfully admitted.",
+    "reproduced_code": "PLATFORM_RESPONSE_INVALID",
+    "reproduced_message": "operation response is not an object",
+    "retryable": false,
+    "parent_fencing_cancelled_activating_child": true,
+    "gpu_generation_started": false,
+    "output_dataset_created": false,
+    "reader_reopen_attempted": false,
+    "new_admissions_stopped": true
+  },
+  "private_evidence": {
+    "directory": "/home/tux/secure-handoff/lerobot-release-20260917/debug-lighting-mcp",
+    "run.json_sha256": "172852246bb08a272eca4ebbc7274493460b4e180c38db719d428f186fcb5fb6",
+    "prepared.json_sha256": "7f8e3dd34848be131e1edfda780af9c6df4a3e175e1578c8a275d4dc6c0e27a4",
+    "qualification-observation-running.json_sha256": "ee243d23f59ca1f7630a0e29f62fdd87152822b51d9a3a60c679c04ab4aa0add",
+    "qualification-observation-failed.json_sha256": "29970da9ce9ec832234cd6178bf3e4dd0b68c139e674b1954fe9ea4c14d73c4d"
+  }
+}

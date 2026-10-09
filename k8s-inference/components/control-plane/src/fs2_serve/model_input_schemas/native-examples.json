@@ -17,5 +17,67 @@
       "num_seq_per_target": 1,
       "random_seed": 2370
     }
+  },
+  "ctoxpred2": {
+    "source": "k8s-inference/models/toxicology/fixtures.py",
+    "request": {
+      "molecules": [
+        {
+          "id": "aspirin",
+          "smiles": "CC(=O)Oc1ccccc1C(=O)O"
+        },
+        {
+          "id": "caffeine",
+          "smiles": "Cn1c(=O)c2c(ncn2C)n(C)c1=O"
+        },
+        {
+          "id": "acetaminophen",
+          "smiles": "CC(=O)Nc1ccc(O)cc1"
+        },
+        {
+          "id": "ibuprofen",
+          "smiles": "CC(C)Cc1ccc(C(C)C(=O)O)cc1"
+        },
+        {
+          "id": "lidocaine",
+          "smiles": "CCN(CC)CC(=O)Nc1c(C)cccc1C"
+        },
+        {
+          "id": "diphenhydramine",
+          "smiles": "CN(C)CCOC(c1ccccc1)c1ccccc1"
+        }
+      ]
+    }
+  },
+  "admet-ai": {
+    "source": "k8s-inference/models/toxicology/fixtures.py",
+    "request": {
+      "molecules": [
+        {
+          "id": "aspirin",
+          "smiles": "CC(=O)Oc1ccccc1C(=O)O"
+        },
+        {
+          "id": "caffeine",
+          "smiles": "Cn1c(=O)c2c(ncn2C)n(C)c1=O"
+        },
+        {
+          "id": "acetaminophen",
+          "smiles": "CC(=O)Nc1ccc(O)cc1"
+        },
+        {
+          "id": "ibuprofen",
+          "smiles": "CC(C)Cc1ccc(C(C)C(=O)O)cc1"
+        },
+        {
+          "id": "lidocaine",
+          "smiles": "CCN(CC)CC(=O)Nc1c(C)cccc1C"
+        },
+        {
+          "id": "diphenhydramine",
+          "smiles": "CN(C)CCOC(c1ccccc1)c1ccccc1"
+        }
+      ]
+    }
   }
 }

@@ -1,0 +1,15 @@
+{
+  "schema": "fs2-serve.nebius.ai/scvi-workflow-request/v1",
+  "method": "scanvi",
+  "counts_source": "raw.X",
+  "batch_key": "dataset",
+  "labels_key": "cell_type",
+  "n_top_genes": 2000,
+  "max_epochs": null,
+  "scanvi_max_epochs": 20,
+  "batch_size": 512,
+  "visualization": "sample",
+  "visualization_cells": 20000,
+  "output_destination": "customer-bucket",
+  "output_prefix": "qualification/scvi-whitelab-20261006"
+}

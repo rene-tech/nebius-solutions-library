@@ -1,0 +1,6 @@
+package kokkos neigh half newton on
+read_restart state.restart
+include protocol.inc
+run 0
+write_dump all custom final.lammpstrj id type x y z vx vy vz modify sort id format float %.15g
+write_data final.data

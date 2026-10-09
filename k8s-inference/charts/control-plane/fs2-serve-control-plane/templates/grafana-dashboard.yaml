@@ -155,6 +155,24 @@ data:
           }],
           "title": "Durable workload reconciliation drill-down",
           "type": "table"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "$prometheus"},
+          "fieldConfig": {"defaults": {"unit": "reqps"}},
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 51},
+          "id": 15,
+          "targets": [{"expr": "sum by (model, tool, outcome, admission_stage) (clamp_min(delta((max by (model,transport,tool,outcome,admission_stage) (fs2_serve_public_exchanges_total{model=~\"$model\"}))[5m:]),0)) / 300", "legendFormat": "{{`{{model}} / {{tool}} / {{outcome}} / {{admission_stage}}`}}"}],
+          "title": "Customer-visible request outcomes (independent of HTTP status)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "$prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}},
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 60},
+          "id": 16,
+          "targets": [{"expr": "sum by (tenant,model,outcome,error_class) (max by (tenant,model,protocol,outcome,workload_class,error_class) (fs2_serve_customer_operations_last_10m{tenant=~\"$tenant\",model=~\"$model\"}))", "legendFormat": "{{`{{tenant}} / {{model}} / {{outcome}} / {{error_class}}`}}"}],
+          "title": "Terminal inference outcomes — rolling ten minutes, replicas deduplicated",
+          "type": "timeseries"
         }
       ],
       "refresh": "30s",

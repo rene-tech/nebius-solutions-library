@@ -1,0 +1,67 @@
+{
+  "source_commit": "0600b3f1321216261ff5356277ad65ebb162be87",
+  "source_tree": "26eab06d6b51a44921d18922d1401c5043544a61",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:41a01714ed6d89b90a5b4a4527e2eb9907433f7932970544d2a712333996de04",
+  "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation:exact-alignment-0600b3f13",
+  "image_configuration_digest": "sha256:aade2187a434edd5ec7638848bcc01c32f1d1e3009d4cbf29a4bdee62600ff2c",
+  "runtime_context_sha256": "5e763f52e33750ef775df86f5d1b41be37e97b454a393cdd331664b9b12fb981",
+  "context_digest_definition": "SHA256 of sorted compact JSON map relative path -> SHA256",
+  "context_files": {
+    "Containerfile.exact-alignment": "2ee999184ef53c2375a0c5ab416b65e836cba70ed4080fcf612e8cdee1826be2",
+    "pyproject.toml": "57fd443d19879480ee2e9edcde6dc174fee05af804c8336949f4e359c8cd4d58",
+    "uv.lock": "d03d784fe11f492349b81ebd6d49364c03f6a5e024985fe2b124879cb2402a3a",
+    "src/fs2_lerobot_augmentation/__init__.py": "5ad1276547c0c1cfca8d609caad8c21df1442f1ac95faa1aea46a2c6750bf627",
+    "src/fs2_lerobot_augmentation/cli.py": "1b71b89ee7a3d0593a95542dcfe4f8f1d2aad0faca23acfa2d033ff86e6adce2",
+    "src/fs2_lerobot_augmentation/contracts.py": "83b78f1f4c98e0357c87b07b013cbc67658f306900196bdecf2b68be0fa22be6",
+    "src/fs2_lerobot_augmentation/cosmos.py": "d6f3e528aa2db51af51ff97c802cf97e3b5693f1f2e50c1a387abac29ad3d7ef",
+    "src/fs2_lerobot_augmentation/dataset.py": "5a419cbc05216b05a9e87b3257f0b33696fdd80ac4e3bc8da6a6737a13a8a672",
+    "src/fs2_lerobot_augmentation/localize.py": "7d1b5ed96bd6f599a9251a2302ad50a6516944f0d9ef8a8e89b3d6cc0474ca22",
+    "src/fs2_lerobot_augmentation/worker.py": "3e0412fb8dda7267c40de8fb3434f6632da02698ffaf5720a83186261df2f526"
+  },
+  "build_command": [
+    "docker",
+    "buildx",
+    "build",
+    "--builder",
+    "default",
+    "--platform",
+    "linux/amd64",
+    "--file",
+    "Containerfile.exact-alignment",
+    "--build-arg",
+    "SOURCE_COMMIT=0600b3f1321216261ff5356277ad65ebb162be87",
+    "--build-arg",
+    "SOURCE_TREE=26eab06d6b51a44921d18922d1401c5043544a61",
+    "--build-arg",
+    "RUNTIME_CONTEXT_SHA256=5e763f52e33750ef775df86f5d1b41be37e97b454a393cdd331664b9b12fb981",
+    "--build-arg",
+    "CONTAINERFILE_SHA256=2ee999184ef53c2375a0c5ab416b65e836cba70ed4080fcf612e8cdee1826be2",
+    "--tag",
+    "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation:exact-alignment-0600b3f13",
+    "--load",
+    "."
+  ],
+  "base_runtime": "sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
+  "platform": "linux/amd64",
+  "public_end_to_end_qualified": false,
+  "validation": {
+    "focused_worker_tests_passed": 48,
+    "reader_integration_tests_passed": 29,
+    "worker_suite": {
+      "passed": 98,
+      "skipped_optional_fixtures": 11,
+      "failed": 1,
+      "failure": "Existing activation/workload-profile.json differs from current canonical execution-map qualification; release owner reconciles successor."
+    },
+    "control_plane_adapter_suite": {
+      "passed": 9,
+      "failed": 1,
+      "failure": "Existing activation/execution-map.json differs from current canonical row; successor promotion must reconcile."
+    },
+    "ruff": "passed",
+    "exact_image_cpu_receipt": "exact-alignment-image-cpu.json",
+    "exact_image_cpu_receipt_sha256": "9c7709fcebae90fa911f1e283f409da3e86ef4cb28e0226e4f87712e5e00b46b",
+    "scope": "Exact CPU coordinator with retained H100 V2V child artifacts; geometry-negative replay uses original malformed448x256 transfer children. Not fresh public transfer or physical-action alignment qualification."
+  },
+  "evidence_path": "/home/tux/secure-handoff/scientific-qualification-20260918/lerobot-admission-diagnosis/exact-alignment-image-cpu-r2/outputs/receipt.json"
+}

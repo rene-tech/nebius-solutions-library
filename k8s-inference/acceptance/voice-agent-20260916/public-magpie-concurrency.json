@@ -1,0 +1,64 @@
+{
+  "model": "magpie-tts-multilingual-357m",
+  "key_revoked": true,
+  "overlap_seconds": 4.415227955207229,
+  "measurements": [
+    {
+      "voice": "Sofia",
+      "started_monotonic": 8134193.626042406,
+      "first_audio_monotonic": 8134198.000574498,
+      "last_audio_monotonic": 8134203.014209656,
+      "done": {
+        "type": "audio.done",
+        "operation_id": "ece044cb-a4ee-49fe-9e6c-55f6565a782f",
+        "samples": 230400,
+        "chunks": 106,
+        "sample_rate_hz": 22050,
+        "duration_seconds": 10.448979591836734,
+        "result_path": "/v1/operations/ece044cb-a4ee-49fe-9e6c-55f6565a782f/result"
+      },
+      "done_monotonic": 8134203.542300208,
+      "first_audio_seconds": 4.374532092362642,
+      "elapsed_seconds": 9.91625780146569,
+      "audio_seconds": 10.448979591836734,
+      "artifact": {
+        "artifact_id": "6d734e5e-6d7f-4279-968d-43b038175802",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "71a6901644c253407782b74a18c99b0cd54cd809cd35535a93195fe44686573c",
+        "size_bytes": 460844
+      },
+      "pcm_sha256": "bd22bc6bcc0063513c815c1b392cc39db226801355100d5dd2badde6fe1a78c6",
+      "stream_matches_durable_wav": true
+    },
+    {
+      "voice": "Jason",
+      "started_monotonic": 8134193.629858554,
+      "first_audio_monotonic": 8134197.424032096,
+      "last_audio_monotonic": 8134202.415802454,
+      "done": {
+        "type": "audio.done",
+        "operation_id": "47fee8c2-3cbb-4b65-bfcf-c0f5a1c22c94",
+        "samples": 235520,
+        "chunks": 108,
+        "sample_rate_hz": 22050,
+        "duration_seconds": 10.681179138321996,
+        "result_path": "/v1/operations/47fee8c2-3cbb-4b65-bfcf-c0f5a1c22c94/result"
+      },
+      "done_monotonic": 8134202.587831311,
+      "first_audio_seconds": 3.7941735414788127,
+      "elapsed_seconds": 8.957972756586969,
+      "audio_seconds": 10.681179138321996,
+      "artifact": {
+        "artifact_id": "8c5215a2-5b86-47e0-b8fe-f7b9385acba4",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "bf16e77e9251fcb3edf102ecb9eb1f98e325da129bb4c6c0d9a7465bf809bb97",
+        "size_bytes": 471084
+      },
+      "pcm_sha256": "b0e4ed6ab7a9e48548e8d98f87f610513d79878c58b3a698199231443ec25c43",
+      "stream_matches_durable_wav": true
+    }
+  ],
+  "status": "passed"
+}

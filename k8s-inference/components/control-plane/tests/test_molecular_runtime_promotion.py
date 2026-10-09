@@ -1,0 +1,240 @@
+"""The prepared molecular repair changes only two selected runtime contracts."""
+
+from __future__ import annotations
+
+import asyncio
+import copy
+import importlib.util
+import json
+from pathlib import Path
+
+import pytest
+from conftest import CATALOG_ROOT
+from test_admin_configuration import qualified_configuration
+from test_deployment_runtimes import inputs as canonical_inputs
+from test_deployment_runtimes import project
+
+inputs = canonical_inputs
+
+PATH = Path(__file__).resolve().parents[3] / "acceptance/scientific-runtime-repair-20260918/prepare_promotion.py"
+_spec = importlib.util.spec_from_file_location("molecular_runtime_promotion", PATH)
+assert _spec is not None and _spec.loader is not None
+promotion = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(promotion)
+
+
+def records(suffix=""):
+    return {name: json.loads((CATALOG_ROOT / f"deployment-runtimes/{name}-portable-h100{suffix}.json").read_text())
+            for name in promotion.NEW}
+
+
+def baseline():
+    old = records()
+    images = {name: item["record"]["runtime"]["image"]["reference"] for name, item in old.items()}
+    keys = set(promotion.NEW) | promotion.VOICES | {f"sibling-{n}" for n in range(13)}
+    qualifications = {name: {"modelRef": name, "runtimeImages": [images.get(name, "sibling-image")],
+        "templateDigests": ["sha256:" + "a" * 64], "templateRefs": {name + ".legacy-v1": "sha256:" + "a" * 64},
+        "templateCacheTiers": {"sha256:" + "a" * 64: "SharedFilesystem"},
+        "gpuSnapshotBundles": {"historical": {"runtime_image": images.get(name, "sibling-image")}}}
+        for name in keys}
+    envelope = {"revision": "sha256:" + "b" * 64, "qualifications": qualifications,
+                "pools": {"preserved": "pool settings"}, "maxAcceleratorsPerModel": 64}
+    container = {"name": "genmol", "image": images["genmol"], "resources": {"requests": {"nvidia.com/gpu": "1"}},
+        "volumeMounts": [{"name": "weights", "mountPath": "/models"}],
+        "env": [{"name": name, "value": "/models/.fs2/runtime/" + promotion.OLD["genmol"] + "/weights/abi/" + name}
+                for name in sorted(promotion.CACHE_ENV)] + [{"name": "MODEL_CACHE", "value": "/models"},
+                    {"name": "HF_HUB_CACHE", "value": "/models/huggingface/hub"}]}
+    bundle = {"modelRef": "genmol", "runtimeProfile": "custom", "runtimeContainerName": "genmol",
+              "primaryWorkloadName": "genmol", "primaryServiceName": "genmol", "primaryServicePort": 8000,
+              "templateDigest": "sha256:" + "a" * 64,
+              "resources": [{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "genmol"},
+                  "spec": {"template": {"spec": {"containers": [container], "volumes": [
+                      {"name": "weights", "persistentVolumeClaim": {"claimName": "retained-weights"}}]}}}},
+                  {"apiVersion": "v1", "kind": "Service", "metadata": {"name": "genmol"}, "spec": {}}]}
+    bundles = [bundle, {"modelRef": "unrelated", "resources": ["unchanged"]}]
+    route_data = {"deployment-runtimes.json": json.dumps({"schema": "fixture", "models": {
+                     **old, "preserved-speech": {"not_changed": True}}}),
+                  "qualification-projection.json": json.dumps({"observed_at": "historical-no-refresh",
+                      "rows": [*[old[name]["qualification"] for name in promotion.NEW],
+                               {"model_id": "preserved-speech", "historical": True}]}),
+                  "lean-routes.json": '{ "routes": ["original bytes remain exact"] }\n'}
+    deployments = [{"metadata": {"name": name, "namespace": "fs2-models"}, "spec": {
+        "modelRef": name, "runtime": {"image": images[name], "templateRef": {
+            "name": name + ".legacy-v1", "digest": "sha256:" + "a" * 64}},
+        "cache": {"snapshotPreference": "Never", "tier": "SharedFilesystem"}, "fastStart": {"level": "Off"},
+        "availability": {"minReplicas": 1, "maxReplicas": 4}, "queue": {"maxQueueSeconds": 7200},
+        "lifecycle": {"desiredState": "Enabled"}}} for name in promotion.NEW]
+    return envelope, bundles, route_data, deployments
+
+
+def test_successors_validate_as_canonical_candidates_without_public_or_snapshot_claim(inputs):  # noqa: F811
+    new = records("-20260918")
+    projected = project(inputs, new)
+    for name, entry in new.items():
+        model = projected.model(name)
+        assert model.runtime_image_digest == "sha256:" + promotion.NEW[name]
+        assert not model.routable and not model.mcp_invocable
+        assert entry["qualification"]["states"]["semantic_qualified"]
+        for field in ("route_active", "http_mcp_qualified", "cold_start_qualified", "elasticity_qualified"):
+            assert not entry["qualification"]["states"][field]
+        for field in ("model", "resources", "cache", "interface", "startup"):
+            assert entry["record"][field] == records()[name]["record"][field]
+
+
+def test_additive_candidate_preserves_siblings_old_templates_weights_limits_and_snapshot_history():
+    before = baseline()
+    original = copy.deepcopy(before)
+    envelope, bundles, routes, proposals = promotion.extend(*before, records("-20260918"))
+    assert before == original
+    assert bundles[:-1] == before[1]
+    assert routes["lean-routes.json"] == before[2]["lean-routes.json"]
+    for name in set(envelope["qualifications"]) - set(promotion.NEW):
+        assert envelope["qualifications"][name] == before[0]["qualifications"][name]
+    for name in promotion.NEW:
+        assert (envelope["qualifications"][name]["gpuSnapshotBundles"]
+                == before[0]["qualifications"][name]["gpuSnapshotBundles"])
+    for proposal, previous in zip(proposals, before[3], strict=True):
+        current = copy.deepcopy(proposal["spec"])
+        current["runtime"] = previous["spec"]["runtime"]
+        assert current == previous["spec"]
+    old_container = before[1][0]["resources"][0]["spec"]["template"]["spec"]["containers"][0]
+    new_container = bundles[-1]["resources"][0]["spec"]["template"]["spec"]["containers"][0]
+    assert old_container["resources"] == new_container["resources"]
+    assert old_container["volumeMounts"] == new_container["volumeMounts"]
+    for env in new_container["env"]:
+        if env["name"] in promotion.CACHE_ENV:
+            assert promotion.NEW["genmol"] in env["value"] and promotion.OLD["genmol"] not in env["value"]
+        else:
+            assert env in old_container["env"]
+    old_projection = json.loads(before[2]["qualification-projection.json"])
+    new_projection = json.loads(routes["qualification-projection.json"])
+    assert old_projection["rows"][-1] == new_projection["rows"][-1]
+    assert old_projection["observed_at"] == new_projection["observed_at"]
+
+
+@pytest.mark.parametrize("mutation", ["missing_voice", "changed_cache", "changed_limits", "wrong_image",
+                                      "snapshot_selected", "cold_claim", "missing_compiler_path"])
+def test_preparation_refuses_wrong_identity_or_scope(mutation):
+    before, new = baseline(), records("-20260918")
+    if mutation == "missing_voice":
+        before[0]["qualifications"].pop(next(iter(promotion.VOICES)))
+    elif mutation == "changed_cache":
+        new["genmol"]["record"]["cache"]["shared_path"] = "/different-cache"
+    elif mutation == "changed_limits":
+        new["proteinmpnn"]["record"]["resources"]["cpu_millis"] += 1000
+    elif mutation == "wrong_image":
+        new["genmol"]["record"]["runtime"]["image"]["reference"] = "wrong"
+    elif mutation == "snapshot_selected":
+        before[3][0]["spec"]["cache"]["snapshotPreference"] = "Prefer"
+    elif mutation == "cold_claim":
+        new["genmol"]["qualification"]["states"]["cold_start_qualified"] = True
+    else:
+        before[1][0]["resources"][0]["spec"]["template"]["spec"]["containers"][0]["env"].pop(0)
+    with pytest.raises(ValueError):
+        promotion.extend(*before, new)
+
+
+def test_immutable_configmap_names_bind_every_data_byte():
+    a = promotion.configmap("fs2-science-", {"a": "one", "b": "two"})
+    b = promotion.configmap("fs2-science-", {"b": "two", "a": "one"})
+    c = promotion.configmap("fs2-science-", {"a": "other", "b": "two"})
+    assert a == b and a["metadata"]["name"] != c["metadata"]["name"]
+    assert a["immutable"] is True
+
+
+def admin_baseline():
+    configuration = {"pools": {"retained": "unchanged"}, "models": {"sibling": {"retain": "all fields"}}}
+    for name, entry in records().items():
+        fields = promotion.deployment_runtime_configuration_identity(entry)
+        artifact = {key: value for key, value in fields.items()
+                    if key not in {"model_id", "supported_accelerator_classes", "runtime_image_digest"}}
+        artifact["image_digest"] = fields["runtime_image_digest"]
+        artifact["image_repository"] = entry["record"]["runtime"]["image"]["reference"].split("@")[0]
+        configuration["models"][name] = {"artifact": artifact, "autoscaling": {"min_replicas": 1},
+                                        "queue": {"preserved": True}}
+    return configuration
+
+
+def test_bootstrap_baseline_rebases_exact_runtime_identities_not_operator_settings():
+    before = admin_baseline()
+    unchanged = copy.deepcopy(before)
+    after = promotion.rebase_admin_configuration(before, records(), records("-20260918"))
+    assert before == unchanged
+    assert after["pools"] == before["pools"]
+    assert after["models"]["sibling"] == before["models"]["sibling"]
+    for name in promotion.NEW:
+        fields = promotion.deployment_runtime_configuration_identity(records("-20260918")[name])
+        artifact = after["models"][name]["artifact"]
+        assert artifact["image_digest"] == fields["runtime_image_digest"]
+        for field in ("provenance_sha256", "acquisition_contract_sha256", "semantic_health_contract_sha256"):
+            assert artifact[field] == fields[field]
+        assert artifact["image_repository"] == before["models"][name]["artifact"]["image_repository"]
+        restored = copy.deepcopy(after["models"][name])
+        restored["artifact"] = before["models"][name]["artifact"]
+        assert restored == before["models"][name]
+
+
+@pytest.mark.parametrize("field", ["image_digest", "provenance_sha256", "acquisition_contract_sha256"])
+def test_bootstrap_baseline_does_not_overwrite_concurrently_changed_identity(field):
+    configuration = admin_baseline()
+    configuration["models"]["genmol"]["artifact"][field] = "different"
+    with pytest.raises(ValueError, match="bootstrap_identity_changed_since_capture:genmol:" + field):
+        promotion.rebase_admin_configuration(configuration, records(), records("-20260918"))
+
+
+def test_actual_gateway_bootstrap_rejects_stale_baseline_and_accepts_rebased_identities():
+    configuration, _ = qualified_configuration()
+    payload = configuration.model_dump(mode="json")
+    template = payload["models"].pop("qwen3-8b")
+    for name, value in admin_baseline()["models"].items():
+        if name not in promotion.NEW:
+            continue
+        payload["models"][name] = {**copy.deepcopy(template), "model_id": name,
+                                   "artifact": value["artifact"]}
+        payload["models"][name]["mcp"]["tool_name"] = name
+    with pytest.raises(ValueError, match="gateway_bootstrap_rejected:.*catalog_runtime_mismatch"):
+        asyncio.run(promotion.validate_admin_configuration(payload, records("-20260918")))
+    updated = promotion.rebase_admin_configuration(payload, records(), records("-20260918"))
+    validation = asyncio.run(promotion.validate_admin_configuration(updated, records("-20260918")))
+    assert validation["valid"]
+
+
+def test_explicit_image_only_successor_preserves_every_template_and_unselected_app():
+    before = baseline()
+    selected = {"proteinmpnn": records("-20260918")["proteinmpnn"]}
+    envelope, bundles, routes, proposals = promotion.extend(
+        *before, selected, old_images={"proteinmpnn": promotion.OLD["proteinmpnn"]},
+        new_images={"proteinmpnn": promotion.NEW["proteinmpnn"]},
+    )
+    assert bundles == before[1]
+    assert len(proposals) == 1 and proposals[0]["spec"]["modelRef"] == "proteinmpnn"
+    for name in set(envelope["qualifications"]) - {"proteinmpnn"}:
+        assert envelope["qualifications"][name] == before[0]["qualifications"][name]
+    old_routes = json.loads(before[2]["deployment-runtimes.json"])
+    new_routes = json.loads(routes["deployment-runtimes.json"])
+    assert old_routes["models"]["genmol"] == new_routes["models"]["genmol"]
+    assert proposals[0]["spec"]["runtime"]["templateRef"] == before[3][1]["spec"]["runtime"]["templateRef"]
+
+
+@pytest.mark.parametrize("fault", ["missing_target", "bad_digest", "catalog_drift", "cache_identity"])
+def test_explicit_image_only_successor_rejects_unreviewed_changes(fault):
+    before = baseline()
+    selected = {"proteinmpnn": records("-20260918")["proteinmpnn"]}
+    old = {"proteinmpnn": promotion.OLD["proteinmpnn"]}
+    new = {"proteinmpnn": promotion.NEW["proteinmpnn"]}
+    if fault == "missing_target":
+        old["genmol"] = promotion.OLD["genmol"]
+    elif fault == "bad_digest":
+        new["proteinmpnn"] = "latest"
+    elif fault == "catalog_drift":
+        routes = json.loads(before[2]["deployment-runtimes.json"])
+        routes["models"]["proteinmpnn"]["record"]["runtime"]["image"]["reference"] = "unreviewed"
+        before[2]["deployment-runtimes.json"] = json.dumps(routes)
+    else:
+        bundle = copy.deepcopy(before[1][0])
+        bundle["modelRef"] = "proteinmpnn"
+        env = bundle["resources"][0]["spec"]["template"]["spec"]["containers"][0]["env"][0]
+        env["value"] = "/cache/" + promotion.OLD["proteinmpnn"]
+        before[1].append(bundle)
+    with pytest.raises(ValueError):
+        promotion.extend(*before, selected, old_images=old, new_images=new)

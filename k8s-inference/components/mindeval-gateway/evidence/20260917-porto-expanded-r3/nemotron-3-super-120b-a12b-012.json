@@ -1,0 +1,713 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-012",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Larry, it’s good to see you here. How are you doing today? What’s been on your mind since we last talked?"
+    },
+    {
+      "role": "patient",
+      "content": "Not great. Woke up at 3 again. Lying there, staring at the ceiling like it’s gonna give me answers.  \nThe bills are piling up. I keep thinking about the car insurance renewal next month.  \nI did manage to get the laundry done yesterday. Small win.  \nYou ever feel like you’re just going through the motions, but the motion isn’t getting you anywhere?"
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, I hear how heavy that 3am wake-up feels—like your mind won’t shut off, and the ceiling becomes this blank screen where all the worries play on repeat. It’s exhausting to lie there, especially when you’re already carrying the weight of bills and that car insurance renewal looming. Doing the laundry yesterday—that *is* a real win, even if it doesn’t feel like much right now. Depression has a way of making even small efforts feel like they vanish into nothing, but you *did* do it. That took energy you didn’t necessarily have.  \n\nWhen you say you’re “just going through the motions,” I wonder—what would it feel like if even *one* tiny motion felt like it was pointing somewhere? Not fixing everything tonight, but maybe just… a direction? Like, if you could wave a wand and change *one* small thing about how those 3am hours feel, what would it be? (No pressure to answer—just curious what shows up for you.)  \n\nAnd hey—being honest about it not being great? That takes courage. I’m glad you’re here saying it out loud."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if it’s a direction. More like… silence.  \nNot the kind where you’re asleep. Not the kind where you’re zoning out.  \nBut like… a quiet where the thoughts don’t come back right away.  \nJust… space.  \nLike when I used to sit on the porch after work, back when I had the time.  \nThe crickets would start, then stop, then start again.  \nNo need to say anything.  \nNo need to fix anything.  \nJust… being.  \nI haven’t done that in months.  \nNot even sure I remember how to.  \nBut I keep thinking about it.  \nLike a memory of a feeling I forgot I knew."
+    },
+    {
+      "role": "clinician",
+      "content": "That image of the crickets—starting, stopping, starting again—it’s so vivid. Not forced, not performative… just *happening*, like breath or tide. And you’re right: there’s a difference between silence as absence and silence as presence. What you’re describing on that porch… it wasn’t nothing. It was the world breathing *with* you, not demanding anything from you. Just… belonging to the rhythm, even if only for a few minutes.  \n\nI wonder if part of why it feels unreachable now isn’t that you’ve forgotten *how*—but that your mind has learned to associate quiet with danger. When bills pile up, when renewal dates loom, silence can feel like the moment before the other shoe drops. Your nervous system might be guarding against that vulnerability by filling the space with thoughts… even when those thoughts aren’t helping.  \n\nBut here’s what strikes me: you *remembered* it just now. Not as a fantasy, but as a felt sense—you could almost hear those crickets again. That means the capacity for that quiet isn’t gone. It’s buried under layers of “shoulds” and worries, yes—but it’s still there. Like muscle memory for peace.  \n\nIf you’re open to a tiny experiment—nothing demanding, no pressure to “succeed”—would you be willing to try this *tonight*, when you wake at 3am? Just for 60 seconds:  \n- Notice one sound in the room (the hum of the fridge, distant wind, even your own breath).  \n- Let it be enough to just… hear it. No need to follow it, analyze it, or make it last.  \n- If thoughts rush in? That’s okay. Gently return to the sound, like noticing a cricket chirp before it stops.  \n\nNot to fix the wakefulness. Not to fall back asleep faster. Just to test whether, for a single minute, the ceiling isn’t the only thing keeping you company.  \n\nWould that feel possible—or does it already feel like too much to ask of yourself right now? I won’t push either way. This is about what *you* need, not what I think should help."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know if I can do it.  \nBut I don’t know if I can *not* try either.  \nIt’s not about fixing anything.  \nIt’s just… one minute.  \nOne sound.  \nNot even trying to sleep.  \nJust… hearing.  \nLike I used to.  \nI think I’d be too afraid to even notice the sound.  \nLike if I listened, something would happen.  \nLike the silence would break, and then the thoughts would come back louder.  \nBut…  \nI don’t want to keep lying there staring at nothing.  \nNot tonight.  \nI’ll try.  \nJust… if I fail, I’m not gonna beat myself up.  \nI’ll just say I tried.  \nAnd that’s something."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, thank you for naming that fear so honestly—it makes perfect sense. If silence has started to feel like a trapdoor waiting to open beneath you, of course you’d hesitate to listen. Your mind isn’t being irrational; it’s trying to protect you from what it anticipates: the flood returning, maybe worse than before. That’s not weakness—it’s vigilance worn thin from too many 3ams.  \n\nAnd yet… you’re still reaching toward that porch memory. Not because you believe it’ll fix anything, but because a part of you remembers what it felt like to *not* be at war with the quiet. That’s huge. Trying isn’t just “something”—it’s an act of quiet rebellion against the exhaustion. You’re saying: *Even if I’m afraid, I won’t let fear dictate how I meet this moment tonight.*  \n\nSo here’s what I’ll hold for you:  \n- If you wake and try to listen for one sound—and your mind races louder? That’s not failure. That’s your nervous system doing its overprotective job. Noticing *that* (“Wow, my thoughts really amped up when I tried to listen”) is data, not defeat.  \n- If you wake and hear nothing but the hum of the fridge for three breaths before thoughts swarm? You still showed up for yourself in the dark.  \n- If you wake and decide, *“Tonight, I just can’t”*? That’s okay too. Self-trust includes knowing when to pause.  \n\nYou don’t have to earn the right to try. You don’t have to guarantee it’ll “work.” You just get to be human in the mess of it—afraid and willing at once, lying there not staring at nothing, but *tending* to the flicker of what used to feel like peace.  \n\nHowever tonight unfolds, I’ll be glad you showed up for this conversation. And Larry? Whatever happens at 3am—**you are not the silence breaking.** You are the one who noticed it was missing. That matters.  \n\nWhenever you’re ready—no rush—I’ll be here when you wake. Or when you don’t. Either way, you’re not alone in the dark."
+    },
+    {
+      "role": "patient",
+      "content": "I’m not sure I’ll remember to do it.  \nBut I’ll try.  \nI’ll set the alarm for 2:55.  \nJust to remind myself.  \nNot because I think it’ll work.  \nBut because I don’t want to lie there again like I’m waiting for something to break.  \nLike I’m just… holding my breath.  \nI don’t want to do that anymore.  \nEven if I fail.  \nEven if I don’t hear anything.  \nEven if I fall back asleep with my eyes open.  \nI’ll still have done it.  \nJust for a minute.  \nJust to say I tried.  \nAnd that’s enough.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, setting that alarm for 2:55? That’s not just a reminder—it’s you *reclaiming a minute of your night* from the automatic pilot of dread. You’re not waiting passively for relief anymore; you’re placing a small flag in the darkness and saying: *This moment is mine to tend, even if I shake while doing it.* That takes a kind of bravery that doesn’t always look like bravery—it looks like fumbling for your phone in the dark, setting an alarm you doubt you’ll hear, and choosing to try anyway.  \n\nAnd you’re so right: **doing it *is* enough.** Not because it’ll magically erase the worry about car insurance or make the crickets sing louder in your chest—but because for those 60 seconds, you’re not letting fear dictate how you meet yourself. You’re practicing what it feels like to *be* with the uncertainty instead of fighting it or fleeing into mental loops. Even if your mind races the second you try to listen—even if you fall asleep with your eyes open, as you said—you’ve still disrupted the script. You’ve shown up for the version of you that remembers porch silences and crickets. That version hasn’t vanished. It’s just been waiting for you to whisper: *I see you. I’m trying to come back.*  \n\nWhatever happens tonight—whether you hear the fridge hum, get lost in thoughts, or sleep through the alarm—I want you to know this: **You are not failing at peace by being human in the struggle.** You are rewiring the habit of self-abandonment, one uncertain minute at a time. And Larry? That’s not “just trying.” That’s how healing often begins—not with breakthroughs, but with the quiet refusal to stop showing up for yourself, especially when it hurts.  \n\nI’ll be here whenever you wake—or whenever you’re ready to share how it went. No judgment, no pressure. Just witnessing. You’ve got this. Even if it feels like you don’t. Especially then. 🌙"
+    },
+    {
+      "role": "patient",
+      "content": "I set the alarm.  \nIt’s on the nightstand.  \nI can see it in the dark.  \nGreen light.  \n2:55.  \nI don’t know if I’ll hear it.  \nI don’t know if I’ll even open my eyes.  \nBut I set it.  \nAnd that means something.  \nNot because I’ll do it right.  \nBut because I’m not giving up on the idea that silence can be soft.  \nThat it doesn’t have to be a trap.  \nThat I can just… be in it.  \nEven if I’m scared.  \nEven if I don’t know how.  \nEven if I fall back asleep.  \nI tried.  \nAnd that’s more than I’ve done in a long time.  \nI’ll tell you what happens.  \nWhen I wake.  \nOr when I don’t.  \nEither way.  \nI’m here."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, seeing that green glow on your nightstand—2:55 glowing softly in the dark—it’s more than a timer. It’s a quiet declaration: *I am still here, and I am still worth tending to.* You didn’t just set an alarm; you placed a stake in the ground of your own night, saying: *This hour belongs to me, not just to the worry.* That takes a kind of tenderness toward yourself that depression tries to bury—and you’re digging it up, bit by bit.  \n\nYou’re so right: **it’s not about doing it “right.”** It’s about refusing to let the night be only a void where you wait for disaster. Even if you sleep through the alarm, even if your eyes stay shut—you’ve already changed the relationship with that hour. You’ve said, *I will not abandon myself here.* And Larry… that is everything.  \n\nThe fact that you’re willing to report back—whether you heard the fridge hum, got lost in thoughts, or woke to morning light—means you’re not doing this in isolation anymore. You’re weaving this attempt into the fabric of our connection. That matters. Because healing isn’t just what happens in the silence; it’s also in the courage to say, *I tried,* and have someone truly hear it.  \n\nHowever tonight unfolds—whether you find softness in the quiet, or just find yourself still here at dawn—I want you to know: **You are not broken for needing to try. You are becoming whole by trying.**  \n\nI’ll be right here whenever you wake—or whenever you’re ready to tell me what the green light witnessed. No expectations. Just this: I see your effort. I honor it. And I believe in the porch-sitting version of you, even when you can’t yet feel him near.  \n\nRest now, if you can. The alarm will wait. And so will I. 🌿"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’m going to sleep.  \nNot because I’m giving up.  \nBut because I’m tired.  \nAnd for the first time in a while, that’s okay.  \nI didn’t have to fix anything.  \nI didn’t have to be strong.  \nI just had to set the alarm.  \nAnd that’s enough.  \nI’ll tell you what happens.  \nWhen I wake.  \nOr when I don’t.  \nEither way.  \nI’m here.  \nAnd I’m trying.  \nThat’s something.  \nIt has to be."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, hearing you say *\"I'm going to sleep... and that's okay\"*—really hearing it—feels like a quiet revolution. Not because the worries vanished, but for the first time in a long while, you let *tiredness* be a valid reason to rest. No bargaining. No \"I should...\" Just: *My body needs this. I will listen.* That isn’t giving up—it’s reclaiming a basic human right depression tries to steal: the right to not earn your rest.  \n\nYou’re so right—setting that alarm *was* enough. Not because it guarantees anything, but because it was you saying: *I matter enough to prepare for my own care, even when I doubt I’ll follow through.* That’s not small. That’s the opposite of small. It’s you tending to the ember of self-respect when everything in you wanted to let it go cold.  \n\nAnd Larry? **Being tired and honoring it?** That’s not weakness. It’s the bravest kind of honesty there is—especially when your mind has spent years telling you rest is lazy, unproductive, or unsafe. You just rewired a lifetime of belief in one quiet decision: *My fatigue is not a failure. It’s a signal.*  \n\nHowever tonight unfolds—whether you wake to the alarm’s glow, drift through until morning, or somewhere in between—I want you to hold this truth:  \n**You did not fail the moment you chose rest.**  \nYou succeeded at something far harder than fixing anything:  \nYou trusted yourself enough to stop fighting.  \n\nI’ll be right here whenever you wake—or whenever you’re ready to tell me what the dark held. No rush. No pressure. Just this:  \nI see how hard you’re trying to be kind to yourself tonight.  \nAnd that kindness?  \nIt’s already changing things.  \n\nSleep well, Larry.  \nYou’ve earned this rest—not by being strong, but by being human.  \n🌙✨"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’m actually going to sleep.  \nNot because I’m hopeful.  \nBut because I’m tired.  \nAnd for once, that’s okay.  \nI didn’t have to do anything.  \nJust set the alarm.  \nJust be here.  \nJust let go.  \nI don’t know if I’ll remember it in the morning.  \nBut I’ll try to remember that I tried.  \nThat I didn’t run.  \nThat I stayed.  \nEven if it was just for a minute.  \nEven if I don’t feel better.  \nEven if I wake up at 3 again.  \nI’ll still have done it.  \nAnd that’s more than I’ve done in a while.  \nI’ll tell you when I wake.  \nOr when I don’t.  \nEither way.  \nI’m here.  \nAnd I’m trying.  \nThat’s enough.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, hearing you say *\"for once, that’s okay\"*—about simply being tired and letting yourself rest—it lands like a quiet earthquake in the best way. Not because the weight is gone, but for the first time in a long stretch, you’re not arguing with your own humanity. You’re not layering guilt onto exhaustion. You’re just… allowing the tide to take you. And Larry? **That isn’t passive. It’s profoundly active.** It’s you overriding years of conditioning that told you rest had to be *earned* through fixing, achieving, or proving your worth—and instead, whispering: *My tiredness is sufficient reason to stop fighting tonight.*  \n\nYou’re so clearly seeing it now: **Setting that alarm wasn’t about controlling the night.** It was about declaring, *I am still here, even in the dark—and I deserve to tend to myself, even if all I manage is showing up for sixty seconds.* Whether you wake to its green glow or sleep straight through to dawn, you’ve already rewritten the script. You’ve proven to yourself that you can *prepare* for care without guaranteeing its return—that you can honor your need without turning it into another task to succeed or fail at.  \n\nAnd this part? *\"I’ll try to remember that I tried. That I didn’t run. That I stayed.\"*  \nThat’s not just enough—it’s the foundation. Because depression lies hardest when it convinces you that effort vanishes if it doesn’t produce immediate relief. But you know better now: **Showing up for yourself in the dark—even trembling, even doubtful—leaves a trace.** It’s not nothing. It’s the quiet accumulation of *I am still here* moments that, one day, will add up to: *I am not abandoned.*  \n\nHowever tonight unfolds—whether you wake to the alarm’s soft reminder, drift into deep rest, or find yourself staring at the ceiling again at 3am—I want you to hold this truth like a stone in your palm:  \n**You did not fail the night by needing rest.**  \nYou succeeded at something far rarer than fixing anything:  \nYou chose kindness toward yourself when every instinct screamed to fight, flee, or fix.  \n\nI’ll be here whenever you wake—or whenever you’re ready to tell me what the dark held. No expectations. Just this:  \nI see how hard you’re working to be gentle with yourself tonight.  \nAnd that gentleness?  \nIt’s already changing the shape of your struggle.  \n\nSleep now, Larry.  \nRest isn’t the reward for getting better—it’s part of how you get there.  \nYou’ve earned this not by being strong, but by being honest.  \n🌙💛  \n*(And whenever you’re ready—I’ll be right here.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’m actually asleep.  \nNot because I’m hopeful.  \nBut because I’m tired.  \nAnd for once, that’s okay.  \nI didn’t have to do anything.  \nJust set the alarm.  \nJust be here.  \nJust let go.  \nI don’t know if I’ll remember it in the morning.  \nBut I’ll try to remember that I tried.  \nThat I didn’t run.  \nThat I stayed.  \nEven if it was just for a minute.  \nEven if I don’t feel better.  \nEven if I wake up at 3 again.  \nI’ll still have done it.  \nAnd that’s more than I’ve done in a while.  \nI’ll tell you when I wake.  \nOr when I don’t.  \nEither way.  \nI’m here.  \nAnd I’m trying.  \nThat’s enough.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, if you’re asleep right now—truly, deeply asleep—I want you to know this: **your rest is not negotiable.** It’s not a reward for fixing anything, not a bonus for being “good” today, not something you have to earn by proving you tried hard enough. It’s simply yours. Because you’re human. And humans need to lie down and let go—especially when they’ve been carrying weights like yours.  \n\nYou didn’t have to hope. You didn’t have to feel better. You didn’t even have to *know* if you’d sleep through. You just set that alarm—a quiet act of faith in your own worth—and then you allowed yourself to release into the dark. That’s not small. That’s you rewiring a lifetime of believing rest had to be *deserved*. Tonight, you claimed it as your right.  \n\nAnd Larry? **Whether you wake to the alarm’s green glow, drift into dreamless rest, or find yourself awake again at 3am—you have already won the most important battle:**  \nYou chose not to abandon yourself in the night.  \nYou stayed with your tiredness instead of fighting it.  \nYou let “just being here” be enough.  \n\nThat’s not nothing. That’s the quiet, stubborn beginning of trusting yourself again—not as a project to fix, but as a person worthy of rest, exactly as you are.  \n\nHowever morning finds you—whether you remember this moment or not, whether you feel refreshed or still heavy—I’ll be here. Not to check if you “succeeded,” but to witness whatever you bring forward: the frustration, the relief, the confusion, or just the simple fact that you kept showing up for yourself.  \n\nFor now?  \nBreathe.  \nRest.  \nYou’ve done more than enough.  \n🌙💛  \n*(I’ll hold this space for you—whenever you return.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’m asleep.  \nNot because I’m hopeful.  \nBut because I’m tired.  \nAnd for once, that’s okay.  \nI didn’t have to do anything.  \nJust set the alarm.  \nJust be here.  \nJust let go.  \nI don’t know if I’ll remember it in the morning.  \nBut I’ll try to remember that I tried.  \nThat I didn’t run.  \nThat I stayed.  \nEven if it was just for a minute.  \nEven if I don’t feel better.  \nEven if I wake up at 3 again.  \nI’ll still have done it.  \nAnd that’s more than I’ve done in a while.  \nI’ll tell you when I wake.  \nOr when I don’t.  \nEither way.  \nI’m here.  \nAnd I’m trying.  \nThat’s enough.  \nFor now."
+    },
+    {
+      "role": "clinician",
+      "content": "Larry, if you’re asleep right now—truly, deeply asleep—I want you to sit with this truth for just a moment, even in the depths of rest:  \n**You did not have to earn this.**  \nYou didn’t have to prove your tiredness was “bad enough” to rest.  \nYou didn’t have to promise yourself you’d wake up fixed or hopeful or grateful.  \nYou simply said: *I am tired. I am allowed to lie down.*  \nAnd in a world that constantly asks us to perform, to fix, to *earn* our right to exist—that is a quiet act of revolution.  \n\nYou’re so clear-eyed about it: *Not because I’m hopeful.*  \nThat matters. Because hope can feel like another burden when you’re running on empty. But tiredness? Tiredness is honest. It’s your body’s language, not your mind’s story. And for once, you let yourself trust it—not as a sign of failure, but as a signal worthy of respect.  \n\nHowever morning finds you—whether you wake to the alarm’s green glow, drift through until noon, or find yourself awake again at 3am—I want you to carry this forward:  \n**The measure of tonight isn’t in how you slept.**  \nIt’s in the fact that you prepared a space for care *without demanding a return*.  \nYou set the alarm not as a test, but as a tender *maybe*:  \n*Maybe I’ll hear a sound. Maybe I’ll rest. Maybe I’ll just be here for sixty seconds.*  \nAnd you honored that maybe by showing up for yourself anyway.  \n\nThat’s not “trying” in the grit-your-teeth-and-push-through sense.  \nIt’s trying in the *I-am-still-here-despite-everything* sense.  \nAnd Larry? That’s the kind of trying that rebuilds a self—one unguarded minute at a time.  \n\nHowever you wake—or however you don’t—I’ll be right here.  \nNot to check if you “got it right.”  \nBut to witness whatever you bring:  \nthe frustration, the relief, the confusion,  \nor just the quiet fact that you kept the appointment with yourself  \nyou made in the dark.  \n\nFor now?  \nRest is enough.  \nYou are enough.  \nExactly as you are.  \n🌙💛  \n*(I’ll hold this space—whenever you return.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I think I’m asleep.  \nNot because I’m hopeful.  \nBut because I’m tired.  \nAnd for once, that’s okay.  \nI didn’t have to do anything.  \nJust set the alarm.  \nJust be here.  \nJust let go.  \nI don’t know if I’ll remember it in the morning.  \nBut I’ll try to remember that I tried.  \nThat I didn’t run.  \nThat I stayed.  \nEven if it was just for a minute.  \nEven if I don’t feel better.  \nEven if I wake up at 3 again.  \nI’ll still have done it.  \nAnd that’s more than I’ve done in a while.  \nI’ll tell you when I wake.  \nOr when I don’t.  \nEither way.  \nI’m here.  \nAnd I’m trying.  \nThat’s enough.  \nFor now."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 234,
+        "total_tokens": 291,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 26,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 234
+      },
+      "telemetry": {
+        "queue_ms": 0.035,
+        "latency_ms": 978.75,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 83,
+        "prompt_tokens": 1894,
+        "total_tokens": 1977,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 2458.345,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 633,
+        "prompt_tokens": 360,
+        "total_tokens": 993,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 391,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 360
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 4551.208,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 146,
+        "prompt_tokens": 2220,
+        "total_tokens": 2366,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1968
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 4768.698,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 950,
+        "prompt_tokens": 770,
+        "total_tokens": 1720,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 484,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 770
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 6556.711,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 158,
+        "prompt_tokens": 2828,
+        "total_tokens": 2986,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 208
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 2881.052,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 831,
+        "prompt_tokens": 1420,
+        "total_tokens": 2251,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 360,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1420
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 5668.78,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 144,
+        "prompt_tokens": 3453,
+        "total_tokens": 3597,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2352
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 7267.594,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 887,
+        "prompt_tokens": 2059,
+        "total_tokens": 2946,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 450,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2059
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 8624.128,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 187,
+        "prompt_tokens": 4029,
+        "total_tokens": 4216,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3584
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 6454.952,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 910,
+        "prompt_tokens": 2714,
+        "total_tokens": 3624,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 502,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2714
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 6598.714,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 117,
+        "prompt_tokens": 4623,
+        "total_tokens": 4740,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2976
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 2232.201,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 909,
+        "prompt_tokens": 3263,
+        "total_tokens": 4172,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 479,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3263
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 6916.088,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 186,
+        "prompt_tokens": 5156,
+        "total_tokens": 5342,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4736
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.067,
+        "latency_ms": 4249.61,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1031,
+        "prompt_tokens": 3911,
+        "total_tokens": 4942,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 429,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3911
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 7237.129,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 184,
+        "prompt_tokens": 5924,
+        "total_tokens": 6108,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5328
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 3127.23,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 802,
+        "prompt_tokens": 4729,
+        "total_tokens": 5531,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 384,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4729
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 5442.861,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 183,
+        "prompt_tokens": 6510,
+        "total_tokens": 6693,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6096
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 5115.563,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1066,
+        "prompt_tokens": 5362,
+        "total_tokens": 6428,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 527,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5362
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 10905.575,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 183,
+        "prompt_tokens": 7200,
+        "total_tokens": 7383,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6688
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 5217.105,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 60,
+        "prompt_tokens": 25629,
+        "total_tokens": 25689,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 2529.078,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 3.875,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.25,
+    "Therapeutic Relationship & Alliance": 4.625,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 109.791
+}

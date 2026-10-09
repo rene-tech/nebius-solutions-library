@@ -1,0 +1,9 @@
+2026-09-16, source 2f8a828f0 (documentation/evidence additions pending).
+Working directory: k8s-inference/components/speech-runtime
+Command: .venv/bin/pytest -q
+........................................................................ [ 82%]
+...............                                                          [100%]
+87 passed in 0.13s
+Command: .venv/bin/ruff check src tests
+All checks passed!
+These CPU tests include lifecycle code added after the GPU-tested image.

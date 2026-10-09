@@ -1,6 +1,8 @@
 """Opt-in preproduction HTTP/MCP debug captures, separate from usage telemetry.
 
 Model inputs and results are retained without a second payload-size ceiling.
+Stored artifact downloads are recorded by immutable artifact reference and a
+streaming checksum, not duplicated into an in-memory/PostgreSQL debug body.
 Authentication material is removed; encrypted PostgreSQL details are available
 only through the operator API. No body, header, query or exception message is
 written to ordinary application logs. An unread or interrupted body is explicit.
@@ -10,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import re
@@ -25,7 +28,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .crypto import Ciphertext, PayloadCipher
 from .models import Principal, StrictModel
-from .request_telemetry import ensure_request_id
+from .request_telemetry import AdmissionStage, SemanticOutcome, classify_public_outcome, ensure_request_id
 
 LOGGER = logging.getLogger(__name__)
 REDACTED = "[REDACTED]"
@@ -72,6 +75,15 @@ _AUTH_SCHEME = re.compile(rb"\b(?:Bearer|Basic)\s+[A-Za-z0-9+/_=.:-]+", re.IGNOR
 _JSON_SCALAR = re.compile(rb'("(?:[^"\\]|\\.)*")(\s*:\s*)("(?:[^"\\]|\\.)*"|[^,}\]\s]+)')
 
 
+class DebugArtifactReference(StrictModel):
+    artifact_id: UUID
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=0)
+    observed_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivered_bytes: int = Field(ge=0)
+    verified: bool
+
+
 class DebugBody(StrictModel):
     encoding: Literal["utf-8", "base64"]
     data: str
@@ -79,6 +91,8 @@ class DebugBody(StrictModel):
     observed_bytes: int = Field(ge=0)
     complete: bool
     redacted: bool
+    capture_mode: Literal["inline", "artifact_reference"] = "inline"
+    artifact_reference: DebugArtifactReference | None = None
 
 
 class DebugMetadata(StrictModel):
@@ -100,6 +114,10 @@ class DebugMetadata(StrictModel):
     http_status: int | None = Field(default=None, ge=100, le=599)
     error_type: str | None = None
     disconnected: bool = False
+    semantic_outcome: SemanticOutcome | None = None
+    jsonrpc_error_code: int | None = Field(default=None, ge=-(2**31), le=2**31 - 1)
+    semantic_error_type: str | None = None
+    admission_stage: AdmissionStage | None = None
 
 
 class DebugExchange(DebugMetadata):
@@ -313,7 +331,12 @@ def _sanitize(exchange: DebugExchange) -> DebugExchange:
         previous = getattr(exchange, field)
         clean = body_capture(_body_bytes(previous), previous.content_type, previous.complete, known)
         bodies[field] = clean.model_copy(
-            update={"observed_bytes": previous.observed_bytes, "redacted": previous.redacted or clean.redacted}
+            update={
+                "observed_bytes": previous.observed_bytes,
+                "redacted": previous.redacted or clean.redacted,
+                "capture_mode": previous.capture_mode,
+                "artifact_reference": previous.artifact_reference,
+            }
         )
     return exchange.model_copy(
         update={
@@ -514,6 +537,28 @@ def _label(value: object) -> str | None:
     return value if isinstance(value, str) and value and value.isprintable() else None
 
 
+def _artifact_response(path: str, status: int, headers: HeaderPairs) -> tuple[UUID, str, int] | None:
+    """Recognize only a successful native artifact route's response metadata.
+
+    Incoming client headers cannot opt a model response out of full capture.
+    The addressed, tenant-authorized object already retains the exact payload;
+    mirroring trajectories here caused multi-gigabyte transient allocations.
+    Errors on the same route still retain their complete inline response.
+    """
+    match = re.fullmatch(r"/v1/artifacts/([^/]+)/content", path)
+    artifact_id = _uuid(match[1]) if match else None
+    if status != 200 or artifact_id is None:
+        return None
+    values = {_text(key).lower(): _text(value) for key, value in headers}
+    if values.get("x-fs2-artifact-id") not in {None, str(artifact_id)}:
+        return None
+    digest = values.get("x-fs2-artifact-sha256", "")
+    size = values.get("content-length", "")
+    if re.fullmatch(r"[0-9a-f]{64}", digest) is None or not size.isdecimal():
+        return None
+    return artifact_id, digest, int(size)
+
+
 class DebugCaptureMiddleware:
     def __init__(
         self,
@@ -532,6 +577,7 @@ class DebugCaptureMiddleware:
             scope["type"] != "http"
             or path == "/v1/tokens"
             or path.startswith("/v1/tokens/")
+            or path == "/v1/storage/credentials"
             or not (path.startswith("/v1/") or path in {"/mcp", "/mcp/"})
         ):
             await self.app(scope, receive, send)
@@ -546,6 +592,9 @@ class DebugCaptureMiddleware:
         error_type: str | None = None
         response_headers: list[tuple[bytes, bytes]] = []
         response_operation: UUID | None = None
+        artifact_response: tuple[UUID, str, int] | None = None
+        artifact_hash = hashlib.sha256()
+        artifact_observed_bytes = artifact_delivered_bytes = 0
         request_headers = list(scope.get("headers", []))
         query = scope.get("query_string", b"")
 
@@ -561,9 +610,11 @@ class DebugCaptureMiddleware:
 
         async def observed_send(message: Message) -> None:
             nonlocal status, response_headers, response_operation, response_complete, finished_at
+            nonlocal artifact_response, artifact_observed_bytes, artifact_delivered_bytes
             if message["type"] == "http.response.start":
                 status = message["status"]
                 response_headers = list(message.get("headers", []))
+                artifact_response = _artifact_response(path, status, response_headers)
                 response_operation = next(
                     (
                         _uuid(value.decode("ascii", errors="ignore"))
@@ -573,8 +624,15 @@ class DebugCaptureMiddleware:
                     None,
                 )
             elif message["type"] == "http.response.body":
-                response_parts.extend(message.get("body", b""))
+                chunk = message.get("body", b"")
+                if artifact_response is not None:
+                    artifact_hash.update(chunk)
+                    artifact_observed_bytes += len(chunk)
+                else:
+                    response_parts.extend(chunk)
             await send(message)
+            if message["type"] == "http.response.body" and artifact_response is not None:
+                artifact_delivered_bytes += len(message.get("body", b""))
             if message["type"] == "http.response.body" and not message.get("more_body", False):
                 response_complete, finished_at = True, datetime.now(UTC)
 
@@ -628,28 +686,71 @@ class DebugCaptureMiddleware:
                 response_type = next(
                     (_text(value) for key, value in response_headers if key.lower() == b"content-type"), None
                 )
+                operation_id = _uuid(state.get("operation_id")) or response_operation
+                semantic = classify_public_outcome(
+                    path=path,
+                    http_status=status,
+                    response_body=bytes(response_parts),
+                    response_complete=response_complete,
+                    disconnected=disconnected,
+                    process_error_type=error_type,
+                    state=state,
+                    operation_id=operation_id,
+                )
+                if artifact_response is not None:
+                    artifact_id, expected_digest, expected_size = artifact_response
+                    captured_response = DebugBody(
+                        encoding="utf-8",
+                        data=(
+                            "Exact response bytes are retained as the tenant-owned artifact "
+                            f"{artifact_id}; this debug record contains a reference, not the artifact body."
+                        ),
+                        content_type=response_type,
+                        observed_bytes=artifact_observed_bytes,
+                        complete=response_complete,
+                        redacted=False,
+                        capture_mode="artifact_reference",
+                        artifact_reference=DebugArtifactReference(
+                            artifact_id=artifact_id,
+                            sha256=expected_digest,
+                            size_bytes=expected_size,
+                            observed_sha256=artifact_hash.hexdigest(),
+                            delivered_bytes=artifact_delivered_bytes,
+                            verified=(
+                                response_complete
+                                and artifact_delivered_bytes == artifact_observed_bytes == expected_size
+                                and artifact_hash.hexdigest() == expected_digest
+                            ),
+                        ),
+                    )
+                else:
+                    captured_response = body_capture(bytes(response_parts), response_type, response_complete, known)
                 exchange = DebugExchange(
                     id=uuid4(),
                     source="public",
                     request_id=request_id,
-                    operation_id=_uuid(state.get("operation_id")) or response_operation,
+                    operation_id=semantic["operation_id"],
                     started_at=started_at,
                     completed_at=finished_at or datetime.now(UTC),
                     tenant_id=principal.tenant_id if principal else None,
                     principal_id=principal.principal_id if principal else None,
                     token_id=principal.token_id if principal else None,
-                    model_id=model_id,
+                    model_id=semantic["model_id"] or model_id,
                     mcp_tool=tool,
                     endpoint=path,
                     method=str(scope.get("method", "")),
                     http_status=status,
                     error_type=error_type,
                     disconnected=disconnected,
+                    semantic_outcome=semantic["semantic_outcome"],
+                    jsonrpc_error_code=semantic["jsonrpc_error_code"],
+                    semantic_error_type=semantic["semantic_error_type"],
+                    admission_stage=semantic["admission_stage"],
                     query_string=redact_query(query, known),
                     request_headers=redact_headers(request_headers, known),
                     response_headers=redact_headers(response_headers, known),
                     request_body=body_capture(bytes(request_parts), request_type, request_complete, known),
-                    response_body=body_capture(bytes(response_parts), response_type, response_complete, known),
+                    response_body=captured_response,
                 )
                 await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)
             except Exception as error:

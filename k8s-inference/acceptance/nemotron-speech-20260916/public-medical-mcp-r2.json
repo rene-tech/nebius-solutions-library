@@ -1,0 +1,601 @@
+{
+  "started_at": "2026-09-16T11:35:46.314428+00:00",
+  "scope": "mcp",
+  "complete_customer_acceptance": false,
+  "measurements": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "input_sha256": "bed0455e336172d5e8c8eaa56bf54efa69cce5f115fba17cfb7d92d482953af5",
+      "source_audio_seconds": 457.92,
+      "tool": "infer_nemotron_speech_en_0_6b_native",
+      "transport_sha256": "a4bf68687801610eb4af999a9633f088c3fbf5dd6dc890af23f188a13e5d31df",
+      "transport_bytes": 6748717,
+      "upload_operation_id": "a0592377-d889-4851-9ec7-23d205b086d5",
+      "artifact_id": "d7049551-cdd0-4e3c-9643-240edb17d746",
+      "arguments": {
+        "audio": {
+          "artifact_id": "d7049551-cdd0-4e3c-9643-240edb17d746",
+          "sha256": "a4bf68687801610eb4af999a9633f088c3fbf5dd6dc890af23f188a13e5d31df",
+          "size_bytes": 6748717,
+          "media_type": "audio/flac",
+          "compression": "none"
+        },
+        "options": {
+          "model": "nemotron-speech-en-0.6b",
+          "language": "en"
+        },
+        "idempotency_key": "speech-mcp-4c223429338f4d14a4b7e4dcfb4a5c12",
+        "wait_seconds": 0
+      },
+      "operation_id": "b9105e90-a19d-47d0-a8c2-13e785023622",
+      "operation": {
+        "id": "b9105e90-a19d-47d0-a8c2-13e785023622",
+        "tenant_id": "rene",
+        "principal_id": "rene",
+        "token_id": "24c06176-6458-436f-8611-79114d9db39b",
+        "model_id": "nemotron-speech-en-0-6b",
+        "model_revision": "dynamic:sha256:5366a4bde7c0e640a995ffbeaf633ec02cdc27401291941a080d4df2bccbf882",
+        "protocol": "native",
+        "operation": "transcribe",
+        "idempotency_key": "speech-mcp-4c223429338f4d14a4b7e4dcfb4a5c12",
+        "status": "failed",
+        "accepted_at": "2026-09-16T11:35:56.770182Z",
+        "available_at": "2026-09-16T11:35:56.770182Z",
+        "deadline_at": "2026-09-16T13:35:56.750314Z",
+        "activation_started_at": "2026-09-16T11:35:56.824404Z",
+        "ready_at": "2026-09-16T11:35:57.331947Z",
+        "started_at": "2026-09-16T11:35:57.339366Z",
+        "completed_at": "2026-09-16T11:35:57.861625Z",
+        "outcome": "upstream_failed",
+        "semantic_outcome": "not_evaluated",
+        "http_status": 429,
+        "response_content_type": null,
+        "result_available": false,
+        "payload_expires_at": "2026-09-17T11:35:56.770182Z",
+        "error_code": "upstream_http_error",
+        "error_detail": null,
+        "attempt": 1,
+        "max_attempts": 3,
+        "fencing_token": 1,
+        "runtime": {
+          "pod_uid": null,
+          "node_uid": null,
+          "gpu_uuids": [],
+          "gpu_count": 0,
+          "preemptible": null
+        },
+        "estimated_gpu_seconds": 3600.0,
+        "reserved_gpu_seconds": 0.0,
+        "cold_start_seconds": 0.561765,
+        "input_tokens": null,
+        "output_tokens": null,
+        "modality_usage": [],
+        "modality_usage_reported": false,
+        "reused": false
+      }
+    }
+  ],
+  "temporary_key_id": "24c06176-6458-436f-8611-79114d9db39b",
+  "discovered_tool_names": [
+    "acknowledge_operation",
+    "begin_model_artifact_upload",
+    "begin_scientific_artifact_upload",
+    "cancel_operation",
+    "cancel_scientific_run",
+    "download_model_artifact",
+    "download_scientific_artifact",
+    "finalize_model_artifact_upload",
+    "finalize_scientific_artifact_upload",
+    "get_model_artifact",
+    "get_model_schema",
+    "get_operation",
+    "get_operation_result",
+    "get_scientific_artifact",
+    "get_scientific_result",
+    "get_scientific_status",
+    "get_tool_catalog_revision",
+    "infer_nemotron_speech_en_0_6b_native",
+    "infer_nemotron_speech_multilingual_0_6b_native",
+    "inspect_model_artifact_manifest",
+    "inspect_scientific_artifact_manifest",
+    "invoke_model",
+    "list_models",
+    "list_scientific_events",
+    "list_scientific_models",
+    "submit_scientific_run"
+  ],
+  "tools": {
+    "infer_nemotron_speech_en_0_6b_native": {
+      "name": "infer_nemotron_speech_en_0_6b_native",
+      "title": "Nemotron Speech English 0.6B (native)",
+      "description": "Invoke Nemotron Speech English 0.6B through the managed fs2-serve route. Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "audio",
+          "options"
+        ],
+        "description": "Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+        "properties": {
+          "audio": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "artifact_id",
+              "sha256",
+              "size_bytes",
+              "media_type",
+              "compression"
+            ],
+            "description": "Small caller-owned artifact reference returned by finalize_model_artifact_upload.",
+            "properties": {
+              "artifact_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Finalized artifact UUID belonging to the caller's tenant."
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "SHA-256 of the uploaded file bytes."
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 536870912,
+                "description": "Exact encoded file size, at most 512 MiB."
+              },
+              "media_type": {
+                "type": "string",
+                "enum": [
+                  "audio/wav",
+                  "audio/x-wav",
+                  "audio/mpeg",
+                  "audio/mp4",
+                  "audio/ogg",
+                  "audio/webm",
+                  "audio/flac",
+                  "audio/aac",
+                  "video/mp4",
+                  "video/webm"
+                ],
+                "description": "Audio or audio-bearing video MIME type."
+              },
+              "compression": {
+                "const": "none",
+                "description": "No artifact-layer compression; audio codec compression is accepted."
+              }
+            },
+            "x-fs2-artifact-materialization": "download-url",
+            "x-fs2-artifact-max-bytes": 536870912,
+            "x-fs2-artifact-media-types": [
+              "audio/wav",
+              "audio/x-wav",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/ogg",
+              "audio/webm",
+              "audio/flac",
+              "audio/aac",
+              "video/mp4",
+              "video/webm"
+            ]
+          },
+          "options": {
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "type": "string",
+                "const": "nemotron-speech-en-0.6b",
+                "description": "The exact App runtime selected by this tool."
+              },
+              "language": {
+                "anyOf": [
+                  {
+                    "maxLength": 16,
+                    "minLength": 2,
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "en-US"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Language",
+                "description": "Language/locale hint, or auto for the multilingual App. Eight adaptation-only locales are not enabled."
+              },
+              "chunk_size_ms": {
+                "default": 560,
+                "maximum": 1120,
+                "minimum": 80,
+                "title": "Chunk Size Ms",
+                "type": "integer",
+                "description": "Streaming chunk size in milliseconds; must match the App's configured worker profile. This is not an end-to-end latency promise.",
+                "enum": [
+                  80,
+                  160,
+                  560,
+                  1120
+                ]
+              },
+              "strip_language_tags": {
+                "default": true,
+                "title": "Strip Language Tags",
+                "type": "boolean",
+                "description": "Whether to remove multilingual language tags; must match the configured worker profile."
+              },
+              "output_granularity": {
+                "default": "segment",
+                "enum": [
+                  "segment",
+                  "word"
+                ],
+                "title": "Output Granularity",
+                "type": "string",
+                "description": "Requested native segment or word metadata. Returned timestamps must come from the runtime, not wall-clock inference."
+              },
+              "stop_history_eou_ms": {
+                "default": 800,
+                "maximum": 10000,
+                "minimum": 0,
+                "title": "Stop History Eou Ms",
+                "type": "integer",
+                "description": "Endpoint-history cutoff in milliseconds after an end-of-utterance marker."
+              }
+            },
+            "required": [
+              "model"
+            ],
+            "title": "SpeechOptions",
+            "type": "object",
+            "description": "Model-specific transcription options. Runtime-wide settings must match the App profile; language and output granularity are per request."
+          },
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 8,
+            "maxLength": 200,
+            "description": "Reuse this key when retrying the same submission to avoid duplicate work."
+          },
+          "wait_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 30.0,
+            "default": 0,
+            "description": "Wait briefly for completion; otherwise poll get_operation using the returned operation ID."
+          }
+        }
+      },
+      "execution": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "invoke_named_modelDictOutput",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": null,
+      "_meta": {
+        "fs2_model_id": "nemotron-speech-en-0-6b",
+        "fs2_protocol": "native",
+        "fs2_model_revision": "dynamic:sha256:5366a4bde7c0e640a995ffbeaf633ec02cdc27401291941a080d4df2bccbf882",
+        "fs2_active_runtime": {
+          "variant_id": "nemotron-speech-en-0-6b-nemo-cuda-v1",
+          "kind": "independent-runtime",
+          "source_kind": "huggingface",
+          "repository": "nvidia/nemotron-speech-streaming-en-0.6b",
+          "relationship": "exact-model",
+          "nim_artifact_parity": "not-applicable"
+        },
+        "fs2_qualification": {
+          "kind": "selected-deployment-runtime",
+          "authority": "explicit-deployment-runtime-record",
+          "observed_at": null,
+          "states": {
+            "cold_start_qualified": false,
+            "elasticity_qualified": null,
+            "http_mcp_qualified": null,
+            "registered": true,
+            "route_active": true,
+            "runtime_ready": true,
+            "semantic_qualified": true
+          },
+          "state_reasons": {
+            "route_active": "Active live-route publication supersedes the retained candidate's pre-activation snapshot.",
+            "http_mcp_qualified": "No retained qualification receipt is attached to this selected deployment runtime; unknown is not a failed qualification.",
+            "elasticity_qualified": "No retained qualification receipt is attached to this selected deployment runtime; unknown is not a failed qualification."
+          }
+        },
+        "fs2_input_contract": "typed-model-v1",
+        "fs2_input_sources": [
+          "k8s-inference/components/speech-runtime/src/fs2_speech/contracts.py",
+          "k8s-inference/components/speech-runtime/src/fs2_speech/audio.py"
+        ]
+      }
+    },
+    "infer_nemotron_speech_multilingual_0_6b_native": {
+      "name": "infer_nemotron_speech_multilingual_0_6b_native",
+      "title": "Nemotron Speech Multilingual 0.6B (native)",
+      "description": "Invoke Nemotron Speech Multilingual 0.6B through the managed fs2-serve route. Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "audio",
+          "options"
+        ],
+        "description": "Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+        "properties": {
+          "audio": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "artifact_id",
+              "sha256",
+              "size_bytes",
+              "media_type",
+              "compression"
+            ],
+            "description": "Small caller-owned artifact reference returned by finalize_model_artifact_upload.",
+            "properties": {
+              "artifact_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Finalized artifact UUID belonging to the caller's tenant."
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "SHA-256 of the uploaded file bytes."
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 536870912,
+                "description": "Exact encoded file size, at most 512 MiB."
+              },
+              "media_type": {
+                "type": "string",
+                "enum": [
+                  "audio/wav",
+                  "audio/x-wav",
+                  "audio/mpeg",
+                  "audio/mp4",
+                  "audio/ogg",
+                  "audio/webm",
+                  "audio/flac",
+                  "audio/aac",
+                  "video/mp4",
+                  "video/webm"
+                ],
+                "description": "Audio or audio-bearing video MIME type."
+              },
+              "compression": {
+                "const": "none",
+                "description": "No artifact-layer compression; audio codec compression is accepted."
+              }
+            },
+            "x-fs2-artifact-materialization": "download-url",
+            "x-fs2-artifact-max-bytes": 536870912,
+            "x-fs2-artifact-media-types": [
+              "audio/wav",
+              "audio/x-wav",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/ogg",
+              "audio/webm",
+              "audio/flac",
+              "audio/aac",
+              "video/mp4",
+              "video/webm"
+            ]
+          },
+          "options": {
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "type": "string",
+                "const": "nemotron-speech-multilingual-0.6b",
+                "description": "The exact App runtime selected by this tool."
+              },
+              "language": {
+                "anyOf": [
+                  {
+                    "maxLength": 16,
+                    "minLength": 2,
+                    "type": "string",
+                    "enum": [
+                      "ar",
+                      "ar-AR",
+                      "auto",
+                      "bg",
+                      "bg-BG",
+                      "cs",
+                      "cs-CZ",
+                      "da",
+                      "da-DK",
+                      "de",
+                      "de-DE",
+                      "en",
+                      "en-GB",
+                      "en-US",
+                      "es",
+                      "es-ES",
+                      "es-US",
+                      "et",
+                      "et-EE",
+                      "fi",
+                      "fi-FI",
+                      "fr",
+                      "fr-CA",
+                      "fr-FR",
+                      "hi",
+                      "hi-IN",
+                      "hr",
+                      "hr-HR",
+                      "hu",
+                      "hu-HU",
+                      "it",
+                      "it-IT",
+                      "ja",
+                      "ja-JP",
+                      "ko",
+                      "ko-KR",
+                      "nb",
+                      "nb-NO",
+                      "nl",
+                      "nl-NL",
+                      "pl",
+                      "pl-PL",
+                      "pt",
+                      "pt-BR",
+                      "pt-PT",
+                      "ro",
+                      "ro-RO",
+                      "ru",
+                      "ru-RU",
+                      "sk",
+                      "sk-SK",
+                      "sv",
+                      "sv-SE",
+                      "tr",
+                      "tr-TR",
+                      "uk",
+                      "uk-UA",
+                      "vi",
+                      "vi-VN",
+                      "zh",
+                      "zh-CN"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Language",
+                "description": "Language/locale hint, or auto for the multilingual App. Eight adaptation-only locales are not enabled."
+              },
+              "chunk_size_ms": {
+                "default": 560,
+                "maximum": 1120,
+                "minimum": 80,
+                "title": "Chunk Size Ms",
+                "type": "integer",
+                "description": "Streaming chunk size in milliseconds; must match the App's configured worker profile. This is not an end-to-end latency promise.",
+                "enum": [
+                  80,
+                  160,
+                  320,
+                  560,
+                  1120
+                ]
+              },
+              "strip_language_tags": {
+                "default": true,
+                "title": "Strip Language Tags",
+                "type": "boolean",
+                "description": "Whether to remove multilingual language tags; must match the configured worker profile."
+              },
+              "output_granularity": {
+                "default": "segment",
+                "enum": [
+                  "segment",
+                  "word"
+                ],
+                "title": "Output Granularity",
+                "type": "string",
+                "description": "Requested native segment or word metadata. Returned timestamps must come from the runtime, not wall-clock inference."
+              },
+              "stop_history_eou_ms": {
+                "default": 800,
+                "maximum": 10000,
+                "minimum": 0,
+                "title": "Stop History Eou Ms",
+                "type": "integer",
+                "description": "Endpoint-history cutoff in milliseconds after an end-of-utterance marker."
+              }
+            },
+            "required": [
+              "model"
+            ],
+            "title": "SpeechOptions",
+            "type": "object",
+            "description": "Model-specific transcription options. Runtime-wide settings must match the App profile; language and output granularity are per request."
+          },
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 8,
+            "maxLength": 200,
+            "description": "Reuse this key when retrying the same submission to avoid duplicate work."
+          },
+          "wait_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 30.0,
+            "default": 0,
+            "description": "Wait briefly for completion; otherwise poll get_operation using the returned operation ID."
+          }
+        }
+      },
+      "execution": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "invoke_named_modelDictOutput",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": null,
+      "_meta": {
+        "fs2_model_id": "nemotron-speech-multilingual-0-6b",
+        "fs2_protocol": "native",
+        "fs2_model_revision": "dynamic:sha256:d6ee37506a17e644b59b17b2d7b09b5b2111d51ec9f845062f104a886f714b4e",
+        "fs2_active_runtime": {
+          "variant_id": "nemotron-speech-multilingual-0-6b-nemo-cuda-v1",
+          "kind": "independent-runtime",
+          "source_kind": "huggingface",
+          "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+          "relationship": "exact-model",
+          "nim_artifact_parity": "not-applicable"
+        },
+        "fs2_qualification": {
+          "kind": "selected-deployment-runtime",
+          "authority": "explicit-deployment-runtime-record",
+          "observed_at": null,
+          "states": {
+            "cold_start_qualified": false,
+            "elasticity_qualified": null,
+            "http_mcp_qualified": null,
+            "registered": true,
+            "route_active": true,
+            "runtime_ready": true,
+            "semantic_qualified": true
+          },
+          "state_reasons": {
+            "route_active": "Active live-route publication supersedes the retained candidate's pre-activation snapshot.",
+            "http_mcp_qualified": "No retained qualification receipt is attached to this selected deployment runtime; unknown is not a failed qualification.",
+            "elasticity_qualified": "No retained qualification receipt is attached to this selected deployment runtime; unknown is not a failed qualification."
+          }
+        },
+        "fs2_input_contract": "typed-model-v1",
+        "fs2_input_sources": [
+          "k8s-inference/components/speech-runtime/src/fs2_speech/contracts.py",
+          "k8s-inference/components/speech-runtime/src/fs2_speech/audio.py"
+        ]
+      }
+    }
+  },
+  "temporary_key_revoked": true,
+  "finished_at": "2026-09-16T11:35:59.812001+00:00"
+}

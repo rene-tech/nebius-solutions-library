@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import AwareDatetime, Field, model_validator
 
 from .models import StrictModel
+from .scientific_activity import DeviceActivitySummary
+from .scientific_batch.recovery_view import ScientificPoolRecovery
 
 
 class ScientificServiceClass(StrEnum):
@@ -143,14 +145,19 @@ class ScientificFastStartObservation(StrictModel):
 class ScientificLifecyclePhase(StrictModel):
     phase: Literal[
         "queue",
+        "dispatch",
         "admission",
         "image-pull",
         "artifact-load",
         "restore",
+        "compile",
         "semantic-warmup",
         "active-compute",
         "allocated-idle",
         "grace-drain",
+        "cooldown",
+        "checkpoint-drain",
+        "unknown",
         "teardown",
     ]
     duration: ScientificMeasurement
@@ -178,6 +185,60 @@ class ScientificGpuAccounting(StrictModel):
     idle_by_cause: list[ScientificIdleCause] = Field(max_length=16)
     grace_drain: ScientificMeasurement
     reconciliation_delta: ScientificMeasurement
+    # Additive projection; legacy idle_total includes startup/unknown and is
+    # deliberately retained for old API clients, never labelled classified idle.
+    phase_partition: dict[str, ScientificMeasurement] = Field(default_factory=dict, max_length=16)
+    quota_reserved: ScientificMeasurement | None = None
+    device_allocated: ScientificMeasurement | None = None
+    sampled_device_activity: ScientificMeasurement | None = None
+    data_gaps: list[str] = Field(default_factory=list, max_length=128)
+
+
+class ScientificPoolUpperBoundFit(StrictModel):
+    pool_id: str
+    state: Literal["blocked", "possible", "unknown"]
+    nodes_observed: int = Field(ge=0)
+    possible_nodes: int = Field(ge=0)
+    unknown_nodes: int = Field(ge=0)
+    blocking_reasons: dict[str, int] = Field(default_factory=dict)
+    max_allocatable_cpu_millis: int | None = None
+    max_allocatable_memory_bytes: int | None = None
+    max_allocatable_ephemeral_storage_bytes: int | None = None
+    max_allocatable_accelerators: int | None = None
+
+
+class ScientificNodeUpperBoundFit(StrictModel):
+    source: Literal["kubernetes-node-allocatable"] = "kubernetes-node-allocatable"
+    observed_at: AwareDatetime
+    pools: list[ScientificPoolUpperBoundFit] = Field(max_length=128)
+    reason: str = (
+        "Current node allocatable upper bounds, not free resources or a scheduling promise. "
+        "Other Pod requests, taints/tolerations, gang placement and reference-data contents are not assessed. "
+        "A possible node may be occupied; historical runs are compared with the current inventory."
+    )
+
+
+class ScientificPlacementConstraints(StrictModel):
+    source: Literal["frozen-admission-contract"] = "frozen-admission-contract"
+    scheduling_digest: str
+    eligible_pool_ids: list[str]
+    namespace: str
+    required_node_labels: dict[str, str]
+    stage_cpu_millis: int | None = None
+    stage_memory_bytes: int | None = None
+    stage_ephemeral_storage_bytes: int | None = None
+    pod_cpu_millis: int | None = None
+    pod_memory_bytes: int | None = None
+    pod_ephemeral_storage_bytes: int | None = None
+    accelerator_count: int
+    accelerator_resource_name: str | None = None
+    reference_data_required: bool | None = None
+    node_upper_bound_fit: ScientificNodeUpperBoundFit | None = None
+    live_fit: Literal["not-observed"] = "not-observed"
+    reason: str = (
+        "Frozen eligibility and stage plus collector requests, not currently placeable capacity. "
+        "Live CPU/RAM/disk, taints, reference-data labels and gang placement still apply."
+    )
 
 
 class ScientificError(StrictModel):
@@ -207,6 +268,14 @@ class ScientificAttempt(StrictModel):
     phase: str | None = Field(default=None, max_length=64)
     phase_reason: str | None = Field(default=None, max_length=300)
     phase_observed_at: AwareDatetime | None = None
+    lifecycle_subject_id: str | None = None
+    lifecycle_phases: list[ScientificLifecyclePhase] = Field(default_factory=list, max_length=32)
+    observed_pod_uids: list[str] = Field(default_factory=list, max_length=1024)
+    observed_node_uids: list[str] = Field(default_factory=list, max_length=1024)
+    observed_gpu_uuids: list[str] = Field(default_factory=list, max_length=1024)
+    device_activity: list[DeviceActivitySummary] = Field(default_factory=list, max_length=1024)
+    activity_capture_reason: str = "dcgm_not_captured"
+    recovery: ScientificPoolRecovery | None = None
 
 
 class ScientificStage(StrictModel):
@@ -219,6 +288,7 @@ class ScientificStage(StrictModel):
     checkpoint_mode: Literal["none", "restart", "resume"]
     status: Literal["pending", "queued", "admitted", "running", "succeeded", "failed", "cancelled", "skipped"]
     attempts: list[ScientificAttempt] = Field(max_length=1024)
+    placement: ScientificPlacementConstraints | None = None
 
 
 class ScientificArtifactDownload(StrictModel):

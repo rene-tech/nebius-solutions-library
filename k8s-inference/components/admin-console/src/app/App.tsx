@@ -3,6 +3,7 @@ import { AppShell } from "../components/AppShell";
 import { ModelDetailPage } from "../pages/ModelDetailPage";
 import { ModelsPage } from "../pages/ModelsPage";
 import { ModelInventoryPage } from "../pages/ModelInventoryPage";
+import { BenchmarksPage } from "../pages/capacity/BenchmarksPage";
 import { OperationDetailPage } from "../pages/OperationDetailPage";
 import { OperationsPage } from "../pages/OperationsPage";
 import { OverviewPage } from "../pages/OverviewPage";
@@ -24,6 +25,7 @@ import { AppsPage } from "../pages/apps/AppsPage";
 import { AppDetailPage } from "../pages/apps/AppDetailPage";
 import { UsersPage } from "../pages/users/UsersPage";
 import { UserDetailPage } from "../pages/users/UserDetailPage";
+import { CustomersPage, CustomerInventoryPage } from "../pages/customers/CustomersPage";
 
 export function App() {
   return (
@@ -36,6 +38,9 @@ export function App() {
           <Route path="apps/:appId/runs/:runId" element={<AppDetailPage />} />
           <Route path="apps/:appId/:tab" element={<AppDetailPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="customers" element={<CustomersPage />} />
+          <Route path="customers/:tenantId" element={<CustomersPage />} />
+          <Route path="customers-inventory" element={<CustomerInventoryPage />} />
           <Route path="users/:userId" element={<UserDetailPage />} />
           <Route path="overview" element={<OverviewPage />} />
           <Route path="models" element={<ModelsPage />} />
@@ -63,6 +68,7 @@ export function App() {
           <Route path="academic-assets" element={<AcademicAssetsPage />} />
           <Route path="access" element={<AccessPage />} />
           <Route path="capacity" element={<CapacityPage />} />
+          <Route path="capacity/benchmarks" element={<BenchmarksPage />} />
           <Route
             path="advanced/capacity"
             element={<CapacityDiagnosticsPage />}

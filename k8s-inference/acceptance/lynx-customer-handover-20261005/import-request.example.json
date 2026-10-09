@@ -1,0 +1,47 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "run-workflow",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "<FINALIZED_INPUT_MANIFEST_UUID>",
+    "sha256": "<FINALIZED_INPUT_MANIFEST_SHA256>",
+    "size_bytes": 0,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1",
+    "jobs": [
+      {
+        "id": "production",
+        "steps": [
+          {
+            "id": "production",
+            "command": "mdrun",
+            "restart_checkpoint": "source-history/fs2-production.cpt",
+            "args": [
+              "-s", "source-history/simulation.tpr",
+              "-deffnm", "continued",
+              "-nb", "gpu",
+              "-bonded", "gpu",
+              "-pme", "auto",
+              "-update", "auto",
+              "-pin", "auto",
+              "-nstlist", "200"
+            ]
+          }
+        ]
+      }
+    ],
+    "threads": 8,
+    "checkpoint_minutes": 5,
+    "segment_minutes": 5,
+    "max_wall_seconds": 1209600,
+    "max_output_bytes": 4294967296,
+    "output_destination": "customer-bucket",
+    "output_prefix": "runs/gromacs-native-continuation"
+  },
+  "client_context": {
+    "display_name": "Native GROMACS continuation from verified checkpoint"
+  }
+}

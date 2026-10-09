@@ -19,6 +19,7 @@ import {
   RotateKeyDialog,
 } from "../access/AccessDialogs";
 import { UserSettingsForm } from "./UserSettingsForm";
+import { UserStoragePanel } from "./UserStoragePanel";
 
 type Dialog =
   | { kind: "settings" | "create-key" }
@@ -103,6 +104,10 @@ export function UserDetailPage() {
                 </button>
               )}
             </section>
+            {data.storage && <UserStoragePanel
+              key={user.id} userId={user.id} storage={data.storage}
+              canReveal={Boolean(session && rolePermits(session.principal.role, "admin"))}
+            />}
             <section className="panel section-stack">
               <h3>Usage in selected window</h3>
               <p>{user.usage.attribution}</p>
@@ -138,9 +143,15 @@ export function UserDetailPage() {
                   value={user.usage.active_gpu_seconds}
                 />
                 <MetricCard
-                  label="GPU occupied idle"
+                  label="GPU classified idle"
                   value={user.usage.occupied_idle_gpu_seconds}
                 />
+                {user.usage.lifecycle_accounting && <>
+                  <MetricCard label="GPU startup/load" value={user.usage.lifecycle_accounting.startup} />
+                  <MetricCard label="GPU checkpoint/teardown" value={user.usage.lifecycle_accounting.other} />
+                  <MetricCard label="GPU unknown phase" value={user.usage.lifecycle_accounting.unknown} />
+                  <MetricCard label="Queue wall time" value={user.usage.lifecycle_accounting.queue} />
+                </>}
                 <MetricCard
                   label="Input tokens"
                   value={user.usage.input_tokens}
@@ -150,6 +161,12 @@ export function UserDetailPage() {
                   value={user.usage.output_tokens}
                 />
               </div>
+              {user.usage.lifecycle_accounting && <p>
+                Exclusive scientific attempts only; shared serving is unallocated. Not a bill.
+                {" "}Occupancy {user.usage.lifecycle_accounting.occupied_complete ? "complete" : "incomplete"};
+                {" "}phase classification {user.usage.lifecycle_accounting.phases_complete ? "complete" : "incomplete"};
+                {" "}quality {user.usage.lifecycle_accounting.quality}.
+              </p>}
             </section>
             <TimeSeriesChart
               title="Logical requests over time"

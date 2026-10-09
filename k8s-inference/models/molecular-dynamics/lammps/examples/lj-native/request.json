@@ -1,0 +1,29 @@
+{
+  "schema": "fs2-serve.nebius.ai/lammps-workflow-request/v1",
+  "backend": "kokkos-cuda",
+  "threads": 1,
+  "segment_seconds": 60,
+  "max_wall_seconds": 3600,
+  "output_destination": "customer-bucket",
+  "output_prefix": "runs/lammps/lj-native",
+  "jobs": [
+    {
+      "id": "lj-native",
+      "steps": [
+        {"id": "prepare", "input": "in.prepare", "expected_outputs": ["prepared.restart"]},
+        {
+          "id": "production",
+          "input": "in.production",
+          "expected_outputs": ["state.restart", "progress.txt"],
+          "continuation": {
+            "input": "in.resume",
+            "restart_file": "state.restart",
+            "progress_file": "progress.txt",
+            "target_step": 51000
+          }
+        },
+        {"id": "analyze", "input": "in.analyze", "expected_outputs": ["final.lammpstrj", "final.data"]}
+      ]
+    }
+  ]
+}

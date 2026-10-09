@@ -46,6 +46,7 @@ from .fast_start_identity import mechanism_config_digest
 from .fast_start_mechanisms import (
     DECLARED_MECHANISMS,
     MECHANISM_ANNOTATION,
+    FastStartCacheMechanismPool,
     FastStartCacheMechanismStatus,
     FastStartMechanism,
     project_cache_mechanisms,
@@ -65,6 +66,7 @@ from .model_deployment import (
     MODEL_DEPLOYMENT_LABEL,
     WORKLOAD_POOL_ANNOTATION,
     WORKLOAD_ROLE_ANNOTATION,
+    WORKLOAD_SEGMENT_OFFSET_ANNOTATION,
     AdoptionMode,
     DesiredState,
     DrainObservation,
@@ -79,7 +81,10 @@ from .model_deployment import (
     RenderContext,
     RenderedResource,
     RenderPlan,
+    SnapshotPreference,
     ValidationDisposition,
+    _ordered_burst_pools,
+    _validate_serving_snapshot_selection,
     bounded_label_value,
     canonical_digest,
     effective_hot_floor,
@@ -89,12 +94,16 @@ from .model_deployment import (
     validate_model_deployment,
 )
 from .models import StrictModel
+from .performance import PerformanceRepository
+from .placement_cost import ranked_pools
+from .serving_pool_recovery import pool_headroom, serving_pool_order
 
 if TYPE_CHECKING:
     from .settings import Settings
 
 LOGGER = logging.getLogger(__name__)
 STATUS_FIELD_MANAGER = "fs2-model-controller-status"
+REPLICA_HANDOFF_FIELD_MANAGER = "fs2-model-controller-replica-handoff"
 FENCE_ANNOTATION = "inference.fs2.nebius.ai/fence-token"
 CONTROLLER_LABEL = "app.kubernetes.io/component=model-controller"
 
@@ -224,6 +233,10 @@ class ModelControllerApi(Protocol):
     async def list_models(self, namespace: str) -> list[dict[str, Any]]: ...
 
     async def get_model(self, key: ModelKey) -> dict[str, Any] | None: ...
+
+    async def list_pool_nodes(self) -> list[dict[str, Any]] | None: ...
+
+    async def list_allocated_pods(self) -> list[dict[str, Any]] | None: ...
 
     async def discover(
         self,
@@ -534,6 +547,12 @@ class HttpKubernetesModelClient:
         self.token_file = token_file
         self.writes_enabled = writes_enabled
         self._owns_client = client is None
+        self._pool_nodes: list[dict[str, Any]] | None = None
+        self._pool_nodes_at: datetime | None = None
+        self._pool_nodes_lock = asyncio.Lock()
+        self._allocated_pods: list[dict[str, Any]] | None = None
+        self._allocated_pods_at: datetime | None = None
+        self._allocated_pods_lock = asyncio.Lock()
         self.client = client or httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             verify=str(ca_file),
@@ -682,12 +701,57 @@ class HttpKubernetesModelClient:
         response = await self._request("GET", MODEL_ENDPOINT.item(key.namespace, key.name))
         return None if response.status_code == 404 else response.json()
 
+    async def list_pool_nodes(self) -> list[dict[str, Any]] | None:
+        # One bounded read per polling interval, shared by all model workers.
+        async with self._pool_nodes_lock:
+            now = _utc_now()
+            if self._pool_nodes_at is not None and (now - self._pool_nodes_at).total_seconds() < 5:
+                return self._pool_nodes
+            try:
+                response = await self._request("GET", "/api/v1/nodes", params={"limit": "10000"})
+                body = response.json()
+                nodes = body.get("items")
+                if (
+                    not isinstance(nodes, list)
+                    or not all(isinstance(node, dict) for node in nodes)
+                    or body.get("metadata", {}).get("continue")
+                ):
+                    raise ControllerError("node inventory is incomplete")
+                self._pool_nodes = nodes
+            except (ControllerError, ValueError):
+                LOGGER.warning("serving pool health unavailable; retaining observed placement")
+                self._pool_nodes = None
+            self._pool_nodes_at = now
+            return self._pool_nodes
+
     @staticmethod
     def _endpoint(api_version: str, kind: str) -> ResourceEndpoint:
         try:
             return RESOURCE_ENDPOINTS[(api_version, kind)]
         except KeyError as exc:
             raise ControllerError("rendered resource GVK is outside the writer allowlist") from exc
+
+    async def list_allocated_pods(self) -> list[dict[str, Any]] | None:
+        async with self._allocated_pods_lock:
+            now = _utc_now()
+            if self._allocated_pods_at is not None and (now - self._allocated_pods_at).total_seconds() < 5:
+                return self._allocated_pods
+            try:
+                response = await self._request("GET", "/api/v1/pods", params={"limit": "10000"})
+                body = response.json()
+                pods = body.get("items")
+                if (
+                    not isinstance(pods, list)
+                    or not all(isinstance(pod, dict) for pod in pods)
+                    or body.get("metadata", {}).get("continue")
+                ):
+                    raise ControllerError("Pod allocation inventory is incomplete")
+                self._allocated_pods = pods
+            except (ControllerError, ValueError):
+                LOGGER.warning("serving allocation evidence unavailable; retaining health-only fallback")
+                self._allocated_pods = None
+            self._allocated_pods_at = now
+            return self._allocated_pods
 
     async def _get_resource(self, api_version: str, kind: str, namespace: str, name: str) -> dict[str, Any] | None:
         endpoint = (
@@ -803,6 +867,7 @@ class HttpKubernetesModelClient:
             current_owner = _controller_owner_uid(current)
             if current_owner not in {None, owner_uid}:
                 raise KubernetesConflictError("resource has a foreign controller owner")
+            current = await self._reclaim_fixed_replicas(resource, current, owner_uid=owner_uid, fence=fence)
             manifest.setdefault("metadata", {})["resourceVersion"] = _required_metadata(current, "resourceVersion")
         await self.assert_fence(fence)
         response = await self._request(
@@ -820,7 +885,106 @@ class HttpKubernetesModelClient:
             raise ControllerError("applied resource failed read-after-write UID verification")
         if _controller_owner_uid(reread) != owner_uid:
             raise KubernetesConflictError("applied resource did not retain the exact controller owner")
+        if REPLICA_HANDOFF_FIELD_MANAGER in _replica_field_managers(reread):
+            if FIELD_MANAGER not in _replica_field_managers(reread):
+                raise ControllerError("replica handoff cannot relinquish the only replica owner")
+            await self.assert_fence(fence)
+            # The full apply now shares replicas. This identity-only apply
+            # releases the temporary manager without dropping the replica count.
+            await self._request(
+                "PATCH",
+                endpoint.item(resource.namespace, resource.name),
+                params={"fieldManager": REPLICA_HANDOFF_FIELD_MANAGER, "force": "false", "fieldValidation": "Strict"},
+                content_type="application/apply-patch+yaml",
+                content=json.dumps(self._replica_handoff_manifest(resource, reread)).encode(),
+            )
+            released = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+            if (
+                released is None
+                or _required_metadata(released, "uid") != _required_metadata(reread, "uid")
+                or _controller_owner_uid(released) != owner_uid
+                or _mapping(released.get("spec")).get("replicas") != _mapping(reread.get("spec")).get("replicas")
+                or REPLICA_HANDOFF_FIELD_MANAGER in _replica_field_managers(released)
+            ):
+                raise ControllerError("temporary replica ownership release failed verification")
+            reread = released
         return _snapshot(reread, resource)
+
+    @staticmethod
+    def _replica_handoff_manifest(resource: RenderedResource, current: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "apiVersion": resource.api_version,
+            "kind": resource.kind,
+            "metadata": {
+                "name": resource.name,
+                "namespace": resource.namespace,
+                "uid": _required_metadata(current, "uid"),
+                "resourceVersion": _required_metadata(current, "resourceVersion"),
+            },
+        }
+
+    async def _reclaim_fixed_replicas(
+        self,
+        resource: RenderedResource,
+        current: dict[str, Any],
+        *,
+        owner_uid: str,
+        fence: LeaseFence,
+    ) -> dict[str, Any]:
+        """Reclaim only replicas from a removed autoscaler through a temporary manager.
+
+        Deleting an HPA does not remove its managedFields entry. A fixed floor
+        must reclaim only replicas, never force ownership of the whole template.
+        Autoscaled manifests omit replicas and therefore never enter this path.
+        """
+        desired = _mapping(resource.manifest.get("spec")).get("replicas")
+        managers = set(_replica_field_managers(current))
+        autoscalers = {"keda", "horizontal-pod-autoscaler", REPLICA_HANDOFF_FIELD_MANAGER}
+        if (
+            (resource.api_version, resource.kind) != ("apps/v1", "Deployment")
+            or not isinstance(desired, int)
+            or isinstance(desired, bool)
+            or desired == _mapping(current.get("spec")).get("replicas")
+            or not managers.intersection(autoscalers)
+        ):
+            return current
+        if _controller_owner_uid(current) != owner_uid or managers - autoscalers - {FIELD_MANAGER}:
+            raise KubernetesConflictError("fixed replica handoff has unknown resource or field ownership")
+        # Fresh full-namespace reads also catch an HPA whose ScaledObject was
+        # already deleted, and foreign autoscalers targeting the same workload.
+        for endpoint in (RESOURCE_ENDPOINTS[("keda.sh/v1alpha1", "ScaledObject")], HPA_ENDPOINT):
+            response = await self._request("GET", endpoint.collection(resource.namespace), params={"limit": "500"})
+            body = response.json()
+            items = body.get("items")
+            if not isinstance(items, list) or _metadata(body).get("continue"):
+                raise ControllerError("fixed replica handoff autoscaler inventory is incomplete")
+            for item in items:
+                if not isinstance(item, Mapping):
+                    raise ControllerError("fixed replica handoff autoscaler inventory is invalid")
+                target = _mapping(_mapping(item.get("spec")).get("scaleTargetRef"))
+                if target.get("name") == resource.name and target.get("kind", "Deployment") == "Deployment":
+                    raise ControllerError("fixed replica handoff waits for autoscaler and HPA removal")
+        manifest = self._replica_handoff_manifest(resource, current)
+        manifest["spec"] = {"replicas": desired}
+        await self.assert_fence(fence)
+        endpoint = self._endpoint(resource.api_version, resource.kind)
+        await self._request(
+            "PATCH",
+            endpoint.item(resource.namespace, resource.name),
+            params={"fieldManager": REPLICA_HANDOFF_FIELD_MANAGER, "force": "true", "fieldValidation": "Strict"},
+            content_type="application/apply-patch+yaml",
+            content=json.dumps(manifest).encode(),
+        )
+        reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if (
+            reread is None
+            or _required_metadata(reread, "uid") != _required_metadata(current, "uid")
+            or _controller_owner_uid(reread) != owner_uid
+            or _mapping(reread.get("spec")).get("replicas") != desired
+            or REPLICA_HANDOFF_FIELD_MANAGER not in _replica_field_managers(reread)
+        ):
+            raise ControllerError("fixed replica handoff failed read-after-write ownership verification")
+        return reread
 
     @staticmethod
     def _parse_identity(identity: str) -> tuple[str, str, str, str]:
@@ -1641,6 +1805,68 @@ def _automatic_fast_start_assessment(
     return updated, automatic
 
 
+def _project_serving_snapshot_mechanism(
+    *,
+    spec: ModelDeploymentSpec,
+    envelope: InfrastructureEnvelope,
+    mechanisms: dict[str, FastStartCacheMechanismStatus],
+    converged: bool,
+) -> None:
+    """Report the exact snapshot loader already selected by the renderer.
+
+    Serving snapshots predate the generic mechanism selector: that selector's
+    conventional default means "no additional loader", not that the rendered
+    CUDA/CRIU supervisor loads weights conventionally. A registered bundle is
+    checked against this App's image, artifact and every selected GPU class.
+    It does not grant snapshot capability to other Apps on the pool, prove an
+    individual restore succeeded, or qualify a customer fast-start level.
+    """
+    reference = spec.cache.snapshot_ref
+    qualification = envelope.qualifications.get(spec.model_ref)
+    if (
+        spec.cache.snapshot_preference is SnapshotPreference.NEVER
+        or reference is None
+        or qualification is None
+        or qualification.model_express is not None
+        or any(pool_ref not in envelope.pools for pool_ref in spec.placement.pool_refs)
+    ):
+        return
+    bundle = qualification.gpu_snapshot_bundles.get(reference.name)
+    if bundle is None:
+        return
+    try:
+        _validate_serving_snapshot_selection(
+            spec,
+            bundle,
+            [envelope.pools[pool_ref].accelerator_class for pool_ref in spec.placement.pool_refs],
+        )
+    except ValueError:
+        return
+    conventional = mechanisms.get(FastStartMechanism.CONVENTIONAL.value)
+    if conventional is not None:
+        mechanisms[FastStartMechanism.CONVENTIONAL.value] = conventional.model_copy(
+            update={"selected": False, "reason": "ConventionalLoaderAvailable"}
+        )
+    mechanisms[FastStartMechanism.SHARED_RESTORE.value] = FastStartCacheMechanismStatus(
+        state="Configured" if converged else "Pending",
+        selected=True,
+        availability="Available",
+        reason="ServingSnapshotRenderConverged" if converged else "ServingSnapshotRenderPending",
+        config_digest=canonical_digest(bundle.model_dump(mode="json", by_alias=True)),
+        pool_refs=sorted(spec.placement.pool_refs),
+        pools={
+            pool_ref: FastStartCacheMechanismPool(
+                availability="Available",
+                reason="ExactServingSnapshotBundleQualified",
+                # Compatibility comes from the exact App bundle, not from a
+                # broad node label or a fabricated benchmark identity.
+                evidence_selector={},
+            )
+            for pool_ref in sorted(spec.placement.pool_refs)
+        },
+    )
+
+
 def _fast_start_status(
     *,
     spec: ModelDeploymentSpec,
@@ -1770,6 +1996,13 @@ def _fast_start_status(
             configured_max_replicas=spec.availability.max_replicas,
             mechanism_config_digest=mechanism_config_digest,
         )
+        if mechanism_decision.mechanism is FastStartMechanism.CONVENTIONAL:
+            _project_serving_snapshot_mechanism(
+                spec=spec,
+                envelope=envelope,
+                mechanisms=cache_mechanisms,
+                converged=converged,
+            )
     return FastStartStatus(
         **assessment.model_dump(),
         effective_level=effective,
@@ -1779,6 +2012,19 @@ def _fast_start_status(
         mechanisms=mechanisms,
         cache_mechanisms=cache_mechanisms,
     )
+
+
+def _fast_start_status_payload(status: FastStartStatus) -> dict[str, Any]:
+    payload = status.model_dump(mode="json", by_alias=True, exclude_none=True)
+    for mechanism in payload["cacheMechanisms"].values():
+        for pool in mechanism["pools"].values():
+            if pool.get("evidenceSelector") == {}:
+                # SSA can materialize null when {} removes the last previously
+                # owned selector key. The CRD requires an object if present;
+                # omit this optional field instead. Pydantic defaults it to {}.
+                # Nonempty evidence and unavailable measurements are unchanged.
+                pool.pop("evidenceSelector")
+    return payload
 
 
 def build_status(
@@ -2051,9 +2297,17 @@ def build_status(
         status["cache"] = cache
     if fast_start is not None:
         # Unavailable measurements are omitted rather than serialised as zero.
-        status["fastStart"] = fast_start.model_dump(mode="json", by_alias=True, exclude_none=True)
+        status["fastStart"] = _fast_start_status_payload(fast_start)
     if plan.validation.admitted_pool_ref is not None:
         status["admittedPoolRef"] = plan.validation.admitted_pool_ref
+    if plan.render is not None and effective_hot_floor(spec.availability, at=observed_at) == 0:
+        # Validation reports static eligibility. Serving status must report
+        # the actual generated burst destination after a health-aware failover.
+        for resource in plan.render.resources:
+            annotations = _mapping(_metadata(resource.manifest).get("annotations"))
+            if resource.kind == "Deployment" and annotations.get(WORKLOAD_ROLE_ANNOTATION) == "burst":
+                status["admittedPoolRef"] = annotations[WORKLOAD_POOL_ANNOTATION]
+                break
     if plan.render is not None:
         status["renderDigest"] = plan.render.render_digest
         endpoint = plan.render.endpoint
@@ -2288,6 +2542,7 @@ class ModelDeploymentController:
         prometheus_server_address: str,
         writes_enabled: bool,
         active_operations: ActiveOperationsReader | None = None,
+        performance: PerformanceRepository | None = None,
         lease_namespace: str = "fs2-system",
         lease_name: str = "fs2-model-controller",
         lease_duration_seconds: int = 15,
@@ -2303,6 +2558,7 @@ class ModelDeploymentController:
         self.prometheus_server_address = prometheus_server_address
         self.writes_enabled = writes_enabled
         self.active_operations = active_operations or UnknownActiveOperations()
+        self.performance = performance
         self.lease_namespace = lease_namespace
         self.lease_name = lease_name
         self.lease_duration_seconds = lease_duration_seconds
@@ -2415,6 +2671,108 @@ class ModelDeploymentController:
             else:
                 plan = None
                 discovery = await self.api.discover(key=key, owner_uid=uid, render=render)
+                if len(context.eligible_pools) > 1:
+                    # Observed segment order is durable state, not a process-
+                    # local retry counter. Preserve it on restart and recovery.
+                    burst_annotations = [
+                        _mapping(_metadata(item.raw).get("annotations"))
+                        for item in discovery.resources
+                        if item.observed.kind == "Deployment"
+                        and item.observed.controller_owner_uid == uid
+                        and _mapping(_metadata(item.raw).get("annotations")).get(WORKLOAD_ROLE_ANNOTATION) == "burst"
+                    ]
+                    observed_order = [
+                        str(item[WORKLOAD_POOL_ANNOTATION])
+                        for item in sorted(
+                            burst_annotations, key=lambda item: int(item.get(WORKLOAD_SEGMENT_OFFSET_ANNOTATION, 0))
+                        )
+                        if WORKLOAD_POOL_ANNOTATION in item
+                    ]
+                    previous_pool = _mapping(raw.get("status")).get("admittedPoolRef")
+                    if not observed_order and isinstance(previous_pool, str):
+                        observed_order = [previous_pool]
+                    demand = await self.active_operations.active_operations(
+                        tenant_id=spec.tenant_id,
+                        model_ref=spec.public_model_id,
+                    )
+                    has_scheduled_pods = any(pod.scheduled for pod in discovery.pods)
+                    preferred = [
+                        pool.pool_id
+                        for pool in _ordered_burst_pools(
+                            context.eligible_pools,
+                            spec.placement.accelerators_per_replica,
+                            spec.placement.cpu_resources,
+                        )
+                    ]
+                    nodes = None
+                    headroom = None
+                    if demand is not None and demand > 0 and not has_scheduled_pods:
+                        if self.performance is not None:
+                            try:
+                                async with asyncio.timeout(2):
+                                    profiles = await self.performance.placement_profiles(
+                                        model_id=spec.public_model_id,
+                                        runtime_image=spec.runtime.image,
+                                        accelerators_per_replica=spec.placement.accelerators_per_replica,
+                                        cache_condition="cold",
+                                    )
+                                preferred = ranked_pools(preferred, profiles)
+                            except (asyncpg.PostgresError, TimeoutError, ValueError):
+                                LOGGER.warning(
+                                    "cost evidence unavailable for model %s; keeping qualified fallback order", key.name
+                                )
+                        nodes = await self.api.list_pool_nodes()
+                        allocated_pods = await self.api.list_allocated_pods()
+                        if nodes is not None and allocated_pods is not None:
+                            pod_specs = {}
+                            for pool in context.eligible_pools:
+                                candidate = self.renderer.render(
+                                    spec,
+                                    context.model_copy(
+                                        update={
+                                            "burst_pool_order": [
+                                                pool.pool_id,
+                                                *(other.pool_id for other in context.eligible_pools if other != pool),
+                                            ],
+                                        }
+                                    ),
+                                )
+                                for resource in candidate.resources:
+                                    manifest = resource.manifest
+                                    if (
+                                        resource.kind == "Deployment"
+                                        and manifest["metadata"]["annotations"].get(WORKLOAD_POOL_ANNOTATION)
+                                        == pool.pool_id
+                                    ):
+                                        pod_specs[pool.pool_id] = manifest["spec"]["template"]["spec"]
+                            try:
+                                headroom = pool_headroom(
+                                    pools=context.eligible_pools,
+                                    nodes=nodes,
+                                    pods=allocated_pods,
+                                    pod_specs=pod_specs,
+                                )
+                            except (ValueError, TypeError, KeyError):
+                                LOGGER.warning(
+                                    "invalid capacity quantities for model %s; retaining health-only fallback", key.name
+                                )
+                    order = serving_pool_order(
+                        pools=context.eligible_pools,
+                        default_order=preferred,
+                        observed_order=observed_order,
+                        # Failover is driven by requests, not fleet-wide idle
+                        # reconciliation. Avoid creating replacement HPAs for
+                        # every cold App when a pool disappears.
+                        nodes=nodes,
+                        headroom=headroom,
+                        has_scheduled_pods=has_scheduled_pods,
+                        now=evaluation_time,
+                    )
+                    context = context.model_copy(update={"burst_pool_order": order})
+                    # Discover the newly selected exact identities too, so a
+                    # foreign collision cannot evade the existing SSA fence.
+                    render = self.renderer.render(spec, context)
+                    discovery = await self.api.discover(key=key, owner_uid=uid, render=render)
         else:
             # The planner returns before rendering for invalid or
             # infrastructure-required revisions; an empty authoritative
@@ -2618,7 +2976,25 @@ class ModelDeploymentController:
                 phase_requeue = True
 
         if phase_action is None:
-            for resource in plan.apply_resources:
+            resources_to_apply = list(plan.apply_resources)
+            applying = {_rendered_identity(resource) for resource in resources_to_apply}
+            # A resourceVersion conflict or process exit after the full apply
+            # can leave temporary replica ownership behind while the manifest
+            # already matches. Re-enter the guarded writer to finish release.
+            for resource in plan.render.resources if plan.render is not None else ():
+                if resource.kind != "Deployment" or "replicas" not in _mapping(resource.manifest.get("spec")):
+                    continue
+                live = _resource_snapshot(
+                    discovery, resource.api_version, resource.kind, resource.namespace, resource.name
+                )
+                if (
+                    live is not None
+                    and live.observed.controller_owner_uid == uid
+                    and REPLICA_HANDOFF_FIELD_MANAGER in live.replica_field_managers
+                    and _rendered_identity(resource) not in applying
+                ):
+                    resources_to_apply.append(resource)
+            for resource in resources_to_apply:
                 await self.api.apply_resource(resource, owner_uid=uid, fence=fence)
                 wrote = True
         if plan.remove_finalizer:
@@ -2811,6 +3187,7 @@ async def run_model_controller(settings: Settings) -> None:
         prometheus_server_address=settings.model_controller_prometheus_server_address,
         writes_enabled=settings.model_controller_writes_enabled,
         active_operations=active_operations,
+        performance=PerformanceRepository(active_operations.pool),
         lease_namespace=settings.model_controller_system_namespace,
         lease_name=settings.model_controller_lease_name,
         lease_duration_seconds=settings.model_controller_lease_duration_seconds,

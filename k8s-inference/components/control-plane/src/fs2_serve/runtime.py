@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import io
 import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterator
+import wave
+import zipfile
+import zlib
+from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
+from string import Formatter
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
@@ -17,7 +24,14 @@ import httpx
 from pydantic import ValidationError
 
 from .federation import FederationRouter, FederationTransportError
-from .models import ClaimedOperation, ReportedUsage, RuntimeIdentity, RuntimeLifecycleObservation, RuntimeResult
+from .models import (
+    ClaimedOperation,
+    ModalityUsage,
+    ReportedUsage,
+    RuntimeIdentity,
+    RuntimeLifecycleObservation,
+    RuntimeResult,
+)
 from .registry import OperationalModel, ProbeSpec
 from .request_debug import (
     DebugExchange,
@@ -29,6 +43,8 @@ from .request_debug import (
     redact_query,
     redact_text,
 )
+from .runtime_scheduling import RuntimeScheduling
+from .speech_models import MEDICAL_NEMOTRON
 
 
 class RuntimeOperationError(RuntimeError):
@@ -55,6 +71,19 @@ class RuntimeTransportError(RuntimeOperationError):
     code = "runtime_transport_error"
 
 
+class RuntimeNoReplayError(RuntimeOperationError):
+    """Accepted/uncertain non-idempotent speech work must never be replayed."""
+
+    code = "speech_outcome_uncertain"
+
+
+class RuntimeBusyError(RuntimeOperationError):
+    """A qualified single-flight worker rejected work BEFORE admission."""
+
+    code = "runtime_busy"
+    status_code = 429
+
+
 class RuntimeProtocolError(RuntimeOperationError):
     code = "runtime_protocol_error"
 
@@ -70,6 +99,57 @@ _MAX_REFLECTED_HEADER_BYTES = 256
 _MAX_USAGE_FIELDS = 16
 _MAX_REPORTED_TOKEN_COUNT = 2**63 - 1
 _DEBUG_CAPTURE_EXTENSION = "fs2_upstream_debug_capture"
+_MAX_SCIENTIFIC_ERROR_BYTES = 16 * 1024
+_SAM2_MODEL_REVISION = "665f8e2ad61cf5f53d65644ff27c8ee525124610"
+_SAM2_CHECKPOINT_SHA256 = "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318"
+_PAIDF_CHAT_MODELS = {
+    "qwen3-6-27b-fp8": ("Qwen/Qwen3.6-27B-FP8", "e89b16ebf1988b3d6befa7de50abc2d76f26eb09"),
+    "qwen2-5-14b-instruct": ("Qwen/Qwen2.5-14B-Instruct", "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8"),
+}
+_SCIENTIFIC_ERROR_DETAILS = {
+    "no_valid_molecules": (
+        "No valid molecular structures were supplied. Check the SMILES or SDF structures "
+        "and resubmit corrected input."
+    ),
+    "unknown_endpoint": (
+        "An endpoint name is not supported by this model. Use get_model_schema to select supported endpoints."
+    ),
+    "invalid_molecular_input": (
+        "Invalid molecular input. Check CSV column names, unique molecule IDs, file format "
+        "and the 1,000-molecule limit."
+    ),
+    "invalid_molecular_request": (
+        "Invalid molecular request. Supply exactly one of smiles, molecules, csv or sdf, "
+        "with at most 1,000 molecules. Check get_model_schema for field types and supported values."
+    ),
+    "evo2_memory_exhausted": (
+        "Evo2 exhausted GPU memory while processing this accepted request. "
+        "The operation was not automatically retried on the same runtime. "
+        "The platform operator must correct runtime memory use or model capacity before replaying this shape."
+    ),
+    "invalid_molecule": (
+        "MolMIM rejected the molecular input. Supply valid SMILES whose tokens fit "
+        "the supported vocabulary and sequence window."
+    ),
+    "molmim_exhausted": (
+        "MolMIM search exhausted: found {feasible} of {requested} distinct feasible molecules "
+        "in {attempted} model decodes ({invalid} invalid; {below} below minimum similarity; "
+        "{unchanged} unchanged; {duplicates} duplicate). No partial result was accepted. "
+        "Review similarity and search parameters before submitting a new operation."
+    ),
+    "genmol_exhausted": (
+        "GenMol search exhausted: accepted {accepted} of {requested} valid molecules after "
+        "{attempts} sampling attempts ({sampled} sampled; {invalid} invalid; {duplicates} duplicate). "
+        "No partial result was accepted. Review sampling parameters before submitting a new operation."
+    ),
+}
+_SCIENTIFIC_ERROR_DETAIL_PATTERNS = tuple(
+    re.compile("".join(
+        re.escape(literal) + (r"[0-9]{1,3}" if field is not None else "")
+        for literal, field, _, _ in Formatter().parse(template)
+    ))
+    for template in _SCIENTIFIC_ERROR_DETAILS.values()
+)
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -228,6 +308,10 @@ def sanitize_error_detail(value: str, limit: int = 200) -> str:
     del limit
     if not value:
         return ""
+    # These exact CP-owned sentences contain only static text and bounded
+    # aggregate counts. Do not make arbitrary upstream messages ledger data.
+    if len(value) <= 1024 and any(pattern.fullmatch(value) for pattern in _SCIENTIFIC_ERROR_DETAIL_PATTERNS):
+        return value
     cleaned = _SECRET_RE.sub("[redacted]", " ".join(value.replace("\x00", "").split()))
     return "runtime operation failed" if cleaned else ""
 
@@ -255,6 +339,17 @@ class RuntimeLifecycleMetadataProvider(RuntimeMetadataProvider, Protocol):
     ) -> RuntimeLifecycleObservation | None: ...
 
 
+@runtime_checkable
+class RuntimeResponseMetadataProvider(RuntimeLifecycleMetadataProvider, Protocol):
+    """Verify a response hint against the actual model Service endpoint set."""
+
+    async def resolve_response_lifecycle(
+        self, *, operation_id: UUID, model_id: str, pod_uid: str,
+        service_name: str, service_namespace: str, service_port: int,
+        runtime_image_digest: str, model_revision: str | None,
+    ) -> RuntimeLifecycleObservation | None: ...
+
+
 class NullRuntimeMetadataProvider:
     """Fail-closed default when no trusted allocation source is configured."""
 
@@ -274,6 +369,7 @@ class RuntimeClient:
         metadata_provider: RuntimeMetadataProvider | None = None,
         federation: FederationRouter | None = None,
         debug_store: DebugStore | None = None,
+        speech_scheduling: RuntimeScheduling | None = None,
     ) -> None:
         self.activation_timeout_seconds = activation_timeout_seconds
         self.runtime_timeout_seconds = runtime_timeout_seconds
@@ -283,6 +379,7 @@ class RuntimeClient:
         self.metadata_provider = metadata_provider or NullRuntimeMetadataProvider()
         self.federation = federation or FederationRouter({})
         self.debug_store = debug_store
+        self.speech_scheduling = speech_scheduling
 
     @asynccontextmanager
     async def _debug_stream(
@@ -471,8 +568,36 @@ class RuntimeClient:
         self,
         operation: ClaimedOperation,
         model: OperationalModel,
+        response: httpx.Response | None = None,
     ) -> tuple[RuntimeIdentity, RuntimeLifecycleObservation | None]:
         try:
+            if (response is not None and model.binding.backend_class == "local-kubernetes"
+                    and isinstance(self.metadata_provider, RuntimeResponseMetadataProvider)):
+                names = ("x-fs2-runtime-pod-uid", "x-fs2-runtime-operation-id", "x-fs2-runtime-attempt")
+                if any(name in response.headers for name in names):
+                    # A malformed/stale hint is unavailable, never a reason to
+                    # guess the singleton Pod or fail otherwise valid inference.
+                    values = [response.headers.get_list(name) for name in names]
+                    if (any(len(v) != 1 or len(v[0]) > 128 for v in values)
+                            or values[1][0] != str(operation.id) or values[2][0] != str(operation.attempt)):
+                        return RuntimeIdentity(), None
+                    try:
+                        pod_uid = str(UUID(values[0][0]))
+                    except ValueError:
+                        return RuntimeIdentity(), None
+                    observation = await self.metadata_provider.resolve_response_lifecycle(
+                        operation_id=operation.id, model_id=model.id, pod_uid=pod_uid,
+                        service_name=model.binding.backend_service_name,
+                        service_namespace=model.binding.backend_namespace,
+                        service_port=model.binding.backend_port,
+                        runtime_image_digest=model.binding.backend_runtime_image_digest,
+                        model_revision=(model.dynamic_policy.publication.artifact_revision
+                                        if model.dynamic_policy else model.gateway.model_revision),
+                    )
+                    if observation is None:
+                        return RuntimeIdentity(), None
+                    validated = RuntimeLifecycleObservation.model_validate(observation)
+                    return validated.runtime, validated
             if isinstance(self.metadata_provider, RuntimeLifecycleMetadataProvider):
                 observation = await self.metadata_provider.resolve_lifecycle(
                     operation_id=operation.id,
@@ -493,6 +618,12 @@ class RuntimeClient:
             # A controller/Kubernetes SDK exception may contain credentials,
             # response bodies, or cluster URLs. Never chain or persist it.
             raise RuntimeIdentityError("runtime identity is invalid") from None
+
+    async def observe(
+        self, model: OperationalModel, operation: ClaimedOperation,
+    ) -> tuple[RuntimeIdentity, RuntimeLifecycleObservation | None]:
+        """Reuse trusted placement/lifecycle accounting for non-HTTP transports."""
+        return await self._trusted_runtime_observation(operation, model)
 
     @classmethod
     def _content_type(cls, response: httpx.Response, protocol: str) -> str:
@@ -529,9 +660,196 @@ class RuntimeClient:
         raise RuntimeProtocolError("runtime protocol is invalid")
 
     @staticmethod
-    def _reported_usage(protocol: str, body: bytes) -> ReportedUsage | None:
+    def _magpie_wave_usage(body: bytes, content_type: str) -> ReportedUsage:
+        """Validate the pinned local Magpie native contract, not arbitrary binary."""
+        if (content_type != "audio/wav" or len(body) < 44 or body[:4] != b"RIFF"
+                or body[8:12] != b"WAVE" or int.from_bytes(body[4:8], "little") + 8 != len(body)):
+            raise RuntimeProtocolError("Magpie response is not a complete WAV")
+        try:
+            with wave.open(io.BytesIO(body), "rb") as audio:
+                frames = audio.getnframes()
+                if (audio.getcomptype() != "NONE" or audio.getnchannels() != 1
+                        or audio.getsampwidth() != 2 or audio.getframerate() != 22050 or frames <= 0
+                        or len(audio.readframes(frames + 1)) != frames * 2):
+                    raise RuntimeProtocolError("Magpie WAV format or frame count is invalid")
+        except (wave.Error, EOFError):
+            raise RuntimeProtocolError("Magpie WAV decoding failed") from None
+        return ReportedUsage(modalities=[ModalityUsage(
+            modality="audio", direction="output", unit="seconds", amount=frames / 22050,
+        )])
+
+    @staticmethod
+    def _ace_step_wave_usage(body: bytes, content_type: str) -> ReportedUsage:
+        """Validate a bounded ACE-Step WAV and meter its decoded duration."""
+        if (content_type != "audio/wav" or len(body) < 44 or body[:4] != b"RIFF"
+                or body[8:12] != b"WAVE" or int.from_bytes(body[4:8], "little") + 8 != len(body)):
+            raise RuntimeProtocolError("ACE-Step response is not a complete WAV")
+        try:
+            with wave.open(io.BytesIO(body), "rb") as audio:
+                frames, rate = audio.getnframes(), audio.getframerate()
+                if (audio.getcomptype() != "NONE" or not 1 <= audio.getnchannels() <= 2
+                        or audio.getsampwidth() not in {2, 3, 4} or not 8000 <= rate <= 192000
+                        or frames <= 0 or frames / rate > 61
+                        or len(audio.readframes(frames + 1)) != frames * audio.getnchannels() * audio.getsampwidth()):
+                    raise RuntimeProtocolError("ACE-Step WAV format or frame count is invalid")
+        except (wave.Error, EOFError):
+            raise RuntimeProtocolError("ACE-Step WAV decoding failed") from None
+        return ReportedUsage(modalities=[ModalityUsage(
+            modality="audio", direction="output", unit="seconds", amount=frames / rate,
+        )])
+
+    @staticmethod
+    def _visual_binary_valid(body: bytes, content_type: str) -> None:
+        """Check a pinned local visual runtime container, not perceptual quality.
+
+        Runs only after the normal bounded response read. No decoder allocation,
+        external process or model-supplied identity/usage is trusted here.
+        """
+        def invalid() -> RuntimeProtocolError:
+            return RuntimeProtocolError("visual media container is invalid")
+
+        if content_type == "image/png":
+            if not body.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise invalid()
+            offset, chunks, image_data = 8, 0, False
+            while offset < len(body):
+                if len(body) - offset < 12:
+                    raise invalid()
+                size = int.from_bytes(body[offset:offset + 4], "big")
+                end = offset + 12 + size
+                kind = body[offset + 4:offset + 8]
+                if end > len(body) or zlib.crc32(memoryview(body)[offset + 4:end - 4]) != int.from_bytes(
+                    body[end - 4:end], "big"
+                ):
+                    raise invalid()
+                if chunks == 0:
+                    header = body[offset + 8:end - 4]
+                    depths = {0: {1, 2, 4, 8, 16}, 2: {8, 16}, 3: {1, 2, 4, 8}, 4: {8, 16}, 6: {8, 16}}
+                    if (kind != b"IHDR" or size != 13 or not int.from_bytes(header[:4], "big")
+                            or not int.from_bytes(header[4:8], "big")
+                            or header[8] not in depths.get(header[9], set()) or header[10:12] != b"\x00\x00"
+                            or header[12] not in {0, 1}):
+                        raise invalid()
+                elif kind == b"IHDR":
+                    raise invalid()
+                if kind == b"IDAT" and size:
+                    image_data = True
+                if kind == b"IEND":
+                    if size or end != len(body) or not image_data:
+                        raise invalid()
+                    return
+                chunks += 1
+                offset = end
+            raise invalid()
+
+        if content_type != "video/mp4":
+            raise invalid()
+
+        def boxes(start: int, end: int) -> Iterator[tuple[bytes, int, int]]:
+            while start < end:
+                if end - start < 8:
+                    raise invalid()
+                size, header = int.from_bytes(body[start:start + 4], "big"), 8
+                if size == 1:
+                    if end - start < 16:
+                        raise invalid()
+                    size, header = int.from_bytes(body[start + 8:start + 16], "big"), 16
+                elif size == 0:
+                    size = end - start
+                if size < header or start + size > end:
+                    raise invalid()
+                yield body[start + 4:start + 8], start + header, start + size
+                start += size
+
+        brands, movie, media, video = False, False, False, False
+        for kind, start, end in boxes(0, len(body)):
+            if not brands:
+                if kind != b"ftyp" or end - start < 8 or (end - start) % 4:
+                    raise invalid()
+                brands = True
+            elif kind == b"ftyp":
+                raise invalid()
+            if kind == b"mdat" and end > start:
+                media = True
+            if kind == b"moov":
+                if movie:
+                    raise invalid()
+                movie = True
+                for child, child_start, child_end in boxes(start, end):
+                    if child != b"trak":
+                        continue
+                    for track, track_start, track_end in boxes(child_start, child_end):
+                        if track != b"mdia":
+                            continue
+                        for field, field_start, field_end in boxes(track_start, track_end):
+                            if field == b"hdlr" and field_end - field_start >= 12:
+                                video |= body[field_start + 8:field_start + 12] == b"vide"
+        if not (brands and movie and media and video):
+            raise invalid()
+
+    @staticmethod
+    def _paidf_chat_valid(source_model: str, body: bytes, content_type: str, request_body: bytes) -> None:
+        expected_model, revision = _PAIDF_CHAT_MODELS[source_model]
+        value, request = json.loads(body), json.loads(request_body)
+        if not isinstance(value, dict) or not isinstance(request, dict):
+            raise RuntimeProtocolError("Reference chat envelope is invalid")
+        raw, streaming = value.get("response_body"), request.get("stream", False)
+        original_request = json.dumps(request, allow_nan=False, ensure_ascii=False, separators=(",", ":")).encode()
+        if (content_type != "application/json" or value.get("schema") != "scientific-reference-chat/v1"
+                or value.get("model") != expected_model or request.get("model") != expected_model
+                or value.get("model_revision") != revision or value.get("stream") is not streaming
+                or not isinstance(raw, str)
+                or value.get("response_sha256") != hashlib.sha256(raw.encode()).hexdigest()
+                or value.get("request_sha256") != hashlib.sha256(original_request).hexdigest()):
+            raise RuntimeProtocolError("Reference chat identity or integrity is invalid")
+        if not streaming:
+            result = json.loads(raw)
+            if (value.get("content_type") != "application/json" or not isinstance(result, dict)
+                    or result.get("model") != expected_model or not isinstance(result.get("choices"), list)
+                    or not result["choices"] or any(not isinstance(choice, dict)
+                        or choice.get("finish_reason") is None or not isinstance(choice.get("message"), dict)
+                        for choice in result["choices"])
+                    or value.get("usage") != result.get("usage")):
+                raise RuntimeProtocolError("Reference chat JSON is incomplete")
+            return
+        if value.get("content_type") != "text/event-stream":
+            raise RuntimeProtocolError("Reference chat stream type is invalid")
+        done, finished, usage = False, False, None
+        for event in raw.replace("\r\n", "\n").split("\n\n"):
+            data = "\n".join(line[5:].lstrip() for line in event.splitlines() if line.startswith("data:"))
+            if not data:
+                continue
+            if done:
+                raise RuntimeProtocolError("Reference chat has data after termination")
+            if data == "[DONE]":
+                done = True
+                continue
+            token = json.loads(data)
+            if (not isinstance(token, dict) or token.get("model") != expected_model
+                    or not isinstance(token.get("choices"), list)
+                    or any(not isinstance(choice, dict) for choice in token["choices"])):
+                raise RuntimeProtocolError("Reference chat token stream is invalid")
+            finished |= any(choice.get("finish_reason") is not None for choice in token["choices"])
+            if token.get("usage") is not None:
+                usage = token["usage"]
+        if not done or not finished or value.get("usage") != usage:
+            raise RuntimeProtocolError("Reference chat stream is incomplete")
+
+    @staticmethod
+    def _reported_usage(protocol: str, body: bytes, *, speech: bool = False) -> ReportedUsage | None:
         """Extract optional OpenAI token totals without making usage part of protocol validity."""
 
+        if speech and protocol == "native":
+            try:
+                payload = json.loads(body)
+            except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+                return None
+            seconds = payload.get("audio_seconds") if isinstance(payload, dict) else None
+            if type(seconds) not in {int, float} or not 0 < seconds <= 7200:
+                return None
+            return ReportedUsage(modalities=[ModalityUsage(
+                modality="audio", direction="input", unit="seconds", amount=seconds,
+            )])
         if protocol not in {"openai-chat", "openai-completions", "openai-embeddings"}:
             return None
         try:
@@ -560,22 +878,311 @@ class RuntimeClient:
             return None
         return ReportedUsage(input_tokens=input_tokens, output_tokens=output_tokens)
 
+    @staticmethod
+    def _scientific_error(source_model: str, status: int, body: bytes) -> tuple[str, str] | None:
+        """Project known local contracts, never model-supplied messages or traces."""
+        try:
+            payload = json.loads(body)
+        except (ValueError, UnicodeError, RecursionError):
+            return None
+        if source_model in {"admet-ai", "ctoxpred2"} and status == 422 and isinstance(payload, dict):
+            detail = payload.get("detail")
+            messages = {code: _SCIENTIFIC_ERROR_DETAILS[code] for code in (
+                "no_valid_molecules", "unknown_endpoint", "invalid_molecular_input",
+            )}
+            if isinstance(detail, dict) and detail.get("code") in messages:
+                code = detail["code"]
+                return code, messages[code]
+            if isinstance(detail, list) and detail:
+                return "invalid_molecular_input", _SCIENTIFIC_ERROR_DETAILS["invalid_molecular_request"]
+        if not isinstance(payload, dict) or not isinstance(payload.get("detail"), dict):
+            return None
+        detail = payload["detail"]
+        if source_model == "evo2-40b" and status == 500 and detail.get("code") == "MODEL_MEMORY_EXHAUSTED":
+            input_length, num_tokens = detail.get("input_length"), detail.get("num_tokens")
+            if (type(input_length) is int and 1 <= input_length <= 8192
+                    and type(num_tokens) is int and 1 <= num_tokens <= 512
+                    and detail.get("retryable") is False):
+                return "model_memory_exhausted", _SCIENTIFIC_ERROR_DETAILS["evo2_memory_exhausted"]
+            return None
+        if source_model == "molmim" and status == 422 and detail.get("code") == "INVALID_MOLECULE":
+            return "invalid_molecule", _SCIENTIFIC_ERROR_DETAILS["invalid_molecule"]
+
+        def counts(value: object, names: tuple[str, ...], maximum: int) -> dict[str, int] | None:
+            if not isinstance(value, dict):
+                return None
+            if any(type(value.get(name)) is not int or not 0 <= value[name] <= maximum for name in names):
+                return None
+            return {name: value[name] for name in names}
+
+        if source_model == "molmim" and status == 422 and detail.get("code") == "GENERATION_EXHAUSTED":
+            values = counts(detail.get("counts"), (
+                "requested_molecules", "distinct_feasible_molecules", "attempted_model_decodes",
+                "invalid_decodes", "below_similarity", "unchanged_decodes", "duplicate_decodes", "optimizer_steps",
+            ), 512)
+            if values is None:
+                return None
+            requested, feasible = values["requested_molecules"], values["distinct_feasible_molecules"]
+            attempted = values["attempted_model_decodes"]
+            if (not 1 <= requested <= 16 or feasible >= requested or not 1 <= values["optimizer_steps"] <= 16
+                    or attempted < requested or sum(values[name] for name in (
+                        "invalid_decodes", "below_similarity", "unchanged_decodes", "duplicate_decodes",
+                        "distinct_feasible_molecules",
+                    )) != attempted):
+                return None
+            return "generation_exhausted", _SCIENTIFIC_ERROR_DETAILS["molmim_exhausted"].format(
+                feasible=feasible, requested=requested, attempted=attempted, invalid=values["invalid_decodes"],
+                below=values["below_similarity"], unchanged=values["unchanged_decodes"],
+                duplicates=values["duplicate_decodes"],
+            )
+        if source_model == "genmol" and status == 503 and detail.get("code") == "generation_exhausted":
+            values = counts(detail.get("metrics"), (
+                "requested_molecules", "returned_molecules", "accepted_molecules", "sampling_attempts",
+                "candidate_requests", "sampled_candidates", "upstream_unreturned_candidates",
+                "invalid_candidates", "duplicate_candidates", "nonfinite_score_candidates",
+                "max_sampling_attempts", "max_candidate_requests",
+            ), 128)
+            if values is None:
+                return None
+            requested, accepted = values["requested_molecules"], values["accepted_molecules"]
+            if (not 1 <= requested <= 16 or accepted >= requested or values["returned_molecules"] != 0
+                    or not 1 <= values["sampling_attempts"] <= values["max_sampling_attempts"] <= 8
+                    or not 1 <= values["candidate_requests"] <= values["max_candidate_requests"] <= requested * 8
+                    or values["sampled_candidates"] + values["upstream_unreturned_candidates"]
+                    != values["candidate_requests"]
+                    or sum(values[name] for name in (
+                        "accepted_molecules", "invalid_candidates", "duplicate_candidates",
+                        "nonfinite_score_candidates",
+                    )) != values["sampled_candidates"]):
+                return None
+            return "generation_exhausted", _SCIENTIFIC_ERROR_DETAILS["genmol_exhausted"].format(
+                accepted=accepted, requested=requested, attempts=values["sampling_attempts"],
+                sampled=values["sampled_candidates"], invalid=values["invalid_candidates"],
+                duplicates=values["duplicate_candidates"],
+            )
+        return None
+
+    async def _scientific_error_body(self, response: httpx.Response) -> bytes | None:
+        """Read once within existing bounds while preserving protected debug capture.
+
+        Only small, complete bodies may influence the public classification.
+        Debug capture retains its existing larger bound; read/capture failures
+        must not replace an already known upstream failure status.
+        """
+        content = bytearray()
+        observed = 0
+        capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
+        maximum = self.max_response_bytes if isinstance(capture, _UpstreamCapture) else min(
+            self.max_response_bytes, _MAX_SCIENTIFIC_ERROR_BYTES
+        )
+        if isinstance(capture, _UpstreamCapture):
+            capture.read_started = True
+        try:
+            async for chunk in response.aiter_bytes():
+                observed += len(chunk)
+                if isinstance(capture, _UpstreamCapture):
+                    capture.observe(chunk)
+                content.extend(chunk[:max(0, _MAX_SCIENTIFIC_ERROR_BYTES - len(content))])
+                if observed > maximum:
+                    return None
+            if isinstance(capture, _UpstreamCapture):
+                capture.finished()
+        except asyncio.CancelledError:
+            raise
+        except (httpx.HTTPError, httpx.StreamError) as exc:
+            if isinstance(capture, _UpstreamCapture):
+                capture.failed(exc)
+            return None
+        return bytes(content) if observed <= _MAX_SCIENTIFIC_ERROR_BYTES else None
+
+    @staticmethod
+    def _scvi_multipart(request_body: bytes) -> tuple[dict[str, str], dict[str, tuple[str, bytes, str]]]:
+        """Translate the public JSON/artifact contract to the pinned multipart runtime."""
+
+        try:
+            payload = json.loads(request_body)
+            if not isinstance(payload, dict):
+                raise ValueError
+            encoded = payload.pop("anndata_base64")
+            filename = payload.pop("filename")
+            if not isinstance(encoded, str) or not isinstance(filename, str):
+                raise ValueError
+            content = base64.b64decode(encoded, validate=True)
+        except (KeyError, ValueError, UnicodeError):
+            raise RuntimeProtocolError("scVI request translation failed") from None
+        if not content or len(content) > 64 * 1024 * 1024:
+            raise RuntimeProtocolError("scVI AnnData input is outside the interactive bound")
+        form: dict[str, str] = {}
+        for key, value in payload.items():
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                form[key] = "true" if value else "false"
+            elif isinstance(value, str | int):
+                form[key] = str(value)
+            else:
+                raise RuntimeProtocolError("scVI request translation failed")
+        return form, {"file": (filename, content, "application/x-hdf5")}
+
+    @staticmethod
+    def _scvi_zip_valid(body: bytes, content_type: str) -> None:
+        if content_type != "application/zip" or len(body) < 22 or not body.startswith(b"PK"):
+            raise RuntimeProtocolError("scVI response is not a complete ZIP artifact")
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                names = archive.namelist()
+                if (
+                    len(names) != len(set(names))
+                    or any(name.startswith("/") or ".." in name.split("/") for name in names)
+                    or not {"manifest.json", "integrated.h5ad", "latent_embeddings.csv"} <= set(names)
+                    or not any(name.startswith("model/") and not name.endswith("/") for name in names)
+                    or archive.testzip() is not None
+                ):
+                    raise RuntimeProtocolError("scVI ZIP contents are invalid")
+                manifest = json.loads(archive.read("manifest.json"))
+        except (zipfile.BadZipFile, KeyError, ValueError, UnicodeError, RecursionError):
+            raise RuntimeProtocolError("scVI ZIP contents are invalid") from None
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("method") not in {"scvi", "scanvi"}
+            or type(manifest.get("cells")) is not int
+            or manifest["cells"] < 1
+            or type(manifest.get("genes")) is not int
+            or manifest["genes"] < 1
+            or type(manifest.get("latent_dimensions")) is not int
+            or manifest["latent_dimensions"] < 2
+            or manifest.get("research_only") is not True
+            or manifest.get("clinical_use") is not False
+        ):
+            raise RuntimeProtocolError("scVI result manifest is invalid")
+
+    @staticmethod
+    def _sam2_zip_valid(body: bytes, content_type: str) -> None:
+        """Validate the bounded SAM 2 artifact before accepting it as a result."""
+
+        if content_type != "application/zip" or len(body) < 22 or not body.startswith(b"PK"):
+            raise RuntimeProtocolError("SAM 2 response is not a complete ZIP artifact")
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                names = archive.namelist()
+                if (
+                    len(names) != len(set(names))
+                    or len(names) > 322
+                    or any(name.startswith("/") or ".." in name.split("/") for name in names)
+                    or "manifest.json" not in names
+                    or archive.testzip() is not None
+                ):
+                    raise RuntimeProtocolError("SAM 2 ZIP contents are invalid")
+                manifest = json.loads(archive.read("manifest.json"))
+        except (zipfile.BadZipFile, KeyError, ValueError, UnicodeError, RecursionError):
+            raise RuntimeProtocolError("SAM 2 ZIP contents are invalid") from None
+        if not isinstance(manifest, dict):
+            raise RuntimeProtocolError("SAM 2 result manifest is invalid")
+        mode = manifest.get("mode")
+        width, height = manifest.get("width"), manifest.get("height")
+        objects = manifest.get("objects")
+        if (
+            manifest.get("schema") != "fs2.nebius.ai/sam2-result/v1"
+            or manifest.get("model") != "facebook/sam2.1-hiera-large"
+            or manifest.get("revision") != _SAM2_MODEL_REVISION
+            or manifest.get("checkpoint_sha256") != _SAM2_CHECKPOINT_SHA256
+            or mode not in {"prompted-image", "automatic-image", "prompted-video"}
+            or type(width) is not int
+            or type(height) is not int
+            or width < 1
+            or height < 1
+            or width * height > 2_073_600
+            or not isinstance(objects, list)
+            or not 1 <= len(objects) <= 128
+        ):
+            raise RuntimeProtocolError("SAM 2 result manifest is invalid")
+        if mode == "prompted-video":
+            frame_count = manifest.get("frame_count")
+            masks = [name for name in names if name.startswith("masks/") and name.endswith(".png")]
+            if (
+                type(frame_count) is not int
+                or not 1 <= frame_count <= 320
+                or len(masks) != frame_count
+                or "overlay.mp4" not in names
+            ):
+                raise RuntimeProtocolError("SAM 2 video result is incomplete")
+        elif not {"mask.png", "overlay.png"} <= set(names):
+            raise RuntimeProtocolError("SAM 2 image result is incomplete")
+
     async def invoke(self, model: OperationalModel, operation: ClaimedOperation, request_body: bytes) -> RuntimeResult:
         try:
             endpoint = model.binding.endpoints[operation.protocol]
         except KeyError:
             raise RuntimeProtocolError("runtime protocol is invalid") from None
+        source_model = (
+            model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
+        )
+        if (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                and source_model in {"mindguard-4b", "mindguard-8b"}):
+            from .mindguard_runtime import invoke_mindguard
+
+            return await invoke_mindguard(self, model, operation, request_body)
         headers = self._correlation_headers(operation)
-        headers["content-type"] = operation.request_content_type
+        scvi = (
+            model.binding.backend_class == "local-kubernetes"
+            and operation.protocol == "native"
+            and source_model == "scvi-scanvi"
+        )
+        if not scvi:
+            headers["content-type"] = operation.request_content_type
+        speech = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                  and source_model in {
+                      "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+                      "parakeet-realtime-eou-120m-v1", "diar-streaming-sortformer-4spk-v2-1",
+                      "magpie-tts-multilingual-357m",
+                  })
+        remote_speech = (model.binding.backend_class == "federated-serverless" and operation.protocol == "native"
+                         and source_model == MEDICAL_NEMOTRON)
+        magpie = speech and source_model == "magpie-tts-multilingual-357m"
+        ace_step = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                    and source_model == "ace-step-1-5")
+        cosmos = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                  and source_model == "cosmos3-nano")
+        wan2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                and source_model in {"wan2-2-t2v-nim", "wan2-2-i2v-nim"})
+        cosmos_transfer = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                           and source_model == "cosmos-transfer2-5-2b")
+        sam2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                and source_model == "sam2-1-hiera-large")
+        paidf_chat = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                      and source_model in _PAIDF_CHAT_MODELS)
+        if speech or paidf_chat:
+            # A retry after explicit pre-admission busy must be able to select
+            # another Service endpoint instead of sticking to a busy socket.
+            headers["connection"] = "close"
         started = time.monotonic()
         try:
             if model.binding.backend_class == "local-kubernetes":
+                request_arguments: dict[str, Any]
+                if scvi:
+                    form, files = self._scvi_multipart(request_body)
+                    request_arguments = {"data": form, "files": files}
+                else:
+                    request_arguments = {"content": request_body}
                 stream = self.client.stream(
                     "POST",
                     f"{model.binding.service_origin}{endpoint}",
                     headers=headers,
-                    content=request_body,
                     timeout=self._timeout(operation, self.runtime_timeout_seconds),
+                    **request_arguments,
+                )
+                if self.debug_store is not None:
+                    stream = self._debug_stream(stream, operation, endpoint, request_body, headers, 1)
+            elif remote_speech:
+                if operation.max_attempts != 1:
+                    raise RuntimeNoReplayError("speech file requires a non-replayable durable claim")
+                if self.speech_scheduling is None:
+                    raise RuntimeNoReplayError("speech file requires authenticated tenant scheduling")
+                group = self.speech_scheduling.headers(operation)["x-fs2-scheduling-group"]
+                stream = self.federation.speech_file(
+                    model, operation_id=operation.id, timeout_seconds=min(7500, self._timeout(
+                        operation, self.runtime_timeout_seconds)), content_type=operation.request_content_type,
+                    content=request_body, scheduling_group=group,
                 )
                 if self.debug_store is not None:
                     stream = self._debug_stream(stream, operation, endpoint, request_body, headers, 1)
@@ -604,9 +1211,39 @@ class RuntimeClient:
                 if response.status_code in (409, 410) and preempted is not None and preempted.lower() == "true":
                     raise PreemptedError("runtime reported preemption")
                 if not response.is_success:
-                    # Public results/ledger remain payload-free for failures;
-                    # the optional encrypted debug capture owns their bodies.
-                    runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
+                    scientific_error = None
+                    if (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                            and source_model in {"molmim", "genmol", "evo2-40b", "admet-ai", "ctoxpred2"}
+                            and response.status_code in {422, 500, 503}
+                            and content_type == "application/json"):
+                        rejected_body = await self._scientific_error_body(response)
+                        if rejected_body is not None:
+                            scientific_error = self._scientific_error(source_model, response.status_code, rejected_body)
+                    if (speech or remote_speech or paidf_chat) and response.status_code == 429:
+                        rejected = bytearray()
+                        capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
+                        if isinstance(capture, _UpstreamCapture):
+                            capture.read_started = True
+                        async for chunk in response.aiter_bytes():
+                            if isinstance(capture, _UpstreamCapture):
+                                capture.observe(chunk)
+                            rejected.extend(chunk)
+                            if len(rejected) > 4096:
+                                raise RuntimeProtocolError("worker busy response exceeds limit")
+                        if isinstance(capture, _UpstreamCapture):
+                            capture.finished()
+                        try:
+                            busy = json.loads(rejected) == {"detail": "runtime_busy"}
+                        except (ValueError, UnicodeError):
+                            busy = False
+                        if busy:
+                            raise RuntimeBusyError("worker capacity is occupied")
+                    if remote_speech and response.status_code >= 500:
+                        raise RuntimeNoReplayError("speech worker failed after possible admission")
+                    # Public failures carry only CP-owned wording and validated
+                    # aggregate counts for the recognized scientific contracts.
+                    # The optional encrypted debug capture owns original bodies.
+                    runtime, lifecycle = await self._trusted_runtime_observation(operation, model, response)
                     return RuntimeResult(
                         status_code=response.status_code,
                         body=b"",
@@ -614,7 +1251,8 @@ class RuntimeClient:
                         elapsed_seconds=time.monotonic() - started,
                         runtime=runtime,
                         semantic_outcome="not_evaluated",
-                        failure_code="upstream_http_error",
+                        failure_code=scientific_error[0] if scientific_error else "upstream_http_error",
+                        failure_detail=scientific_error[1] if scientific_error else None,
                         lifecycle=lifecycle,
                     )
                 content = bytearray()
@@ -629,8 +1267,41 @@ class RuntimeClient:
                         raise RuntimeProtocolError("runtime response exceeded configured maximum")
                 if isinstance(capture, _UpstreamCapture):
                     capture.finished()
-                semantic = self._semantic_outcome(operation.protocol, bytes(content))
-                runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
+                if remote_speech:
+                    from .native_serverless import NativeServerlessError, validate_worker_checkpoint
+                    try:
+                        validate_worker_checkpoint(model, json.loads(content), file_result=True)
+                    except (NativeServerlessError, ValueError, UnicodeError):
+                        raise RuntimeProtocolError("speech worker checkpoint identity differs") from None
+                if magpie:
+                    usage = self._magpie_wave_usage(bytes(content), content_type)
+                    semantic = "protocol_valid"
+                elif ace_step:
+                    usage = self._ace_step_wave_usage(bytes(content), content_type)
+                    semantic = "protocol_valid"
+                elif cosmos_transfer:
+                    if content_type != "video/mp4":
+                        raise RuntimeProtocolError("Cosmos Transfer must return a verified MP4")
+                    self._visual_binary_valid(bytes(content), content_type)
+                    semantic, usage = "protocol_valid", None
+                elif ((cosmos and content_type == "image/png")
+                      or ((cosmos or wan2) and content_type == "video/mp4")):
+                    self._visual_binary_valid(bytes(content), content_type)
+                    semantic, usage = "protocol_valid", None
+                elif scvi:
+                    self._scvi_zip_valid(bytes(content), content_type)
+                    semantic, usage = "protocol_valid", None
+                elif sam2:
+                    self._sam2_zip_valid(bytes(content), content_type)
+                    semantic, usage = "protocol_valid", None
+                elif paidf_chat:
+                    self._paidf_chat_valid(source_model, bytes(content), content_type, request_body)
+                    semantic = "protocol_valid"
+                    usage = self._reported_usage("openai-chat", bytes(content))
+                else:
+                    semantic = self._semantic_outcome(operation.protocol, bytes(content))
+                    usage = self._reported_usage(operation.protocol, bytes(content), speech=speech or remote_speech)
+                runtime, lifecycle = await self._trusted_runtime_observation(operation, model, response)
                 return RuntimeResult(
                     status_code=response.status_code,
                     body=bytes(content),
@@ -638,20 +1309,32 @@ class RuntimeClient:
                     elapsed_seconds=time.monotonic() - started,
                     runtime=runtime,
                     semantic_outcome=semantic,
-                    usage=self._reported_usage(operation.protocol, bytes(content)),
+                    usage=usage,
                     lifecycle=lifecycle,
                 )
         except asyncio.CancelledError:
             raise
+        except RuntimeBusyError:
+            raise
         except RuntimeOperationError:
+            if remote_speech:
+                raise RuntimeNoReplayError("speech worker outcome is uncertain; automatic replay disabled") from None
             raise
         except FederationTransportError:
+            if remote_speech:
+                raise RuntimeNoReplayError("speech transport failed; automatic replay disabled") from None
             raise RuntimeTransportError("federated transport failed") from None
         except httpx.TimeoutException:
+            if remote_speech:
+                raise RuntimeNoReplayError("speech request timed out; automatic replay disabled") from None
             raise RuntimeTransportError("runtime request timed out") from None
         except (httpx.HTTPError, httpx.InvalidURL, httpx.StreamError):
+            if remote_speech:
+                raise RuntimeNoReplayError("speech transport failed; automatic replay disabled") from None
             raise RuntimeTransportError("runtime transport failed") from None
         except (ValidationError, json.JSONDecodeError, UnicodeError, ValueError, TypeError, RecursionError):
+            if remote_speech:
+                raise RuntimeNoReplayError("speech result invalid; automatic replay disabled") from None
             raise RuntimeProtocolError("runtime response is invalid") from None
 
 
@@ -667,6 +1350,11 @@ class StubRuntimeClient(RuntimeClient):
 
     async def activate(self, model: OperationalModel, operation: ClaimedOperation) -> None:
         del model, operation
+
+    async def observe(
+        self, model: OperationalModel, operation: ClaimedOperation,
+    ) -> tuple[RuntimeIdentity, RuntimeLifecycleObservation | None]:
+        return RuntimeIdentity(gpu_count=model.gateway.gpu_allocation_count), None
 
     async def invoke(self, model: OperationalModel, operation: ClaimedOperation, request_body: bytes) -> RuntimeResult:
         del request_body

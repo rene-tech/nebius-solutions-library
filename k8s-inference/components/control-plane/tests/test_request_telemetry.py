@@ -13,6 +13,7 @@ from fs2_serve.models import Principal
 from fs2_serve.request_telemetry import (
     InMemoryRequestTelemetryStore,
     RequestTelemetryMiddleware,
+    classify_public_outcome,
     observe_mcp_result,
     observe_request_metadata,
     request_telemetry_context,
@@ -121,6 +122,77 @@ async def test_disconnect_preserves_partial_bytes_and_does_not_invent_status():
     (row,) = store.observations
     assert row.disconnected and row.request_bytes_observed == 3
     assert row.request_bytes is None and row.response_bytes is None and row.http_status is None
+    assert row.semantic_outcome == "cancelled" and row.semantic_error_type == "client_disconnected"
+
+
+@pytest.mark.parametrize(
+    ("path", "status", "body", "expected", "error_type"),
+    [
+        (
+            "/mcp",
+            400,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {
+                    "code": -32602,
+                    "data": {"type": "model_input_validation"},
+                },
+            },
+            "failed",
+            "model_input_validation",
+        ),
+        (
+            "/mcp",
+            200,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "isError": False,
+                    "structuredContent": {
+                        "id": "07e454be-e11b-4f4f-9110-c076eb69c68e",
+                        "status": "queued",
+                        "model_id": "qwen3-8b",
+                    },
+                },
+            },
+            "accepted",
+            None,
+        ),
+        ("/v1/models", 200, {"models": []}, "succeeded", None),
+        ("/v1/models", 422, {"error": "invalid_request"}, "failed", "http_request_error"),
+    ],
+)
+async def test_post_response_disconnect_retains_completed_semantics_and_raw_flag(
+    path, status, body, expected, error_type
+):
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": status})
+        await send({"type": "http.response.body", "body": json.dumps(body).encode(), "more_body": False})
+        assert (await receive())["type"] == "http.disconnect"
+
+    store, _ = await exchange(app, path=path)
+    (row,) = store.observations
+    assert row.disconnected and row.response_complete
+    assert row.semantic_outcome == expected and row.semantic_error_type == error_type
+    assert row.http_status == status and row.error_type is None
+    if path == "/mcp" and status == 400:
+        assert row.jsonrpc_error_code == -32602 and row.admission_stage == "pre_admission"
+
+
+async def test_mid_response_disconnect_remains_cancelled_with_incomplete_observed_bytes():
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200})
+        await send({"type": "http.response.body", "body": b"partial", "more_body": True})
+        assert (await receive())["type"] == "http.disconnect"
+
+    store, _ = await exchange(app, path="/mcp")
+    (row,) = store.observations
+    assert row.disconnected and not row.response_complete
+    assert row.response_bytes is None and row.response_bytes_observed == 7
+    assert row.semantic_outcome == "cancelled" and row.semantic_error_type == "client_disconnected"
+    assert row.http_status == 200
 
 
 async def test_response_failure_preserves_partial_result_without_replacing_original_exception():
@@ -183,6 +255,8 @@ async def test_mcp_actual_request_context_crosses_sdk_task_and_http200_tool_fail
     (row,) = store.observations
     assert row.transport == "mcp" and row.http_status == 200 and row.mcp_is_error is True
     assert row.mcp_tool == "invoke_model" and row.principal_id == "actual-owner"
+    assert row.semantic_outcome == "failed" and row.admission_stage == "pre_admission"
+    assert row.semantic_error_type == "mcp_tool_error"
 
 
 async def test_replay_and_polling_are_three_requests_for_one_operation_with_isolated_auth_contexts():
@@ -216,3 +290,142 @@ def test_invalid_result_identity_and_non_http_context_do_not_raise_or_capture_pa
     assert scope["state"] == {}
     with request_telemetry_context(None):
         observe_mcp_result(json.loads('{"id":"not-a-uuid"}'))
+
+
+def classify(body, **updates):
+    values = dict(
+        path="/mcp",
+        http_status=200,
+        response_body=json.dumps(body).encode() if isinstance(body, dict) else body,
+        response_complete=True,
+        disconnected=False,
+        process_error_type=None,
+        state={"mcp_tool": "cosmos3_nano_generate_media_native", "model_id": "cosmos3-nano"},
+        operation_id=None,
+    )
+    values.update(updates)
+    return classify_public_outcome(**values)
+
+
+def test_jsonrpc_http200_schema_rejection_is_failed_pre_admission_without_usage_identity():
+    result = classify(
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "error": {
+                "code": -32602,
+                "message": "Invalid request parameters",
+                "data": {"type": "model_input_validation", "private_input": "must-not-be-retained"},
+            },
+        }
+    )
+    assert result == {
+        "semantic_outcome": "failed",
+        "jsonrpc_error_code": -32602,
+        "semantic_error_type": "model_input_validation",
+        "admission_stage": "pre_admission",
+        "mcp_is_error": True,
+        "operation_id": None,
+        "model_id": "cosmos3-nano",
+    }
+    assert "private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected", "error_type"),
+    [
+        ("queued", "accepted", None),
+        ("running", "accepted", None),
+        ("succeeded", "succeeded", None),
+        ("failed", "failed", "upstream_runtime_failure"),
+        ("cancelled", "cancelled", "customer_cancelled"),
+        ("expired", "timed_out", "execution_deadline_exceeded"),
+    ],
+)
+def test_mcp_operation_terminal_semantics_are_not_inferred_from_http(status, expected, error_type):
+    operation_id = uuid4()
+    operation = {"id": str(operation_id), "model_id": "cosmos3-nano", "status": status}
+    if error_type:
+        operation["error_class"] = error_type
+    result = classify(
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "result": {"isError": False, "structuredContent": {"operation": operation}},
+        }
+    )
+    assert result["semantic_outcome"] == expected
+    assert result["admission_stage"] == "admitted" and result["operation_id"] == operation_id
+    assert result["semantic_error_type"] == error_type
+
+
+def test_structured_tool_error_auth_timeout_disconnect_and_malformed_are_distinct():
+    tool_error = classify(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "result": {
+                "isError": True,
+                "structuredContent": {"error": {"type": "route_unavailable", "retryable": True}},
+            },
+        }
+    )
+    assert (tool_error["semantic_outcome"], tool_error["semantic_error_type"]) == (
+        "failed",
+        "route_unavailable",
+    )
+    authentication = classify(b"unauthorized", http_status=401)
+    assert authentication["semantic_error_type"] == "authentication_failed"
+    timeout = classify(b"", response_complete=False, process_error_type="TimeoutError")
+    assert timeout["semantic_outcome"] == "timed_out" and timeout["semantic_error_type"] == "request_timeout"
+    disconnected = classify(b"", response_complete=False, disconnected=True)
+    assert disconnected["semantic_outcome"] == "cancelled"
+    malformed = classify(b"not-json")
+    assert malformed["semantic_outcome"] == "failed"
+    assert malformed["semantic_error_type"] == "malformed_mcp_response"
+
+
+def test_sse_jsonrpc_error_is_classified_without_persisting_response_payload():
+    body = b'event: message\ndata: {"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"PRIVATE"}}\n\n'
+    result = classify(body)
+    assert result["jsonrpc_error_code"] == -32603
+    assert result["semantic_error_type"] == "jsonrpc_internal_error"
+    assert "PRIVATE" not in str(result)
+
+
+def test_protocol_or_handler_failure_cannot_be_erased_by_a_later_success_event():
+    operation_id = uuid4()
+    success = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "structuredContent": {
+                    "operation": {
+                        "id": str(operation_id),
+                        "model_id": "cosmos3-nano",
+                        "status": "succeeded",
+                    }
+                }
+            },
+        }
+    ).encode()
+    protocol_error = b'{"jsonrpc":"2.0","id":1,"error":{"code":-32602}}'
+    mixed = b"data: " + protocol_error + b"\n\ndata: " + success + b"\n\n"
+    result = classify(mixed)
+    assert result["semantic_outcome"] == "failed"
+    assert result["jsonrpc_error_code"] == -32602
+
+    trusted = classify(
+        {"jsonrpc": "2.0", "id": 1, "result": {"structuredContent": {}}},
+        state={
+            "mcp_tool": "cosmos3_nano_video_to_video",
+            "model_id": "cosmos3-nano",
+            "semantic_outcome": "failed",
+            "semantic_error_type": "upstream_runtime_failure",
+            "admission_stage": "admitted",
+            "mcp_is_error": True,
+        },
+    )
+    assert trusted["semantic_outcome"] == "failed"
+    assert trusted["semantic_error_type"] == "upstream_runtime_failure"

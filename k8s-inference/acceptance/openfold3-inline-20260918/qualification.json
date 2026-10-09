@@ -1,0 +1,256 @@
+{
+  "schema": "openfold3-inline-candidate-qualification/v1",
+  "recorded_at": "2026-09-18T22:33:58.366462+00:00",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
+  "source_commit": "84a466792feb69ac852ffdb6124c47706751646c",
+  "status": "isolated_runtime_repair_supported_scientific_accuracy_poor",
+  "namespace": "fs2-models",
+  "pod_uid": "ae32f847-492a-413c-af54-71c686a8493c",
+  "node": "computeinstance-e00m0hsph76ajt9sdb",
+  "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+  "pool": "h100-reserved-8x",
+  "gpu_csv": "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b, NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
+  "shared_memory_bytes": 67108864,
+  "resource_envelope": {
+    "limits": {
+      "cpu": "32",
+      "ephemeral-storage": "128Gi",
+      "memory": "256Gi",
+      "nvidia.com/gpu": "1"
+    },
+    "requests": {
+      "cpu": "8",
+      "ephemeral-storage": "32Gi",
+      "memory": "96Gi",
+      "nvidia.com/gpu": "1"
+    }
+  },
+  "cases": [
+    {
+      "case": "1acb-s1",
+      "seed": 1,
+      "duration_seconds": 44.997,
+      "input_identity": {
+        "artifact_id": "openfold3-raw-1acb-s1",
+        "sha256": "55811d2cfc86253f6d136d878fef4861d8caa6a32e161355b0d38e87574964f1"
+      },
+      "confidence": {
+        "avg_plddt": 37.768555,
+        "disorder": 0.0,
+        "gpde": 3.942976,
+        "iptm": 0.076377,
+        "ptm": 0.250986,
+        "sample_ranking_score": 0.111299
+      },
+      "structure": {
+        "atom_records": 2373,
+        "bytes": 239254,
+        "path": "openfold3-openbind-1acb-heteromer-s1/seed_1/openfold3-openbind-1acb-heteromer-s1_seed_1_sample_1_model.cif",
+        "sha256": "52f5fe83994ad81693f08f1166e344168deaec939ee509286840d661db4402c4"
+      },
+      "evaluation": {
+        "evaluator": "protein_complex",
+        "case_id": "openfold3-openbind-1acb-heteromer-s1",
+        "service_semantic_pass": true,
+        "paper_reproduction": "not_claimed",
+        "predictions": [
+          {
+            "chains": [
+              {
+                "reference_chain": "E",
+                "prediction_chain": "A",
+                "reference_coverage": 1.0
+              },
+              {
+                "reference_chain": "I",
+                "prediction_chain": "B",
+                "reference_coverage": 1.0
+              }
+            ],
+            "complex_ca_rmsd_angstrom": 18.717048145922973,
+            "interface_ca_rmsd_angstrom": 13.865236707130274,
+            "partner_ca_rmsd_after_receptor_fit_angstrom": 15.348418289112796,
+            "native_ca_contacts": 43,
+            "predicted_ca_contacts": 31,
+            "native_ca_contact_recall": 0.0,
+            "ca_contact_precision": 0.0,
+            "interface_residues": 28,
+            "all_input_chain_sequences_exact": true,
+            "method": "Sequence-mapped heterodimer; C-alpha contacts under 8 A. Not DockQ/CAPRI or all-atom interface scoring."
+          }
+        ],
+        "scientific_accuracy": "measured_against_experimental_complex",
+        "reference_sha256": "79bca7d835e21ee7015932fc39c74a54458ae115167e665e6f69f1f7318921e5"
+      }
+    },
+    {
+      "case": "1brs-s7",
+      "seed": 7,
+      "duration_seconds": 38.835,
+      "input_identity": {
+        "artifact_id": "openfold3-raw-1brs-s7",
+        "sha256": "10a59a89c1f804575a9d65b5b4cfd3ab679826f51b612ed640447aa86ef2934e"
+      },
+      "confidence": {
+        "avg_plddt": 44.493767,
+        "disorder": 0.0,
+        "gpde": 2.592492,
+        "iptm": 0.062978,
+        "ptm": 0.278883,
+        "sample_ranking_score": 0.106159
+      },
+      "structure": {
+        "atom_records": 1594,
+        "bytes": 164961,
+        "path": "openfold3-openbind-1brs-heteromer-s7/seed_7/openfold3-openbind-1brs-heteromer-s7_seed_7_sample_1_model.cif",
+        "sha256": "7d2ab54061e4ea910934270b70a432c1a1a04168022b4036fd99f3ee2a09b2b3"
+      },
+      "evaluation": {
+        "evaluator": "protein_complex",
+        "case_id": "openfold3-openbind-1brs-heteromer-s7",
+        "service_semantic_pass": true,
+        "paper_reproduction": "not_claimed",
+        "predictions": [
+          {
+            "chains": [
+              {
+                "reference_chain": "A",
+                "prediction_chain": "A",
+                "reference_coverage": 1.0
+              },
+              {
+                "reference_chain": "D",
+                "prediction_chain": "B",
+                "reference_coverage": 1.0
+              }
+            ],
+            "complex_ca_rmsd_angstrom": 14.437243127605234,
+            "interface_ca_rmsd_angstrom": 9.995332040760953,
+            "partner_ca_rmsd_after_receptor_fit_angstrom": 22.397462790680127,
+            "native_ca_contacts": 36,
+            "predicted_ca_contacts": 37,
+            "native_ca_contact_recall": 0.05555555555555555,
+            "ca_contact_precision": 0.05405405405405406,
+            "interface_residues": 27,
+            "all_input_chain_sequences_exact": true,
+            "method": "Sequence-mapped heterodimer; C-alpha contacts under 8 A. Not DockQ/CAPRI or all-atom interface scoring."
+          }
+        ],
+        "scientific_accuracy": "measured_against_experimental_complex",
+        "reference_sha256": "8308fdd0c0e8e3518ec48d87fb226134f72f01472158f1096db2328cdfe911eb"
+      }
+    },
+    {
+      "case": "2ptc-s42",
+      "seed": 42,
+      "duration_seconds": 40.537,
+      "input_identity": {
+        "artifact_id": "openfold3-raw-2ptc-s42",
+        "sha256": "56aea1c7477f4e1387b1577054551cc617bd0cb2c5cb04732ffbaf05684cccb6"
+      },
+      "confidence": {
+        "avg_plddt": 29.039108,
+        "disorder": 0.0,
+        "gpde": 4.151453,
+        "iptm": 0.078926,
+        "ptm": 0.167616,
+        "sample_ranking_score": 0.096664
+      },
+      "structure": {
+        "atom_records": 2081,
+        "bytes": 212427,
+        "path": "openfold3-openbind-2ptc-heteromer-s42/seed_42/openfold3-openbind-2ptc-heteromer-s42_seed_42_sample_1_model.cif",
+        "sha256": "7d10937178282a5bf6f25f69c3156ea96badcf26146f879855be42a7f1586635"
+      },
+      "evaluation": {
+        "evaluator": "protein_complex",
+        "case_id": "openfold3-openbind-2ptc-heteromer-s42",
+        "service_semantic_pass": true,
+        "paper_reproduction": "not_claimed",
+        "predictions": [
+          {
+            "chains": [
+              {
+                "reference_chain": "E",
+                "prediction_chain": "A",
+                "reference_coverage": 1.0
+              },
+              {
+                "reference_chain": "I",
+                "prediction_chain": "B",
+                "reference_coverage": 1.0
+              }
+            ],
+            "complex_ca_rmsd_angstrom": 18.88206746961698,
+            "interface_ca_rmsd_angstrom": 13.831576137756246,
+            "partner_ca_rmsd_after_receptor_fit_angstrom": 32.8045114431988,
+            "native_ca_contacts": 46,
+            "predicted_ca_contacts": 35,
+            "native_ca_contact_recall": 0.0,
+            "ca_contact_precision": 0.0,
+            "interface_residues": 31,
+            "all_input_chain_sequences_exact": true,
+            "method": "Sequence-mapped heterodimer; C-alpha contacts under 8 A. Not DockQ/CAPRI or all-atom interface scoring."
+          }
+        ],
+        "scientific_accuracy": "measured_against_experimental_complex",
+        "reference_sha256": "21f4210f8e688874355a1ed9f6600db6b8f4e7cbbfa5a1132afc88a0c13d979f"
+      }
+    }
+  ],
+  "evidence_sha256": {
+    "cases.json": "cac3327b980396589b598c97a3d816ce70301fcaaa1e98775eb9d27ec76290ca",
+    "candidate.json": "d8a0662d71a1d2bad2a8a241d92a1b462acc0be21dac548831513a14109efa50",
+    "artifact-bindings.json": "4b642b4cecdabb3d194daece080a617266e8406a3b19858279a5db1b1335dd89",
+    "worker.log": "e3949dcab67d01a19990d57b789335941e3dc486bacdb8e363bca5a14bdb14d4",
+    "pod-final.json": "77f6bae4f94e83566fcb3935e60a09d284b5d9ce9ce14afd56715bc307f11519",
+    "pod-events-final.json": "3f16e18f488b77ee294e8b6ff706d73b1d8b15ff9008b28fd39f3568e3823f0f",
+    "independent-validation.json": "97ab7fcc6ddf1ee6a114d82c1b328f7c8c751d859ac1f2624ce257254e8e1708",
+    "outputs/gpu.csv": "03c76d1b7a5c5354480364b10e0c1be33f2118ee407c06d216ec42ae5e646983",
+    "outputs/shm.txt": "b47e78fd1220035aad2649b77aa589b1614f87bb9aa7debe68f5fef9f4921da9",
+    "outputs/runtime-file-hashes.txt": "5ecdf74f131a551be6da7d8127d8cafd68cc51fd1258f725e46651dfc01cf9ea",
+    "cleanup-verified.json": "67b0c02ca67c2d1ea7d07ec2d8f3a52fbea1d302e445e564fbaab6c1d2b95dfe"
+  },
+  "cleanup": {
+    "at": "2026-09-18T22:33:34.258394+00:00",
+    "resources": [
+      {
+        "kind": "pod",
+        "name": "fs2-openfold3-inline-20260918",
+        "absent": true
+      },
+      {
+        "kind": "pod",
+        "name": "fs2-openfold3-inline-20260918-r2",
+        "absent": true
+      },
+      {
+        "kind": "pod",
+        "name": "fs2-openfold3-inline-20260918-r3",
+        "absent": true
+      },
+      {
+        "kind": "configmap",
+        "name": "fs2-openfold3-inline-20260918-input",
+        "absent": true
+      },
+      {
+        "kind": "configmap",
+        "name": "fs2-openfold3-inline-20260918-r2-input",
+        "absent": true
+      },
+      {
+        "kind": "configmap",
+        "name": "fs2-openfold3-inline-20260918-r3-input",
+        "absent": true
+      }
+    ],
+    "all_absent": true
+  },
+  "limitations": [
+    "No production profile change or public replay in this qualification.",
+    "MSA-free/template-free model outputs have poor experimental agreement; no biological/clinical accuracy qualification.",
+    "Runner durations exclude image download, scheduling and input preparation; they are not isolated GPU kernel times.",
+    "Earlier placement/preflight harness failures are retained separately, not counted as model failures."
+  ]
+}

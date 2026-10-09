@@ -1,0 +1,196 @@
+{
+  "schema": "fs2-cosmos-bounded-public-release-evidence/v1",
+  "release_number": 146,
+  "cp_source_revision": "bce48ba03",
+  "cp_index_digest": "sha256:25438d07ec2caae07ae30209f6267d215b6a037b453aa9f0a3a5a76cb5b6e37e",
+  "completed_at": "2026-09-17T16:25:36.370732+00:00",
+  "outcome": "bounded_public_media_paths_passed",
+  "customer_ready": false,
+  "public_endpoint": "https://89.169.99.188",
+  "template_digest": "sha256:a4c96a343622a0e809e61f132c71032dd6e845c9ea7d846563cdb0ce36cf0fab",
+  "template_generation": 16,
+  "runtime_snapshot_and_policy": {
+    "adapter": "cbdea972edc77cc9735eea0d30dfc70d733464fb39f8cdc7889c12c8a435363e",
+    "config": {
+      "/etc/fs2-scientific-batch/execution-map.json": "sha256:88c83daa474b2b66976c2d286cee863e21b0de7e8b1e08796515fb37852c3040",
+      "/etc/fs2-scientific-batch/kueue-scheduling.json": "sha256:e7bb83c3bbd78646367df71b2fbac86afcf145b713b71194c057e20a13ad3e14",
+      "/etc/fs2-serve/admin-observability/..2026_09_17_15_57_50.3741470442/config.json": "sha256:5f9787f4b4f74d2903c562a6933fa987d99e7650d474f3869a38b9d51cb41549",
+      "/etc/fs2-serve/admin-observability/config.json": "sha256:5f9787f4b4f74d2903c562a6933fa987d99e7650d474f3869a38b9d51cb41549",
+      "/etc/fs2-serve/admin/admin-configuration.json": "sha256:fe0354706ca1c699e468d15f05084551ff3d41086851ac3e97d12ff7915e8e6e",
+      "/etc/fs2-serve/bindings/model-variant-promotions.json": "sha256:a1f4c5a2e76e1f7e98770fc64a16dc79a354e84011f9fc5360cc0ee072931a97",
+      "/etc/fs2-serve/bindings/serving-bindings.json": "sha256:c0ac8754f75d649c697a19cda3b755cd9a887cd50660864f6f8fc56c1899ad76",
+      "/etc/fs2-serve/lean-routes/..2026_09_17_15_57_50.1839906651/deployment-runtimes.json": "sha256:07234652c31a51dcb413da7cabdac1f8c369185cc8e44ea9ae77faaeb2554efa",
+      "/etc/fs2-serve/lean-routes/..2026_09_17_15_57_50.1839906651/lean-routes.json": "sha256:d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+      "/etc/fs2-serve/lean-routes/deployment-runtimes.json": "sha256:07234652c31a51dcb413da7cabdac1f8c369185cc8e44ea9ae77faaeb2554efa",
+      "/etc/fs2-serve/lean-routes/lean-routes.json": "sha256:d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+      "/etc/fs2-serve/model-controller/infrastructure-envelope.json": "sha256:03bda7e70440bc4ef1d6db6ea13b6b39b0539e51b18372c3bc8afd044d1f3076",
+      "/etc/fs2-serve/model-controller/renderer-bundles.json": "sha256:b28e336b8c935720552f11b4280783a9318e33d5cd16bf14df2eacfa57a0f8ee"
+    },
+    "image": {
+      "control-plane": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:25438d07ec2caae07ae30209f6267d215b6a037b453aa9f0a3a5a76cb5b6e37e"
+    },
+    "policy": {
+      "gpu_seconds_budget": null,
+      "max_concurrency": 1,
+      "models": [
+        "cosmos3-nano"
+      ],
+      "rate_limit_requests": null,
+      "rate_window_seconds": null,
+      "request_budget": null,
+      "scopes": [
+        "catalog.read",
+        "inference.invoke",
+        "mcp.invoke",
+        "operations.acknowledge",
+        "operations.cancel",
+        "operations.read",
+        "operations.result"
+      ],
+      "tenant_id": "robotics"
+    },
+    "serving": [
+      {
+        "name": "cosmos3-nano-burst-h100-1x",
+        "runtime_images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
+        ],
+        "snapshot": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+        "spec_digest": "sha256:96bacd2bcce5f6061f71c70613c4ee1d0fa9cb359cf5e00caf992779f6cc7b15"
+      }
+    ]
+  },
+  "client": {
+    "kind": "raw public MCP SDK plus HTTPS client, not installed LibreChat or skills",
+    "python": "3.13.13",
+    "packages": {
+      "mcp": "2.1.1",
+      "httpx2": "2.12.0",
+      "jsonschema": "4.26.0"
+    },
+    "runner_sha256": {
+      "public_media.py": "c23f7686ddcd3daceb2830cc9fd07ed37620a3d9defd71149ec34dbec7abb85e",
+      "public_compatibility.py": "8474b58996fa1a97faa992356b387b9bfaac134e4ea60126d84810a1a08dc2e9"
+    }
+  },
+  "results": {
+    "successful_gpu_generations": 20,
+    "unexpected_terminal_failures": 0,
+    "platform_attempts_per_generation": 1,
+    "compatibility_cases": 4,
+    "matrix_cohorts": 2,
+    "matrix_cases_each": 8,
+    "same_mode_video_bytes_identical_across_both_cohorts": true,
+    "full_decode": "1 PNG256x256 plus19 H264 MP4s256x256/33frames/20fps/1.65s; artifact and decoded-pixel hashes retained.",
+    "idempotent_replay": "Both in-flight and terminal same-key requests preserved all20operation IDs.",
+    "held_upload_cpu_only": "90.408645s pending across10caller-visible queued samples; all GPU demand/replica observations0 then ordinary PUT/finalize succeeded."
+  },
+  "cold_timings": [
+    {
+      "case": "mcp-text-to-image",
+      "operation_id": "4382aea1-5d3d-46c2-9dc8-a85d006bef72",
+      "cold_start_seconds": 37.921762,
+      "end_to_end": 40.104806,
+      "processing": 2.17405,
+      "capacity": "Existing cached preemptible H100, not a new-node provisioning claim"
+    },
+    {
+      "case": "cold-mcp-https-video-to-video",
+      "operation_id": "17dd04e5-3b76-4b8c-b5aa-4bc03a133b9c",
+      "cold_start_seconds": 38.225737,
+      "end_to_end": 42.546559,
+      "processing": 4.317492,
+      "capacity": "Existing cached preemptible H100, not a new-node provisioning claim"
+    },
+    {
+      "case": "cold-http-https-video-to-video",
+      "operation_id": "06c23069-66f9-4178-a489-7c988ec6c036",
+      "cold_start_seconds": 37.809772,
+      "end_to_end": 41.677109,
+      "processing": 3.86158,
+      "capacity": "Existing cached preemptible H100, not a new-node provisioning claim"
+    }
+  ],
+  "harness_negative": "First matrix synchronous paired-metric assertion failed on one stale desired1 sample, but orchestration incorrectly continued. Independent six advancing zero KSM samples and all9fresh CP demand series strictly before admission prove actual cold condition. This is not a clean preflight; the second matrix explicitly gated runner launch on assertion success. No inference was repeated to repair evidence.",
+  "telemetry_limitations": "Three first-matrix operation runtime identities unavailable when multiple Ready Pods existed; raw gpu_count0 is not measured zero. First-matrix second-Pod logs missed after natural deletion. Other scoped logs retained, including second-matrix both Pods (8generations plus0unused). No full usage/admin/client gate claim.",
+  "retained_diagnostics": "Nine TUN/iptables CRIU_RESTORE_ERROR lines per complete snapshot log are reprinted by immutable entrypoint finally at natural shutdown; actual CRIU/CUDA/unlock returncodes0 and restored markers verified. Diagnostics retained and explained, never claimed absent.",
+  "cleanup": {
+    "canary_settlement": {
+      "token_id": "bd6b4755-35d7-4583-96ac-5d95a37c8c49",
+      "checked_at": "2026-09-17T16:21:12.203205+00:00",
+      "status_protocol_counts": [
+        {
+          "status": "succeeded",
+          "protocol": "native",
+          "count": 40
+        },
+        {
+          "status": "succeeded",
+          "protocol": "scientific-artifact-upload-v1",
+          "count": 9
+        },
+        {
+          "status": "failed",
+          "protocol": "native",
+          "count": 2
+        }
+      ],
+      "nonterminal_count": 0,
+      "scope": "Exact task disposable canary only; no other customer rows or payloads queried."
+    },
+    "canary_revocation": {
+      "revoked_at": "2026-09-17T16:21:23.926422Z",
+      "token_id": "bd6b4755-35d7-4583-96ac-5d95a37c8c49"
+    },
+    "revoked_public_read": {
+      "verified_at": "2026-09-17T16:24:08.010196+00:00",
+      "method": "GET",
+      "path": "/v1/models",
+      "status": 401,
+      "token_id": "bd6b4755-35d7-4583-96ac-5d95a37c8c49",
+      "inference_admitted": false
+    },
+    "model_natural_zero": {
+      "actual_desired_zero_no_pods_observed_at": "2026-09-17T16:22:58.932943Z",
+      "demand_zero": true,
+      "startup_hold_zero": true,
+      "receipt": "/home/tux/secure-handoff/cosmos-stockholm-rollout-20260917/held-upload-r146-00000000-0000-0000-0000-000000000000-sample7.json",
+      "sha256": "5acdc066fbdd36854b53e7d16f4e009e31eeeb756b5ae72b69527e611cf5889d",
+      "manual_scaling_or_deletion": false
+    },
+    "existing_customer_keys_changed": false,
+    "preview_resources": "Earlier task preview Deployments/ConfigMaps/local port-forwards already removed; no public-test Pod/scale/node mutation.",
+    "media_and_receipts_retained": true
+  },
+  "remaining_gaps": [
+    "LeRobot candidate remains unrouted; no public parent-to-child dataset execution, two output datasets/reopen, priority/cancellation/admin workflow acceptance.",
+    "Installed LibreChat/skills tool refresh, selection/error rendering and exact Timothy robot_pouring.mp4 fixture are not tested.",
+    "Numeric action/frame preservation does not establish physical robot-action fidelity; V2V motion diverges and transfer stylizes fine details. No training benefit or robot-safety claim.",
+    "No concurrent/load-balance, audio/non-edge-transfer, complete usage-ledger reconciliation or whole-customer readiness gate."
+  ],
+  "evidence_files": [
+    {
+      "file": "public-upload-cpu-only-release146.json",
+      "sha256": "9bf4bd79962a40438e534c16cd2f09d6c181bb1289422934bb00711a677bcd10"
+    },
+    {
+      "file": "public-compatibility-release146.json",
+      "sha256": "b64a8b364ec6fd6b98b50b076ddc29b469a279f99b2962adac973ac11abb9739"
+    },
+    {
+      "file": "public-media-release146-cohort1.json",
+      "sha256": "a3e4e297d7f655f0a304c2cdcba692ba77acdcdfd2b51b88649edd3fdf2780bc"
+    },
+    {
+      "file": "public-media-release146-cohort2.json",
+      "sha256": "9533814afbadfc2e025ffee523c6ba471d7dd5159219212648b12c2923056e25"
+    }
+  ],
+  "historical_negatives_preserved": [
+    "public-media-failure-20260917.json",
+    "public-t2i-failure-20260917.json",
+    "public-cold-guard-negative-release145.json"
+  ],
+  "local_verification": "36 runner tests passed; known unrelated pytest cleanup warnings for stale local PostgreSQL sockets retained."
+}

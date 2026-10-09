@@ -24,6 +24,7 @@ from .scientific_artifacts import (
     ArtifactAccess,
     ArtifactCompression,
     ArtifactDirection,
+    ArtifactVerificationError,
     AttemptStatus,
     BeginArtifactUpload,
     CloseStageAttempt,
@@ -81,6 +82,7 @@ class ScientificInputUpload(StrictModel):
     handle: UploadHandle
     content_path: str
     max_content_bytes: int
+    multipart_path: str | None = None
 
 
 class ScientificInputUploadFinalizeRequest(StrictModel):
@@ -134,6 +136,8 @@ class ScientificInputUploadService:
         principal: Principal,
         request: ScientificInputUploadRequest,
         idempotency_key: str,
+        parent_operation_id: UUID | None = None,
+        parent_attempt_id: UUID | None = None,
     ) -> ScientificInputUpload:
         principal.require(Scope.INFERENCE_INVOKE, model_id=request.model_id)
         # An input may be staged for a scientific profile whose runtime is not
@@ -144,7 +148,13 @@ class ScientificInputUploadService:
         except (KeyError, RuntimeError):
             if self.registry is None:
                 raise
-            self.registry.get(request.model_id, require_enabled=False)
+            model = self.registry.get(request.model_id, require_enabled=False)
+            if model.qualification_policy is not None:
+                # Catalog-only discovery never grants storage/admission for a
+                # named qualification route, even with a wildcard model key.
+                self.registry.authorize_principal(
+                    model, principal, requested_model_id=request.model_id, surface="native"
+                )
         operation = await self.store.append_operation(
             principal=principal,
             admission=AdmissionRequest(
@@ -154,6 +164,8 @@ class ScientificInputUploadService:
                 idempotency_key=idempotency_key,
                 request_body=request.canonical_bytes(),
                 request_content_type="application/json",
+                parent_operation_id=parent_operation_id,
+                parent_attempt_id=parent_attempt_id,
             ),
             model_revision=UPLOAD_MODEL_REVISION,
             reserved_gpu_seconds=0,
@@ -222,6 +234,7 @@ class ScientificInputUploadService:
             upload_id=upload_id,
             content_path=content_path(operation.id, upload_id),
             max_content_bytes=self.max_content_bytes,
+            multipart_path=f"/v1/scientific-artifacts/uploads/{upload_id}/multipart",
             handle=UploadHandle(
                 method="PUT",
                 url=result.handle.url,
@@ -288,13 +301,35 @@ class ScientificInputUploadService:
         upload_id: UUID,
     ) -> ArtifactRef:
         operation_uuid = await self._authorize(principal, operation_id, upload_id)
-        artifact = await self.artifacts.finalize_upload(
-            FinalizeArtifactUpload(
-                upload_id=upload_id,
-                operation_id=operation_uuid,
-                tenant_id=principal.tenant_id,
+        try:
+            artifact = await self.artifacts.finalize_upload(
+                FinalizeArtifactUpload(
+                    upload_id=upload_id,
+                    operation_id=operation_uuid,
+                    tenant_id=principal.tenant_id,
+                )
             )
-        )
+        except ArtifactVerificationError:
+            # A persisted write-once object cannot be repaired in place. Mark
+            # this operation failed so it cannot indefinitely occupy the
+            # caller's concurrency slot. Missing bytes/transient store errors
+            # remain retryable, as do inline mismatches rejected before a write.
+            failed = await self.store.complete_scientific_artifact_upload(
+                operation_uuid,
+                tenant_id=principal.tenant_id,
+                principal_id=principal.principal_id,
+                verified=False,
+            )
+            await self.artifacts.close_attempt(
+                CloseStageAttempt(
+                    attempt_id=_identity(operation_uuid, "attempt"),
+                    operation_id=operation_uuid,
+                    tenant_id=principal.tenant_id,
+                    status=AttemptStatus.FAILED,
+                    completed_at=failed.completed_at or datetime.now(UTC),
+                )
+            )
+            raise
         await self.store.complete_scientific_artifact_upload(
             operation_uuid,
             tenant_id=principal.tenant_id,

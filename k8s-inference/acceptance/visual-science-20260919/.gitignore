@@ -1,0 +1,5 @@
+__pycache__/
+fixtures/
+results/
+evidence/*-trivy.json
+evidence/*-sbom.spdx.json

@@ -8,8 +8,8 @@ import copy
 import hashlib
 import json
 import secrets
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, NoReturn, ParamSpec, TypeVar, cast
@@ -49,6 +49,7 @@ from .configuration_models import (
     TerraformApplyReceipt,
 )
 from .crypto import Ciphertext, KeyedHasher, PayloadCipher
+from .metrics_accounting import historical_reporting_connection
 from .model_deployment import DesiredState, ModelDeploymentSpec, spec_digest
 from .model_deployment_records import (
     ModelDeploymentAppendRequest,
@@ -85,6 +86,7 @@ from .models import (
 from .postgres_retry import retry_serialization
 from .postgresql_release import validate_migration_set
 from .runtime import sanitize_error_detail
+from .scientific_cpu import run_scientific_cpu
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -179,6 +181,19 @@ def _decode_configuration_json(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"stored {label} is not an object")
     return cast(dict[str, Any], value)
+
+
+_SCIENTIFIC_ADMISSION_RECOVERY_LOCK = int.from_bytes(
+    hashlib.blake2b(b"fs2:scientific-admission-recovery:v1", digest_size=8).digest(), "big", signed=True
+)
+
+
+def _pending_scientific_admission(record: Any) -> PendingScientificAdmission:
+    return PendingScientificAdmission(
+        operation_id=record["operation_id"],
+        payload=_decode_configuration_json(record["payload"], "scientific admission outbox"),
+        created_at=record["created_at"],
+    )
 
 
 def _upgrade_legacy_model_deployment_status(value: dict[str, Any]) -> dict[str, Any]:
@@ -327,6 +342,7 @@ class PostgresStore:
         self.hasher = hasher
         self.payload_ttl_seconds = payload_ttl_seconds
         self.activation = PostgresActivationStore(pool, owns_pool=False)
+        self._scientific_admission_recovery_active = False
 
     @classmethod
     async def _connect_pool(
@@ -534,8 +550,24 @@ class PostgresStore:
                 f"fs2_reporting_lifecycle_workloads TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
+            await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}")
             await connection.execute(
-                f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}"
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_customer_profiles,fs2_workbenches,"
+                f"fs2_workbench_operations TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE,DELETE ON fs2_workbench_observations TO {quoted_runtime}"
+            )
+            await connection.execute(f"GRANT SELECT,INSERT ON fs2_retired_tenants TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_benchmark_campaigns,fs2_benchmark_trials,"
+                f"fs2_benchmark_attempts TO {quoted_runtime}"
+            )
+            await connection.execute(f"GRANT DELETE ON fs2_inference_users,fs2_storage_policies TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_storage_policies,fs2_storage_buckets,fs2_user_storage,"
+                f"fs2_customer_starter_packs "
+                f"TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_request_telemetry,fs2_request_debug TO {quoted_runtime}"
@@ -574,11 +606,13 @@ class PostgresStore:
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
             )
             # API-key inventory joins runtime-owned token identities to a
-            # narrow, payload-free usage projection. Column grants keep the
-            # runtime role unable to inspect tenant/principal/model facts or
-            # mutate the append-only accounting ledger.
+            # narrow, payload-free usage projection. Customer outcome metrics
+            # additionally need bounded tenant/model/protocol/status/time
+            # dimensions, including after operation detail retention. Principal
+            # and free-form outcome remain private; ledger writes stay denied.
             await connection.execute(
-                f"GRANT SELECT (operation_id,token_id,estimated_gpu_seconds,input_tokens,output_tokens,modality_usage) "
+                f"GRANT SELECT (operation_id,token_id,estimated_gpu_seconds,input_tokens,output_tokens,modality_usage,"
+                f"tenant_id,model_id,protocol,status,occurred_at) "
                 f"ON fs2_usage_facts TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT ON fs2_activation_intents TO {quoted_runtime}")
@@ -608,12 +642,23 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT SELECT (id,token_id,status,reserved_gpu_seconds,payload_expires_at,"
-                f"payload_purged_at,completed_at,outcome,error_code,fencing_token),"
+                f"payload_purged_at,completed_at,outcome,error_code,fencing_token,parent_operation_id),"
                 f"UPDATE (request_key_id,request_nonce,request_ciphertext,response_key_id,response_nonce,"
                 f"response_ciphertext,payload_purged_at,status,completed_at,outcome,error_code,error_detail,"
                 f"worker_id,heartbeat_at,lease_expires_at,fencing_token,reserved_gpu_seconds),"
                 f"DELETE ON fs2_operations TO {quoted_maintenance}"
             )
+            for table in (
+                "fs2_scientific_stage_attempts",
+                "fs2_scientific_stage_commits",
+                "fs2_scientific_run_results",
+                "fs2_scientific_artifact_events",
+                "fs2_scientific_batches",
+                "fs2_scientific_admission_outbox",
+            ):
+                # Retention needs reference identities, never scientific input,
+                # result documents, or authority to remove scientific history.
+                await connection.execute(f"GRANT SELECT (operation_id) ON {table} TO {quoted_maintenance}")
             await connection.execute(
                 f"GRANT SELECT (id,occurred_at),DELETE ON fs2_audit_events TO {quoted_maintenance}"
             )
@@ -740,6 +785,12 @@ class PostgresStore:
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
+                            " AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY["
+                            "'tenant_id','model_id','protocol','status','occurred_at']) AS required(column_name)"
+                            " WHERE NOT has_column_privilege('fs2_serve_runtime',"
+                            "'public.fs2_usage_facts',required.column_name,'SELECT')"
+                            " OR NOT has_column_privilege(current_user,"
+                            "'public.fs2_usage_facts',required.column_name,'SELECT'))"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")
@@ -870,6 +921,8 @@ class PostgresStore:
         result_available = row["response_ciphertext"] is not None and expires > datetime.now(UTC)
         return OperationView(
             id=row["id"],
+            parent_operation_id=row["parent_operation_id"],
+            parent_attempt_id=row["parent_attempt_id"],
             tenant_id=row["tenant_id"],
             principal_id=row["principal_id"],
             token_id=row["token_id"],
@@ -975,6 +1028,11 @@ class PostgresStore:
         fingerprint: str | None = None,
     ) -> TokenView:
         async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended($1,34))", request.tenant_id)
+            if await connection.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM fs2_retired_tenants WHERE tenant_id=$1)", request.tenant_id
+            ):
+                raise ConflictError("tenant has been retired")
             await self._token_lock(connection, token_id)
             try:
                 row = await connection.fetchrow(
@@ -1025,7 +1083,11 @@ class PostgresStore:
 
     async def token_for_verification(self, token_id: UUID) -> tuple[TokenView, str] | None:
         async with self.pool.acquire() as connection:
-            row = await connection.fetchrow("SELECT * FROM fs2_tokens WHERE id=$1", token_id)
+            row = await connection.fetchrow(
+                """SELECT * FROM fs2_tokens t WHERE id=$1
+                AND NOT EXISTS(SELECT 1 FROM fs2_retired_tenants r WHERE r.tenant_id=t.tenant_id)""",
+                token_id,
+            )
             return (self._token(row), cast(str, row["digest"])) if row is not None else None
 
     async def get_token(self, token_id: UUID) -> TokenView:
@@ -1055,7 +1117,8 @@ class PostgresStore:
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
                 """
-                SELECT * FROM fs2_tokens WHERE ($1::text IS NULL OR tenant_id=$1)
+                SELECT * FROM fs2_tokens t WHERE ($1::text IS NULL OR tenant_id=$1)
+                AND NOT EXISTS(SELECT 1 FROM fs2_retired_tenants r WHERE r.tenant_id=t.tenant_id)
                 ORDER BY created_at DESC,id DESC LIMIT $2
                 """,
                 tenant_id,
@@ -1990,6 +2053,13 @@ class PostgresStore:
                 request.actor_id,
                 request.idempotency_key,
             )
+            await self._model_deployment_lock(connection, request.namespace, request.name)
+            if await connection.fetchval(
+                "SELECT retired_at IS NOT NULL FROM fs2_model_deployments WHERE namespace=$1 AND name=$2",
+                request.namespace,
+                request.name,
+            ):
+                raise ConflictError("model deployment is retired; history cannot be reactivated by replay")
             for key_id, key_hmac in candidates:
                 receipt = await connection.fetchrow(
                     """
@@ -2188,6 +2258,7 @@ class PostgresStore:
                  AND revision.name=deployment.name
                  AND revision.revision=deployment.current_revision
                 WHERE deployment.namespace=$1
+                  AND deployment.retired_at IS NULL
                   AND ($2::text IS NULL OR deployment.tenant_id=$2)
                   AND ($3::text IS NULL OR deployment.name>$3)
                 ORDER BY deployment.name
@@ -2220,6 +2291,7 @@ class PostgresStore:
                  AND revision.name=deployment.name
                  AND revision.revision=deployment.current_revision
                 WHERE deployment.namespace=$1 AND deployment.name=$2
+                  AND deployment.retired_at IS NULL
                   AND ($3::text IS NULL OR deployment.tenant_id=$3)
                 """,
                 namespace,
@@ -2227,6 +2299,19 @@ class PostgresStore:
                 tenant_id,
             )
         return self._model_deployment_revision(row) if row is not None else None
+
+    async def model_deployment_retired(self, namespace: str) -> list[ModelDeploymentRevision]:
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """SELECT revision.* FROM fs2_model_deployments deployment
+                JOIN fs2_model_deployment_revisions revision
+                  ON revision.namespace=deployment.namespace AND revision.name=deployment.name
+                 AND revision.revision=deployment.current_revision
+                WHERE deployment.namespace=$1 AND deployment.retired_at IS NOT NULL
+                ORDER BY deployment.name""",
+                namespace,
+            )
+        return [self._model_deployment_revision(row) for row in rows]
 
     async def model_deployment_history(
         self,
@@ -2487,6 +2572,8 @@ class PostgresStore:
                     existing["operation"],
                     existing["request_content_type"],
                     existing["request_hmac"],
+                    existing["parent_operation_id"],
+                    existing["parent_attempt_id"],
                 )
                 incoming = (
                     admission.model_id,
@@ -2495,6 +2582,8 @@ class PostgresStore:
                     admission.operation,
                     admission.request_content_type,
                     request_hmac,
+                    admission.parent_operation_id,
+                    admission.parent_attempt_id,
                 )
                 if comparable != incoming:
                     raise ConflictError("idempotency key is already bound to a different request")
@@ -2522,6 +2611,7 @@ class PostgresStore:
                      AND revision.name=deployment.name
                      AND revision.revision=deployment.current_revision
                     WHERE deployment.namespace=$1 AND deployment.name=$2
+                      AND deployment.retired_at IS NULL
                     FOR UPDATE OF deployment
                     """,
                     dynamic_fence.namespace,
@@ -2559,10 +2649,37 @@ class PostgresStore:
             ):
                 raise BudgetExceededError("GPU-seconds reservation exceeds token budget")
             active = await connection.fetchval(
-                "SELECT count(*) FROM fs2_operations WHERE token_id=$1 AND status IN ('queued','activating','running')",
+                "SELECT count(DISTINCT COALESCE(parent_operation_id,id)) FROM fs2_operations "
+                "WHERE token_id=$1 AND status IN ('queued','activating','running')",
                 principal.token_id,
             )
-            if int(active) >= token["max_concurrency"]:
+            if admission.parent_operation_id is not None:
+                if int(active) > token["max_concurrency"]:
+                    raise ConcurrencyExceededError("token concurrency limit reached")
+                if (
+                    admission.model_id != "cosmos3-nano"
+                    or (admission.protocol, admission.operation) not in {
+                        ("native", "generate-media"), ("scientific-artifact-upload-v1", "upload")
+                    }
+                    or not await self._delegation_active(
+                        connection, parent_operation_id=admission.parent_operation_id,
+                        parent_attempt_id=admission.parent_attempt_id, tenant_id=principal.tenant_id,
+                        principal_id=principal.principal_id, token_id=principal.token_id,
+                    )
+                ):
+                    raise PermissionError("scientific parent delegation is no longer active")
+                if token["tenant_id"] != principal.tenant_id or token["principal_id"] != principal.principal_id:
+                    raise PermissionError("scientific child identity differs from parent policy")
+                if "inference.invoke" not in token["scopes"] or not (
+                    "*" in token["models"] or admission.model_id in token["models"]
+                ):
+                    raise PermissionError("scientific child is outside current token policy")
+                if await connection.fetchval(
+                    "SELECT true FROM fs2_operations WHERE parent_operation_id=$1 "
+                    "AND status IN ('queued','activating','running') LIMIT 1", admission.parent_operation_id,
+                ):
+                    raise ConcurrencyExceededError("scientific parent already has an active child")
+            elif int(active) >= token["max_concurrency"]:
                 raise ConcurrencyExceededError("token concurrency limit reached")
             operation_id = uuid4()
             encrypted = self.cipher.encrypt(
@@ -2576,9 +2693,9 @@ class PostgresStore:
                         (id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
                          idempotency_key,request_hmac_key_id,request_hmac,request_key_id,request_nonce,
                          request_ciphertext,request_content_type,traceparent,deadline_at,payload_expires_at,
-                         max_attempts,reserved_gpu_seconds,dispatch_snapshot)
+                         max_attempts,reserved_gpu_seconds,dispatch_snapshot,parent_operation_id,parent_attempt_id)
                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21::jsonb)
+                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21::jsonb,$22,$23)
                     RETURNING *
                     """,
                     operation_id,
@@ -2602,6 +2719,8 @@ class PostgresStore:
                     max_attempts,
                     reserved_gpu_seconds,
                     dispatch_snapshot,
+                    admission.parent_operation_id,
+                    admission.parent_attempt_id,
                 )
             except asyncpg.UniqueViolationError as exc:
                 raise ConflictError("idempotency key raced with another request") from exc
@@ -2642,6 +2761,66 @@ class PostgresStore:
             return operation
 
     @staticmethod
+    async def _delegation_active(
+        connection: asyncpg.Connection[Any], *, parent_operation_id: UUID,
+        parent_attempt_id: UUID | None, tenant_id: str, principal_id: str, token_id: UUID,
+    ) -> bool:
+        # The only delegated workflow has one stage and one serial shard. Read
+        # its latest persisted attempt, never a caller-supplied fencing claim.
+        return bool(await connection.fetchval(
+            """
+            SELECT true FROM fs2_operations parent
+            JOIN fs2_scientific_batches batch ON batch.operation_id=parent.id
+            JOIN fs2_tokens token ON token.id=parent.token_id
+            WHERE parent.id=$1 AND parent.tenant_id=$3 AND parent.principal_id=$4 AND parent.token_id=$5
+              AND parent.model_id IN ('cosmos3-lerobot-augmentation', 'physical-ai-video-augmentation')
+              AND parent.protocol='scientific-batch-v1'
+              AND parent.parent_operation_id IS NULL AND parent.status IN ('queued','activating','running')
+              AND (parent.deadline_at IS NULL OR parent.deadline_at>clock_timestamp())
+              AND parent.payload_expires_at>clock_timestamp()
+              AND token.revoked_at IS NULL AND (token.expires_at IS NULL OR token.expires_at>clock_timestamp())
+              AND 'inference.invoke'=ANY(token.scopes)
+              AND ('*'=ANY(token.models) OR 'cosmos3-nano'=ANY(token.models))
+              AND batch.status IN ('queued','running') AND NOT batch.cancel_requested
+              AND (
+                (parent.model_id='cosmos3-lerobot-augmentation'
+                  AND batch.state#>>'{stages,0,stage_id}'='augment-dataset')
+                OR (parent.model_id='physical-ai-video-augmentation'
+                  AND batch.state#>>'{stages,0,stage_id}'='augment-videos')
+              )
+              AND batch.state#>>'{stages,0,attempts,-1,attempt_id}'=$2::text
+              AND batch.state#>>'{stages,0,attempts,-1,shard_id}'='main'
+              AND batch.state#>>'{stages,0,attempts,-1,outcome}'='active'
+              AND batch.state#>>'{stages,0,attempts,-1,resource_released}'='false'
+              AND batch.state#>>'{stages,0,attempts,-1,deletion_requested}'='false'
+            """, parent_operation_id, str(parent_attempt_id), tenant_id, principal_id, token_id,
+        ))
+
+    async def _cancel_stale_children(self) -> int:
+        async with self.pool.acquire() as connection:
+            candidates = await connection.fetch(
+                """
+                SELECT child.* FROM fs2_operations child
+                LEFT JOIN fs2_operations parent ON parent.id=child.parent_operation_id
+                LEFT JOIN fs2_scientific_batches batch ON batch.operation_id=parent.id
+                WHERE child.parent_operation_id IS NOT NULL AND child.status IN ('queued','activating','running')
+                  AND (parent.id IS NULL OR parent.status NOT IN ('queued','activating','running')
+                       OR batch.operation_id IS NULL OR batch.status NOT IN ('queued','running')
+                       OR batch.cancel_requested
+                       OR parent.deadline_at<=clock_timestamp() OR parent.payload_expires_at<=clock_timestamp()
+                       OR batch.state#>>'{stages,0,attempts,-1,attempt_id}'
+                            IS DISTINCT FROM child.parent_attempt_id::text
+                       OR batch.state#>>'{stages,0,attempts,-1,outcome}' IS DISTINCT FROM 'active'
+                       OR batch.state#>>'{stages,0,attempts,-1,resource_released}' IS DISTINCT FROM 'false'
+                       OR batch.state#>>'{stages,0,attempts,-1,deletion_requested}' IS DISTINCT FROM 'false')
+                ORDER BY child.accepted_at,child.id LIMIT 100
+                """
+            )
+        for row in candidates:
+            await self.cancel_operation(row["id"], tenant_id=row["tenant_id"], actor="scientific-parent-fence")
+        return len(candidates)
+
+    @staticmethod
     async def _stage_scientific_admission(
         connection: asyncpg.Connection[Any],
         operation: OperationView,
@@ -2665,10 +2844,19 @@ class PostgresStore:
             # Exact request-HMAC replay keeps the original accepted payload,
             # including when a process stopped before batch materialization.
             return
-        payload = factory(operation)
-        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        if len(payload_json.encode("utf-8")) > 4 * 1024 * 1024:
-            raise ConflictError("scientific admission outbox exceeds the durable bound")
+        admission_factory = factory
+
+        def freeze_payload() -> tuple[dict[str, object], str]:
+            payload = admission_factory(operation)
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            if len(encoded.encode("utf-8")) > 4 * 1024 * 1024:
+                raise ConflictError("scientific admission outbox exceeds the durable bound")
+            return payload, encoded
+
+        # The worker performs only CPU work on request-local values. The
+        # transaction, token/activation locks and every database read/write
+        # stay here. Cancellation drains the worker before leaving this scope.
+        payload, payload_json = await run_scientific_cpu(freeze_payload)
         await connection.execute(
             """
             INSERT INTO fs2_scientific_admission_outbox(operation_id,payload)
@@ -2682,7 +2870,9 @@ class PostgresStore:
             "SELECT payload FROM fs2_scientific_admission_outbox WHERE operation_id=$1 FOR SHARE",
             operation.id,
         )
-        if stored is None or _decode_configuration_json(stored, "scientific admission outbox") != payload:
+        if stored is None or await run_scientific_cpu(
+            _decode_configuration_json, stored, "scientific admission outbox"
+        ) != payload:
             raise ConflictError("scientific admission outbox already contains another frozen request")
 
     async def get_scientific_admission(self, operation_id: UUID) -> PendingScientificAdmission | None:
@@ -2693,11 +2883,7 @@ class PostgresStore:
             )
         if record is None:
             return None
-        return PendingScientificAdmission(
-            operation_id=record["operation_id"],
-            payload=_decode_configuration_json(record["payload"], "scientific admission outbox"),
-            created_at=record["created_at"],
-        )
+        return await run_scientific_cpu(_pending_scientific_admission, record)
 
     async def list_scientific_admissions(self, *, limit: int = 100) -> list[PendingScientificAdmission]:
         if not 1 <= limit <= 1000:
@@ -2712,14 +2898,59 @@ class PostgresStore:
                 """,
                 limit,
             )
-        return [
-            PendingScientificAdmission(
-                operation_id=record["operation_id"],
-                payload=_decode_configuration_json(record["payload"], "scientific admission outbox"),
-                created_at=record["created_at"],
+        return await run_scientific_cpu(lambda: [_pending_scientific_admission(record) for record in records])
+
+    @asynccontextmanager
+    async def scientific_admission_recovery(self) -> AsyncIterator[bool]:
+        """One background outbox reader across replicas; normal submit is independent.
+
+        The local flag avoids queueing duplicate workers for a pool connection.
+        PostgreSQL's nonblocking session lock covers the complete recovery page,
+        without a long transaction or a persistent lease/migration. A lost
+        connection automatically releases the lock; exact durable admission
+        checks still arbitrate a race with the original submitting process.
+        """
+        if self._scientific_admission_recovery_active:
+            yield False
+            return
+        self._scientific_admission_recovery_active = True
+        connection = None
+        try:
+            connection = await self.pool.acquire()
+            acquired = bool(
+                await connection.fetchval(
+                    "SELECT pg_try_advisory_lock($1::bigint)", _SCIENTIFIC_ADMISSION_RECOVERY_LOCK,
+                )
             )
-            for record in records
-        ]
+            yield acquired
+        finally:
+            try:
+                if connection is not None:
+                    # asyncpg resets the connection, including advisory locks,
+                    # even if cancellation landed after SQL acquired the lock
+                    # but before Python received the result. Drain that reset
+                    # despite repeated raw Task.cancel() before relinquishing
+                    # this owner scope. No new timeout or pool is introduced.
+                    cleanup = asyncio.create_task(self.pool.release(connection))
+                    cancellation: asyncio.CancelledError | None = None
+                    while True:
+                        try:
+                            await asyncio.shield(cleanup)
+                            break
+                        except asyncio.CancelledError as error:
+                            cancellation = cancellation or error
+                            if cleanup.done():
+                                if not cleanup.cancelled():
+                                    cleanup.exception()
+                                break
+                        except BaseException:
+                            if cancellation is not None:
+                                raise cancellation from None
+                            raise
+                    if cancellation is not None:
+                        raise cancellation
+            finally:
+                self._scientific_admission_recovery_active = False
 
     async def complete_scientific_admission(self, operation_id: UUID) -> None:
         async with self.pool.acquire() as connection:
@@ -2738,6 +2969,31 @@ class PostgresStore:
             if row is None:
                 raise NotFoundError("operation not found")
             return self._operation(row)
+
+    async def list_customer_operations(
+        self, principal: Principal, *, limit: int, before: tuple[datetime, UUID] | None = None
+    ) -> list[OperationView]:
+        if not 1 <= limit <= 201:
+            raise ValueError("operation history page is outside the bound")
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                SELECT * FROM fs2_operations
+                WHERE tenant_id=$1
+                  AND ($2::boolean OR (token_id=$3 AND principal_id=$4))
+                  AND ($5::timestamptz IS NULL OR
+                       (accepted_at,id)<($5::timestamptz,$6::uuid))
+                ORDER BY accepted_at DESC,id DESC LIMIT $7
+                """,
+                principal.tenant_id,
+                "tenant.admin" in principal.scopes,
+                principal.token_id,
+                principal.principal_id,
+                before[0] if before else None,
+                before[1] if before else None,
+                limit,
+            )
+        return [self._operation(row) for row in rows]
 
     async def get_operation_result(self, operation_id: UUID, *, tenant_id: str) -> OperationResult:
         async with self.pool.acquire() as connection:
@@ -2990,10 +3246,13 @@ class PostgresStore:
         )
 
     @retry_serialization
-    async def claim_operation(self, worker_id: str, *, lease_seconds: float) -> ClaimedOperation | None:
+    async def claim_operation(
+        self, worker_id: str, *, lease_seconds: float, stream_operation_id: UUID | None = None,
+    ) -> ClaimedOperation | None:
         # Cleanup is deliberately bounded, while the active-token join below
         # prevents any remaining inactive rows from becoming a queue head.
         await self._expire_inactive_queued_batch()
+        await self._cancel_stale_children()
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
@@ -3003,6 +3262,8 @@ class PostgresStore:
                     AND (t.expires_at IS NULL OR t.expires_at>clock_timestamp())
                 WHERE o.status='queued' AND o.protocol<>'scientific-batch-v1'
                   AND o.protocol<>'scientific-artifact-upload-v1'
+                  AND (($2::uuid IS NULL AND o.protocol<>'speech-stream-v1')
+                       OR (o.id=$2 AND o.protocol='speech-stream-v1'))
                   AND o.available_at<=clock_timestamp()
                   AND o.payload_expires_at>clock_timestamp()
                   AND (o.deadline_at IS NULL OR o.deadline_at>clock_timestamp())
@@ -3010,6 +3271,7 @@ class PostgresStore:
                 ORDER BY o.available_at,o.accepted_at,o.id LIMIT $1
                 """,
                 _CLAIM_BATCH_SIZE,
+                stream_operation_id,
             )
         for candidate in candidates:
             async with self.pool.acquire() as connection, connection.transaction():
@@ -3039,6 +3301,13 @@ class PostgresStore:
                     if inactive is not None:
                         await self._expire_locked_inactive_operation(connection, inactive)
                     continue
+                child = await connection.fetchrow("SELECT * FROM fs2_operations WHERE id=$1", candidate["id"])
+                if child is not None and child["parent_operation_id"] is not None and not await self._delegation_active(
+                    connection, parent_operation_id=child["parent_operation_id"],
+                    parent_attempt_id=child["parent_attempt_id"], tenant_id=child["tenant_id"],
+                    principal_id=child["principal_id"], token_id=child["token_id"],
+                ):
+                    continue
                 row = await connection.fetchrow(
                     """
                     WITH charge AS (
@@ -3046,6 +3315,8 @@ class PostgresStore:
                         FROM fs2_operations WHERE id=$1 AND token_id=$4 AND status='queued'
                           AND protocol<>'scientific-batch-v1'
                           AND protocol<>'scientific-artifact-upload-v1'
+                          AND (($5::uuid IS NULL AND protocol<>'speech-stream-v1')
+                               OR (id=$5 AND protocol='speech-stream-v1'))
                           AND available_at<=clock_timestamp() AND payload_expires_at>clock_timestamp()
                           AND (deadline_at IS NULL OR deadline_at>clock_timestamp())
                           AND attempt<max_attempts FOR UPDATE
@@ -3065,6 +3336,7 @@ class PostgresStore:
                     worker_id,
                     lease_seconds,
                     candidate["token_id"],
+                    stream_operation_id,
                 )
                 if row is None:
                     continue
@@ -3105,8 +3377,9 @@ class PostgresStore:
         *,
         tenant_id: str,
         principal_id: str,
+        verified: bool = True,
     ) -> OperationView:
-        """Atomically terminalize a verified upload operation without a worker lease."""
+        """Terminalize a verified or irrecoverably invalid upload without a worker lease."""
 
         async with self.pool.acquire() as connection, connection.transaction():
             token_id = await connection.fetchval(
@@ -3128,24 +3401,33 @@ class PostgresStore:
                 or current["protocol"] != "scientific-artifact-upload-v1"
             ):
                 raise NotFoundError("scientific artifact upload operation not found")
-            if current["status"] == "succeeded":
+            status = OperationStatus.SUCCEEDED if verified else OperationStatus.FAILED
+            outcome = "artifact_uploaded" if verified else "artifact_verification_failed"
+            if current["status"] == status.value:
                 return self._operation(current, reused=True)
             if current["status"] != "queued":
                 raise ConflictError("scientific artifact upload operation is not writable")
             row = await connection.fetchrow(
                 """
                 UPDATE fs2_operations
-                SET status='succeeded',completed_at=clock_timestamp(),outcome='artifact_uploaded',
-                    semantic_outcome='verified',http_status=201,reserved_gpu_seconds=0,
+                SET status=$2,completed_at=clock_timestamp(),outcome=$3,
+                    semantic_outcome=$4,http_status=$5,reserved_gpu_seconds=0,
+                    error_code=$6,error_detail=$7,
                     worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL
                 WHERE id=$1 AND status='queued' AND protocol='scientific-artifact-upload-v1'
                 RETURNING *
                 """,
                 operation_id,
+                status.value,
+                outcome,
+                "verified" if verified else "failed",
+                201 if verified else 422,
+                None if verified else outcome,
+                None if verified else "Stored bytes do not match the upload; start a new upload.",
             )
             if row is None:
                 raise ConflictError("scientific artifact upload operation changed")
-            await self._event(connection, operation_id, "artifact_uploaded", OperationStatus.SUCCEEDED, row["attempt"])
+            await self._event(connection, operation_id, outcome, status, row["attempt"])
             await self._audit(
                 connection,
                 actor=principal_id,
@@ -3154,7 +3436,7 @@ class PostgresStore:
                 action="scientific_artifact.upload.complete",
                 target_type="operation",
                 target_id=str(operation_id),
-                outcome="succeeded",
+                outcome=status.value,
             )
             return self._operation(row)
 
@@ -3180,6 +3462,19 @@ class PostgresStore:
 
     @retry_serialization
     async def heartbeat(self, operation_id: UUID, *, worker_id: str, fencing_token: int, lease_seconds: float) -> None:
+        async with self.pool.acquire() as connection:
+            child = await connection.fetchrow("SELECT * FROM fs2_operations WHERE id=$1", operation_id)
+            stale_parent = (
+                child is not None and child["parent_operation_id"] is not None and not await self._delegation_active(
+                    connection, parent_operation_id=child["parent_operation_id"],
+                    parent_attempt_id=child["parent_attempt_id"], tenant_id=child["tenant_id"],
+                    principal_id=child["principal_id"], token_id=child["token_id"],
+                )
+            )
+        if stale_parent:
+            assert child is not None
+            await self.cancel_operation(operation_id, tenant_id=child["tenant_id"], actor="scientific-parent-fence")
+            raise StaleLeaseError("scientific parent delegation is no longer active")
         async with self.pool.acquire() as connection, connection.transaction():
             result = await connection.execute(
                 """
@@ -3292,6 +3587,12 @@ class PostgresStore:
                 )
                 if existing is None:
                     raise StaleLeaseError("operation lease is stale")
+                if existing["parent_operation_id"] is not None and not await self._delegation_active(
+                    connection, parent_operation_id=existing["parent_operation_id"],
+                    parent_attempt_id=existing["parent_attempt_id"], tenant_id=existing["tenant_id"],
+                    principal_id=existing["principal_id"], token_id=existing["token_id"],
+                ):
+                    raise StaleLeaseError("scientific parent delegation is no longer active")
                 encrypted = None
                 response_hmac_key_id = None
                 response_hmac = None
@@ -3554,12 +3855,22 @@ class PostgresStore:
 
     @retry_serialization
     async def purge_expired_payloads(self) -> int:
+        # Active scientific owners retain their request across long native runs,
+        # queue delays and infrastructure retries. Their frozen batch budget,
+        # not the generic short request-payload TTL, controls execution. Recheck
+        # under the operation lock; terminal scientific payloads still expire.
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
                 SELECT id,token_id FROM fs2_operations
                 WHERE payload_expires_at<=clock_timestamp()
                   AND payload_purged_at IS NULL
+                  AND (status NOT IN ('queued','activating','running') OR (
+                    NOT EXISTS (SELECT 1 FROM fs2_scientific_batches b
+                                WHERE b.operation_id=fs2_operations.id)
+                    AND NOT EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox a
+                                    WHERE a.operation_id=fs2_operations.id)
+                  ))
                 ORDER BY payload_expires_at,id LIMIT 100
                 """
             )
@@ -3572,6 +3883,12 @@ class PostgresStore:
                     """
                     SELECT id,token_id,status,reserved_gpu_seconds FROM fs2_operations
                     WHERE id=$1 AND payload_expires_at<=clock_timestamp() AND payload_purged_at IS NULL
+                      AND (status NOT IN ('queued','activating','running') OR (
+                        NOT EXISTS (SELECT 1 FROM fs2_scientific_batches b
+                                    WHERE b.operation_id=fs2_operations.id)
+                        AND NOT EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox a
+                                        WHERE a.operation_id=fs2_operations.id)
+                      ))
                     FOR UPDATE SKIP LOCKED
                     """,
                     candidate["id"],
@@ -3608,6 +3925,7 @@ class PostgresStore:
     async def expire_deadline_operations(self) -> int:
         """Boundedly terminalize queued deadlines using token-before-operation locking."""
 
+        await self._cancel_stale_children()
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
@@ -3737,14 +4055,28 @@ class PostgresStore:
         # Keep operation deletion and token deletion in separate transactions.
         # No transaction may lock an operation and then a token: all state
         # transitions that need both use token -> operation ordering.
-        async with self.pool.acquire() as connection, connection.transaction():
+        # Scientific history has a separate retention lifecycle. Preserve its
+        # owning operation instead of cascading or deleting provenance records.
+        # Serializable isolation plus retry_serialization also covers a new
+        # reference committed concurrently with candidate selection.
+        async with self.pool.acquire() as connection, connection.transaction(isolation="serializable"):
             operations = await connection.fetch(
                 """
                 WITH candidates AS (
-                    SELECT id FROM fs2_operations
-                    WHERE status IN ('succeeded','failed','cancelled','preempted','expired')
-                      AND completed_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY completed_at,id FOR UPDATE SKIP LOCKED LIMIT 100
+                    SELECT o.id FROM fs2_operations o
+                    WHERE o.status IN ('succeeded','failed','cancelled','preempted','expired')
+                      AND o.completed_at < clock_timestamp()-make_interval(secs=>$1::double precision)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_stage_attempts s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_stage_commits s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_run_results s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_artifact_events s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_batches s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox s WHERE s.operation_id=o.id)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_operations child WHERE child.parent_operation_id=o.id
+                            AND child.status IN ('queued','activating','running')
+                      )
+                    ORDER BY o.completed_at,o.id FOR UPDATE OF o SKIP LOCKED LIMIT 100
                 )
                 DELETE FROM fs2_operations o USING candidates c WHERE o.id=c.id RETURNING o.id
                 """,
@@ -3838,8 +4170,14 @@ class PostgresStore:
             return result
 
     async def queue_counts(self) -> dict[tuple[str, str], int]:
+        """Model-runtime demand; CPU uploads retain their separate outcome ledger."""
         async with self.pool.acquire() as connection:
-            rows = await connection.fetch("SELECT model_id,status,count(*) AS count FROM fs2_operations GROUP BY 1,2")
+            rows = await connection.fetch(
+                """
+                SELECT model_id,status,count(*) AS count FROM fs2_operations
+                WHERE protocol<>'scientific-artifact-upload-v1' GROUP BY 1,2
+                """
+            )
             return {(row["model_id"], str(row["status"])): row["count"] for row in rows}
 
     async def oldest_queue_age(self) -> dict[str, float]:
@@ -3854,7 +4192,7 @@ class PostgresStore:
             return {row["model_id"]: float(row["age"]) for row in rows}
 
     async def terminal_accounting(self) -> list[TerminalAccounting]:
-        async with self.pool.acquire() as connection:
+        async with historical_reporting_connection(self.pool) as connection:
             rows = await connection.fetch(
                 """
                 SELECT model_id,protocol,outcome,operations,estimated_gpu_seconds,
@@ -3927,6 +4265,7 @@ class PostgresStore:
                        COALESCE(sum(estimated_gpu_seconds),0)::double precision AS estimated_gpu_seconds,
                        COALESCE(sum(latency_seconds),0)::double precision AS duration_seconds,
                        COALESCE(sum(COALESCE(cold_start_seconds,0)),0)::double precision AS cold_start_seconds,
+                       count(cold_start_seconds)::bigint AS accepted_to_ready_operations,
                        COALESCE(sum(input_tokens),0)::bigint AS input_tokens,
                        COALESCE(sum(output_tokens),0)::bigint AS output_tokens,
                        count(*) FILTER (

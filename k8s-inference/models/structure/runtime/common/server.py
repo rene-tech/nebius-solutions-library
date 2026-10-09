@@ -20,6 +20,34 @@ MAX_REQUEST_BYTES = int(os.environ.get("FS2_MAX_REQUEST_BYTES", str(16 * 1024 * 
 HOST = os.environ.get("FS2_HOST", "0.0.0.0")
 PORT = int(os.environ.get("FS2_PORT", "8080"))
 MODEL = os.environ.get("FS2_MODEL", "")
+RESPONSE_IDENTITY_VERSION = "http-open-runtime-v1"
+
+
+def response_identity(headers: Any) -> list[tuple[str, str]]:
+    """Echo the gateway attempt, bound to this Pod's downward-API UID.
+
+    Optional for existing non-Kubernetes users. Identity remains unavailable
+    when headers or the Pod UID are absent/ambiguous; inference is unchanged.
+    The gateway independently verifies the hint against Kubernetes records.
+    """
+    operations = headers.get_all("X-FS2-Operation-Id", [])
+    requests = headers.get_all("X-Request-Id", [])
+    if len(operations) != 1 or len(requests) != 1:
+        return []
+    try:
+        pod_uid = str(uuid.UUID(os.environ.get("FS2_RUNTIME_POD_UID", "")))
+        operation = str(uuid.UUID(operations[0]))
+        prefix, attempt = requests[0].rsplit(":", 1)
+        if (prefix != operation or not attempt.isascii() or not attempt.isdigit()
+                or not 1 <= len(attempt) <= 9 or not 1 <= int(attempt) <= 999_999_999):
+            return []
+    except (ValueError, AttributeError):
+        return []
+    return [
+        ("X-FS2-Runtime-Pod-Uid", pod_uid),
+        ("X-FS2-Runtime-Operation-Id", operation),
+        ("X-FS2-Runtime-Attempt", attempt),
+    ]
 
 
 class ClientError(ValueError):
@@ -175,6 +203,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Backend-Id", STATE.backend_id)
+        for name, value in response_identity(self.headers):
+            self.send_header(name, value)
         if request_id:
             self.send_header("X-Request-Id", request_id)
         self.end_headers()

@@ -150,6 +150,28 @@ async def test_operator_session_is_domain_separated_opaque_and_replay_fenced(cip
 
 
 @pytest.mark.asyncio
+async def test_customer_keys_default_to_no_expiry_even_years_later(cipher, hasher, monkeypatch) -> None:
+    store = MemoryStore(cipher, hasher)
+    tokens = TokenService(store, PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32}))
+    request = token_request()
+    assert request.expires_at is None
+    issued = await tokens.issue(request, created_by="operator-a")
+    assert issued.expires_at is None
+    future = datetime.now(UTC) + timedelta(days=3650)
+
+    class FutureClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return future.astimezone(tz)
+
+    monkeypatch.setattr("fs2_serve.auth.datetime", FutureClock)
+    assert (await tokens.verify(issued.token)).token_id == issued.id
+    await tokens.revoke(issued.id, actor="operator-a")
+    with pytest.raises(AuthenticationError):
+        await tokens.verify(issued.token)
+
+
+@pytest.mark.asyncio
 async def test_key_fingerprint_last_use_rate_window_and_atomic_rotation(cipher, hasher) -> None:
     store = MemoryStore(cipher, hasher)
     tokens = TokenService(store, PepperRing(active_key_id="pepper-v1", keys={"pepper-v1": b"p" * 32}))

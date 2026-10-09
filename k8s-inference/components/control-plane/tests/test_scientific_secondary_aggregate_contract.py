@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import PurePosixPath
 
-from conftest import CATALOG_ROOT, SOLUTION_ROOT
+from conftest import CATALOG_ROOT, SCIENTIFIC_FLEET, SOLUTION_ROOT
 
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
@@ -57,7 +57,7 @@ SECONDARY_ACTIVE = {
         "qualified_at": "2026-09-05T00:12:44Z",
     },
     "openfold3-openbind": {
-        "digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+        "digest": "sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
         "variant": "upstream-openbind-v0-5-0",
         "namespace": "fs2-models",
         "stages": ("data-pipeline", "inference"),
@@ -69,9 +69,9 @@ SECONDARY_ACTIVE = {
         "cache_stages": ("inference",),
         "uid": 10001,
         "gid": 10001,
-        "receipt": "2590708d8932ddef795957a91215dd20ca7e8f8666b4aa9d50e782b212029d09",
-        "evidence": "openfold3-openbind-h100-semantic-qualification.json",
-        "qualified_at": "2026-09-05T00:12:15Z",
+        "receipt": "99e1e2672cb010b285d6031e42dd1e7fa903c10e532b942dc9c1444b1ccc62e6",
+        "evidence": "acceptance/openfold3-inline-20260918/qualification.json",
+        "qualified_at": "2026-09-18T22:33:58.366462+00:00",
     },
     "alphafold3": {
         "digest": "sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
@@ -92,14 +92,7 @@ SECONDARY_ACTIVE = {
     },
 }
 
-COMPLETE_FLEET = {
-    "boltzgen",
-    "proteina-complexa",
-    "bindcraft",
-    "mosaic",
-    "rfdiffusion",
-    *SECONDARY_ACTIVE,
-}
+COMPLETE_FLEET = SCIENTIFIC_FLEET
 
 
 def _documents() -> tuple[dict[str, object], dict[str, object]]:
@@ -135,15 +128,24 @@ def test_complete_fleet_has_consistent_public_acceptance_evidence_state() -> Non
         assert profile["semantic_validation"]["state"] == profile["state"]
         qualification = profile["qualification"]
         assert qualification["h100_semantic_receipt_sha256"] == expected["receipt"]
-        assert qualification["execution_map_sha256"] == profiles["boltzgen"]["qualification"]["execution_map_sha256"]
+        # LeRobot was added separately; the declared preserved-row baseline is
+        # the evidence scope, not whichever other models happen to be current.
+        baseline_digest = qualification["execution_map_sha256"]
+        baseline_ids = execution_document["qualification_baselines"][baseline_digest]
+        assert model_id in baseline_ids
+        baseline = {"schema": execution_document["schema"], "models": [executions[key] for key in baseline_ids]}
+        assert (
+            baseline_digest
+            == hashlib.sha256(json.dumps(baseline, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        )
+        if model_id == "openfold3-openbind":
+            assert profile["state"] == "active"
         if profile["state"] == "active":
             assert qualification["public_completion_receipt_sha256"] is None
             assert qualification["scheduler_eligibility_receipt_sha256"] is None
             assert qualification["qualified_at"] == expected["qualified_at"]
         else:
-            assert re.fullmatch(
-                r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"]
-            )
+            assert re.fullmatch(r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"])
             assert re.fullmatch(
                 r"[a-f0-9]{64}",
                 qualification["scheduler_eligibility_receipt_sha256"],
@@ -155,6 +157,8 @@ def test_complete_fleet_has_consistent_public_acceptance_evidence_state() -> Non
             / evidence_directory
             / expected["evidence"]
         )
+        if model_id == "openfold3-openbind":
+            evidence = SOLUTION_ROOT / expected["evidence"]
         assert hashlib.sha256(evidence.read_bytes()).hexdigest() == expected["receipt"]
         assert identity["runtime_image_digest"] == expected["digest"]
         assert re.fullmatch(r"[a-f0-9]{64}", identity["artifact_manifest_digest"])

@@ -1,0 +1,1343 @@
+{
+  "repetition_1": {
+    "jobs": 60,
+    "statuses": {
+      "completed": 60
+    },
+    "first_created_at": "2026-09-16T18:24:52.368384+00:00",
+    "last_completed_at": "2026-09-16T18:32:01.315621+00:00",
+    "logical_calls": 300,
+    "provider_retries": 7,
+    "provider_attempts": 307,
+    "successful_response_usage": {
+      "prompt_tokens": 1530857,
+      "completion_tokens": 70239,
+      "total_tokens": 1601096
+    },
+    "mean_reported_queue_ms": 35942.86882333332,
+    "mean_logical_call_latency_ms": 50115.71363666665,
+    "max_logical_call_latency_ms": 375576.612,
+    "classifier": {
+      "assessments": 180,
+      "completed": 180,
+      "truncated": 0,
+      "errors": 0,
+      "max_input_tokens": 3925
+    },
+    "recovered_calls": [
+      {
+        "run_id": "3540fb0c-09c9-4f56-96d9-3ed2e2210843",
+        "model": "google/gemma-3-27b-it",
+        "telemetry": {
+          "retries": 1,
+          "queue_ms": 188038.549,
+          "latency_ms": 375576.612,
+          "request_id": "856b2996-1a7d-4788-8d3f-e72fe73d83de",
+          "retry_codes": [
+            "transport_error"
+          ],
+          "token_parameter": "max_completion_tokens"
+        }
+      },
+      {
+        "run_id": "9238b2fa-65f6-49c0-9370-08d8dce59589",
+        "model": "google/gemma-3-27b-it",
+        "telemetry": {
+          "retries": 1,
+          "queue_ms": 71555.893,
+          "latency_ms": 257232.758,
+          "request_id": "d1658d21-0942-47f7-b7aa-8fdfa75b169b",
+          "retry_codes": [
+            "transport_error"
+          ],
+          "token_parameter": "max_completion_tokens"
+        }
+      },
+      {
+        "run_id": "1808f43a-b843-4ab1-9155-f0049c1684d8",
+        "model": "google/gemma-3-27b-it",
+        "telemetry": {
+          "retries": 1,
+          "queue_ms": 12068.546,
+          "latency_ms": 199755.732,
+          "request_id": "3c25d772-7c98-4d3a-90ed-fe0638bb7f7e",
+          "retry_codes": [
+            "transport_error"
+          ],
+          "token_parameter": "max_completion_tokens"
+        }
+      },
+      {
+        "run_id": "1f3be22e-137e-494b-b94f-a281c97cb19c",
+        "model": "google/gemma-3-27b-it",
+        "telemetry": {
+          "retries": 1,
+          "queue_ms": 126126.495,
+          "latency_ms": 362468.045,
+          "request_id": "3388d39e-e964-466a-9d6f-533bdd29212a",
+          "retry_codes": [
+            "transport_error"
+          ],
+          "token_parameter": "max_completion_tokens"
+        }
+      },
+      {
+        "run_id": "363292cb-a5b3-4667-866e-60bcdbfa9fe7",
+        "model": "google/gemma-3-27b-it",
+        "telemetry": {
+          "retries": 1,
+          "queue_ms": 124350.797,
+          "latency_ms": 357519.267,
+          "request_id": "36b962b2-ce99-43b6-9242-dda936ace43a",
+          "retry_codes": [
+            "transport_error"
+          ],
+          "token_parameter": "max_completion_tokens"
+        }
+      },
+      {
+        "run_id": "9c9f4b27-c969-4280-b3db-68a6b4c95091",
+        "model": "google/gemma-3-27b-it",
+        "telemetry": {
+          "retries": 1,
+          "queue_ms": 138760.804,
+          "latency_ms": 362598.659,
+          "request_id": "38f4dfe2-c8e2-4a0c-8824-9eb48f79264e",
+          "retry_codes": [
+            "transport_error"
+          ],
+          "token_parameter": "max_completion_tokens"
+        }
+      },
+      {
+        "run_id": "c30c328e-f7ec-459e-9491-f9ca844b6785",
+        "model": "google/gemma-3-27b-it",
+        "telemetry": {
+          "retries": 1,
+          "queue_ms": 168481.241,
+          "latency_ms": 362361.821,
+          "request_id": "09bf748f-fcee-4e1d-95b0-ef4b53cd0cd4",
+          "retry_codes": [
+            "transport_error"
+          ],
+          "token_parameter": "max_completion_tokens"
+        }
+      }
+    ],
+    "per_run": [
+      {
+        "id": "3540fb0c-09c9-4f56-96d9-3ed2e2210843",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:52.368384+00:00",
+        "completed_at": "2026-09-16T18:31:43.758592+00:00",
+        "messages": 5,
+        "server_span_seconds": 411.390208,
+        "server_span_microseconds": 411390208
+      },
+      {
+        "id": "77827e96-90ce-410e-bd26-5dcc87b8506d",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:52.368384+00:00",
+        "completed_at": "2026-09-16T18:32:01.315621+00:00",
+        "messages": 5,
+        "server_span_seconds": 428.947237,
+        "server_span_microseconds": 428947237
+      },
+      {
+        "id": "8fdf847c-a3f2-43f9-b657-6f78cfea6115",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:52.368384+00:00",
+        "completed_at": "2026-09-16T18:27:31.214743+00:00",
+        "messages": 5,
+        "server_span_seconds": 158.846359,
+        "server_span_microseconds": 158846359
+      },
+      {
+        "id": "979ad7ce-3c78-40a4-9ff4-65549dcc18dd",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:52.368384+00:00",
+        "completed_at": "2026-09-16T18:27:34.284959+00:00",
+        "messages": 5,
+        "server_span_seconds": 161.916575,
+        "server_span_microseconds": 161916575
+      },
+      {
+        "id": "bc871a4f-0dcc-4d4c-b7e0-f1be7159f46c",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:52.368384+00:00",
+        "completed_at": "2026-09-16T18:29:27.807860+00:00",
+        "messages": 5,
+        "server_span_seconds": 275.439476,
+        "server_span_microseconds": 275439476
+      },
+      {
+        "id": "bd1b2653-59ac-47fd-b043-d704c14f4f1b",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:52.368384+00:00",
+        "completed_at": "2026-09-16T18:27:34.414189+00:00",
+        "messages": 5,
+        "server_span_seconds": 162.045805,
+        "server_span_microseconds": 162045805
+      },
+      {
+        "id": "194a1635-ab73-4a92-94bd-6efae2a50aec",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:52.717466+00:00",
+        "completed_at": "2026-09-16T18:29:46.080310+00:00",
+        "messages": 5,
+        "server_span_seconds": 293.362844,
+        "server_span_microseconds": 293362844
+      },
+      {
+        "id": "59934bb3-b39e-487b-a7e3-83190980a2ea",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:52.717466+00:00",
+        "completed_at": "2026-09-16T18:29:32.446545+00:00",
+        "messages": 5,
+        "server_span_seconds": 279.729079,
+        "server_span_microseconds": 279729079
+      },
+      {
+        "id": "63b75a97-dc71-4770-84f0-aa1d312ab071",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:52.717466+00:00",
+        "completed_at": "2026-09-16T18:28:56.908494+00:00",
+        "messages": 5,
+        "server_span_seconds": 244.191028,
+        "server_span_microseconds": 244191028
+      },
+      {
+        "id": "817f0ec1-da5e-4e21-89ab-15b8a2228add",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:52.717466+00:00",
+        "completed_at": "2026-09-16T18:29:27.813057+00:00",
+        "messages": 5,
+        "server_span_seconds": 275.095591,
+        "server_span_microseconds": 275095591
+      },
+      {
+        "id": "85689550-2f03-42e8-b23e-561d1a96a641",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:52.717466+00:00",
+        "completed_at": "2026-09-16T18:29:37.207309+00:00",
+        "messages": 5,
+        "server_span_seconds": 284.489843,
+        "server_span_microseconds": 284489843
+      },
+      {
+        "id": "9238b2fa-65f6-49c0-9370-08d8dce59589",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:52.717466+00:00",
+        "completed_at": "2026-09-16T18:29:41.692777+00:00",
+        "messages": 5,
+        "server_span_seconds": 288.975311,
+        "server_span_microseconds": 288975311
+      },
+      {
+        "id": "1808f43a-b843-4ab1-9155-f0049c1684d8",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:52.592926+00:00",
+        "completed_at": "2026-09-16T18:28:48.478851+00:00",
+        "messages": 5,
+        "server_span_seconds": 235.885925,
+        "server_span_microseconds": 235885925
+      },
+      {
+        "id": "2ba46c49-104f-4779-aa03-922d353a3177",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:52.592926+00:00",
+        "completed_at": "2026-09-16T18:28:45.658972+00:00",
+        "messages": 5,
+        "server_span_seconds": 233.066046,
+        "server_span_microseconds": 233066046
+      },
+      {
+        "id": "a0c5627e-301d-4707-a1e1-cd3ee2d9561a",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:52.592926+00:00",
+        "completed_at": "2026-09-16T18:28:49.282934+00:00",
+        "messages": 5,
+        "server_span_seconds": 236.690008,
+        "server_span_microseconds": 236690008
+      },
+      {
+        "id": "b90927bb-c252-495c-8b82-358e69a9179c",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:52.592926+00:00",
+        "completed_at": "2026-09-16T18:29:29.086379+00:00",
+        "messages": 5,
+        "server_span_seconds": 276.493453,
+        "server_span_microseconds": 276493453
+      },
+      {
+        "id": "d3694900-c98a-4f5e-a1d8-71d3db077762",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:52.592926+00:00",
+        "completed_at": "2026-09-16T18:28:36.038259+00:00",
+        "messages": 5,
+        "server_span_seconds": 223.445333,
+        "server_span_microseconds": 223445333
+      },
+      {
+        "id": "e657ea06-76f7-4b3e-a488-5fafddb66df9",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:52.592926+00:00",
+        "completed_at": "2026-09-16T18:28:49.305591+00:00",
+        "messages": 5,
+        "server_span_seconds": 236.712665,
+        "server_span_microseconds": 236712665
+      },
+      {
+        "id": "1bab4869-814b-4a2c-bc69-dbcbdd0978e0",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:54.453435+00:00",
+        "completed_at": "2026-09-16T18:31:28.698984+00:00",
+        "messages": 5,
+        "server_span_seconds": 394.245549,
+        "server_span_microseconds": 394245549
+      },
+      {
+        "id": "1f3be22e-137e-494b-b94f-a281c97cb19c",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:54.453435+00:00",
+        "completed_at": "2026-09-16T18:31:33.713013+00:00",
+        "messages": 5,
+        "server_span_seconds": 399.259578,
+        "server_span_microseconds": 399259578
+      },
+      {
+        "id": "363292cb-a5b3-4667-866e-60bcdbfa9fe7",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:54.453435+00:00",
+        "completed_at": "2026-09-16T18:31:36.657298+00:00",
+        "messages": 5,
+        "server_span_seconds": 402.203863,
+        "server_span_microseconds": 402203863
+      },
+      {
+        "id": "42ed5498-6956-4b75-ba0f-a81917018392",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:54.453435+00:00",
+        "completed_at": "2026-09-16T18:26:40.908844+00:00",
+        "messages": 5,
+        "server_span_seconds": 106.455409,
+        "server_span_microseconds": 106455409
+      },
+      {
+        "id": "9c9f4b27-c969-4280-b3db-68a6b4c95091",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:54.453435+00:00",
+        "completed_at": "2026-09-16T18:31:51.086203+00:00",
+        "messages": 5,
+        "server_span_seconds": 416.632768,
+        "server_span_microseconds": 416632768
+      },
+      {
+        "id": "c30c328e-f7ec-459e-9491-f9ca844b6785",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:54.453435+00:00",
+        "completed_at": "2026-09-16T18:31:31.889284+00:00",
+        "messages": 5,
+        "server_span_seconds": 397.435849,
+        "server_span_microseconds": 397435849
+      },
+      {
+        "id": "03dc82b8-768f-454b-93ce-2abe86010371",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:53.038051+00:00",
+        "completed_at": "2026-09-16T18:30:03.083630+00:00",
+        "messages": 5,
+        "server_span_seconds": 310.045579,
+        "server_span_microseconds": 310045579
+      },
+      {
+        "id": "c63f0c92-1dc6-43e7-9b4e-f451f2e3e93d",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:53.038051+00:00",
+        "completed_at": "2026-09-16T18:30:00.125224+00:00",
+        "messages": 5,
+        "server_span_seconds": 307.087173,
+        "server_span_microseconds": 307087173
+      },
+      {
+        "id": "e80e91ca-b837-4cf5-a2c9-f57f35da9a95",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:53.038051+00:00",
+        "completed_at": "2026-09-16T18:29:54.575239+00:00",
+        "messages": 5,
+        "server_span_seconds": 301.537188,
+        "server_span_microseconds": 301537188
+      },
+      {
+        "id": "e9cae97d-faaf-4ce8-aef0-b0cee0dd08ca",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:53.038051+00:00",
+        "completed_at": "2026-09-16T18:30:08.475280+00:00",
+        "messages": 5,
+        "server_span_seconds": 315.437229,
+        "server_span_microseconds": 315437229
+      },
+      {
+        "id": "f4b82592-c53d-4d8a-b1aa-b64ddfcd9eb0",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:53.038051+00:00",
+        "completed_at": "2026-09-16T18:28:56.765537+00:00",
+        "messages": 5,
+        "server_span_seconds": 243.727486,
+        "server_span_microseconds": 243727486
+      },
+      {
+        "id": "fe499cac-310e-4d80-bd0e-c8632556aafa",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:53.038051+00:00",
+        "completed_at": "2026-09-16T18:29:53.620667+00:00",
+        "messages": 5,
+        "server_span_seconds": 300.582616,
+        "server_span_microseconds": 300582616
+      },
+      {
+        "id": "21707967-3a0c-4909-8938-58d5d4ff1c66",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:53.298948+00:00",
+        "completed_at": "2026-09-16T18:30:08.542726+00:00",
+        "messages": 5,
+        "server_span_seconds": 315.243778,
+        "server_span_microseconds": 315243778
+      },
+      {
+        "id": "b9779261-95ac-4172-8174-e6ee653ec768",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:53.298948+00:00",
+        "completed_at": "2026-09-16T18:25:39.116469+00:00",
+        "messages": 5,
+        "server_span_seconds": 45.817521,
+        "server_span_microseconds": 45817521
+      },
+      {
+        "id": "dab5ad7b-d497-4d14-b206-7d74494da82e",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:53.298948+00:00",
+        "completed_at": "2026-09-16T18:30:37.454333+00:00",
+        "messages": 5,
+        "server_span_seconds": 344.155385,
+        "server_span_microseconds": 344155385
+      },
+      {
+        "id": "df2a89a2-7326-41a4-bee4-f4a6bb705971",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:53.298948+00:00",
+        "completed_at": "2026-09-16T18:30:29.442945+00:00",
+        "messages": 5,
+        "server_span_seconds": 336.143997,
+        "server_span_microseconds": 336143997
+      },
+      {
+        "id": "eba166cd-d659-4652-9036-5d855f48e0ff",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:53.298948+00:00",
+        "completed_at": "2026-09-16T18:30:22.350840+00:00",
+        "messages": 5,
+        "server_span_seconds": 329.051892,
+        "server_span_microseconds": 329051892
+      },
+      {
+        "id": "f3d9a259-1145-4167-be86-a0558b9f2c1e",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:53.298948+00:00",
+        "completed_at": "2026-09-16T18:30:14.699702+00:00",
+        "messages": 5,
+        "server_span_seconds": 321.400754,
+        "server_span_microseconds": 321400754
+      },
+      {
+        "id": "180509e6-b672-40da-a469-a662a5ad1c90",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:53.237300+00:00",
+        "completed_at": "2026-09-16T18:30:57.398147+00:00",
+        "messages": 5,
+        "server_span_seconds": 364.160847,
+        "server_span_microseconds": 364160847
+      },
+      {
+        "id": "27622a0b-b5e3-430c-87af-f8a63bb20cf1",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:53.237300+00:00",
+        "completed_at": "2026-09-16T18:30:50.858122+00:00",
+        "messages": 5,
+        "server_span_seconds": 357.620822,
+        "server_span_microseconds": 357620822
+      },
+      {
+        "id": "47463289-11a6-4509-a06f-2702d51a78af",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:53.237300+00:00",
+        "completed_at": "2026-09-16T18:30:55.079443+00:00",
+        "messages": 5,
+        "server_span_seconds": 361.842143,
+        "server_span_microseconds": 361842143
+      },
+      {
+        "id": "91229eb6-04a6-4a40-8724-0907eaa555e1",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:53.237300+00:00",
+        "completed_at": "2026-09-16T18:31:02.027580+00:00",
+        "messages": 5,
+        "server_span_seconds": 368.79028,
+        "server_span_microseconds": 368790280
+      },
+      {
+        "id": "ad5d6ec4-1a79-473c-b741-a82fbc5f1401",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:53.237300+00:00",
+        "completed_at": "2026-09-16T18:31:00.122345+00:00",
+        "messages": 5,
+        "server_span_seconds": 366.885045,
+        "server_span_microseconds": 366885045
+      },
+      {
+        "id": "e69c5bb3-38c5-47c0-a99e-826c5479e5e0",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:53.237300+00:00",
+        "completed_at": "2026-09-16T18:30:47.174937+00:00",
+        "messages": 5,
+        "server_span_seconds": 353.937637,
+        "server_span_microseconds": 353937637
+      },
+      {
+        "id": "3ba7b145-f77d-40b1-8b69-ace7e0d7bf9f",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:55.203845+00:00",
+        "completed_at": "2026-09-16T18:31:12.121941+00:00",
+        "messages": 5,
+        "server_span_seconds": 376.918096,
+        "server_span_microseconds": 376918096
+      },
+      {
+        "id": "3def33c7-514c-4504-a21a-47337b1c7a97",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:55.203845+00:00",
+        "completed_at": "2026-09-16T18:31:08.846554+00:00",
+        "messages": 5,
+        "server_span_seconds": 373.642709,
+        "server_span_microseconds": 373642709
+      },
+      {
+        "id": "6b58960e-bea0-4e98-8922-b63596ebad5a",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:55.203845+00:00",
+        "completed_at": "2026-09-16T18:31:21.733244+00:00",
+        "messages": 5,
+        "server_span_seconds": 386.529399,
+        "server_span_microseconds": 386529399
+      },
+      {
+        "id": "88cdc256-3aff-4850-94a5-328520d3657f",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:55.203845+00:00",
+        "completed_at": "2026-09-16T18:31:26.042272+00:00",
+        "messages": 5,
+        "server_span_seconds": 390.838427,
+        "server_span_microseconds": 390838427
+      },
+      {
+        "id": "a9479ca5-e76c-4f5a-8959-6348fe769992",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:55.203845+00:00",
+        "completed_at": "2026-09-16T18:31:14.359330+00:00",
+        "messages": 5,
+        "server_span_seconds": 379.155485,
+        "server_span_microseconds": 379155485
+      },
+      {
+        "id": "e0479a71-9c55-49a4-bd79-9b6df7865ddb",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:55.203845+00:00",
+        "completed_at": "2026-09-16T18:31:08.258776+00:00",
+        "messages": 5,
+        "server_span_seconds": 373.054931,
+        "server_span_microseconds": 373054931
+      },
+      {
+        "id": "276f4bb5-eb28-4674-8b79-1c2d936184c8",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:53.102063+00:00",
+        "completed_at": "2026-09-16T18:27:42.961168+00:00",
+        "messages": 5,
+        "server_span_seconds": 169.859105,
+        "server_span_microseconds": 169859105
+      },
+      {
+        "id": "404f57c4-3540-4938-8ac5-ac9c259ee803",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:53.102063+00:00",
+        "completed_at": "2026-09-16T18:27:41.757911+00:00",
+        "messages": 5,
+        "server_span_seconds": 168.655848,
+        "server_span_microseconds": 168655848
+      },
+      {
+        "id": "649a3224-2753-4693-a024-75c9b54b9df9",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:53.102063+00:00",
+        "completed_at": "2026-09-16T18:29:28.731151+00:00",
+        "messages": 5,
+        "server_span_seconds": 275.629088,
+        "server_span_microseconds": 275629088
+      },
+      {
+        "id": "778c9089-45d5-4fe5-aab7-2b8a2582b8c4",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:53.102063+00:00",
+        "completed_at": "2026-09-16T18:27:38.918466+00:00",
+        "messages": 5,
+        "server_span_seconds": 165.816403,
+        "server_span_microseconds": 165816403
+      },
+      {
+        "id": "91e4f2ae-eb35-4ac2-9ccb-1ee8d64de3b1",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:53.102063+00:00",
+        "completed_at": "2026-09-16T18:31:48.814592+00:00",
+        "messages": 5,
+        "server_span_seconds": 415.712529,
+        "server_span_microseconds": 415712529
+      },
+      {
+        "id": "a8dd4acf-78bc-4e96-8378-539ee1b68f1e",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:53.102063+00:00",
+        "completed_at": "2026-09-16T18:29:28.059029+00:00",
+        "messages": 5,
+        "server_span_seconds": 274.956966,
+        "server_span_microseconds": 274956966
+      },
+      {
+        "id": "4e3d8be0-d078-4ae1-9138-dde8432e9160",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:24:54.058907+00:00",
+        "completed_at": "2026-09-16T18:29:03.069120+00:00",
+        "messages": 5,
+        "server_span_seconds": 249.010213,
+        "server_span_microseconds": 249010213
+      },
+      {
+        "id": "77550c8f-4c61-4994-a0d9-643d4800f840",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:24:54.058907+00:00",
+        "completed_at": "2026-09-16T18:29:13.604246+00:00",
+        "messages": 5,
+        "server_span_seconds": 259.545339,
+        "server_span_microseconds": 259545339
+      },
+      {
+        "id": "8060b837-1d4c-49f3-94db-809b061514ae",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:54.058907+00:00",
+        "completed_at": "2026-09-16T18:29:17.784507+00:00",
+        "messages": 5,
+        "server_span_seconds": 263.7256,
+        "server_span_microseconds": 263725600
+      },
+      {
+        "id": "8883337c-a39f-4a68-8ada-5ee14e0dfbdd",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:24:54.058907+00:00",
+        "completed_at": "2026-09-16T18:29:13.637726+00:00",
+        "messages": 5,
+        "server_span_seconds": 259.578819,
+        "server_span_microseconds": 259578819
+      },
+      {
+        "id": "ad3b88fb-becc-4fe9-8b8d-28a2b612ee65",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:24:54.058907+00:00",
+        "completed_at": "2026-09-16T18:28:56.884258+00:00",
+        "messages": 5,
+        "server_span_seconds": 242.825351,
+        "server_span_microseconds": 242825351
+      },
+      {
+        "id": "cc8c29fb-e33d-4eba-8e95-96b69449c940",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:24:54.058907+00:00",
+        "completed_at": "2026-09-16T18:29:03.183237+00:00",
+        "messages": 5,
+        "server_span_seconds": 249.12433,
+        "server_span_microseconds": 249124330
+      }
+    ],
+    "server_span_seconds": 428.947237,
+    "server_span_microseconds": 428947237
+  },
+  "repetition_2": {
+    "jobs": 60,
+    "statuses": {
+      "completed": 60
+    },
+    "first_created_at": "2026-09-16T18:33:00.598207+00:00",
+    "last_completed_at": "2026-09-16T18:37:24.106838+00:00",
+    "logical_calls": 300,
+    "provider_retries": 0,
+    "provider_attempts": 300,
+    "successful_response_usage": {
+      "prompt_tokens": 1544249,
+      "completion_tokens": 72516,
+      "total_tokens": 1616765
+    },
+    "mean_reported_queue_ms": 17135.54105,
+    "mean_logical_call_latency_ms": 23204.04720666667,
+    "max_logical_call_latency_ms": 203506.863,
+    "classifier": {
+      "assessments": 180,
+      "completed": 180,
+      "truncated": 0,
+      "errors": 0,
+      "max_input_tokens": 3958
+    },
+    "recovered_calls": [],
+    "per_run": [
+      {
+        "id": "2a409633-6444-4ad2-8032-2711f7b95c10",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:00.747826+00:00",
+        "completed_at": "2026-09-16T18:35:47.609501+00:00",
+        "messages": 5,
+        "server_span_seconds": 166.861675,
+        "server_span_microseconds": 166861675
+      },
+      {
+        "id": "6bd59975-035b-4370-8027-f982a0c87820",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:00.747826+00:00",
+        "completed_at": "2026-09-16T18:35:18.130998+00:00",
+        "messages": 5,
+        "server_span_seconds": 137.383172,
+        "server_span_microseconds": 137383172
+      },
+      {
+        "id": "a9bd2c1f-8326-4c3f-9f5c-3fb220f973ad",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:00.747826+00:00",
+        "completed_at": "2026-09-16T18:35:52.049912+00:00",
+        "messages": 5,
+        "server_span_seconds": 171.302086,
+        "server_span_microseconds": 171302086
+      },
+      {
+        "id": "b82e2bfb-aa8b-4d21-9561-dbccc30e455d",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:00.747826+00:00",
+        "completed_at": "2026-09-16T18:35:44.730375+00:00",
+        "messages": 5,
+        "server_span_seconds": 163.982549,
+        "server_span_microseconds": 163982549
+      },
+      {
+        "id": "f341d607-9759-47f2-ba47-1a6719e61875",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:00.747826+00:00",
+        "completed_at": "2026-09-16T18:35:39.931621+00:00",
+        "messages": 5,
+        "server_span_seconds": 159.183795,
+        "server_span_microseconds": 159183795
+      },
+      {
+        "id": "f3f2b057-6b85-4e5e-a650-30d997d23685",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:00.747826+00:00",
+        "completed_at": "2026-09-16T18:35:34.724316+00:00",
+        "messages": 5,
+        "server_span_seconds": 153.97649,
+        "server_span_microseconds": 153976490
+      },
+      {
+        "id": "0b12314a-62a8-4b23-8609-d33cf6b6e3a1",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:00.598207+00:00",
+        "completed_at": "2026-09-16T18:33:36.908310+00:00",
+        "messages": 5,
+        "server_span_seconds": 36.310103,
+        "server_span_microseconds": 36310103
+      },
+      {
+        "id": "0eb90055-dc99-49c4-9aa1-9dbfa0eb3821",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:00.598207+00:00",
+        "completed_at": "2026-09-16T18:35:06.636734+00:00",
+        "messages": 5,
+        "server_span_seconds": 126.038527,
+        "server_span_microseconds": 126038527
+      },
+      {
+        "id": "454a6d94-e23b-4029-a407-aa52f8edcb54",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:00.598207+00:00",
+        "completed_at": "2026-09-16T18:33:42.922413+00:00",
+        "messages": 5,
+        "server_span_seconds": 42.324206,
+        "server_span_microseconds": 42324206
+      },
+      {
+        "id": "757e4d3f-e3e1-4897-8fef-fc8089094b0c",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:00.598207+00:00",
+        "completed_at": "2026-09-16T18:35:09.914427+00:00",
+        "messages": 5,
+        "server_span_seconds": 129.31622,
+        "server_span_microseconds": 129316220
+      },
+      {
+        "id": "bcb5ed73-395c-4658-896a-a03ccb2fd555",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:00.598207+00:00",
+        "completed_at": "2026-09-16T18:35:07.868745+00:00",
+        "messages": 5,
+        "server_span_seconds": 127.270538,
+        "server_span_microseconds": 127270538
+      },
+      {
+        "id": "f9d15cd1-b1e1-4d3f-b7aa-4f025f06e286",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:00.598207+00:00",
+        "completed_at": "2026-09-16T18:35:14.247870+00:00",
+        "messages": 5,
+        "server_span_seconds": 133.649663,
+        "server_span_microseconds": 133649663
+      },
+      {
+        "id": "0b45d8f2-c2f5-47e3-a293-d4d6a02bf81e",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:04.702057+00:00",
+        "completed_at": "2026-09-16T18:37:09.592740+00:00",
+        "messages": 5,
+        "server_span_seconds": 244.890683,
+        "server_span_microseconds": 244890683
+      },
+      {
+        "id": "27c20a78-815b-44b4-a362-ef9be71a5d51",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:04.702057+00:00",
+        "completed_at": "2026-09-16T18:37:20.318254+00:00",
+        "messages": 5,
+        "server_span_seconds": 255.616197,
+        "server_span_microseconds": 255616197
+      },
+      {
+        "id": "2ee266b2-0f7a-466c-b5a6-7a34a58bf240",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:04.702057+00:00",
+        "completed_at": "2026-09-16T18:36:57.907990+00:00",
+        "messages": 5,
+        "server_span_seconds": 233.205933,
+        "server_span_microseconds": 233205933
+      },
+      {
+        "id": "7ddf1949-2ff3-4e87-8526-658b477377f7",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:04.702057+00:00",
+        "completed_at": "2026-09-16T18:33:46.831362+00:00",
+        "messages": 5,
+        "server_span_seconds": 42.129305,
+        "server_span_microseconds": 42129305
+      },
+      {
+        "id": "99cc9404-5177-4f98-9832-aff8dbe2b3e0",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:04.702057+00:00",
+        "completed_at": "2026-09-16T18:37:04.367965+00:00",
+        "messages": 5,
+        "server_span_seconds": 239.665908,
+        "server_span_microseconds": 239665908
+      },
+      {
+        "id": "f88d21ef-bf49-4b34-864d-7ed942763dfd",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:04.702057+00:00",
+        "completed_at": "2026-09-16T18:33:41.257203+00:00",
+        "messages": 5,
+        "server_span_seconds": 36.555146,
+        "server_span_microseconds": 36555146
+      },
+      {
+        "id": "032ed9d5-1cab-4a68-ae70-9b73752d87f4",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:02.118074+00:00",
+        "completed_at": "2026-09-16T18:36:22.968417+00:00",
+        "messages": 5,
+        "server_span_seconds": 200.850343,
+        "server_span_microseconds": 200850343
+      },
+      {
+        "id": "1ec528ac-caeb-420c-b693-5d2ca224bbad",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:02.118074+00:00",
+        "completed_at": "2026-09-16T18:36:15.939526+00:00",
+        "messages": 5,
+        "server_span_seconds": 193.821452,
+        "server_span_microseconds": 193821452
+      },
+      {
+        "id": "277bcdec-fffd-47cb-be14-2646d7a4cafa",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:02.118074+00:00",
+        "completed_at": "2026-09-16T18:36:21.285078+00:00",
+        "messages": 5,
+        "server_span_seconds": 199.167004,
+        "server_span_microseconds": 199167004
+      },
+      {
+        "id": "7a2b0c94-8d32-4c2e-8034-e65b66fab5a3",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:02.118074+00:00",
+        "completed_at": "2026-09-16T18:36:34.283303+00:00",
+        "messages": 5,
+        "server_span_seconds": 212.165229,
+        "server_span_microseconds": 212165229
+      },
+      {
+        "id": "9e840917-dd9d-4d5d-ad5d-8210969ce01e",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:02.118074+00:00",
+        "completed_at": "2026-09-16T18:36:24.957591+00:00",
+        "messages": 5,
+        "server_span_seconds": 202.839517,
+        "server_span_microseconds": 202839517
+      },
+      {
+        "id": "f112056a-538a-4cbd-8781-4c5f874d26b5",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:02.118074+00:00",
+        "completed_at": "2026-09-16T18:36:18.410846+00:00",
+        "messages": 5,
+        "server_span_seconds": 196.292772,
+        "server_span_microseconds": 196292772
+      },
+      {
+        "id": "23bc645a-2b44-47e5-bdf7-76e395a704d5",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:00.906913+00:00",
+        "completed_at": "2026-09-16T18:34:59.334649+00:00",
+        "messages": 5,
+        "server_span_seconds": 118.427736,
+        "server_span_microseconds": 118427736
+      },
+      {
+        "id": "4f1534d9-04e0-4097-a474-636b7da70bce",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:00.906913+00:00",
+        "completed_at": "2026-09-16T18:34:57.986092+00:00",
+        "messages": 5,
+        "server_span_seconds": 117.079179,
+        "server_span_microseconds": 117079179
+      },
+      {
+        "id": "69cebabe-e932-4cfd-b1d1-7281a4c96013",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:00.906913+00:00",
+        "completed_at": "2026-09-16T18:33:41.651345+00:00",
+        "messages": 5,
+        "server_span_seconds": 40.744432,
+        "server_span_microseconds": 40744432
+      },
+      {
+        "id": "7845a3ec-cb5b-4a12-a72f-fe0137d46a16",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:00.906913+00:00",
+        "completed_at": "2026-09-16T18:35:05.724887+00:00",
+        "messages": 5,
+        "server_span_seconds": 124.817974,
+        "server_span_microseconds": 124817974
+      },
+      {
+        "id": "8803d320-4839-4baf-8b0c-5de865f19e2f",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:00.906913+00:00",
+        "completed_at": "2026-09-16T18:34:49.830377+00:00",
+        "messages": 5,
+        "server_span_seconds": 108.923464,
+        "server_span_microseconds": 108923464
+      },
+      {
+        "id": "f1b222e9-3f2c-4f13-832c-df7756f338f5",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:00.906913+00:00",
+        "completed_at": "2026-09-16T18:34:50.560911+00:00",
+        "messages": 5,
+        "server_span_seconds": 109.653998,
+        "server_span_microseconds": 109653998
+      },
+      {
+        "id": "60de6708-b293-48b5-8a08-14ee6b643c70",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:00.823263+00:00",
+        "completed_at": "2026-09-16T18:33:41.673203+00:00",
+        "messages": 5,
+        "server_span_seconds": 40.84994,
+        "server_span_microseconds": 40849940
+      },
+      {
+        "id": "728bcdaa-52fe-4113-946b-e6d68c979139",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:00.823263+00:00",
+        "completed_at": "2026-09-16T18:33:33.649489+00:00",
+        "messages": 5,
+        "server_span_seconds": 32.826226,
+        "server_span_microseconds": 32826226
+      },
+      {
+        "id": "9c9f1db3-2ba5-4174-9fe7-e54613313321",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:00.823263+00:00",
+        "completed_at": "2026-09-16T18:33:53.927790+00:00",
+        "messages": 5,
+        "server_span_seconds": 53.104527,
+        "server_span_microseconds": 53104527
+      },
+      {
+        "id": "c3aadb68-c4c1-450b-947d-ab1806cce25d",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:00.823263+00:00",
+        "completed_at": "2026-09-16T18:33:50.269593+00:00",
+        "messages": 5,
+        "server_span_seconds": 49.44633,
+        "server_span_microseconds": 49446330
+      },
+      {
+        "id": "e4e8eb95-4bdb-46ea-99ed-87d380403e33",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:00.823263+00:00",
+        "completed_at": "2026-09-16T18:37:22.645840+00:00",
+        "messages": 5,
+        "server_span_seconds": 261.822577,
+        "server_span_microseconds": 261822577
+      },
+      {
+        "id": "e6b648da-94aa-4209-bedc-2a41bb8141c9",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:00.823263+00:00",
+        "completed_at": "2026-09-16T18:33:50.907382+00:00",
+        "messages": 5,
+        "server_span_seconds": 50.084119,
+        "server_span_microseconds": 50084119
+      },
+      {
+        "id": "27888bf4-c0dd-4d0c-b175-387faed7ee9c",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:02.142454+00:00",
+        "completed_at": "2026-09-16T18:36:54.756163+00:00",
+        "messages": 5,
+        "server_span_seconds": 232.613709,
+        "server_span_microseconds": 232613709
+      },
+      {
+        "id": "42584d8c-4832-4f16-b93a-5af6f0d57c24",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:02.142454+00:00",
+        "completed_at": "2026-09-16T18:36:40.246220+00:00",
+        "messages": 5,
+        "server_span_seconds": 218.103766,
+        "server_span_microseconds": 218103766
+      },
+      {
+        "id": "42ee281f-d9b1-456f-b36e-2e8a0594732a",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:02.142454+00:00",
+        "completed_at": "2026-09-16T18:36:48.045833+00:00",
+        "messages": 5,
+        "server_span_seconds": 225.903379,
+        "server_span_microseconds": 225903379
+      },
+      {
+        "id": "8575cd03-55d8-4d24-9334-c1f7796bc792",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:02.142454+00:00",
+        "completed_at": "2026-09-16T18:36:43.485178+00:00",
+        "messages": 5,
+        "server_span_seconds": 221.342724,
+        "server_span_microseconds": 221342724
+      },
+      {
+        "id": "d83e1c14-7f56-4ee6-8a4a-059d8cff5723",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:02.142454+00:00",
+        "completed_at": "2026-09-16T18:37:15.186265+00:00",
+        "messages": 5,
+        "server_span_seconds": 253.043811,
+        "server_span_microseconds": 253043811
+      },
+      {
+        "id": "ec15abd9-cf43-4994-a764-e7c9c67ee882",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:02.142454+00:00",
+        "completed_at": "2026-09-16T18:36:51.793417+00:00",
+        "messages": 5,
+        "server_span_seconds": 229.650963,
+        "server_span_microseconds": 229650963
+      },
+      {
+        "id": "00dc526f-48af-424e-b424-ba5337301e05",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:03.114765+00:00",
+        "completed_at": "2026-09-16T18:36:08.860177+00:00",
+        "messages": 5,
+        "server_span_seconds": 185.745412,
+        "server_span_microseconds": 185745412
+      },
+      {
+        "id": "0adfc46b-79c7-4865-bace-07cd57909889",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:03.114765+00:00",
+        "completed_at": "2026-09-16T18:36:02.957590+00:00",
+        "messages": 5,
+        "server_span_seconds": 179.842825,
+        "server_span_microseconds": 179842825
+      },
+      {
+        "id": "5708a8f7-0f4b-4378-9681-2873cb486376",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:03.114765+00:00",
+        "completed_at": "2026-09-16T18:36:04.811255+00:00",
+        "messages": 5,
+        "server_span_seconds": 181.69649,
+        "server_span_microseconds": 181696490
+      },
+      {
+        "id": "a4604db8-be16-4268-bc3f-4295baf69cdf",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:03.114765+00:00",
+        "completed_at": "2026-09-16T18:35:55.868045+00:00",
+        "messages": 5,
+        "server_span_seconds": 172.75328,
+        "server_span_microseconds": 172753280
+      },
+      {
+        "id": "d9c8f14e-5dac-4f9b-a266-63dee6f8a1d4",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:03.114765+00:00",
+        "completed_at": "2026-09-16T18:36:10.045663+00:00",
+        "messages": 5,
+        "server_span_seconds": 186.930898,
+        "server_span_microseconds": 186930898
+      },
+      {
+        "id": "eff425bf-3bba-4399-b5cb-90cd64792450",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:03.114765+00:00",
+        "completed_at": "2026-09-16T18:36:01.772604+00:00",
+        "messages": 5,
+        "server_span_seconds": 178.657839,
+        "server_span_microseconds": 178657839
+      },
+      {
+        "id": "2bfb596b-8965-4f65-a5f6-2faaa088eaf1",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:01.322146+00:00",
+        "completed_at": "2026-09-16T18:33:45.021521+00:00",
+        "messages": 5,
+        "server_span_seconds": 43.699375,
+        "server_span_microseconds": 43699375
+      },
+      {
+        "id": "517d3b86-1ab0-49af-b0f5-3ab7cdf5e9cc",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:01.322146+00:00",
+        "completed_at": "2026-09-16T18:37:24.106838+00:00",
+        "messages": 5,
+        "server_span_seconds": 262.784692,
+        "server_span_microseconds": 262784692
+      },
+      {
+        "id": "7082938f-a665-41bb-ab87-a55654b85491",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:01.322146+00:00",
+        "completed_at": "2026-09-16T18:33:54.453077+00:00",
+        "messages": 5,
+        "server_span_seconds": 53.130931,
+        "server_span_microseconds": 53130931
+      },
+      {
+        "id": "74d1242f-085f-4061-a734-b5e0277296f0",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:01.322146+00:00",
+        "completed_at": "2026-09-16T18:33:56.188491+00:00",
+        "messages": 5,
+        "server_span_seconds": 54.866345,
+        "server_span_microseconds": 54866345
+      },
+      {
+        "id": "c4e8166b-8467-4c47-9499-5e4fb36fe3a0",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:01.322146+00:00",
+        "completed_at": "2026-09-16T18:33:44.775392+00:00",
+        "messages": 5,
+        "server_span_seconds": 43.453246,
+        "server_span_microseconds": 43453246
+      },
+      {
+        "id": "f843e0ef-4b1a-4844-867b-35cff3c21d76",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:01.322146+00:00",
+        "completed_at": "2026-09-16T18:33:59.998965+00:00",
+        "messages": 5,
+        "server_span_seconds": 58.676819,
+        "server_span_microseconds": 58676819
+      },
+      {
+        "id": "378b90c4-208d-4568-93fa-349fad2653aa",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:02.229849+00:00",
+        "completed_at": "2026-09-16T18:34:46.778308+00:00",
+        "messages": 5,
+        "server_span_seconds": 104.548459,
+        "server_span_microseconds": 104548459
+      },
+      {
+        "id": "50449181-5a01-4609-9c86-590b6be94810",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:33:02.229849+00:00",
+        "completed_at": "2026-09-16T18:34:34.237751+00:00",
+        "messages": 5,
+        "server_span_seconds": 92.007902,
+        "server_span_microseconds": 92007902
+      },
+      {
+        "id": "6b90ea01-077c-4e7a-90d8-65fa37873dea",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:33:02.229849+00:00",
+        "completed_at": "2026-09-16T18:34:37.229237+00:00",
+        "messages": 5,
+        "server_span_seconds": 94.999388,
+        "server_span_microseconds": 94999388
+      },
+      {
+        "id": "865bd3e9-d122-4d58-8b47-430fe76029f4",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:33:02.229849+00:00",
+        "completed_at": "2026-09-16T18:34:43.179771+00:00",
+        "messages": 5,
+        "server_span_seconds": 100.949922,
+        "server_span_microseconds": 100949922
+      },
+      {
+        "id": "bd9233d6-290a-4b50-a8a3-831dc785c9be",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:33:02.229849+00:00",
+        "completed_at": "2026-09-16T18:34:04.234908+00:00",
+        "messages": 5,
+        "server_span_seconds": 62.005059,
+        "server_span_microseconds": 62005059
+      },
+      {
+        "id": "c252d108-faf7-41bd-862c-054965828339",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:33:02.229849+00:00",
+        "completed_at": "2026-09-16T18:34:41.241282+00:00",
+        "messages": 5,
+        "server_span_seconds": 99.011433,
+        "server_span_microseconds": 99011433
+      }
+    ],
+    "server_span_seconds": 263.508631,
+    "server_span_microseconds": 263508631
+  },
+  "full_cohort": {
+    "jobs": 6,
+    "statuses": {
+      "completed": 6
+    },
+    "first_created_at": "2026-09-16T18:37:40.197384+00:00",
+    "last_completed_at": "2026-09-16T18:47:58.106830+00:00",
+    "logical_calls": 126,
+    "provider_retries": 0,
+    "provider_attempts": 126,
+    "successful_response_usage": {
+      "prompt_tokens": 700024,
+      "completion_tokens": 50016,
+      "total_tokens": 750040
+    },
+    "mean_reported_queue_ms": 0.0723809523809524,
+    "mean_logical_call_latency_ms": 9439.730158730157,
+    "max_logical_call_latency_ms": 115140.573,
+    "classifier": {
+      "assessments": 66,
+      "completed": 66,
+      "truncated": 0,
+      "errors": 0,
+      "max_input_tokens": 13909
+    },
+    "recovered_calls": [],
+    "per_run": [
+      {
+        "id": "97cf6268-9d81-455a-87a4-2146da710715",
+        "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "created_at": "2026-09-16T18:37:40.197384+00:00",
+        "completed_at": "2026-09-16T18:40:10.937758+00:00",
+        "messages": 21,
+        "server_span_seconds": 150.740374,
+        "server_span_microseconds": 150740374
+      },
+      {
+        "id": "5ac013e1-866d-4c09-a7f9-0d71e6da96a6",
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "created_at": "2026-09-16T18:37:40.197384+00:00",
+        "completed_at": "2026-09-16T18:39:59.388828+00:00",
+        "messages": 21,
+        "server_span_seconds": 139.191444,
+        "server_span_microseconds": 139191444
+      },
+      {
+        "id": "f090e43a-a8dd-4aa3-acda-feb1be9ba00b",
+        "model": "deepseek-ai/DeepSeek-V4-Pro",
+        "created_at": "2026-09-16T18:37:40.197384+00:00",
+        "completed_at": "2026-09-16T18:39:20.211064+00:00",
+        "messages": 21,
+        "server_span_seconds": 100.01368,
+        "server_span_microseconds": 100013680
+      },
+      {
+        "id": "f81a6521-ca92-4050-ab84-d6be4a7acbd1",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "created_at": "2026-09-16T18:37:40.197384+00:00",
+        "completed_at": "2026-09-16T18:40:00.593632+00:00",
+        "messages": 21,
+        "server_span_seconds": 140.396248,
+        "server_span_microseconds": 140396248
+      },
+      {
+        "id": "2d034dca-a89f-4d6d-a7e9-e6a9c0b0e729",
+        "model": "openai/gpt-oss-120b",
+        "created_at": "2026-09-16T18:37:40.197384+00:00",
+        "completed_at": "2026-09-16T18:40:41.967495+00:00",
+        "messages": 21,
+        "server_span_seconds": 181.770111,
+        "server_span_microseconds": 181770111
+      },
+      {
+        "id": "d43a0d53-ce33-4da4-a0fe-57db73f89e35",
+        "model": "zai-org/GLM-5.1",
+        "created_at": "2026-09-16T18:37:40.197384+00:00",
+        "completed_at": "2026-09-16T18:47:58.106830+00:00",
+        "messages": 21,
+        "server_span_seconds": 617.909446,
+        "server_span_microseconds": 617909446
+      }
+    ],
+    "server_span_seconds": 617.909446,
+    "server_span_microseconds": 617909446
+  },
+  "total": {
+    "jobs": 126,
+    "logical_calls": 726,
+    "provider_retries": 7,
+    "provider_attempts": 733,
+    "successful_response_tokens": 3967901,
+    "classifier_assessments": 426
+  },
+  "measurement_notes": [
+    "Server spans are max completed_at minus min created_at across persisted report rows; observer and read-only collection delays are excluded. Exact microsecond differences are retained.",
+    "Reported token usage covers successful provider responses only. Failed-attempt usage and any provider billing for it are unknown.",
+    "queue_ms on recovered calls omits any scheduler wait belonging to failed transport attempts; logical latency includes retries. Reported queue_ms is not a complete decomposition of recovered-call latency.",
+    "Counts exclude the separate intentionally aborted intervention-control run and the coordinator's concurrent browser runs.",
+    "Per-run server span includes durable workshop job wait; it is not model-only latency."
+  ]
+}

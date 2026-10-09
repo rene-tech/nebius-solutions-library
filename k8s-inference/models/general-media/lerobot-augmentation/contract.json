@@ -1,0 +1,56 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-app/v1",
+  "app_id": "cosmos3-lerobot-augmentation",
+  "operation": "augment-lerobot-dataset",
+  "execution_mode": "scientific-batch-v1",
+  "state": "candidate",
+  "route_exposed": false,
+  "input_schema": "schema/request.schema.json",
+  "source_reference_schema": "schema/source-reference.schema.json",
+  "result_schema": "schema/result.schema.json",
+  "dataset": {
+    "format": "LeRobotDataset-v3.0",
+    "reader": "lerobot==0.6.1",
+    "source_revision": "7e241bd630a3719a56157a497ce5d08f244784f1"
+  },
+  "model": {
+    "repository": "nvidia/Cosmos3-Nano",
+    "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+    "serving_revision": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+    "supported_operations": [
+      "video-to-video",
+      "transfer"
+    ],
+    "unavailable_operations": [
+      {
+        "operation": "forward-dynamics",
+        "reason": "pinned H100 runtime exits with SIGBUS under normal load and restored CUDA state returns cudaErrorNotSupported"
+      },
+      {
+        "operation": "inverse-dynamics",
+        "reason": "pinned H100 runtime exits with SIGBUS under normal load"
+      }
+    ]
+  },
+  "admission_bounds": {
+    "variants": 8,
+    "selected_episodes": 256,
+    "selected_cameras": 8,
+    "frames_per_episode": [16, 400],
+    "max_pixels": 921600,
+    "max_parallel_generations_per_gpu": 1,
+    "max_attempts_per_unit": 3
+  },
+  "promotion_gate": {
+    "customer_ready": false,
+    "requirements": [
+      "digest-pinned worker image",
+      "tenant-delegated child Cosmos admission with parent/child attribution and no parent concurrency deadlock",
+      "durable public submission and cancellation",
+      "lighting and environment live GPU variants",
+      "two distinct published GPU-output artifacts reopen with lerobot==0.6.1",
+      "decoded output frame/action/timestamp alignment",
+      "Apps admin progress, artifacts, logs, failures, and usage"
+    ]
+  }
+}
