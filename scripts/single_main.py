@@ -41,7 +41,7 @@ def enabled(repo: Path) -> bool:
 def pre_push(repo: Path, url: str, updates: list[str]) -> None:
     if not enabled(repo):
         return
-    owner = policy(repo)["personal_repository"]
+    owner = policy(main_checkout(repo))["personal_repository"]
     allowed = {f"https://github.com/{owner}", f"https://github.com/{owner}.git",
                f"git@github.com:{owner}", f"git@github.com:{owner}.git",
                f"ssh://git@github.com/{owner}", f"ssh://git@github.com/{owner}.git"}
@@ -92,6 +92,33 @@ def validated_candidate(task: Path, evidence: Path) -> str:
     return sha
 
 
+def open_pull_requests(repo: Path, branch: str) -> list[str] | None:
+    """Read-only check; unknown GitHub state must preserve a branch."""
+    owner = policy(main_checkout(repo))["personal_repository"]
+    short = branch.removeprefix("refs/heads/")
+    query = '''query($search: String!) {
+      search(query: $search, type: ISSUE, first: 100) {
+        pageInfo { hasNextPage }
+        nodes { ... on PullRequest { url headRefName headRepository { nameWithOwner } } }
+      }
+    }'''
+    try:
+        result = subprocess.run([
+            "gh", "api", "graphql", "-f", f"query={query}",
+            "-f", f"search=is:pr is:open head:{short}",
+        ], text=True, capture_output=True, check=True)
+        document = json.loads(result.stdout)
+        if document.get("errors"):
+            return None
+        data = document["data"]["search"]
+        if data["pageInfo"]["hasNextPage"]:
+            return None
+        return [row["url"] for row in data["nodes"] if row.get("headRefName") == short
+                and (row.get("headRepository") or {}).get("nameWithOwner") == owner]
+    except (OSError, subprocess.CalledProcessError, KeyError, ValueError):
+        return None
+
+
 def retire_task_branch(repo: Path, task: Path, branch: str, sha: str, push: bool) -> None:
     """Retire only this exact clean, integrated task; never remove its directory."""
     if not branch:
@@ -102,6 +129,11 @@ def retire_task_branch(repo: Path, task: Path, branch: str, sha: str, push: bool
         raise ValueError("Unmerged task branches must be preserved, not deleted")
     require_clean(task)
     if push:
+        active = open_pull_requests(repo, branch)
+        if active is None or active:
+            reason = "open PR: " + ", ".join(active) if active else "PR state unavailable"
+            print(f"Retained {branch} for closeout review ({reason})")
+            return
         url = f"https://github.com/{policy(main_checkout(repo))['personal_repository']}.git"
         rows = value(repo, "ls-remote", "--heads", url, branch).splitlines()
         if rows:

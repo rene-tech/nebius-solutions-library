@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 SOURCE = Path(__file__).with_name("single_main.py")
@@ -75,6 +76,16 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unmerged"):
             workflow.retire_task_branch(self.repo, task, "refs/heads/task/unfinished", sha, False)
         self.assertEqual(workflow.value(self.repo, "rev-parse", "task/unfinished"), sha)
+
+    def test_open_pr_or_unknown_pr_state_preserves_local_and_remote_task_branch(self):
+        task, evidence, sha = self.task()
+        workflow.git(self.repo, "merge", "--ff-only", sha)
+        workflow.git(task, "checkout", "-b", "task/open-pr")
+        for status in (["https://github.com/nebius/test/pull/1"], None):
+            with patch.object(workflow, "open_pull_requests", return_value=status):
+                workflow.retire_task_branch(self.repo, task, "refs/heads/task/open-pr", sha, True)
+            self.assertEqual(workflow.value(self.repo, "rev-parse", "task/open-pr"), sha)
+            self.assertEqual(workflow.value(task, "symbolic-ref", "HEAD"), "refs/heads/task/open-pr")
 
     def test_local_main_history_rewrite_is_rejected(self):
         task, evidence, sha = self.task()

@@ -41,7 +41,7 @@ python3 scripts/single_main.py integrate /absolute/path/to/task-worktree --evide
 It refuses dirty worktrees, stale validation and divergent main. When this task
 uses a branch, successful integration retires that exact local/personal-fork
 branch, preserves a closeout receipt and leaves the worktree files intact in
-detached HEAD. A moved remote branch is preserved for review. No unmerged work
+detached HEAD. An open PR, unavailable PR state or a moved remote branch is preserved for review. No unmerged work
 is automatically deleted. Remove only a clean, finished worktree after its
 session exits. A task is complete after publication and branch closeout, or an
 explicit recoverable archive and follow-up disposition for unqualified work.
