@@ -181,10 +181,11 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertTrue(list(validator.iter_errors(academic)))
 
     def test_source_observations_are_exactly_candidate_and_unqualified(self) -> None:
-        receipts = self.load(CONTRACT_ROOT / "scientific-source-candidate-receipts.json")
+        receipts = self.load(
+            CONTRACT_ROOT / "scientific-source-candidate-receipts.json"
+        )
         self.assert_valid("scientific-source-candidate-receipts.schema.json", receipts)
         expected = {
-            "cosmos3-lerobot-augmentation": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
             "alphafold3": "c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
             "bindcraft": "efb5bfeb8b4b1a5944256f979c34e0c8e6a82d9d",
             "boltzgen": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
@@ -195,16 +196,43 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             "proteina-complexa": "54058860d43444c7289873f77d3e50b5b02348cd",
             "protenix-v2": "4c355be4553512f72453ecbfb65e69f4c35d1413",
             "rfdiffusion-upstream": "86507b6538f51fce57b5a72477165f03999ed7ae",
+            "cosmos3-lerobot-augmentation": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+            "gromacs": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+            "gromacs-mpi": "da9e013175bae98b31b34384f6b4864ff29f65a5",
+            "namd": "e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+            "lammps": "d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+            "amber": "cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+            "scvi-scanvi": "56520c713eb1d2b245c72a0f60bc393b74198c91",
         }
-        actual = {item["model_id"]: item["source"]["revision"] for item in receipts["receipts"]}
+        actual = {
+            item["model_id"]: item["source"]["revision"]
+            for item in receipts["receipts"]
+        }
         self.assertEqual(expected, actual)
         self.assertEqual(len(actual), len(receipts["receipts"]))
-        self.assertTrue(all(item["status"] == "candidate" for item in receipts["receipts"]))
-        self.assertTrue(all(item["qualification_state"] == "unqualified" for item in receipts["receipts"]))
-        academic = {item["model_id"] for item in receipts["receipts"] if item["access_profile"] == "academic"}
+        self.assertTrue(
+            all(item["status"] == "candidate" for item in receipts["receipts"])
+        )
+        self.assertTrue(
+            all(
+                item["qualification_state"] == "unqualified"
+                for item in receipts["receipts"]
+            )
+        )
+        academic = {
+            item["model_id"]
+            for item in receipts["receipts"]
+            if item["access_profile"] == "academic"
+        }
         self.assertEqual({"alphafold3", "bindcraft"}, academic)
 
     PROMOTABLE_SCIENTIFIC_FLEET = {
+        "amber",
+        "gromacs",
+        "gromacs-mpi",
+        "lammps",
+        "namd",
+        "scvi-scanvi",
         "cosmos3-lerobot-augmentation",
         "alphafold3",
         "bindcraft",

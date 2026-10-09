@@ -533,7 +533,19 @@ class DeploymentContractTests(unittest.TestCase):
         variable_file = self._write_configuration("alertmanager-contract", deployment)
         outputs = self._planned_outputs(variable_file, "alertmanager-contract")
 
-        expected = deployment["observability"]["alertmanager"]
+        expected = {
+            **deployment["observability"]["alertmanager"],
+            "email": {
+                "enabled": False,
+                "admin_url": "",
+                "from": "",
+                "to": "",
+                "smarthost": "smtp.resend.com:587",
+                "username": "resend",
+                "password_key": "smtp-password",
+                "password_secret": "fs2-important-alert-mail",
+            },
+        }
         self.assertEqual(
             outputs["deployment_contract"]["stages"]["foundation"]["alertmanager"],
             expected,
@@ -1056,12 +1068,18 @@ class DeploymentContractTests(unittest.TestCase):
         variable_file = self._write_configuration("scientific-batch-shape", deployment)
         # This is the complete customer-authored scientific batch surface. The
         # generated map belongs to the repository, not terraform.tfvars.
-        customer_batch = json.loads(variable_file.read_text(encoding="utf-8"))["deployment"]["scientific_batch"]
+        customer_batch = json.loads(variable_file.read_text(encoding="utf-8"))[
+            "deployment"
+        ]["scientific_batch"]
         self.assertNotIn("execution_map", customer_batch)
 
         outputs = self._planned_outputs(variable_file, "scientific-batch-shape")
-        stage = outputs["deployment_contract"]["stages"]["workloads"]["scientific_batch"]
-        committed_map_path = DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+        stage = outputs["deployment_contract"]["stages"]["workloads"][
+            "scientific_batch"
+        ]
+        committed_map_path = (
+            DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+        )
         committed_map = json.loads(committed_map_path.read_text(encoding="utf-8"))
         self.assertEqual(
             stage,
@@ -1088,6 +1106,7 @@ class DeploymentContractTests(unittest.TestCase):
                     "storage_class_name": "csi-mounted-fs-path-sc",
                 },
                 "token_expiration_seconds": 600,
+                "tools_image": "",
                 "workers": 2,
             },
         )
@@ -1099,26 +1118,45 @@ class DeploymentContractTests(unittest.TestCase):
             effective["execution_map_source"],
             "catalog/runtime/contracts/scientific-execution-map.json",
         )
-        helm_bytes = json.dumps(committed_map, separators=(",", ":"), sort_keys=True).encode()
-        self.assertEqual(effective["execution_map_sha256"], hashlib.sha256(helm_bytes).hexdigest())
+        helm_bytes = json.dumps(
+            committed_map, separators=(",", ":"), sort_keys=True
+        ).encode()
+        self.assertEqual(
+            effective["execution_map_sha256"], hashlib.sha256(helm_bytes).hexdigest()
+        )
         profiles = json.loads(
-            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json").read_text(
-                encoding="utf-8"
-            )
+            (
+                DEPLOY_ROOT
+                / "catalog/runtime/contracts/scientific-workload-profiles.json"
+            ).read_text(encoding="utf-8")
         )["profiles"]
         profiles_by_id = {profile["model_id"]: profile for profile in profiles}
         for model in committed_map["models"]:
-            qualified_digest = profiles_by_id[model["model_id"]]["qualification"]["execution_map_sha256"]
-            baseline_ids = committed_map.get("qualification_baselines", {}).get(qualified_digest)
+            qualified_digest = profiles_by_id[model["model_id"]]["qualification"][
+                "execution_map_sha256"
+            ]
+            baseline_ids = committed_map.get("qualification_baselines", {}).get(
+                qualified_digest
+            )
             if baseline_ids is not None:
                 self.assertIn(model["model_id"], baseline_ids)
                 rows = {row["model_id"]: row for row in committed_map["models"]}
-                measured = {"schema": committed_map["schema"], "models": [rows[key] for key in baseline_ids]}
+                measured = {
+                    "schema": committed_map["schema"],
+                    "models": [rows[key] for key in baseline_ids],
+                }
             else:
-                measured = {key: value for key, value in committed_map.items() if key != "qualification_baselines"}
-            self.assertEqual(qualified_digest, hashlib.sha256(
-                json.dumps(measured, separators=(",", ":"), sort_keys=True).encode()
-            ).hexdigest())
+                measured = {
+                    key: value
+                    for key, value in committed_map.items()
+                    if key != "qualification_baselines"
+                }
+            self.assertEqual(
+                qualified_digest,
+                hashlib.sha256(
+                    json.dumps(measured, separators=(",", ":"), sort_keys=True).encode()
+                ).hexdigest(),
+            )
 
         for relative in ("locals.tf", "outputs.tf"):
             with self.subTest(source=relative):
@@ -3270,7 +3308,12 @@ class DeploymentContractTests(unittest.TestCase):
         )
         selected = ("cosmos3-nano", "qwen3-8b")
         self.assertEqual(
-            sorted({inventory["routes"][model_id]["service"]["port"] for model_id in selected}),
+            sorted(
+                {
+                    inventory["routes"][model_id]["service"]["port"]
+                    for model_id in selected
+                }
+            ),
             [8000, 8080],
         )
 
@@ -3284,7 +3327,12 @@ class DeploymentContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("selected_runtime_ports = [", locals_source)
-        self.assertIn("format(\"%05d\", local.selected_routes[model_id].service.port)", locals_source)
+        self.assertIn("local.selected_routes[model_id].service.port", locals_source)
+        self.assertIn(
+            "local.model_controller_retained_bundles : bundle.primaryServicePort",
+            locals_source,
+        )
+        self.assertIn('format("%05d", port)', locals_source)
         self.assertIn("ports = local.selected_runtime_ports", control_plane_source)
         self.assertIn(
             'nodeScalerProvider = local.admin_configuration_enabled ? "nebius-managed-node-group-autoscaler" : ""',

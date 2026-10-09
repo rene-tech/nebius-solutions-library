@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+import test_scientific_batch_postgres_state as postgres_fixtures
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from test_scientific_batch_postgres_state import durable_input_artifact
@@ -44,7 +45,8 @@ from fs2_serve.user_models import InferenceUser, owner_id
 from fs2_serve.user_repository import PostgresUserRepository
 from fs2_serve.users import UserService
 
-pytest_plugins = ("test_scientific_batch_postgres_state",)
+# Reuse the exact isolated PostgreSQL lifecycle fixture across this consumer suite.
+store = postgres_fixtures.store
 
 
 async def parent_fixture(store, *, request_budget=10, gpu_budget=100, video=False):

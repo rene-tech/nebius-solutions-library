@@ -851,7 +851,7 @@ def _admin_catalog() -> Any:
         from fs2_serve.native_catalog import augment_native_catalog
 
         return augment_native_catalog(
-            load_catalog(CATALOG_ROOT), CATALOG_ROOT, repo_root=REPOSITORY_ROOT
+            load_catalog(CATALOG_ROOT), CATALOG_ROOT, repo_root=CATALOG_ROOT / "packaged-repository"
         )
     except (ImportError, OSError, ValueError) as exc:
         raise DeploymentError(

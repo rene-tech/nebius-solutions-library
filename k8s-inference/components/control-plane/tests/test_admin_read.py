@@ -293,9 +293,7 @@ def test_promql_is_fixed_bounded_and_rejects_selector_injection() -> None:
 
 
 def test_grouped_metrics_are_scoped_to_current_models_and_escape_regex_literals() -> None:
-    queries = PrometheusQueryTemplates.by_model_for_window(
-        seconds=300, model_ids=("qwen3-8b", "model.v2/variant")
-    )
+    queries = PrometheusQueryTemplates.by_model_for_window(seconds=300, model_ids=("qwen3-8b", "model.v2/variant"))
     assert len(queries) == 6
     assert all('model=~"qwen3-8b|model\\\\.v2/variant"' in query for query in queries.values())
     # Other scientific/historical model series must not enter the bounded
@@ -399,7 +397,10 @@ def test_context_overview_models_and_model_detail_are_typed_and_explicit(
 
 @pytest.mark.parametrize("recorded", [None, 0.0, 3.5])
 def test_model_window_total_distinguishes_missing_spans_from_a_measured_zero(
-    registry: Registry, cipher: Any, hasher: Any, recorded: float | None,
+    registry: Registry,
+    cipher: Any,
+    hasher: Any,
+    recorded: float | None,
 ) -> None:
     runtime = _runtime(registry, cipher, hasher)
     _seed_operations(runtime)
@@ -407,9 +408,12 @@ def test_model_window_total_distinguishes_missing_spans_from_a_measured_zero(
     rows = list(runtime.store.operations.values())
     for ordinal, row in enumerate(rows):
         row.view = row.view.model_copy(update={"cold_start_seconds": recorded if ordinal == 0 else None})
-    usage = asyncio.run(runtime.store.admin_usage_window(
-        from_at=FIXED_NOW - timedelta(hours=1), to_at=FIXED_NOW,
-    ))
+    usage = asyncio.run(
+        runtime.store.admin_usage_window(
+            from_at=FIXED_NOW - timedelta(hours=1),
+            to_at=FIXED_NOW,
+        )
+    )
     assert usage.rows[0].accepted_to_ready_operations == (0 if recorded is None else 1)
     with _client(runtime) as client:
         response = client.get("/admin/api/v1/models?search=qwen", headers=ADMIN_AUTH)
@@ -857,14 +861,29 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
         expected_data_schema = route["data_schema"]
         if route.get("response_format") == "binary":
             assert success_response["content"]["application/octet-stream"]["schema"] == {
-                "type": "string", "format": "binary"
+                "type": "string",
+                "format": "binary",
             }
             assert route["cache_control"] == "no-store"
+        elif route.get("response_format") == "untyped-json":
+            # Deployed customer/workbench inventory and retirement endpoints
+            # predate typed response declarations. Keep that limitation explicit
+            # and seal their actual schema rather than calling empty JSON typed.
+            assert route["schema_state"] == "unavailable"
+            assert success_response["content"]["application/json"]["schema"] == route["openapi_schema"]
+            assert "$ref" not in route["openapi_schema"]
+            assert "properties" not in route["openapi_schema"]
         elif expected_data_schema is None:
             assert "content" not in success_response
         else:
             success_schema = success_response["content"]["application/json"]["schema"]
             assert expected_data_schema in success_schema["$ref"]
+        if route.get("problem_schema_state") == "unavailable":
+            assert route["response_format"] == "untyped-json"
+            assert {code: value for code, value in responses.items() if not code.startswith("2")} == route[
+                "openapi_error_responses"
+            ]
+            continue
         for status_code in contract["problem"]["status_codes"]:
             response = responses[str(status_code)]
             assert response["content"]["application/problem+json"]["schema"] == {

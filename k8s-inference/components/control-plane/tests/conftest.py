@@ -20,6 +20,7 @@ REPO_ROOT = CATALOG_ROOT / "packaged-repository"
 SCIENTIFIC_FLEET = frozenset(
     {
         "alphafold3",
+        "amber",
         "bindcraft",
         "boltzgen",
         "cosmos3-lerobot-augmentation",
@@ -34,6 +35,7 @@ SCIENTIFIC_FLEET = frozenset(
         "proteina-complexa",
         "protenix-v2",
         "rfdiffusion",
+        "scvi-scanvi",
     }
 )
 sys.path.insert(0, str(CONTROL_ROOT / "src"))

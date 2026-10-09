@@ -564,14 +564,15 @@ variable "deployment" {
         # rollout identity also covers the key's own non-secret identifiers.
         credential_generation = optional(number, 1)
         media_types = optional(set(string), [
+
           "application/gzip",
           "application/json",
           "application/octet-stream",
-          "application/vnd.fs2.scientific-manifest+json",
+          "application/vnd.fs2.amber-checkpoint+json",
           "application/vnd.fs2.gromacs-checkpoint+json",
           "application/vnd.fs2.lammps-checkpoint+json",
           "application/vnd.fs2.namd-checkpoint+json",
-          "application/vnd.fs2.amber-checkpoint+json",
+          "application/vnd.fs2.scientific-manifest+json",
           "application/vnd.fs2.scientific-validation+json",
           "application/x-nifti",
           "application/x-tar",

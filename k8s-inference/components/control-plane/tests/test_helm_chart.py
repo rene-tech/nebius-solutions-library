@@ -1024,10 +1024,19 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
         "resources": ["daemonsets", "deployments"],
         "verbs": ["get", "list", "watch", "create", "patch", "delete"],
     } in model_role["rules"]
-    assert not any(
-        document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
-        for document in documents
-    )
+    # The deployed fallback selector needs cluster-wide pool observations, but
+    # all workload writes remain namespace scoped. Seal its exact read-only role.
+    cluster_roles = [document for document in documents if document["kind"] == "ClusterRole"
+                     and "model-controller" in document["metadata"]["name"]]
+    assert len(cluster_roles) == 1
+    assert cluster_roles[0]["metadata"]["name"] == "fs2-serve-control-plane-model-controller-pool-reader"
+    assert cluster_roles[0]["rules"] == [{"apiGroups": [""], "resources": ["nodes", "pods"], "verbs": ["list"]}]
+    cluster_bindings = [document for document in documents if document["kind"] == "ClusterRoleBinding"
+                        and "model-controller" in document["metadata"]["name"]]
+    assert len(cluster_bindings) == 1
+    assert cluster_bindings[0]["roleRef"]["name"] == cluster_roles[0]["metadata"]["name"]
+    assert cluster_bindings[0]["subjects"] == [{"kind": "ServiceAccount", "name": pod["serviceAccountName"],
+                                              "namespace": "fs2-system"}]
     leader_role = named[("Role", "fs2-serve-control-plane-model-controller-leader")]
     assert leader_role["rules"][0]["resourceNames"] == ["fs2-model-controller"]
 

@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
-from test_fast_start import STORAGE_CONTRACT_DIGEST, evidence, qualify_for_fast_start, with_evidence, with_fast_start
+from test_fast_start import NOW, STORAGE_CONTRACT_DIGEST, evidence, qualify_for_fast_start, with_evidence, with_fast_start
 from test_model_deployment import (
     envelope,
     model_spec,
@@ -820,6 +820,7 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
         namespace="fs2-models",
         uid="cr-uid-1",
         generation=1,
+        evaluation_time=NOW,
         pool=envelope().pools["pool-b"],
         eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
         prometheus_server_address="http://prometheus:9090",
@@ -941,6 +942,7 @@ def test_automatic_status_uses_durable_demand_history_and_persists_hysteresis() 
         namespace="fs2-models",
         uid="cr-uid-1",
         generation=1,
+        evaluation_time=NOW,
         pool=pools["pool-b"],
         eligible_pools=[pools[pool_ref] for pool_ref in spec.placement.pool_refs],
         prometheus_server_address="http://prometheus:9090",

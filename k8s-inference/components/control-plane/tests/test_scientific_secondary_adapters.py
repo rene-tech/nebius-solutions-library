@@ -655,6 +655,9 @@ class _ArtifactRecords:
     def __init__(self, records: tuple[ArtifactRecord, ...]) -> None:
         self.records = {item.artifact_id: item for item in records}
 
+    async def get_artifacts(self, artifact_ids: tuple[UUID, ...], *, tenant_id: str) -> tuple[ArtifactRecord, ...]:
+        return tuple([await self.get_artifact(artifact_id, tenant_id=tenant_id) for artifact_id in artifact_ids])
+
     async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord:
         record = self.records[artifact_id]
         assert record.tenant_id == tenant_id
@@ -844,9 +847,7 @@ async def test_service_bridge_scheduler_controller_and_renderer_use_one_frozen_c
         assert runtime_marker["artifacts"][0]["content_digest"] == (
             "sha256:" + protenix_v2.LOCALIZED_TREE_CONTENT_SHA256
         )
-        assert runtime_marker["artifacts"][0]["artifact_manifest_sha256"] == (
-            protenix_v2.LOCALIZATION_MANIFEST_SHA256
-        )
+        assert runtime_marker["artifacts"][0]["artifact_manifest_sha256"] == (protenix_v2.LOCALIZATION_MANIFEST_SHA256)
     else:
         assert "supplementalGroups" not in pod["securityContext"]
 

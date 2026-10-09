@@ -206,6 +206,17 @@ def test_publish_adds_admin_source_receipts_without_replacing_existing_apps(tmp_
         else:
             key = "profiles" if name == "scientific-workload-profiles.json" else "receipts"
             value[key] = [row for row in value[key] if row["model_id"] not in release.MODELS]
+            if key == "profiles":
+                # inputs() removes already-published native MD Apps to exercise
+                # first onboarding. Bind copied profiles to that synthetic map,
+                # rather than claiming its changed bytes retain a live proof.
+                captured = args[0]["scientificBatch"]["executionMap"]
+                fixture_map_sha = release.hashlib.sha256(release.canonical({
+                    "schema": captured["schema"], "models": captured["models"]
+                })).hexdigest()
+                for profile in value[key]:
+                    if profile.get("route_exposed"):
+                        profile["qualification"]["execution_map_sha256"] = fixture_map_sha
         before[name] = value
         (target / name).write_text(json.dumps(value))
     monkeypatch.setattr(release, "ROOT", tmp_path)

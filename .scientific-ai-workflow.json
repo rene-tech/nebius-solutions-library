@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "personal_repository": "rene-tech/nebius-solutions-library",
+  "main_branch": "main",
+  "workflow": "detached-worktrees"
+}

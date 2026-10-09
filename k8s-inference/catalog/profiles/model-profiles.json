@@ -523,12 +523,12 @@
     "ctoxpred2": {
       "deployment": "ctoxpred2",
       "gpu_count": 0,
-      "ephemeral_storage_request_gib": 0.0625
+      "ephemeral_storage_request_gib": 0.125
     },
     "admet-ai": {
       "deployment": "admet-ai",
       "gpu_count": 0,
-      "ephemeral_storage_request_gib": 0.0625
+      "ephemeral_storage_request_gib": 0.125
     }
   },
   "common_keeper_paths": [

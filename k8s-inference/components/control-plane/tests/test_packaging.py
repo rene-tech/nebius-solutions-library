@@ -30,6 +30,11 @@ def test_wheel_installs_control_plane_and_canonical_catalog_packages() -> None:
     assert wheel["force-include"] == {
         "../../catalog/runtime/fs2_serve_catalog": "fs2_serve_catalog",
         "migrations": "fs2_serve/migrations",
+        "../../models/molecular-dynamics/gromacs/runtime/fs2_gromacs": "fs2_gromacs",
+        "../../models/molecular-dynamics/lammps/runtime/fs2_lammps": "fs2_lammps",
+        "../../models/molecular-dynamics/namd/runtime/fs2_namd": "fs2_namd",
+        "../../models/molecular-dynamics/amber/runtime/fs2_amber": "fs2_amber",
+        "../../models/visual-science/scvi-scanvi/runtime/fs2_scvi": "fs2_scvi",
     }
 
 
@@ -280,6 +285,8 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "0034_retired_event_tenants.sql",
         "0035_benchmark_campaigns.sql",
         "0036_model_retirement.sql",
+        "0037_customer_workbenches.sql",
+        "0038_scientific_claimable_index.sql",
     ]
     assert hashlib.sha256((migration_dir / "0005_terminal_accounting.sql").read_bytes()).hexdigest() == (
         "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197"
@@ -429,6 +436,8 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             "fs2_serve/migrations/0034_retired_event_tenants.sql",
             "fs2_serve/migrations/0035_benchmark_campaigns.sql",
             "fs2_serve/migrations/0036_model_retirement.sql",
+            "fs2_serve/migrations/0037_customer_workbenches.sql",
+            "fs2_serve/migrations/0038_scientific_claimable_index.sql",
         ]
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1
@@ -496,7 +505,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
                 "assert pathlib.Path(fs2_serve_catalog.__file__).resolve().is_relative_to(root);"
                 "migration_dir=Settings.model_fields['migrations_dir'].default;"
                 "assert migration_dir.parent == pathlib.Path(fs2_serve.__file__).resolve().parent;"
-                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 36;"
+                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 38;"
                 "assert Registry and load_gateway_catalog"
             ),
         ],

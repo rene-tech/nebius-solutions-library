@@ -291,7 +291,7 @@
         "kind": "git",
         "repository": "scverse/scvi-tools",
         "revision": "56520c713eb1d2b245c72a0f60bc393b74198c91",
-        "review_url": "https://github.com/scverse/scvi-tools/tree/1.5.0.post1"
+        "review_url": "https://github.com/scverse/scvi-tools/tree/56520c713eb1d2b245c72a0f60bc393b74198c91"
       },
       "access_profile": "standard",
       "access_state": "not-required",

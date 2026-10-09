@@ -201,13 +201,13 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
         source = (ROOT / "stages/workloads/model_controller.tf").read_text(
             encoding="utf-8"
         )
+        self.assertIn("keys(module.kueue_scheduling.contract.local_queues)", source)
         self.assertIn(
-            "sort(keys(module.kueue_scheduling.contract.local_queues))", source
-        )
-        self.assertIn(
-            "sort(keys(module.kueue_scheduling.contract.workload_priority_classes))",
+            "keys(module.kueue_scheduling.contract.workload_priority_classes)",
             source,
         )
+        self.assertIn("localQueues = sort(distinct(concat(", source)
+        self.assertIn("var.general_cpu_lane.local_queue", source)
         self.assertNotIn(
             "localQueues                   = "
             "[local.selected_accelerator_pool_profile.queue.local_queue_name]",
@@ -842,9 +842,10 @@ class CpuStageClassContractTests(unittest.TestCase):
         # from the reference plane's own storage contract. Only namespace and
         # LocalQueue differ; duplicating capacity here would permit drift.
         queue = (ROOT / "stages/workloads/queue.tf").read_text(encoding="utf-8")
-        reference_class = queue.split("reference_cpu_class_backing = {", 1)[1].split(
-            "\n  scientific_cpu_classes = merge(", 1
-        )[0]
+        reference_class = queue.split(
+            "reference_cpu_class_backing = var.reference_data.storage_contract == null ? null : {",
+            1,
+        )[1].split("\n  scientific_cpu_classes = merge(", 1)[0]
         for class_name in ("reference-data", "model-reference-data"):
             self.assertIn(
                 f"{class_name} = merge(local.reference_cpu_class_backing, {{", queue
