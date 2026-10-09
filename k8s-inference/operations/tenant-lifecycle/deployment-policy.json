@@ -1,0 +1,83 @@
+{
+  "schema": "fs2-tenant-lifecycle-intent/v1",
+  "reviewed_at": "2026-09-29",
+  "note": "Operator intent, not a second user database or an automatic deletion allowlist. Actual identities, grants and storage bindings remain in PostgreSQL.",
+  "default_storage_mode": "tenant",
+  "default_quota_bytes": 5000000000,
+  "tenants": {
+    "rene": {
+      "id": "rene",
+      "display_name": "Rene",
+      "purpose": "customer-internal",
+      "mode": "tenant",
+      "users": ["rene"],
+      "preserve_existing_access": true
+    },
+    "koprabio": {
+      "id": "kopra",
+      "aliases": ["KopraBio"],
+      "display_name": "KopraBio",
+      "purpose": "customer",
+      "mode": "tenant",
+      "users": ["kopra"],
+      "preserve_existing_access": true,
+      "note": "User confirmed this is existing Kopra. Never recreate/rename its identity, rotate its keys or replace its mounted bucket implicitly."
+    },
+    "lynx": {
+      "id": "lynx",
+      "display_name": "Lynx",
+      "purpose": "customer-molecular-dynamics",
+      "mode": "tenant",
+      "users": ["lynx"],
+      "preserve_existing_access": true,
+      "model_grants": ["amber", "gromacs", "gromacs-mpi", "lammps", "namd"],
+      "key_sharing": "Explicit owner exception: one shared API key, max_concurrency 8, across both LibreChat logins; attribution is tenant/service-principal level.",
+      "librechat_mode": "tenant-shared",
+      "librechat_members": [
+        {"member": "gyorgy", "endpoint_id": "aiendpoint-e00kybbs8a1sbxcfyw"},
+        {"member": "daniel", "endpoint_id": "aiendpoint-e00kybbs8a1sbxcfyw"}
+      ],
+      "note": "Owner explicitly clarified on 2026-09-29: one shared LibreChat instance with two distinct local logins, overriding the per-user-instance default for Lynx. Includes AMBER26 and one shared 5 GB bucket fs2-lynx-c327dcc386444425. Chats are account-scoped; workspace files and model usage are shared. No public signup. Do not split the instance or issue two eight-slot keys."
+    },
+    "system": {
+      "id": "system",
+      "display_name": "System",
+      "purpose": "development-and-qa",
+      "mode": "tenant",
+      "users": ["development", "qa"],
+      "run_prefix": "runs/<task-id>/<run-id>/",
+      "note": "Reuse these users and shared workspace; temporary isolation users/resources need an explicit scope and closeout."
+    },
+    "demo": {
+      "id": "demo",
+      "display_name": "Demo",
+      "purpose": "showcase",
+      "mode": "tenant",
+      "users": ["demo"],
+      "migration_sources": ["demo-user"],
+      "note": "Target, not an executed cutover. Export current demo client state and migrate its bindings before retiring demo-user."
+    },
+    "speech-to-text": {
+      "id": "speech-to-text",
+      "display_name": "Speech to text",
+      "purpose": "speech-workstream",
+      "mode": "tenant",
+      "users": ["speech"],
+      "migration_sources": ["clinical-speech-demo-20260925", "clinical-speech-round2-20260925"],
+      "note": "Target shared workspace; existing private speech workspaces and active clients require an explicit migration. Large speech-service artifacts remain infrastructure data."
+    }
+  },
+  "demo_data_source": {
+    "owner_tenant": "system",
+    "purpose": "demo-data-source",
+    "bucket_name_pattern": "fs2-system-<stable-id>",
+    "bucket_id": null,
+    "status": "not-created-by-this-change",
+    "note": "One dedicated system-owned platform bucket, distinct from the system QA workspace. Not another customer tenant. Publish reviewed immutable examples/vN prefixes; never source customer buckets.",
+    "selected_version": "v3",
+    "manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+    "seed_mode": "one-shot-nebius-data-transfer-v1",
+    "overwrite_strategy": "NEVER",
+    "delete_destination_objects": false
+  }
+}
