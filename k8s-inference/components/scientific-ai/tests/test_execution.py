@@ -11,12 +11,21 @@ from pydantic import ValidationError
 from scientific_ai.contracts import Attempt, FileRecord, GromacsRun, Owner, RuntimeProfile
 from scientific_ai.gromacs import DeliveryPending, GromacsApplication
 from scientific_ai.serverless import (
-    REQUIRED_CAPABILITIES,
     ServerlessClient,
     UnsupportedExecution,
     invoke_payload,
 )
 from scientific_ai.storage import Artifacts, S3Objects
+
+
+def fleet_execution():
+    return {
+        "io_modes": ["managed", "application"],
+        "execution_profiles": ["profile"],
+        "identities": ["identity"],
+        "private_input_dir": "/var/run/serverless2/private",
+        "identity_token_file": "/var/run/secrets/workload-identity/token",
+    }
 
 
 @pytest.mark.parametrize(
@@ -226,7 +235,7 @@ def test_private_data_and_raw_storage_handles_do_not_enter_public_submission(set
     for forbidden in ("input.tar.gz", "s3://", "parameters", "access_key", "secret", "run.tpr", "image"):
         assert forbidden not in encoded
     assert payload["execution"]["placement"]["gpu_preference"] == ["rtx-pro-6000", "l40s"]
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         invoke_payload(
             args["profile"],
             profile_ref="protected",
@@ -235,13 +244,13 @@ def test_private_data_and_raw_storage_handles_do_not_enter_public_submission(set
         )
 
 
-@pytest.mark.parametrize("missing", [None, *sorted(REQUIRED_CAPABILITIES)])
+@pytest.mark.parametrize("missing", [None, *sorted(fleet_execution())])
 def test_missing_s2_contract_prevents_submission(setup, missing):
     calls = []
 
     def handle(request):
         calls.append(request.method)
-        supported = {key: True for key in REQUIRED_CAPABILITIES if key != missing}
+        supported = {key: value for key, value in fleet_execution().items() if key != missing}
         return httpx.Response(404 if missing is None else 200, json={"execution": supported})
 
     client = ServerlessClient(
@@ -263,7 +272,7 @@ def test_submission_has_stable_idempotency_and_does_not_retry_implicitly(setup):
     def handle(request):
         calls.append(request)
         if request.method == "GET":
-            return httpx.Response(200, json={"execution": dict.fromkeys(REQUIRED_CAPABILITIES, True)})
+            return httpx.Response(200, json={"execution": fleet_execution()})
         return httpx.Response(202, json={"root_operation_id": "run-1"})
 
     args, _, _ = setup
@@ -325,7 +334,7 @@ def test_status_and_cancel_use_serverless_state_without_a_local_retry_loop():
         [],
         {"execution": []},
         {"execution": "all"},
-        {"execution": dict.fromkeys(REQUIRED_CAPABILITIES, "true")},
+        {"execution": dict.fromkeys(fleet_execution(), "true")},
     ],
 )
 def test_malformed_or_stringified_capabilities_are_not_accepted(document):

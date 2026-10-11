@@ -47,6 +47,12 @@ Its five requirements are agreed; integration is owned by the Serverless team.
 The runtime source is the Solutions Library Serverless PR, not the historical
 example GROMACS catalog in the Serverless notes repository.
 
+The delivered S2 implementation has now been inspected and its live discovery
+verified. The Scientific AI wire adapter is updated, but the joint
+[integration probes and remaining execution gaps](S2-INTEGRATION-GAPS-20261011.md)
+currently block a truthful compatible GROMACS deployment. No migration
+API/MCP service or GPU worker has been rolled out yet.
+
 ## Implemented on the application side
 
 [components/scientific-ai](../components/scientific-ai/README.md) is the new small
@@ -73,8 +79,9 @@ keep their defaults. No customer image is rebuilt or deployed by source integrat
 | S2-04 placement/recovery | Qualify exact RTX and L40S builds, freeze one compatible scientific revision, then abruptly lose an RTX attempt and resume in an approved L40S cluster. Record actual GPU/image/cluster, steps lost/repeated/completed and ns/day. |
 | S2-05 finalization/cleanup | Exercise denied/partial output writes and lost acknowledgments. Prove no false success or premature scratch deletion and transfer-only recovery on the approved storage profile. |
 
-The last inspected fleet handover did not list RTX/L40S pools. Check live test
-capacity before scheduling this gate; do not substitute H100 and call it passed.
+The new S2 handoff lists RTX/L40S spot pools (us-central1/eu-north1), each capped
+at two nodes. Check live test capacity before scheduling this gate; do not
+substitute H100 and call it passed.
 Do not reprovision current Scientific AI customer nodes for migration testing.
 
 Once the pilot passes, migrate the existing REST/MCP artifact/operation envelope,

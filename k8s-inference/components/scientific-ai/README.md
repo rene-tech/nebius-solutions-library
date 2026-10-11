@@ -24,7 +24,7 @@ legacy checkpoint recipe and local/companion modes remain unchanged.
 | Module | Responsibility |
 | --- | --- |
 | `contracts.py` | Authenticated owner/attempt context, private scientific input, job-bound grant, immutable runtime map and manifests |
-| `serverless.py` | Small submission/status/cancel client, opaque request references, capability check; the lifecycle port awaits the integrated S2 API |
+| `serverless.py` | S2 0.11.8+ fleet discovery, private binding, submission/status/result/cancel/resume transport; lifecycle guarantees remain gated by the integration probes |
 | `identity.py` | Per-job AWS SDK web-identity provider with renewal; no environment/static-key/metadata-service credential fallback |
 | `storage.py` | Scoped S3 transfer, streaming SHA-256 validation, incremental closed-file objects and manifest-last publication |
 | `gromacs.py` | Existing native GROMACS execution with durable application-managed checkpoints, fresh-workspace restore and transfer-only recovery |
@@ -137,9 +137,13 @@ directory if those artifacts must survive normal `/tmp` cleanup.
 
 See [the migration handoff](../../docs/SERVERLESS2-MIGRATION.md). In particular:
 
-- The seven capability keys and `execution` wire fields in `serverless.py` are
-  **provisional**, aligned to S2-01..05. Supply the final discovery path explicitly;
-  do not deploy the adapter against a server that ignores these fields.
+- The wire adapter now uses the delivered `GET /v1/fleet` execution shape, named
+  profiles/identities, confidential bindings and portable resume request. An
+  absent AWS trust setup can use an explicitly authorized confidential binding;
+  it must not try the test fleet's placeholder role or ambient credentials.
+  Discovery proves configuration availability, not execution correctness. The
+  [upstream integration probes](../../docs/S2-INTEGRATION-GAPS-20261011.md)
+  currently fail required finalization, resume and fallback contracts.
 - Implement `Lifecycle` against the S2 team's final authenticated current-attempt,
   checkpoint and finalization APIs. The only implementation here is a test double
   under `tests/`; there is deliberately no permissive production implementation.
