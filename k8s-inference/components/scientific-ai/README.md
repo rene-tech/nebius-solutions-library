@@ -1,6 +1,6 @@
 # Scientific AI application layer on Serverless 2.0
 
-An **isolated, pre-deployment implementation**, starting with GROMACS. Existing
+An **isolated migration pilot**, starting with GROMACS. Existing
 Scientific AI routes, customer workloads, tenants, buckets, MCP tools and the
 admin UI are unchanged. This is not a replacement API rollout or a claim of
 customer/PHI readiness.
@@ -14,7 +14,9 @@ customer/PHI readiness.
   placement-time image choice, durable status/finalization and runtime isolation.
 - **Provider SDK/IAM:** temporary credentials, renewal and actual storage permissions.
 
-There is no new scheduler, database, token issuer, operator or workflow engine.
+There is no new scheduler, user database, cloud credential issuer, operator or workflow engine.
+The optional online object signer issues job-scoped application capabilities;
+it does not issue customer API keys or cloud credentials.
 The wheel includes the existing `fs2_gromacs` native worker from its original
 source directory; it does not import or copy the old control plane. Its default
 legacy checkpoint recipe and local/companion modes remain unchanged.
@@ -24,7 +26,11 @@ legacy checkpoint recipe and local/companion modes remain unchanged.
 | Module | Responsibility |
 | --- | --- |
 | `contracts.py` | Authenticated owner/attempt context, private scientific input, job-bound grant, immutable runtime map and manifests |
-| `serverless.py` | S2 0.11.8+ fleet discovery, private binding, submission/status/result/cancel/resume transport; lifecycle guarantees remain gated by the integration probes |
+| `serverless.py` | S2 0.11.11 fleet discovery, private binding and idempotent execution/continuation transport |
+| `lifecycle.py` / `runner.py` | Authenticated uploader file bridge, epoch-fenced pointer acknowledgement and one native execution |
+| `gateway.py` / `mcp_server.py` | REST and typed MCP compatibility, S2 key authentication, same application methods for both clients |
+| `gateway_store.py` | Owner-scoped immutable artifacts and UUID compatibility references in customer object storage; no scheduling state |
+| `broker.py` | Request/attempt-scoped direct S3 transfer, including multipart uploads; no bucket credentials in GPU pods |
 | `identity.py` | Per-job AWS SDK web-identity provider with renewal; no environment/static-key/metadata-service credential fallback |
 | `storage.py` | Scoped S3 transfer, streaming SHA-256 validation, incremental closed-file objects and manifest-last publication |
 | `gromacs.py` | Existing native GROMACS execution with durable application-managed checkpoints, fresh-workspace restore and transfer-only recovery |
@@ -143,13 +149,37 @@ See [the migration handoff](../../docs/SERVERLESS2-MIGRATION.md). In particular:
   it must not try the test fleet's placeholder role or ambient credentials.
   Discovery proves configuration availability, not execution correctness. The
   [upstream integration probes](../../docs/S2-INTEGRATION-GAPS-20261011.md)
-  currently fail required finalization, resume and fallback contracts.
-- Implement `Lifecycle` against the S2 team's final authenticated current-attempt,
-  checkpoint and finalization APIs. The only implementation here is a test double
-  under `tests/`; there is deliberately no permissive production implementation.
-- Connect protected binding resolution and the existing Scientific AI authorization
-  and operation/API envelopes. No ephemeral in-memory grant store is introduced.
+  now pass finalization, resume and fallback contracts against 0.11.11.
+- Qualify `FileLifecycle` against the actual 0.1.14 uploader. It waits for fenced
+  durable pointer acknowledgement, not file existence. Result publication is also
+  a recoverable checkpoint; S2 alone decides terminal success after main exits.
+- The pilot authenticates existing **S2** internal keys and preserves UUID-shaped
+  Scientific AI handles, artifact upload, submit, status, result, cancel and
+  native-resume routes. This does not migrate existing production API keys/users.
 - Qualify exact optimized RTX/L40S image digests and real storage grants on the
   shared `s2pr2` fleet. Do not touch the current customer cluster or use customer keys.
 
 Reference: [AWS SDK web-identity authentication](https://docs.aws.amazon.com/sdkref/latest/guide/access-assume-role-web.html).
+
+## Pilot deployment and explicit limits
+
+`deploy/` is an isolated Terraform application deployment into the s2pr2 control
+cluster. It creates only its own Namespace, configuration Secret, Deployment,
+Service and `/scientific-ai` HTTPRoute. It does not change GPU pools, shared
+Serverless releases or customer routes. State and the 0600 configuration file
+belong outside Git. `acceptance/serverless2-gromacs-20261011/pilot.py` prepares
+internal bindings, registers the GPU-image map and drives fresh synthetic runs.
+
+The online signer holds the configured storage credential in the trusted API,
+not in GPU pods, then authorizes the active S2 attempt and one operation prefix
+before issuing a 60-second object URL. It supports direct multipart transfer.
+Previously issued URLs can remain valid for at most 60 seconds after termination;
+this is not instantaneous provider revocation. No signing request bodies,
+credentials or URLs are written to shared logs. The federation module remains
+an alternative once a real external AWS trust setup is supplied and tested.
+
+The first pilot is **one native job per operation, one GPU**. Multi-job fan-out,
+external-MPI, legacy admin integration, production identity migration, events,
+changing continuation budgets and full extension/library qualification remain
+on the existing production implementation. They are not removed or claimed
+implemented in the replacement. It is not customer-ready or PHI-approved.

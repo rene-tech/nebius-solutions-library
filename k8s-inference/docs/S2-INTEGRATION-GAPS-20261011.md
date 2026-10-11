@@ -4,6 +4,19 @@ Scope: the first lean Scientific AI GROMACS REST/MCP deployment on the shared
 `s2pr2` test fleet. No customer cluster, key, bucket, workload or route was changed.
 Scientific AI work remains on `scientific-ai-serverless2-migration`.
 
+## Retest after Serverless integration (11 October, afternoon)
+
+All three executable probes now **pass**, against Serverless commit
+`56aaa9eb3c9b6fb1176584c73e463884473b2c17`. The shared control API is 0.11.11;
+the jobs 0.1.14 uploader adds the live checkpoint file bridge and retains scratch
+until acknowledged delivery. The original findings below are preserved as
+incident history, not current blockers.
+
+The application now implements the file bridge, idempotent resume, REST/MCP
+compatibility routes and online request-scoped S3 object signing. Actual GPU,
+cross-cluster and failure-injection acceptance remains separate from these
+passing offline probes. No customer cutover is authorized.
+
 ## Implemented and checked here
 
 The lean application's Serverless client now speaks the delivered API rather
@@ -22,7 +35,7 @@ than the earlier provisional discovery contract:
 That identity is a normal internal test user, not a customer or operator key.
 No GROMACS API/MCP endpoint has been deployed or qualified by this slice.
 
-## Blocking execution contracts
+## Original blocking execution contracts (fixed upstream; retained evidence)
 
 These are functional/data-durability requirements agreed for the pilot, not new
 compliance requirements. Do not bypass them with a second Scientific AI scheduler
@@ -53,8 +66,8 @@ From this Scientific AI branch:
 ```
 
 This uses the Serverless project's installed test dependencies and fake cluster,
-not Kubernetes credentials. Exit 1 is the current expected failing integration
-gate; do not convert it to a passing or skipped test. The receipt identifies the
+not Kubernetes credentials. Exit 0 is now expected; do not convert a regression
+to a passing or skipped test. The receipt identifies the
 Serverless source commit and reports the actual outcomes.
 
 Last complete probe: S2 source `069cfe712d3c44e90c74c6fa3c63fa4b891e7f61`;

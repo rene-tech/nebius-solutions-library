@@ -9,9 +9,13 @@ description = "Scientific application adapters for Serverless 2.0; no scheduler"
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "boto3==1.40.47",
+  "fastapi==0.141.1",
   "httpx==0.28.1",
   "jsonschema==4.26.0",
+  "mcp==2.1.1",
   "pydantic==2.12.5",
+  "PyJWT==2.13.0",
+  "uvicorn==0.35.0",
 ]
 
 [dependency-groups]

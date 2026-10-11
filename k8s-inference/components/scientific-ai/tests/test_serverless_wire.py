@@ -107,7 +107,7 @@ def test_resume_uses_portable_checkpoint_and_actual_wire_shape():
         return httpx.Response(202, json={"id": "op-gromacs-1-r1", "status": "QUEUED"})
 
     c = client(handler)
-    c.resume("op-gromacs-1", checkpoint_ref="a" * 64, gpu_class="l40s")
+    c.resume("op-gromacs-1", idempotency_key="resume-1", checkpoint_ref="a" * 64, gpu_class="l40s")
     assert seen[0].url.path == "/v1/operations/op-gromacs-1:resume"
     assert json.loads(seen[0].content) == {"checkpoint_ref": "a" * 64, "gpu_class": "l40s"}
 

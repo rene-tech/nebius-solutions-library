@@ -1,0 +1,12 @@
+ARG ENGINE_IMAGE=scientific-ai/gromacs-engine:2026.4-sm89-pilot
+FROM ${ENGINE_IMAGE}
+COPY dist/*.whl /tmp/wheels/
+COPY dist/requirements.txt /tmp/requirements.txt
+RUN python3 -m venv /opt/scientific-ai && \
+    /opt/scientific-ai/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt && \
+    /opt/scientific-ai/bin/pip install --no-cache-dir --no-deps /tmp/wheels/*.whl && \
+    rm -rf /tmp/wheels
+ENV PATH=/opt/scientific-ai/bin:/opt/gromacs/bin:$PATH \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+USER 10001:10001
+ENTRYPOINT ["python", "-m", "scientific_ai.runner"]

@@ -240,19 +240,34 @@ class ServerlessClient:
             raise ServerlessError(503)
         return document
 
-    def resume(self, operation_id: str, *, checkpoint_ref: str, gpu_class: str | None = None) -> dict:
-        """One explicit request. S2 0.11.8 does not accept a resume idempotency key.
+    def resume(
+        self,
+        operation_id: str,
+        *,
+        idempotency_key: str,
+        checkpoint_ref: str | None = None,
+        gpu_class: str | None = None,
+    ) -> dict:
+        """S2 0.11.11 binds one continuation to the key and request payload.
 
-        The compatibility API must not advertise idempotent continuation until
-        the upstream resume boundary can bind an intent to one new operation.
+        With no explicit reference, S2 selects the newest acknowledged checkpoint,
+        including after loss of the old execution volume.
         """
         from pydantic import TypeAdapter
 
         from .contracts import Digest
 
         TypeAdapter(Identifier).validate_python(operation_id)
-        TypeAdapter(Digest).validate_python(checkpoint_ref)
-        body = {"checkpoint_ref": checkpoint_ref}
+        _idempotency(idempotency_key)
+        body = {}
+        if checkpoint_ref is not None:
+            TypeAdapter(Digest).validate_python(checkpoint_ref)
+            body["checkpoint_ref"] = checkpoint_ref
         if gpu_class is not None:
             body["gpu_class"] = _reference(gpu_class)
-        return self._request("POST", f"/v1/operations/{operation_id}:resume", json=body)
+        return self._request(
+            "POST",
+            f"/v1/operations/{operation_id}:resume",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+        )
