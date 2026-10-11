@@ -17,6 +17,7 @@ import os
 import secrets
 import subprocess
 import tarfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -114,7 +115,9 @@ def prepare(directory, tag, api_tag=None):
             "images": {"rtx-pro-6000": images["gromacs-sm120"], "l40s": images["gromacs-sm89"]},
             "allowed_clusters": ["us-central1", "eu-north1"],
             "gpu_preference": ["rtx-pro-6000", "l40s"],
-            "fallback_wait_s": 420,
+            # S2 only applies this to an unplaced run (both preferred slots
+            # reserved), not to a placed run booting its new GPU node.
+            "fallback_wait_s": 60,
         },
         "tenants": {
             "sciai": {
@@ -466,10 +469,51 @@ def control(directory, name, action, path, gpu_class):
         )
 
 
+def boundaries(directory, name):
+    """Real gateway checks with internal identities; no customer credentials."""
+    receipt = json.loads((directory / (name + ".json")).read_bytes())
+    op, key = receipt["response"]["operation_id"], "s2-gromacs-20261011-" + name
+    selected, evidence = keys(), {"at": now()}
+    with httpx.Client(base_url=PUBLIC, timeout=120) as client:
+        evidence["anonymous_rest"] = client.get("/v1/scientific-models").status_code
+        evidence["anonymous_mcp"] = client.post(
+            "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+        ).status_code
+        evidence["other_principal_operation"] = client.get(
+            "/v1/operations/" + op, headers={"Authorization": "Bearer " + selected["admin"]}
+        ).status_code
+        evidence["other_principal_artifact"] = client.get(
+            "/v1/artifacts/" + receipt["request"]["input_manifest"]["artifact_id"] + "/content",
+            headers={"Authorization": "Bearer " + selected["admin"]},
+        ).status_code
+        assert evidence["anonymous_rest"] == evidence["anonymous_mcp"] == 401
+        assert evidence["other_principal_operation"] == evidence["other_principal_artifact"] == 404
+        headers = {"Authorization": "Bearer " + selected["worker"], "Idempotency-Key": key}
+
+        def replay(_):
+            response = client.post("/v1/models/gromacs:submit", json=receipt["request"], headers=headers)
+            response.raise_for_status()
+            return response.json()["operation_id"]
+
+        with ThreadPoolExecutor(max_workers=6) as workers:
+            identities = list(workers.map(replay, range(6)))
+        assert identities == [op] * 6
+        evidence["concurrent_replays"] = {"requests": 6, "unique_operations": len(set(identities))}
+        altered = json.loads(json.dumps(receipt["request"]))
+        altered["parameters"]["max_wall_seconds"] += 1
+        evidence["different_intent_same_key"] = client.post(
+            "/v1/models/gromacs:submit", json=altered, headers=headers
+        ).status_code
+        assert evidence["different_intent_same_key"] == 409
+    write(directory / (name + "-boundaries.json"), evidence)
+    print(json.dumps(evidence))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "action", choices=["prepare", "register", "submit", "status", "replay", "cancel", "resume"]
+        "action",
+        choices=["prepare", "register", "submit", "status", "replay", "cancel", "resume", "boundaries"],
     )
     parser.add_argument("--private-dir", type=Path, required=True)
     parser.add_argument("--tag", default="pilot-20261011-r2")
@@ -487,6 +531,8 @@ def main():
         submit(args.private_dir, args.name, args.steps, args.path)
     elif args.action == "status":
         status(args.private_dir, args.name)
+    elif args.action == "boundaries":
+        boundaries(args.private_dir, args.name)
     else:
         control(args.private_dir, args.name, args.action, args.path, args.gpu_class)
 

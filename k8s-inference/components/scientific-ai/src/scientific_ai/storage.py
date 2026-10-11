@@ -17,6 +17,7 @@ from uuid import uuid4
 from fs2_gromacs.files import FileDigestCache, file_signature
 
 from .contracts import FileRecord, Snapshot
+from .transfer import TRANSIENT, retry_transfer
 
 CHUNK = 4 * 1024**2
 MANIFEST_LIMIT = 32 * 1024**2
@@ -79,20 +80,34 @@ class Artifacts:
         """
         from contextlib import ExitStack
 
-        with ExitStack() as stack:
-            source = self.objects.get(key)
-            stack.callback(source.close)
-            output = stack.enter_context(destination.open("xb")) if destination is not None else None
-            sha, total = hashlib.sha256(), 0
-            while block := source.read(CHUNK):
-                total += len(block)
-                if total > size:
-                    raise ValueError("object exceeds its immutable size")
-                sha.update(block)
-                if output is not None:
-                    output.write(block)
-            if (total, sha.hexdigest()) != (size, digest):
-                raise ValueError("object content differs from its immutable identity")
+        def read():
+            # Only this call's newly created partial destination may be removed.
+            # Never unlink a pre-existing file, including on a failed open.
+            created = False
+            try:
+                with ExitStack() as stack:
+                    source = self.objects.get(key)
+                    stack.callback(source.close)
+                    output = None
+                    if destination is not None:
+                        output = stack.enter_context(destination.open("xb"))
+                        created = True
+                    sha, total = hashlib.sha256(), 0
+                    while block := source.read(CHUNK):
+                        total += len(block)
+                        if total > size:
+                            raise ValueError("object exceeds its immutable size")
+                        sha.update(block)
+                        if output is not None:
+                            output.write(block)
+                    if (total, sha.hexdigest()) != (size, digest):
+                        raise ValueError("object content differs from its immutable identity")
+            except TRANSIENT:
+                if created:
+                    destination.unlink()
+                raise
+
+        retry_transfer(read)
 
     def upload(self, path: Path, record: FileRecord) -> None:
         before = path.lstat()
@@ -103,8 +118,12 @@ class Artifacts:
         identity = (record.sha256, record.size_bytes)
         if identity not in self.verified:
             key = "blobs/" + record.sha256
-            with path.open("rb") as source:
-                self.objects.put(key, source)
+
+            def put():
+                with path.open("rb") as source:
+                    self.objects.put(key, source)
+
+            retry_transfer(put)
             self.verify(key, *identity)
             self.verified.add(identity)
         if file_signature(before) != file_signature(path.lstat()):
@@ -129,7 +148,7 @@ class Artifacts:
         if len(data) > MANIFEST_LIMIT:
             raise ValueError("snapshot manifest exceeds the size budget")
         digest = hashlib.sha256(data).hexdigest()
-        self.objects.put("manifests/" + digest, io.BytesIO(data))
+        retry_transfer(lambda: self.objects.put("manifests/" + digest, io.BytesIO(data)))
         self.verify("manifests/" + digest, digest, len(data))
         return digest
 
@@ -139,11 +158,15 @@ class Artifacts:
         from .contracts import Digest
 
         TypeAdapter(Digest).validate_python(reference)
-        source = self.objects.get("manifests/" + reference)
-        try:
-            data = source.read(MANIFEST_LIMIT + 1)
-        finally:
-            source.close()
+
+        def read():
+            source = self.objects.get("manifests/" + reference)
+            try:
+                return source.read(MANIFEST_LIMIT + 1)
+            finally:
+                source.close()
+
+        data = retry_transfer(read)
         if len(data) > MANIFEST_LIMIT or hashlib.sha256(data).hexdigest() != reference:
             raise ValueError("snapshot manifest content differs from its reference")
         return Snapshot.model_validate(json.loads(data))

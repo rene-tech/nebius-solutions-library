@@ -40,7 +40,7 @@ def main() -> int:
         )
         # Neither request arguments nor environment can select another image,
         # executable, Kubernetes identity, or shared cache.
-        with httpx.Client(timeout=httpx.Timeout(120, connect=10), follow_redirects=False) as http:
+        with httpx.Client(timeout=httpx.Timeout(120, connect=10, read=30), follow_redirects=False) as http:
             objects = BrokerObjects(
                 http=http,
                 url=binding.broker_url,

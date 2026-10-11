@@ -58,6 +58,8 @@ class BrokerObjects:
             json={"action": action, "key": key, "attempt_id": self.attempt_id, **values},
             follow_redirects=False,
         )
+        if response.status_code in (408, 429, 500, 502, 503, 504):
+            raise ConnectionError("job storage authorization is temporarily unavailable")
         if response.status_code != 200:
             raise PermissionError(f"job storage grant refused (HTTP {response.status_code})")
         return response.json()
@@ -68,6 +70,8 @@ class BrokerObjects:
         response = self.http.send(request, stream=True, follow_redirects=False)
         if response.status_code != 200:
             response.close()
+            if response.status_code in (408, 429, 500, 502, 503, 504):
+                raise ConnectionError("customer object is temporarily unavailable")
             raise OSError("customer object could not be read")
         return io.BufferedReader(_Stream(response), buffer_size=1024**2)
 
@@ -77,6 +81,8 @@ class BrokerObjects:
         if not second:
             target = self._request("put", key)
             response = self.http.put(target["url"], content=first, follow_redirects=False)
+            if response.status_code in (408, 429, 500, 502, 503, 504):
+                raise ConnectionError("customer object write is temporarily unavailable")
             if response.status_code not in (200, 201, 204):
                 raise OSError("customer object could not be written")
             return
