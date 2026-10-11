@@ -1,3 +1,7 @@
+import io
+import json
+import urllib.request
+
 import httpx
 import jwt
 import pytest
@@ -43,6 +47,25 @@ def verify(verifier, token, **overrides):
 
 def test_real_projected_signature(verifier, pod_tokens):
     verify(verifier, pod_tokens[1](pod_tokens[0]()))
+
+
+def test_jwks_transport_identifies_application_and_keeps_verification(verifier, pod_tokens, monkeypatch):
+    client = verifier.keys["test-a"]
+    monkeypatch.setattr(client, "fetch_data", jwt.PyJWKClient.fetch_data.__get__(client))
+    seen = []
+
+    def open_jwks(request, **kwargs):
+        assert request.full_url == "https://issuer.example/test-a/keys"
+        assert request.get_header("User-agent") == "nebius-scientific-ai/1.0"
+        assert "application/jwk-set+json" in request.get_header("Accept")
+        assert kwargs["timeout"] == 5
+        seen.append(request.full_url)
+        return io.BytesIO(json.dumps(pod_tokens[2]).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", open_jwks)
+    verify(verifier, pod_tokens[1](pod_tokens[0]()))
+    verify(verifier, pod_tokens[1](pod_tokens[0]()))
+    assert len(seen) == 1  # the short JWKS cache still works
 
 
 @pytest.mark.parametrize(

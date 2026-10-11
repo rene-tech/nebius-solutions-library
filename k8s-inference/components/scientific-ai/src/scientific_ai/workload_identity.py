@@ -36,7 +36,18 @@ class PodVerifier:
     def __init__(self, config: WorkloadIdentity):
         self.config = config
         self.keys = {
-            region: jwt.PyJWKClient(issuer.jwks_url, cache_keys=False, lifespan=300, timeout=5)
+            region: jwt.PyJWKClient(
+                issuer.jwks_url,
+                cache_keys=False,
+                lifespan=300,
+                timeout=5,
+                # The managed issuer rejects urllib's default user agent. Identify the application explicitly;
+                # TLS, issuer, audience and signature verification stay unchanged.
+                headers={
+                    "User-Agent": "nebius-scientific-ai/1.0",
+                    "Accept": "application/jwk-set+json, application/json",
+                },
+            )
             for region, issuer in config.issuers.items()
         }
 
