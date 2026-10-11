@@ -5,6 +5,15 @@ explicit RTX-to-L40S native recovery passed. No customer cutover.** All existing
 features and routes remain in service on the current implementation. This
 migration must not interrupt them.
 
+Evening update: API image r10 / GPU workers r6 add pod-bound storage authorization
+and reject unsupported resume options instead of silently ignoring them. Shared
+Serverless API 0.11.20 fixes private-input delivery during fallback/resume and
+cleanup across continuation chains. r10 also treats an authenticated worker's
+startup-status propagation delay as retryable, without granting early access.
+Read the current
+[follow-up receipt](../acceptance/serverless2-gromacs-20261011/FOLLOW-UP.md)
+alongside the historical r5 results below. No customer release is implied.
+
 ## Branch isolation and disposition
 
 Owner: Rene's Scientific AI migration workstream. Active development is on the
@@ -79,8 +88,8 @@ application package. It reuses the current GROMACS scientific worker and adds:
 - existing scientific artifact/input envelopes, UUID operation handles and typed
   GROMACS tools over the same application methods;
 - a 60-second, operation-prefix-bound S3 URL broker that verifies the active S2
-  attempt ID before granting access; GPU pods receive no tenant storage secret.
-  The requester's pod identity is not yet cryptographically attested (see gates);
+  attempt and signed projected pod identity; GPU pods receive no tenant storage
+  secret. Offline JWT verification does not prove immediate Pod deletion;
 - a small isolated Terraform root for the pilot API, without a second scheduler.
 
 The result envelope explicitly uses `scientific-run-result/v2`: legacy v1's
@@ -97,7 +106,7 @@ keep their defaults. No customer image is rebuilt or deployed by source integrat
 
 | S2 requirement | Scientific AI integration action / acceptance |
 | --- | --- |
-| S2-01 identity/private bindings | Internal bindings and logical-job storage withdrawal work. Before customer/PHI use, add pod-attested authorization to the signer: the present job token plus caller-supplied attempt ID does not exclude a stale holder who knows the replacement ID. Qualify external IAM, cross-tenant denial and renewal. |
+| S2-01 identity/private bindings | Projected pod JWT authorization is implemented alongside the online attempt check. Qualify external IAM, token renewal/revocation and protected-data handling. No hardware attestation or immediate Pod-deletion guarantee is claimed. |
 | S2-02 application I/O | GPU pods use scoped object URLs, not tenant S3 keys. The trusted API holds the internal test bucket credential. Real external customer storage, large multipart artifacts and protected-data cleanup still need qualification. |
 | S2-03 durable attempt lifecycle | The authenticated file bridge, live checkpoints, explicit cancellation and same-key resume were exercised. Partitioned stale-worker and lost-ack live drills remain. Do not build a second scheduler/operation ledger. |
 | S2-04 placement/recovery | Exact SM120/SM89 builds and fresh-PVC cross-cluster native recovery passed. Automatic cross-class recovery after a placed worker loses capacity remains an S2 gate. Startup/network-volume attachment and realistic PME/protein throughput need measurement/optimization. |
@@ -118,7 +127,7 @@ are allowed where needed, but feature removal is not.
 
 Component tests and the fresh real-engine local recovery test are recorded in
 [the dated evidence](../acceptance/serverless2-gromacs-20261011/README.md).
-The current offline suite is 94 passing tests; AWS federation still uses SDK
+The current offline suite is 123 passing tests; AWS federation still uses SDK
 stubs. The deployed internal pilot uses the existing demo workspace under an
 owned run prefix, not an AWS customer role. This does not qualify AWS federation,
 HIPAA, physical scratch erasure or unrestricted production use. Previously

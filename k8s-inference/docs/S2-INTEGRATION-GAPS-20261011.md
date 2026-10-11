@@ -4,6 +4,30 @@ Scope: the first lean Scientific AI GROMACS REST/MCP deployment on the shared
 `s2pr2` test fleet. No customer cluster, key, bucket, workload or route was changed.
 Scientific AI work remains on `scientific-ai-serverless2-migration`.
 
+## Evening follow-up: storage identity and continuation delivery
+
+The new signer verifies Kubernetes' signed projected pod JWT against fixed issuer,
+audience, namespace, service account and current S2 attempt. Missing, forged and
+stale identities have dedicated tests. The managed OIDC issuer rejects urllib's
+default user agent; the application identifies itself explicitly without relaxing
+TLS or signature checks. API image `pilot-20261011-r10` includes that correction
+and a retryable response for verified workers while startup status converges;
+GPU workers remain the digest-pinned r6 builds.
+
+Live fallback exposed missing private input on a successor Job. S2 commit
+`094db8f16` / API **0.11.20** moves binding delivery into the common Job creation
+path before admission, covering fallback, resume and export retry. Cleanup now
+removes only a finished operation's copies, not those of active successors. The
+same regression tests fixed fresh-volume creation for portable non-fleet resume.
+These changes are in the existing **unmerged** Serverless PR and deployed through
+Terraform on the shared control cluster. Its CI and `make check` pass (240 tests,
+13 optional tests skipped; four Terraform tests). No customer fleet was changed.
+
+See the [follow-up evidence](../acceptance/serverless2-gromacs-20261011/FOLLOW-UP.md)
+for exact live qualification, failures retained and remaining gaps. Automatic
+cross-class recovery of an already-placed job is still not implemented; timed
+unplaced fallback and explicit checkpoint resume are different mechanisms.
+
 ## Retest after Serverless integration (11 October, afternoon)
 
 All three executable probes now **pass**, against Serverless commit
@@ -45,21 +69,19 @@ protected-data qualification.
 - **S2 automatic recovery:** class fallback handles unplaced work; a failed
   already-placed run does not automatically move to another class/region when
   its original capacity disappears. The live drill used explicit `:resume`.
-- **Scientific AI storage authorization:** the signer currently validates a
-  logical-job bearer and a caller-supplied attempt ID against S2. Bind requests
-  to a cryptographically verified pod identity before customer/PHI use. S2's
-  existing projected identity mechanism is the integration point; do not build
-  a second credential issuer. Confirm an appropriate audience and trusted issuer
-  mapping, then test a partitioned/replaced caller who knows the new attempt ID.
+- **Scientific AI storage authorization:** projected pod verification is now
+  implemented. Qualify external provider IAM and token refresh/revocation; a
+  signed pod JWT is not hardware attestation or proof of immediate Pod deletion.
+  Retain the online S2 current-attempt check and 60-second signed-URL lifetime.
 - **Joint live durability/security acceptance:** inject denied final-object
   storage and lost final acknowledgement. Completed-result replay and offline
   denied-transfer tests passed, but are not equivalent. External AWS trust is
   still a placeholder; provider IAM and protected scratch/log/process isolation
   remain unqualified.
 
-These are retained integration work, not hidden passing checks. No upstream
-Serverless changes were made by this task, and no external tickets/messages were
-created from the shared fleet.
+These are retained integration work, not hidden passing checks. The bounded
+Serverless fixes above were made after the original report; no external
+tickets/messages were created from the shared fleet.
 
 ## Original blocking execution contracts (fixed upstream; retained evidence)
 
@@ -100,7 +122,7 @@ Last complete probe: S2 source `fdcbf7785dd0f46679f877eaef9c7b78d2f59ac8`;
 all three checks passed. The original failing source was
 `069cfe712d3c44e90c74c6fa3c63fa4b891e7f61`. Its checkout is shared and has active
 development, so re-run against the current candidate rather than editing or
-deploying an older copy. This application task does not modify Serverless source.
+deploying an older copy. The evening follow-up above records the later S2 fixes.
 
 Other lanes upgraded the shared API to 0.11.12 and then 0.11.13 during the live
 application tests. The new three-probe pass and the exact final API image digest

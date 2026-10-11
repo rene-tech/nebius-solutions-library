@@ -26,11 +26,11 @@ legacy checkpoint recipe and local/companion modes remain unchanged.
 | Module | Responsibility |
 | --- | --- |
 | `contracts.py` | Authenticated owner/attempt context, private scientific input, job-bound grant, immutable runtime map and manifests |
-| `serverless.py` | S2 0.11.11 fleet discovery, private binding and idempotent execution/continuation transport |
+| `serverless.py` | S2 fleet discovery, private binding and idempotent execution/continuation transport; qualified with API 0.11.20 |
 | `lifecycle.py` / `runner.py` | Authenticated uploader file bridge, epoch-fenced pointer acknowledgement and one native execution |
 | `gateway.py` / `mcp_server.py` | REST and typed MCP compatibility, S2 key authentication, same application methods for both clients |
 | `gateway_store.py` | Owner-scoped immutable artifacts and UUID compatibility references in customer object storage; no scheduling state |
-| `broker.py` | Request/attempt-scoped direct S3 transfer, including multipart uploads; no bucket credentials in GPU pods |
+| `broker.py` / `workload_identity.py` | Job capability plus signed, audience- and pod-bound S2 identity for direct S3 transfers, including multipart; no bucket credentials in GPU pods |
 | `identity.py` | Per-job AWS SDK web-identity provider with renewal; no environment/static-key/metadata-service credential fallback |
 | `storage.py` | Scoped S3 transfer, streaming SHA-256 validation, incremental closed-file objects and manifest-last publication |
 | `gromacs.py` | Existing native GROMACS execution with durable application-managed checkpoints, fresh-workspace restore and transfer-only recovery |
@@ -118,6 +118,12 @@ uv run pytest -q ../../models/molecular-dynamics/gromacs/tests/test_runtime.py \
 uv build --wheel
 ```
 
+Build the wheel **before** building either container: the Dockerfiles install
+`dist/*.whl`, not the live source tree. Check the installed wheel inside the
+candidate image before deployment. Use `uv build --wheel` from this checkout;
+the source-distribution build currently cannot resolve the reused GROMACS worker
+outside this component directory. Do not publish that sdist as a standalone package.
+
 Ordinary tests use explicit storage/lifecycle doubles or AWS SDK stubs. They cover
 wrong tenant/user/job grants, placement/image mismatches, stale attempts, denied
 and corrupted transfers, restore identity checks, temporary credential renewal
@@ -161,8 +167,9 @@ See [the migration handoff](../../docs/SERVERLESS2-MIGRATION.md). In particular:
   Scientific AI handles, artifact upload, submit, status, result, cancel and
   native-resume routes. This does not migrate existing production API keys/users.
 - Exact optimized RTX/L40S images and the internal scoped storage path passed the
-  shared-fleet drill. Real external customer IAM and strong attempt-attested
-  signing remain gates. Do not touch the customer cluster or use customer keys.
+  shared-fleet drill. The signer additionally requires S2's projected pod JWT;
+  see the follow-up receipt for that release's live evidence. External customer
+  IAM remains unqualified. Do not touch the customer cluster or use customer keys.
 
 Reference: [AWS SDK web-identity authentication](https://docs.aws.amazon.com/sdkref/latest/guide/access-assume-role-web.html).
 
@@ -183,11 +190,41 @@ this is not instantaneous provider revocation. No signing request bodies,
 credentials or URLs are written to shared logs. The federation module remains
 an alternative once a real external AWS trust setup is supplied and tested.
 
-The current broker's bearer is **logical-job scoped**, while `attempt_id` is a
-caller-supplied field checked against S2. It is not cryptographic pod attestation:
-a stale token holder who knows the replacement's ID is not excluded by this
-comparison. Add approved pod-bound identity verification before customer/PHI
-use; wrong-ID/terminal-state denial alone does not prove this boundary.
+The broker requires **both** the private logical-job capability and the worker's
+projected JWT in `X-Scientific-Workload-Token`. S2's existing workload-identity
+mechanism mints/rotates it; Scientific AI does not issue a second pod credential.
+The worker re-reads the projected file for every signing request, so rotation
+does not require restarting a long simulation.
+
+Configure a dedicated tenant identity, for example:
+
+```hcl
+identities = {
+  scientific-ai-storage = {
+    audience = "https://<scientific-ai-origin>/scientific-ai/internal/storage"
+  }
+}
+```
+
+The trusted API config pins that audience, each permitted region's OIDC issuer
+and JWKS URL, and the tenant's namespace/identity reference. No discovery URL is
+taken from an untrusted JWT. RS256 signature, expiry/not-before, issuer, audience,
+subject, namespace, service account and signed pod name are verified against
+S2's online current-attempt state. A previous pod cannot become its replacement
+by supplying the replacement's name. Missing credentials fail closed; key-fetch
+outages return retryable 503, not an authorization bypass.
+
+This is [Kubernetes projected-token validation](https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/),
+using PyJWT, not hardware attestation. Offline JWT verification does not itself
+re-check Pod/ServiceAccount deletion against Kubernetes; S2's current-attempt
+state is the online withdrawal boundary, with up to 60 seconds of residual URL
+validity. TokenReview-based immediate object revocation, compromised-node/process
+isolation and external IAM are not claimed qualified by this change.
+
+Resume accepts only `gpu_class` (one of the original runtime's qualified choices).
+Legacy `job_id`, `performance_mode` and `max_wall_seconds` are rejected with 422
+and field names before admission, rather than silently ignored. Their actual
+implementation remains a migration gate; the production platform retains them.
 
 The first pilot is **one native job per operation, one GPU**. Multi-job fan-out,
 external-MPI, legacy admin integration, production identity migration, events,

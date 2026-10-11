@@ -18,8 +18,10 @@ import re
 import secrets
 import subprocess
 import tarfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
@@ -39,6 +41,7 @@ def command(*args):
     return result.stdout
 
 
+@lru_cache(maxsize=1)
 def keys():
     return json.loads(command("./stack.sh", "output", "platform", "control", "-json", "tenant_keys"))["sciai"]
 
@@ -427,6 +430,45 @@ def status(directory, name, path="rest"):
                     }
                 )
             )
+        return value
+
+
+def wait_for(directory, name, path="rest", *, ready=False, timeout=1200):
+    """Bounded operator test polling, not a production scheduling/recovery loop."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        value = status(directory, name, path)
+        if value["status"] == "SUCCEEDED":
+            return value
+        if value["status"] in {"FAILED", "CANCELLED", "EXPORT_FAILED", "TIMED_OUT"}:
+            raise RuntimeError("synthetic acceptance operation ended unsuccessfully")
+        if ready and value["status"] == "RUNNING" and value.get("attempt_id"):
+            return value
+        time.sleep(15)
+    raise TimeoutError("synthetic acceptance deadline reached; operation was not silently resubmitted")
+
+
+def recovery_cycle(directory, name):
+    """Explicit operator fault drill, NOT automatic production failover."""
+    wait_for(directory, name, ready=True)
+    identity_boundaries(directory, name)
+    deadline = time.monotonic() + 300
+    while time.monotonic() < deadline:
+        observed = checkpoint(directory, name)
+        if observed:
+            state, snapshot = observed
+            commands = [c for c in snapshot.state["commands"] if c["command"][1] == "mdrun"]
+            if commands and commands[-1].get("checkpoint_step", 0) > 0:
+                break
+        time.sleep(10)
+    else:
+        raise TimeoutError("no native checkpoint for safe fault injection")
+    interrupt(directory, name)
+    control(directory, name, "resume", "rest", "l40s")
+    resumed = name + "-resumed"
+    wait_for(directory, resumed, ready=True)
+    identity_boundaries(directory, resumed, stale_name=name)
+    wait_for(directory, resumed, "mcp")
 
 
 def control(directory, name, action, path, gpu_class):
@@ -538,6 +580,16 @@ def boundaries(directory, name):
             "/v1/models/gromacs:submit", json=altered, headers=headers
         ).status_code
         assert evidence["different_intent_same_key"] == 409
+        evidence["unsupported_resume_options"] = {}
+        for field, value in {
+            "job_id": "unsupported-replica",
+            "performance_mode": "optimized",
+            "max_wall_seconds": 1209600,
+            "gpu_class": "unqualified-gpu",
+        }.items():
+            rejected = client.post("/v1/operations/" + op + ":resume", json={field: value}, headers=headers)
+            evidence["unsupported_resume_options"][field] = rejected.status_code
+            assert rejected.status_code == 422
     write(directory / (name + "-boundaries.json"), evidence)
     print(json.dumps(evidence))
 
@@ -572,10 +624,12 @@ def storage_denial(directory, name):
             gateway.settings.signing_key.get_secret_value(),
             algorithm="HS256",
         )
+    captured = directory / (name + "-identity-private.json")
+    projected = json.loads(captured.read_bytes())["token"] if captured.exists() else ""
     with httpx.Client(base_url=PUBLIC, timeout=60) as http:
         response = http.post(
             "/internal/storage",
-            headers={"Authorization": "Bearer " + token},
+            headers={"Authorization": "Bearer " + token, "X-Scientific-Workload-Token": projected},
             json={"action": "get", "key": "blobs/" + "a" * 64, "attempt_id": current["attempt_id"]},
         )
     evidence = {
@@ -586,13 +640,14 @@ def storage_denial(directory, name):
         "new_object_url_after_terminal_http": response.status_code,
         "previously_signed_url_max_ttl_seconds": 60,
         "per_pod_attestation_proved": False,
+        "previously_accepted_projected_identity_included": bool(projected),
     }
     assert response.status_code == 403
     write(directory / (name + "-storage-denial.json"), evidence)
     print(json.dumps(evidence))
 
 
-def identity_boundaries(directory, name, stale_name=None):
+def identity_boundaries(directory, name, stale_name=None, *, multipart=False):
     """Use only this pilot's synthetic pod; never print its projected token.
 
     Save a 0600 token receipt for a later replaced-pod test. With --stale-name,
@@ -682,6 +737,50 @@ def identity_boundaries(directory, name, stale_name=None):
             assert previous["attempt_id"] != pod
             evidence["stale_identity_with_current_attempt_id"] = check(previous["token"])
             assert evidence["stale_identity_with_current_attempt_id"] == 403, evidence
+    if multipart:
+        # Test the real worker credential/egress/multipart path. The object is
+        # synthetic, confined to this operation, and never an engine output.
+        script = """
+import hashlib, io, json, socket, time
+from pathlib import Path
+import httpx
+from scientific_ai.broker import BrokerObjects
+from scientific_ai.runner import PrivateRun
+b = PrivateRun.model_validate_json(Path('/var/run/serverless2/private/run.json').read_bytes())
+data = b'x' * (129 * 1024**2)
+digest = hashlib.sha256(data).hexdigest()
+with httpx.Client(timeout=120, follow_redirects=False) as http:
+    objects = BrokerObjects(http=http, url=b.broker_url, token=b.storage_token,
+        attempt_id=socket.gethostname(), identity_token_file=Path('/var/run/secrets/workload-identity/token'))
+    started = time.monotonic()
+    objects.put('blobs/' + digest, io.BytesIO(data))
+    written = time.monotonic()
+    checked, size = hashlib.sha256(), 0
+    with objects.get('blobs/' + digest) as response:
+        while block := response.read(1024**2):
+            checked.update(block)
+            size += len(block)
+    assert size == len(data) and checked.hexdigest() == digest
+    print(json.dumps({'bytes': size, 'sha256': digest, 'verified': True,
+        'upload_s': written-started, 'readback_s': time.monotonic()-written}))
+"""
+        evidence["multipart"] = json.loads(
+            command(
+                "kubectl",
+                "--context",
+                context,
+                "-n",
+                "tenant-sciai",
+                "exec",
+                pod,
+                "-c",
+                "main",
+                "--",
+                "/opt/scientific-ai/bin/python",
+                "-c",
+                script,
+            )
+        )
     write(directory / (name + "-identity-boundaries.json"), evidence)
     print(json.dumps(evidence))
 
@@ -693,7 +792,7 @@ def trajectories(directory, name, engine_image):
     image_id = command("docker", "image", "inspect", engine_image, "--format", "{{.Id}}").strip()
     result = json.loads((directory / (name + "-result.json")).read_bytes())
     receipt = json.loads((directory / (name + ".json")).read_bytes())
-    checked, next_time = [], 0.0
+    checked, next_time, previous_source = [], 0.0, None
     for item in sorted(result["native_result"]["files"], key=lambda item: item["path"]):
         if not item["path"].endswith(".xtc"):
             continue
@@ -732,15 +831,63 @@ def trajectories(directory, name, engine_image):
         first = float(re.search(r"Reading frame\s+0 time\s+([0-9.]+)", output)[1])
         counts = re.search(r"^Coords\s+(\d+)\s+([0-9.]+)", output, re.MULTILINE)
         frames, interval = int(counts[1]), float(counts[2])
-        assert atoms == 4096 and first == next_time and interval == 2.0
+        assert atoms == 4096 and interval == 2.0
+        overlap_sha256 = None
+        if checked and first == checked[-1]["last_ps"]:
+            # A native checkpoint exactly on the output grid may write its last frame again with -noappend.
+            # Accept ONE boundary overlap only when native extraction proves byte-identical frames.
+            script = """
+printf '0\\n' | /opt/gromacs/bin/gmx trjconv -f /previous.xtc -o /tmp/previous.xtc -dump "$1" >/dev/null 2>&1
+printf '0\\n' | /opt/gromacs/bin/gmx trjconv -f /next.xtc -o /tmp/next.xtc -dump "$1" >/dev/null 2>&1
+cmp /tmp/previous.xtc /tmp/next.xtc
+sha256sum /tmp/previous.xtc
+"""
+            duplicate = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--network",
+                    "none",
+                    "--read-only",
+                    "--tmpfs",
+                    "/tmp:rw,nosuid,nodev,size=64m",
+                    "--cap-drop",
+                    "ALL",
+                    "--security-opt",
+                    "no-new-privileges",
+                    "--entrypoint",
+                    "/bin/sh",
+                    "--mount",
+                    f"type=bind,src={previous_source},dst=/previous.xtc,readonly",
+                    "--mount",
+                    f"type=bind,src={source},dst=/next.xtc,readonly",
+                    image_id,
+                    "-ec",
+                    script,
+                    "boundary-check",
+                    str(first),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=60,
+            )
+            overlap_sha256 = duplicate.stdout.split()[0]
+            assert re.fullmatch(r"[a-f0-9]{64}", overlap_sha256)
+        else:
+            assert first == next_time, f"trajectory gap before {item['path']}: {first} != {next_time}"
         last = first + (frames - 1) * interval
         next_time = last + interval
+        previous_source = source
         checked.append(
             {
                 "path": item["path"],
                 "sha256": item["sha256"],
                 "atoms": atoms,
                 "frames": frames,
+                "duplicate_boundary_frames": int(overlap_sha256 is not None),
+                "identical_boundary_frame_sha256": overlap_sha256,
                 "first_ps": first,
                 "last_ps": last,
                 "interval_ps": interval,
@@ -748,8 +895,19 @@ def trajectories(directory, name, engine_image):
             }
         )
     assert checked and checked[-1]["last_ps"] == receipt["steps"] * 0.002
-    assert sum(item["frames"] for item in checked) == receipt["steps"] // 1000 + 1
-    evidence = {"at": now(), "engine_image_id": image_id, "segments": checked, "continuous": True}
+    raw_frames = sum(item["frames"] for item in checked)
+    duplicate_frames = sum(item["duplicate_boundary_frames"] for item in checked)
+    assert raw_frames - duplicate_frames == receipt["steps"] // 1000 + 1
+    evidence = {
+        "at": now(),
+        "engine_image_id": image_id,
+        "segments": checked,
+        "continuous": True,
+        "raw_frames": raw_frames,
+        "identical_boundary_duplicates": duplicate_frames,
+        "unique_frames": raw_frames - duplicate_frames,
+        "raw_files_unchanged": True,
+    }
     write(directory / (name + "-trajectory-check.json"), evidence)
     print(json.dumps(evidence))
 
@@ -866,14 +1024,17 @@ def main():
             "storage-denial",
             "trajectories",
             "identity-boundaries",
+            "wait",
+            "recovery-cycle",
         ],
     )
     parser.add_argument("--private-dir", type=Path, required=True)
     parser.add_argument("--tag", default="pilot-20261011-r6")
-    parser.add_argument("--api-tag")
+    parser.add_argument("--api-tag", default="pilot-20261011-r10")
     parser.add_argument("--engine-image")
     parser.add_argument("--name", default="rest-cohort-1")
     parser.add_argument("--stale-name")
+    parser.add_argument("--multipart", action="store_true")
     parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--path", choices=["rest", "mcp"], default="rest")
     parser.add_argument("--gpu-class", choices=["l40s", "rtx-pro-6000"], default="l40s")
@@ -897,7 +1058,11 @@ def main():
     elif args.action == "trajectories":
         trajectories(args.private_dir, args.name, args.engine_image)
     elif args.action == "identity-boundaries":
-        identity_boundaries(args.private_dir, args.name, args.stale_name)
+        identity_boundaries(args.private_dir, args.name, args.stale_name, multipart=args.multipart)
+    elif args.action == "wait":
+        wait_for(args.private_dir, args.name, args.path)
+    elif args.action == "recovery-cycle":
+        recovery_cycle(args.private_dir, args.name)
     else:
         control(args.private_dir, args.name, args.action, args.path, args.gpu_class)
 

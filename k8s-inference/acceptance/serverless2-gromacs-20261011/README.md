@@ -1,6 +1,16 @@
 # Scientific AI application / S2 GROMACS evidence
 
-## Integrated pilot — deployed and exercised
+## Current follow-up — API r10 / workers r6 / S2 0.11.20
+
+Read [FOLLOW-UP.md](FOLLOW-UP.md) first. Pod-bound storage authorization,
+continuation private-input delivery, startup-status retries and strict resume
+validation are now deployed on the shared test fleet. The application has
+123 passing tests; the existing GROMACS regression selection has 75. Fresh
+REST/MCP and timed L40S fallback jobs completed with native steps and every
+artifact hash verified. Current startup measurements and remaining migration
+gates are in the report. **No customer cutover or PHI qualification.**
+
+## Earlier r5 integrated pilot — retained history
 
 API 0.11.11 / jobs 0.1.14 includes the agreed S2 changes. The three application
 contract probes pass against S2 source `56aaa9eb3`. The application unit suite is
@@ -17,7 +27,8 @@ earlier CPU-only evidence below is retained as history, not substituted for live
 
 `pilot.py` is the reproducible operator driver: `prepare`, `register`, `submit`,
 `status`, `replay`, `cancel`, `resume`, `checkpoint`, `interrupt`, `boundaries`,
-`storage-denial`, `trajectories`. It reads only the existing internal
+`storage-denial`, `trajectories`, `identity-boundaries`, `wait`, `recovery-cycle`.
+It reads only the existing internal
 `sciai` identity and demo storage. Private configuration/state/receipts live in
 `/home/tux/secure-handoff/scientific-ai-s2-pilot-20261011` (0700, outside Git).
 The isolated Terraform root is `components/scientific-ai/deploy`; it creates only
@@ -33,7 +44,8 @@ Live evidence and the remaining gates:
   the old PVC, and resumes with `-cpi`; preparation executes exactly once.
 - Anonymous/other-principal access and new object URLs after terminal completion
   are denied; previously signed URLs have a 60-second residual lifetime. Strong
-  pod-attested identity against replaced-worker impersonation remains a gate.
+  pod-bound identity was still a gate for r5; the later implementation and
+  measured authorization checks are in FOLLOW-UP.md.
 - Completed-result replay requires no recomputation. Live denied-final-export and
   lost-final-ack injections remain gates; unit tests alone do not qualify them.
   No broad customer-data or PHI release is implied by these pilot checks.

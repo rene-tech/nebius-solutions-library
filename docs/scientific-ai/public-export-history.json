@@ -2,6 +2,34 @@
   "schema": "scientific-ai/public-export-history/v1",
   "description": "Exact-byte inventory of operator history omitted only from the reusable export. Changes require explicit re-review. This is not a credential exception or evidence of model readiness.",
   "files": {
+    "k8s-inference/acceptance/serverless2-gromacs-20261011/LIVE-PILOT.md": {
+      "sha256": "e59ebb33058c2c8dad3b2900de37790f5f959453ff634bf1a148eb863290abc0",
+      "reason": "Reviewed shared-fleet operator qualification history; preserves exact measurements, private evidence locations and rollback context, not a portable runtime input."
+    },
+    "k8s-inference/acceptance/serverless2-gromacs-20261011/README.md": {
+      "sha256": "4a929e0a8072b72f043e441113cbc903dc6e85ceb84f1529c71a6ca6b1b51740",
+      "reason": "Reviewed internal acceptance index with operator-only evidence paths; retained in Git, not a reusable deployment input."
+    },
+    "k8s-inference/acceptance/serverless2-gromacs-20261011/live-pilot.json": {
+      "sha256": "e84c437587b99971dad1ccafb042e49e958cef8841d3bd19597d99b570835865",
+      "reason": "Immutable r5 shared-fleet measurement receipt with private evidence locations; kept unchanged, not runtime configuration."
+    },
+    "k8s-inference/acceptance/serverless2-gromacs-20261011/native-acceptance.json": {
+      "sha256": "ccf84f0ee936a1262c19553052cf98df2383162728b7d91b7dbd806ded8dcb5d",
+      "reason": "Immutable local native-engine measurement receipt with exact operator paths; not a portable application dependency."
+    },
+    "k8s-inference/acceptance/serverless2-gromacs-20261011/pilot.py": {
+      "sha256": "b603e4d6964494aff355e6ca46c8c0e4c8784dbafd0b0073be458d7f89122312",
+      "reason": "Reviewed operator-only driver targeting the fixed s2pr2 internal fleet; not imported by the application, native runtime or Terraform module."
+    },
+    "k8s-inference/docs/S2-INTEGRATION-GAPS-20261011.md": {
+      "sha256": "836149f5b2e435865f3d3635050d0819750c8016ba7c9436474f342bbf3767f2",
+      "reason": "Dated joint integration incident and follow-up report, including exact local reproduction paths; retained operator history."
+    },
+    "k8s-inference/docs/SERVERLESS2-MIGRATION.md": {
+      "sha256": "93c5fec51a5fb36247b2c427a9f6d04e3aa4ad10f7237fd91464e78bb4aaa227",
+      "reason": "Reviewed active migration handoff with private worktree/state locations; not application code or reusable deployment configuration."
+    },
     "k8s-inference/acceptance/admin-apps-20260908/RELEASE.md": {
       "sha256": "cbcc0743ba6c22823c5bfbd122594040a4d2e97165c3b21b61d4250200ba01c8",
       "reason": "Immutable operator measurement, deployment history or operator-only reproduction; retained unchanged in Git, not a reusable deployment input."
