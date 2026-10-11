@@ -8,6 +8,7 @@ import pytest
 from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
+from scientific_ai.contracts import FileRecord, Owner, Snapshot
 from scientific_ai.gateway import Gateway, Settings, create_app
 from scientific_ai.gateway_store import canonical
 
@@ -26,7 +27,7 @@ class S3:
             raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
         return {"Body": io.BytesIO(self.data[Key])}
 
-    def upload_fileobj(self, source, bucket, key):
+    def upload_fileobj(self, source, bucket, key, **kwargs):
         self.data[key] = source.read()
 
     def generate_presigned_url(self, method, *, Params, ExpiresIn):
@@ -153,7 +154,10 @@ def submit_request(client, setup):
         canonical(
             {
                 "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
-                "artifacts": [{"role": "gromacs-inputs", "artifact": bundle}],
+                "manifest_id": "fixture",
+                "entries": [
+                    {"name": "gromacs-inputs", "semantic_type": "gromacs-input-bundle/v1", "artifact": bundle}
+                ],
             }
         ),
     )
@@ -274,3 +278,54 @@ def test_mcp_and_rest_share_submission_and_uuid_handle(gateway_fixture, setup):
     replay = client.post("/v1/models/gromacs:submit", json=body, headers={"Idempotency-Key": "mcp-cohort-01"})
     assert replay.json()["operation_id"] == op
     assert len([path for _, path in calls if path.endswith(":invoke")]) == 1
+
+
+def test_terminal_result_keeps_downloadable_legacy_artifact_manifest(gateway_fixture, setup):
+    gateway, client, _, _, operations, _ = gateway_fixture
+    body = submit_request(client, setup)
+    submitted = client.post(
+        "/v1/models/gromacs:submit", json=body, headers={"Idempotency-Key": "result-cohort-1"}
+    ).json()
+    op = submitted["operation_id"]
+    owner = Owner(tenant_id="system", principal_id="qa")
+    store = gateway.store(owner)
+    data = b"synthetic-native-result"
+    file = FileRecord(path="md.gro", sha256=hashlib.sha256(data).hexdigest(), size_bytes=len(data))
+    store.objects(op).put("blobs/" + file.sha256, io.BytesIO(data))
+    current = next(iter(operations.values()))
+    profile = setup[0]["profile"]
+    reference = store.artifacts(op).commit(
+        Snapshot(
+            kind="result",
+            owner=owner,
+            root_operation_id=current["id"],
+            attempt_id="pod-1",
+            epoch=1,
+            runtime_revision=profile.revision,
+            compatibility_id=profile.checkpoint_compatibility_id,
+            image=profile.images["rtx-pro-6000"],
+            job_id="replica",
+            input_sha256="a" * 64,
+            state={},
+            files=(file,),
+            result={"status": "succeeded", "files": [file.model_dump()]},
+        )
+    )
+    current.update(status="SUCCEEDED", result_ref=reference)
+    result = client.get(f"/v1/operations/{op}/result")
+    assert result.status_code == 200, result.text
+    assert result.json()["terminal_status"] == "succeeded"
+    pointer = result.json()["output_manifest"]
+    response = client.get(f"/v1/artifacts/{pointer['artifact_id']}/content")
+    assert response.status_code == 200
+    assert hashlib.sha256(response.content).hexdigest() == pointer["sha256"]
+    entry = response.json()["entries"][0]
+    downloaded = client.get(f"/v1/artifacts/{entry['artifact']['artifact_id']}/content")
+    assert downloaded.content == data
+    assert downloaded.headers["x-fs2-artifact-sha256"] == file.sha256
+    from pathlib import Path
+
+    from jsonschema import validate
+
+    schema = Path(__file__).parents[3] / "catalog/runtime/schema/scientific-artifact-manifest.schema.json"
+    validate(response.json(), json.loads(schema.read_text()))

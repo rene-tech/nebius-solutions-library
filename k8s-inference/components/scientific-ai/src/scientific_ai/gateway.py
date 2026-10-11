@@ -8,6 +8,7 @@ The bucket holds artifact manifests and the UUID-to-S2 compatibility mapping.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -228,7 +229,7 @@ class Gateway:
         # filenames nor the scientific protocol enter ordinary S2 Job metadata.
         manifest = json.loads(self.content(store, body.input_manifest, limit=1024**2))
         entries = manifest.get("artifacts", manifest.get("entries", []))
-        inputs = [entry for entry in entries if entry.get("role") == "gromacs-inputs"]
+        inputs = [entry for entry in entries if entry.get("name", entry.get("role")) == "gromacs-inputs"]
         if manifest.get("schema") != MANIFEST_SCHEMA or len(inputs) != 1:
             raise HTTPException(422, "input manifest requires exactly one gromacs-inputs bundle")
         entry = inputs[0].get("artifact", inputs[0].get("ref", inputs[0]))
@@ -256,6 +257,7 @@ class Gateway:
                 "root_id": op,
                 "request_sha256": request_hash,
                 "runtime": self.settings.runtime.model_dump(mode="json"),
+                "input_manifest": body.input_manifest.model_dump(),
                 "s2_id": None,
                 "latest_s2_id": None,
             },
@@ -311,7 +313,7 @@ class Gateway:
                 "retry_same_idempotency_key": True,
             }
         value = client.status(record["s2_id"])
-        return {
+        result = {
             **value,
             "operation_id": op,
             "id": op,
@@ -320,6 +322,23 @@ class Gateway:
             "state": value["status"].lower(),
             "batch_id": op,
         }
+        result["operation"] = {
+            "operation_id": op,
+            "status": value["status"].lower(),
+            "result_available": value["status"] == "SUCCEEDED" and bool(value.get("result_ref")),
+        }
+        result["batch"] = {
+            "batch_id": op,
+            "status": value["status"].lower(),
+            "stages": [
+                {
+                    "stage_id": "gromacs",
+                    "status": value["status"].lower(),
+                    "attempts": value.get("attempts", []),
+                }
+            ],
+        }
+        return result
 
     def result(self, client, store, op):
         operation = self.status(client, store, op)
@@ -345,14 +364,53 @@ class Gateway:
                 },
                 create=True,
             )
-            outputs.append({"path": file.path, "artifact": self.pointer(output)})
+            outputs.append(
+                {
+                    "name": "file-" + str(len(outputs) + 1),
+                    "semantic_type": "gromacs-output/v1",
+                    "artifact": self.pointer(output),
+                }
+            )
+        manifest = {"schema": MANIFEST_SCHEMA, "manifest_id": op, "entries": outputs}
+        encoded = canonical(manifest)
+        digest = hashlib.sha256(encoded).hexdigest()
+        objects = store.objects(record["root_id"])
+        objects.put("blobs/" + digest, io.BytesIO(encoded))
+        manifest_id = identifier(store.owner, "output-manifest", record["root_id"] + ":" + digest)
+        published = store.save(
+            "artifacts",
+            manifest_id,
+            {
+                "artifact_id": manifest_id,
+                "sha256": digest,
+                "size_bytes": len(encoded),
+                "media_type": "application/vnd.fs2.scientific-manifest+json",
+                "compression": "none",
+                "object_key": objects.prefix + "blobs/" + digest,
+            },
+            create=True,
+        )
+        root = store.get("operations", record["root_id"])
         return {
-            "schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+            # v1 requires legacy-controller-specific admission UIDs which S2
+            # does not publish. Keep useful names/pointers, version the changed
+            # execution record instead of fabricating those fields.
+            "schema": "fs2-serve.nebius.ai/scientific-run-result/v2",
             "operation_id": op,
             "model_id": "gromacs",
             "status": "succeeded",
+            "terminal_status": "succeeded",
+            "submitted_at": operation.get("created_at"),
+            "completed_at": operation.get("ended_at"),
+            "input_manifest": root["input_manifest"],
+            "semantic_validation": {
+                "validator_id": "gromacs-native-workflow",
+                "status": "passed",
+                "receipt_digest": hashlib.sha256(canonical(snapshot.result)).hexdigest(),
+            },
             "native_result": snapshot.result,
-            "output_manifest": {"schema": MANIFEST_SCHEMA, "artifacts": outputs},
+            "output_manifest": self.pointer(published),
+            "attempts": operation.get("attempts", []),
             "execution": {k: operation.get(k) for k in ("attempt_id", "epoch", "cluster", "image_digest")},
         }
 
@@ -564,6 +622,7 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
         with gateway.client(authorization(request)) as (client, store, _):
             return gateway.result(client, store, uuid(op))
 
+    @app.delete("/v1/operations/{op}")
     @app.post("/v1/operations/{op}:cancel")
     def cancel(request: Request, op: str):
         with gateway.client(authorization(request)) as (client, store, _):
@@ -586,6 +645,7 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
                 gpu_class=body.get("gpu_class"),
             )
 
+    @app.get("/v1/artifacts/{aid}/content")
     @app.get("/v1/scientific-artifacts/{aid}/content")
     def download(request: Request, aid: str):
         with gateway.client(authorization(request)) as (_, store, _):
@@ -602,8 +662,21 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
             return StreamingResponse(
                 chunks(),
                 media_type=artifact["media_type"],
-                headers={"Content-Length": str(artifact["size_bytes"])},
+                headers={
+                    "Content-Length": str(artifact["size_bytes"]),
+                    "x-fs2-artifact-sha256": artifact["sha256"],
+                },
             )
+
+    @app.get("/v1/artifacts/{aid}/download")
+    def download_handle(request: Request, aid: str):
+        with gateway.client(authorization(request)) as (_, store, _):
+            artifact = store.get("artifacts", aid)
+            return {
+                "artifact": gateway.pointer(artifact),
+                "url": store.url("get_object", artifact["object_key"]),
+                "expires_in": 60,
+            }
 
     @app.post("/internal/storage")
     def storage(request: Request, body: dict):

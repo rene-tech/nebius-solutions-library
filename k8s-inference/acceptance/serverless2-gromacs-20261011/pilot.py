@@ -47,7 +47,7 @@ def write(path, value, *, private=False):
         output.write("\n")
 
 
-def prepare(directory, tag):
+def prepare(directory, tag, api_tag=None):
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     if directory.stat().st_mode & 0o077:
         raise RuntimeError("private configuration directory must have mode 0700")
@@ -69,7 +69,8 @@ def prepare(directory, tag):
     data = {key: base64.b64decode(value).decode() for key, value in secret["data"].items()}
     images = {}
     for name in ("api", "gromacs-sm89", "gromacs-sm120"):
-        digest = command("crane", "digest", f"{REGISTRY}/scientific-ai/{name}:{tag}").strip()
+        selected_tag = api_tag if name == "api" and api_tag else tag
+        digest = command("crane", "digest", f"{REGISTRY}/scientific-ai/{name}:{selected_tag}").strip()
         images[name] = f"registry.serverless2.local/nebius/scientific-ai/{name}@{digest}"
     target = directory / "config.json"
     signing_key = (
@@ -262,7 +263,14 @@ def submit(directory, name, steps, path):
         manifest = json.dumps(
             {
                 "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
-                "artifacts": [{"role": "gromacs-inputs", "artifact": pointer}],
+                "manifest_id": "synthetic-" + name,
+                "entries": [
+                    {
+                        "name": "gromacs-inputs",
+                        "semantic_type": "gromacs-input-bundle/v1",
+                        "artifact": pointer,
+                    }
+                ],
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -342,11 +350,11 @@ def status(directory, name):
             result = client.get("/v1/operations/" + op + "/result")
             result.raise_for_status()
             write(directory / (name + "-result.json"), result.json())
-            print(
-                json.dumps(
-                    {"result": "retrieved", "files": len(result.json()["output_manifest"]["artifacts"])}
-                )
-            )
+            manifest_id = result.json()["output_manifest"]["artifact_id"]
+            manifest = client.get(f"/v1/artifacts/{manifest_id}/content")
+            manifest.raise_for_status()
+            write(directory / (name + "-outputs.json"), manifest.json())
+            print(json.dumps({"result": "retrieved", "files": len(manifest.json()["entries"])}))
 
 
 def main():
@@ -354,12 +362,13 @@ def main():
     parser.add_argument("action", choices=["prepare", "register", "submit", "status"])
     parser.add_argument("--private-dir", type=Path, required=True)
     parser.add_argument("--tag", default="pilot-20261011-r2")
+    parser.add_argument("--api-tag")
     parser.add_argument("--name", default="rest-cohort-1")
     parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--path", choices=["rest", "mcp"], default="rest")
     args = parser.parse_args()
     if args.action == "prepare":
-        prepare(args.private_dir, args.tag)
+        prepare(args.private_dir, args.tag, args.api_tag)
     elif args.action == "register":
         register(args.private_dir)
     elif args.action == "submit":
