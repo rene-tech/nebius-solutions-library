@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-11",
+  "scope": "real GROMACS CPU; local transport/lifecycle doubles; not GPU or fleet qualification",
+  "source": "components/scientific-ai/tests/test_native_recovery.py at the enclosing Git commit",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/gromacs@sha256:b1807416793b1c9cc4b2f296a7aad2982df3c70de6cec0f1d5ca6e119fceb0a0",
+  "input_sha256": "40956c3fe33446510fcb079cb9e5c7c2c58b36786e16fcd9e6d4c20319c0f777",
+  "random_seed": 1741,
+  "atoms": 216,
+  "interrupted_at_step": 185320,
+  "final_step": 600000,
+  "preparation_executions": 1,
+  "attempts": 2,
+  "result_reference": "56bef30636fb92b3b4b0f136d09d0d5408790bdedf3b820d42601acf4de8823c",
+  "test_elapsed_seconds": 23.39,
+  "raw_evidence_directory": "/home/tux/scientific-ai-s2-acceptance-20261011.4bZPoP/native/test_actual_gromacs_checkpoint0",
+  "junit": "/home/tux/scientific-ai-s2-acceptance-20261011.4bZPoP/native-junit.xml",
+  "cloud_resources_changed": false,
+  "customer_data_or_keys_used": false
+}

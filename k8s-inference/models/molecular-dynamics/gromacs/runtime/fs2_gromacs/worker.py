@@ -141,6 +141,9 @@ class Workflow:
         gmx=None,
         checkpoint_mode="local",
         mpi=False,
+        engine_id=None,
+        checkpoint_compatibility_id=None,
+        checkpoint_publisher=None,
     ):
         self.mpi = mpi
         self.request = normalize(request, mpi=mpi)
@@ -151,12 +154,18 @@ class Workflow:
         self.meta = self.root / ".fs2"
         self.gmx = gmx or os.environ.get("FS2_GROMACS_BINARY", DEFAULT_GMX)
         self.checkpoint_mode = checkpoint_mode
+        if checkpoint_publisher is not None and checkpoint_mode != "application":
+            raise ValueError("an application publisher needs application checkpoint mode")
+        if checkpoint_mode == "application" and checkpoint_publisher is None:
+            raise ValueError("application checkpoint mode needs a durable publisher")
+        self.checkpoint_publisher = checkpoint_publisher
+        self.checkpoint_compatibility_id = checkpoint_compatibility_id
         self.stopped = False
         self.time_limit_exceeded = False
         self.child = None
         self.started = time.monotonic()
         self.deadline = self.started + self.request["max_wall_seconds"]
-        self.engine_id = os.environ.get("FS2_GROMACS_ENGINE_ID", NVIDIA_IMAGE)
+        self.engine_id = engine_id or os.environ.get("FS2_GROMACS_ENGINE_ID", NVIDIA_IMAGE)
         self.mpi_stager = None
         self.file_digests = FileDigestCache()
         if mpi:
@@ -164,7 +173,10 @@ class Workflow:
 
             self.mpi_stager = InputStager(self.root)
         self.recipe = hashlib.sha256(
-            canonical({"request": self.request, "job": job_id, "image": self.engine_id})
+            canonical({
+                "request": self.request, "job": job_id,
+                "image": checkpoint_compatibility_id or self.engine_id,
+            })
         ).hexdigest()
         self.state = {
             "schema": "fs2-serve.nebius.ai/gromacs-checkpoint/v1",
@@ -303,6 +315,10 @@ class Workflow:
                 lambda value: value.get("generation") == generation
                 and value.get("status") == "committed",
             )
+        elif self.checkpoint_mode == "application":
+            # The engine is stopped here. A failed/stale publication must not
+            # advance the committed generation or let computation continue.
+            self.checkpoint_publisher(marker)
         self.committed_generation = self.state["generation"]
 
     def execute(self, argv, *, cwd, log, stdin="", timeout=None):
@@ -582,6 +598,8 @@ class Workflow:
             "engine": self.version,
             "nvidia_image": NVIDIA_IMAGE if self.engine_id == NVIDIA_IMAGE else None,
             "engine_id": self.engine_id,
+            **({"checkpoint_compatibility_id": self.checkpoint_compatibility_id}
+               if self.checkpoint_compatibility_id else {}),
             "mpi_ranks": self.request.get("nodes", 1)
             * self.request.get("gpus_per_node", 1),
             "nodes": self.request.get("nodes", 1),
@@ -592,6 +610,8 @@ class Workflow:
             "committed_checkpoint_generation": self.committed_generation,
             "checkpoint_commit_scope": "remote-companion"
             if self.checkpoint_mode == "companion"
+            else "application-managed"
+            if self.checkpoint_mode == "application"
             else "local-only",
             "gpu_snapshot_used": False,
             "finished_at": utc(),
