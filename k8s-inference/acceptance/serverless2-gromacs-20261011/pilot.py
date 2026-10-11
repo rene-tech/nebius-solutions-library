@@ -17,6 +17,7 @@ import os
 import secrets
 import subprocess
 import tarfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -45,6 +46,31 @@ def write(path, value, *, private=False):
     with os.fdopen(descriptor, "w") as output:
         json.dump(value, output, indent=2)
         output.write("\n")
+
+
+def now():
+    return datetime.now(UTC).isoformat()
+
+
+def call_tool(client, name, arguments):
+    response = client.post(
+        "/mcp",
+        headers={"Accept": "application/json, text/event-stream"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+    )
+    response.raise_for_status()
+    result = response.json()["result"]
+    if result.get("isError"):
+        raise RuntimeError("MCP call failed")
+    value = result.get("structuredContent") or json.loads(result["content"][0]["text"])
+    if value.get("error"):
+        raise RuntimeError("MCP application request failed")
+    return value
 
 
 def prepare(directory, tag, api_tag=None):
@@ -255,6 +281,7 @@ def upload(client, data, media_type, compression="none"):
 
 
 def submit(directory, name, steps, path):
+    started = now()
     data, parameters = fixture(steps)
     with httpx.Client(
         base_url=PUBLIC, headers={"Authorization": "Bearer " + keys()["worker"]}, timeout=120
@@ -290,25 +317,18 @@ def submit(directory, name, steps, path):
             response.raise_for_status()
             value = response.json()
         else:
-            response = client.post(
-                "/mcp",
-                headers={"Accept": "application/json, text/event-stream"},
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "tools/call",
-                    "params": {
-                        "name": "submit_gromacs_workflow",
-                        "arguments": {"request": request, "idempotency_key": key},
-                    },
-                },
-            )
-            response.raise_for_status()
-            result = response.json()["result"]
-            if result.get("isError"):
-                raise RuntimeError("MCP submission failed")
-            value = result.get("structuredContent") or json.loads(result["content"][0]["text"])
-        write(directory / (name + ".json"), {"request": request, "response": value, "path": path})
+            value = call_tool(client, "submit_gromacs_workflow", {"request": request, "idempotency_key": key})
+        write(
+            directory / (name + ".json"),
+            {
+                "request": request,
+                "response": value,
+                "path": path,
+                "started_at": started,
+                "accepted_at": now(),
+                "steps": steps,
+            },
+        )
         print(
             json.dumps(
                 {k: value.get(k) for k in ("operation_id", "serverless_operation_id", "status", "reason")}
@@ -326,6 +346,10 @@ def status(directory, name):
         response.raise_for_status()
         value = response.json()
         write(directory / (name + "-status.json"), value)
+        timeline_path = directory / (name + "-timeline.json")
+        timeline = json.loads(timeline_path.read_bytes()) if timeline_path.exists() else []
+        timeline.append({"observed_at": now(), "operation": value})
+        write(timeline_path, timeline)
         print(
             json.dumps(
                 {
@@ -354,18 +378,106 @@ def status(directory, name):
             manifest = client.get(f"/v1/artifacts/{manifest_id}/content")
             manifest.raise_for_status()
             write(directory / (name + "-outputs.json"), manifest.json())
-            print(json.dumps({"result": "retrieved", "files": len(manifest.json()["entries"])}))
+            output = directory / (name + "-files")
+            output.mkdir(exist_ok=True)
+            for entry in manifest.json()["entries"]:
+                pointer = entry["artifact"]
+                download = client.get("/v1/artifacts/" + pointer["artifact_id"] + "/content")
+                download.raise_for_status()
+                assert len(download.content) == pointer["size_bytes"]
+                assert hashlib.sha256(download.content).hexdigest() == pointer["sha256"]
+                (output / pointer["sha256"]).write_bytes(download.content)
+            native = result.json()["native_result"]
+            md = [item for item in native["commands"] if item["command"][1] == "mdrun"]
+            assert native["completed_steps"] == ["prepare", "md"]
+            assert sum(item["command"][1] == "grompp" for item in native["commands"]) == 1
+            assert md[-1]["checkpoint_step"] == receipt["steps"]
+            print(
+                json.dumps(
+                    {
+                        "result": "all hashes and native steps verified",
+                        "files": len(manifest.json()["entries"]),
+                        "final_step": md[-1]["checkpoint_step"],
+                    }
+                )
+            )
+
+
+def control(directory, name, action, path, gpu_class):
+    receipt = json.loads((directory / (name + ".json")).read_bytes())
+    op = receipt["response"]["operation_id"]
+    with httpx.Client(
+        base_url=PUBLIC, headers={"Authorization": "Bearer " + keys()["worker"]}, timeout=120
+    ) as client:
+        if action == "replay":
+            key = "s2-gromacs-20261011-" + name
+            if path == "mcp":
+                value = call_tool(
+                    client, "submit_gromacs_workflow", {"request": receipt["request"], "idempotency_key": key}
+                )
+            else:
+                response = client.post(
+                    "/v1/models/gromacs:submit", json=receipt["request"], headers={"Idempotency-Key": key}
+                )
+                response.raise_for_status()
+                value = response.json()
+            assert value["operation_id"] == op
+        elif action == "cancel":
+            if path == "mcp":
+                value = call_tool(client, "cancel_scientific_run", {"operation_id": op})
+            else:
+                response = client.post("/v1/operations/" + op + ":cancel")
+                response.raise_for_status()
+                value = response.json()
+        else:
+            key = "s2-gromacs-resume-" + name + "-" + gpu_class
+            args = {"idempotency_key": key, "gpu_class": gpu_class}
+            if path == "mcp":
+                value = call_tool(client, "resume_gromacs_workflow", {"operation_id": op, **args})
+            else:
+                response = client.post(
+                    "/v1/operations/" + op + ":resume", json=args, headers={"Idempotency-Key": key}
+                )
+                response.raise_for_status()
+                value = response.json()
+            write(
+                directory / (name + "-resumed.json"),
+                {
+                    **receipt,
+                    "response": value,
+                    "path": path,
+                    "resumed_at": now(),
+                    "original_operation_id": op,
+                },
+            )
+        write(
+            directory / (name + "-" + action + "-receipt.json"),
+            {"at": now(), "path": path, "response": value},
+        )
+        print(
+            json.dumps(
+                {
+                    "action": action,
+                    "operation_id": value.get("operation_id"),
+                    "status": value.get("status"),
+                    "replay_matches": action == "replay",
+                }
+            )
+        )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["prepare", "register", "submit", "status"])
+    parser.add_argument(
+        "action", choices=["prepare", "register", "submit", "status", "replay", "cancel", "resume"]
+    )
     parser.add_argument("--private-dir", type=Path, required=True)
     parser.add_argument("--tag", default="pilot-20261011-r2")
     parser.add_argument("--api-tag")
     parser.add_argument("--name", default="rest-cohort-1")
     parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--path", choices=["rest", "mcp"], default="rest")
+    parser.add_argument("--gpu-class", choices=["l40s", "rtx-pro-6000"], default="l40s")
     args = parser.parse_args()
     if args.action == "prepare":
         prepare(args.private_dir, args.tag, args.api_tag)
@@ -373,8 +485,10 @@ def main():
         register(args.private_dir)
     elif args.action == "submit":
         submit(args.private_dir, args.name, args.steps, args.path)
-    else:
+    elif args.action == "status":
         status(args.private_dir, args.name)
+    else:
+        control(args.private_dir, args.name, args.action, args.path, args.gpu_class)
 
 
 if __name__ == "__main__":

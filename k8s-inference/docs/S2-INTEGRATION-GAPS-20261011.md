@@ -30,7 +30,7 @@ than the earlier provisional discovery contract:
 - fail closed if Serverless says an application run succeeded but provides no
   durable result reference.
 
-76 application/transport tests pass. A real, read-only call using the existing
+86 application/transport tests pass. A real, read-only call using the existing
 `sciai-worker` key confirmed the live fleet's discovery and tenant configuration.
 That identity is a normal internal test user, not a customer or operator key.
 No GROMACS API/MCP endpoint has been deployed or qualified by this slice.
@@ -70,12 +70,11 @@ not Kubernetes credentials. Exit 0 is now expected; do not convert a regression
 to a passing or skipped test. The receipt identifies the
 Serverless source commit and reports the actual outcomes.
 
-Last complete probe: S2 source `069cfe712d3c44e90c74c6fa3c63fa4b891e7f61`;
-all three checks failed. Its checkout is shared and has active development, so
-re-run against the next integrated candidate rather than editing or deploying an
-older copy of it. No Serverless source or shared-fleet configuration was changed
-by this Scientific AI task. The owner has been asked which team should own these
-fixes.
+Last complete probe: S2 source `56aaa9eb3c9b6fb1176584c73e463884473b2c17`;
+all three checks passed. The original failing source was
+`069cfe712d3c44e90c74c6fa3c63fa4b891e7f61`. Its checkout is shared and has active
+development, so re-run against the current candidate rather than editing or
+deploying an older copy. This application task does not modify Serverless source.
 
 ## Continue after the upstream fixes
 

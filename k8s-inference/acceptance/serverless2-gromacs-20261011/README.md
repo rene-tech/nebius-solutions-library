@@ -1,5 +1,41 @@
 # Scientific AI application / S2 GROMACS evidence
 
+## Integrated pilot — in progress
+
+API 0.11.11 / jobs 0.1.14 includes the agreed S2 changes. The three application
+contract probes pass against S2 source `56aaa9eb3`. The application unit suite is
+now **86 passing tests**. API/worker images are being published for the isolated
+`s2pr2` pilot. **No live GPU verdict yet.** The earlier CPU-only evidence below is
+retained as history, not substituted for the live tests.
+
+`pilot.py` is the reproducible operator driver: `prepare`, `register`, `submit`,
+`status`, `replay`, `cancel`, `resume`. It reads only the existing internal
+`sciai` identity and demo storage. Private configuration/state/receipts live in
+`/home/tux/secure-handoff/scientific-ai-s2-pilot-20261011` (0700, outside Git).
+The isolated Terraform root is `components/scientific-ai/deploy`; it creates only
+the pilot namespace, configuration Secret, API Deployment, Service and path route.
+Use its private local state, never the customer platform's Terraform state.
+
+Live gates (pending until evidence is recorded):
+
+- New synthetic GPU work submitted through REST and MCP, replayed with the same
+  key, completed and retrieved with every artifact hash and native step checked.
+- Real RTX and L40S placements select their matching digest-pinned native image.
+- A committed mid-run checkpoint survives abrupt loss, crosses clusters without
+  the old PVC, and resumes with `-cpi`; preparation executes exactly once.
+- Unauthorized access and a terminated/replaced attempt cannot obtain new object
+  URLs; previously signed URLs have an explicit 60-second residual lifetime.
+- A failed result transfer cannot be reported as success or discard its recovery
+  data. No broad customer-data or PHI release is implied by these pilot checks.
+
+The fixture is a **new 4096-particle LJ argon** simulation with seed 1741,
+2-fs timestep, NVE and a 120-K initial velocity distribution. It is a runtime
+recovery test, not a biomedical accuracy or production-performance benchmark.
+Every run retains its request, interface, acceptance time, polled S2 state,
+native result, manifest and downloaded content-addressed output files.
+
+## Earlier local CPU gate
+
 11 October 2026. Scope: application contracts, SDK/transport behavior, and a
 fresh real GROMACS **CPU** checkpoint/recovery execution. **Not a fleet,
 cross-GPU, public-customer-path or HIPAA acceptance verdict.**
@@ -48,7 +84,7 @@ revocation, optimized RTX/L40S images, native GPU performance, cross-cluster los
 public REST/MCP, protected scratch/cleanup and the full unchanged-release customer
 acceptance cohorts. These are gates, not silently passing skips.
 
-The S2 runtime source was rechecked at `5e97b75eb` on 11 October: the agreed
-application-I/O/identity/attempt contract is still absent from its API. The
-provisional wire adapter is therefore not enabled against that release. No
-Serverless runtime or infrastructure files were changed by this application task.
+At the earlier source `5e97b75eb`, the agreed execution contract was absent. That
+historical blocker is superseded by the integrated pilot update above. No
+Serverless runtime or infrastructure source files were changed by this
+application task.

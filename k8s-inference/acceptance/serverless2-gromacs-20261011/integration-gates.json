@@ -2,28 +2,29 @@
   "date": "2026-10-11",
   "scope": "Scientific AI application integration with delivered Serverless 2 execution API",
   "scientific_ai_branch": "scientific-ai-serverless2-migration",
-  "serverless_source_commit": "069cfe712d3c44e90c74c6fa3c63fa4b891e7f61",
-  "live_api_image_observed": "registry.serverless2.local/nebius/serverless2/api:0.11.8",
+  "serverless_source_commit": "56aaa9eb3c9b6fb1176584c73e463884473b2c17",
+  "live_api_image_observed": "registry.serverless2.local/nebius/serverless2/api:0.11.11",
   "fleet": "s2pr2",
   "identity": {"tenant": "sciai", "alias": "sciai-worker", "role": "user"},
   "read_only_live_discovery": "passed",
-  "application_tests": {"passed": 76, "failed": 0},
+  "application_tests": {"passed": 86, "failed": 0},
   "existing_gromacs_worker_tests": {"passed": 75, "failed": 0},
   "lint": "passed",
   "wheel_build": "passed",
   "upstream_probes": [
-    {"case": "resume_same_idempotency_key", "observed": "two different continuation IDs", "passed": false},
-    {"case": "complete_job_missing_durable_finalization", "observed": "SUCCEEDED", "passed": false},
-    {"case": "original_handle_survives_capacity_fallback", "observed_http_status": 404, "passed": false}
+    {"case": "resume_same_idempotency_key", "observed": "same continuation ID", "passed": true},
+    {"case": "complete_job_missing_durable_finalization", "observed": "FINALIZING", "passed": true},
+    {"case": "original_handle_survives_capacity_fallback", "observed_http_status": 200, "passed": true}
   ],
   "upstream_probe_live_resources_used": false,
-  "source_inspection_gaps": [
-    "uploader does not gate application-mode PVC release on durable finalization acknowledgement",
-    "no acknowledged checkpoint-reference publication while computation is still running"
+  "source_inspection_fixes_requiring_live_application_drills": [
+    "application-mode PVC release now requires durable finalization acknowledgement",
+    "CHECKPOINT.json and acknowledged pointer publication while computation is still running"
   ],
   "scientific_ai_api_mcp_deployed": false,
   "gromacs_gpu_pilot_executed": false,
   "serverless_source_changed_by_this_task": false,
   "customer_services_changed": false,
-  "verdict": "integration-blocked; not customer-ready"
+  "original_failing_source": "069cfe712d3c44e90c74c6fa3c63fa4b891e7f61",
+  "verdict": "offline integration gates passed; live GPU qualification in progress; not customer-ready"
 }

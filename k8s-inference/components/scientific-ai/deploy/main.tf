@@ -14,6 +14,11 @@ variable "kube_context" {
     error_message = "This isolated pilot may deploy only to the s2pr2 control cluster."
   }
 }
+variable "kube_config_path" {
+  type        = string
+  default     = "~/.kube/config"
+  description = "Operator kubeconfig; the explicit test-fleet context is still required."
+}
 variable "image" {
   type = string
   validation {
@@ -30,7 +35,7 @@ variable "api_host" {
 }
 
 provider "kubernetes" {
-  config_path    = "/home/tux/.kube/config"
+  config_path    = pathexpand(var.kube_config_path)
   config_context = var.kube_context
 }
 
@@ -69,7 +74,12 @@ resource "kubernetes_deployment_v1" "application" {
     replicas = 1
     selector { match_labels = { app = local.name } }
     template {
-      metadata { labels = { app = local.name } }
+      metadata {
+        labels = { app = local.name }
+        annotations = {
+          "checksum/configuration" = sha256(sensitive(file(var.private_config_file)))
+        }
+      }
       spec {
         automount_service_account_token = false
         security_context {

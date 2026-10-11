@@ -1,8 +1,9 @@
 # Scientific AI → Serverless 2.0: implementation handoff
 
-Updated 11 October 2026. **Application slice implemented locally; no customer
-cutover or fleet deployment.** All existing platform features and routes remain
-in service on the current implementation. This migration must not interrupt them.
+Updated 11 October 2026. **The integrated S2 contracts pass; isolated fleet
+qualification is in progress. No customer cutover.** All existing platform
+features and routes remain in service on the current implementation. This
+migration must not interrupt them.
 
 ## Branch isolation and disposition
 
@@ -48,10 +49,13 @@ The runtime source is the Solutions Library Serverless PR, not the historical
 example GROMACS catalog in the Serverless notes repository.
 
 The delivered S2 implementation has now been inspected and its live discovery
-verified. The Scientific AI wire adapter is updated, but the joint
-[integration probes and remaining execution gaps](S2-INTEGRATION-GAPS-20261011.md)
-currently block a truthful compatible GROMACS deployment. No migration
-API/MCP service or GPU worker has been rolled out yet.
+verified. The original [integration blockers](S2-INTEGRATION-GAPS-20261011.md)
+were fixed in API 0.11.11 / jobs 0.1.14; all three application probes pass against
+source `56aaa9eb3`. The application now has a typed MCP/REST gateway, a fenced
+file-lifecycle bridge and request-scoped S3 URL broker. Exact native SM89/SM120
+GROMACS 2026.4 images are built. Publication and live qualification are in progress;
+the dated acceptance record, not this implementation summary, determines what
+has actually passed.
 
 ## Implemented on the application side
 
@@ -64,6 +68,17 @@ application package. It reuses the current GROMACS scientific worker and adds:
 - streaming customer-object transfers and verified manifest-last checkpoints;
 - native recovery into a new workspace, with compatibility distinct from image identity;
 - export-only recovery, including recovery after a lost finalization callback.
+- existing scientific artifact/input envelopes, UUID operation handles and typed
+  GROMACS tools over the same application methods;
+- a 60-second, operation-prefix-bound S3 URL broker that verifies the active S2
+  attempt before granting access; GPU pods receive no tenant storage secret;
+- a small isolated Terraform root for the pilot API, without a second scheduler.
+
+The result envelope explicitly uses `scientific-run-result/v2`: legacy v1's
+controller-specific admission UIDs are not fabricated. Output/input artifact
+manifests remain v1-compatible. The first pilot handles one native job per
+submission, not legacy batch fan-out or MPI. Those existing features are still
+served by the old implementation and must be migrated before a full cutover.
 
 Only optional constructor/hooks were added to `fs2_gromacs.worker.Workflow`.
 Existing CLI, checkpoint hashes, environment behavior and local/companion paths
@@ -94,8 +109,9 @@ are allowed where needed, but feature removal is not.
 
 Component tests and the fresh real-engine local recovery test are recorded in
 [the dated evidence](../acceptance/serverless2-gromacs-20261011/README.md).
-These qualify local application logic and native CPU restart only. AWS STS/S3
-wire behavior uses SDK stubs; lifecycle authority uses a test double. Live IAM,
-GPU image compatibility/performance, multi-cluster recovery, request-lifetime
-credential withdrawal, public API/MCP/client paths and PHI suitability remain
-unqualified. No production key, bucket, cluster, DNS or customer job was changed.
+The current offline suite is 86 passing tests; AWS federation still uses SDK
+stubs. The deployed internal pilot uses the existing demo workspace under an
+owned run prefix, not an AWS customer role. This does not qualify AWS federation,
+HIPAA, physical scratch erasure or unrestricted production use. Previously
+signed S3 URLs can remain valid for up to 60 seconds after cancellation. No
+production key, bucket, cluster, DNS or customer job is changed by this pilot.
