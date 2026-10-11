@@ -1,32 +1,42 @@
 # Scientific AI application / S2 GROMACS evidence
 
-## Integrated pilot — in progress
+## Integrated pilot — deployed and exercised
 
 API 0.11.11 / jobs 0.1.14 includes the agreed S2 changes. The three application
 contract probes pass against S2 source `56aaa9eb3`. The application unit suite is
-now **86 passing tests**. API/worker images are being published for the isolated
-`s2pr2` pilot. **No live GPU verdict yet.** The earlier CPU-only evidence below is
-retained as history, not substituted for the live tests.
+now **94 passing tests**. The isolated `s2pr2` REST/MCP pilot is deployed. Two
+unchanged-application-release cohorts completed, and abrupt RTX pod/scratch loss followed
+by explicit L40S resume completed 2,000,000 native steps with 2,001 continuous
+trajectory frames. Read [the live report](LIVE-PILOT.md) and
+[machine-readable evidence](live-pilot.json) for exact digests, timings, failures
+and remaining security/compatibility gates. Other fleet lanes upgraded S2 from
+0.11.11 through 0.11.13 during testing; the report distinguishes those versions.
+Two additional REST/MCP cohorts also passed on the final 0.11.13 API image.
+**Not a customer/PHI release.** The
+earlier CPU-only evidence below is retained as history, not substituted for live tests.
 
 `pilot.py` is the reproducible operator driver: `prepare`, `register`, `submit`,
-`status`, `replay`, `cancel`, `resume`. It reads only the existing internal
+`status`, `replay`, `cancel`, `resume`, `checkpoint`, `interrupt`, `boundaries`,
+`storage-denial`, `trajectories`. It reads only the existing internal
 `sciai` identity and demo storage. Private configuration/state/receipts live in
 `/home/tux/secure-handoff/scientific-ai-s2-pilot-20261011` (0700, outside Git).
 The isolated Terraform root is `components/scientific-ai/deploy`; it creates only
 the pilot namespace, configuration Secret, API Deployment, Service and path route.
 Use its private local state, never the customer platform's Terraform state.
 
-Live gates (pending until evidence is recorded):
+Live evidence and the remaining gates:
 
 - New synthetic GPU work submitted through REST and MCP, replayed with the same
   key, completed and retrieved with every artifact hash and native step checked.
 - Real RTX and L40S placements select their matching digest-pinned native image.
 - A committed mid-run checkpoint survives abrupt loss, crosses clusters without
   the old PVC, and resumes with `-cpi`; preparation executes exactly once.
-- Unauthorized access and a terminated/replaced attempt cannot obtain new object
-  URLs; previously signed URLs have an explicit 60-second residual lifetime.
-- A failed result transfer cannot be reported as success or discard its recovery
-  data. No broad customer-data or PHI release is implied by these pilot checks.
+- Anonymous/other-principal access and new object URLs after terminal completion
+  are denied; previously signed URLs have a 60-second residual lifetime. Strong
+  pod-attested identity against replaced-worker impersonation remains a gate.
+- Completed-result replay requires no recomputation. Live denied-final-export and
+  lost-final-ack injections remain gates; unit tests alone do not qualify them.
+  No broad customer-data or PHI release is implied by these pilot checks.
 
 The fixture is a **new 4096-particle LJ argon** simulation with seed 1741,
 2-fs timestep, NVE and a 120-K initial velocity distribution. It is a runtime
@@ -79,7 +89,7 @@ TPR and native checkpoints/trajectory files. It moves the original workspace out
 of the expected path before restoring. All raw files remain in the retained test
 directory named in the machine-readable evidence; no customer data is included.
 
-Pending: real S2 binding/lifecycle adapter, cloud provider policy enforcement and
+Pending **at the time of the earlier CPU gate**: real S2 binding/lifecycle adapter, cloud provider policy enforcement and
 revocation, optimized RTX/L40S images, native GPU performance, cross-cluster loss,
 public REST/MCP, protected scratch/cleanup and the full unchanged-release customer
 acceptance cohorts. These are gates, not silently passing skips.

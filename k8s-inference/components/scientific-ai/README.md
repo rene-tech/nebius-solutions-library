@@ -45,8 +45,10 @@ Use one compatibility ID only for builds explicitly qualified for native
 checkpoint interchange: same GROMACS version, precision, enabled extensions and
 scientific contract. Images may differ in GPU kernels. Record the actual image
 on every attempt; do not substitute a compatibility ID for image provenance.
-The code supports this distinction, but RTX-to-L40S compatibility is **not yet
-GPU-tested**. CUDA process snapshots are not the recovery mechanism here.
+The exact 2026.4 SM120/SM89 pilot builds passed native RTX-to-L40S recovery with
+a fresh scratch disk on another cluster; see the [live evidence](../../acceptance/serverless2-gromacs-20261011/LIVE-PILOT.md).
+This does not qualify arbitrary versions/extensions. CUDA process snapshots are
+not the recovery mechanism here.
 
 ## Binding a request
 
@@ -120,7 +122,8 @@ Ordinary tests use explicit storage/lifecycle doubles or AWS SDK stubs. They cov
 wrong tenant/user/job grants, placement/image mismatches, stale attempts, denied
 and corrupted transfers, restore identity checks, temporary credential renewal
 twice, withdrawal, no ambient credentials, transfer-only retry and legacy defaults.
-They do **not** prove cloud IAM enforcement or real multi-cluster failover.
+These local tests do **not** prove cloud IAM enforcement or real multi-cluster
+failover; the separate dated report records the live explicit recovery drill.
 
 For the additional real-engine test, pre-pull an operator-approved image with
 GROMACS 2026.4 at `/opt/gromacs/bin/gmx`, then:
@@ -150,14 +153,16 @@ See [the migration handoff](../../docs/SERVERLESS2-MIGRATION.md). In particular:
   Discovery proves configuration availability, not execution correctness. The
   [upstream integration probes](../../docs/S2-INTEGRATION-GAPS-20261011.md)
   now pass finalization, resume and fallback contracts against 0.11.11.
-- Qualify `FileLifecycle` against the actual 0.1.14 uploader. It waits for fenced
+- `FileLifecycle` was exercised against the actual 0.1.14 uploader. It waits for fenced
   durable pointer acknowledgement, not file existence. Result publication is also
   a recoverable checkpoint; S2 alone decides terminal success after main exits.
+  Denied final-output and lost-ack live drills remain unqualified.
 - The pilot authenticates existing **S2** internal keys and preserves UUID-shaped
   Scientific AI handles, artifact upload, submit, status, result, cancel and
   native-resume routes. This does not migrate existing production API keys/users.
-- Qualify exact optimized RTX/L40S image digests and real storage grants on the
-  shared `s2pr2` fleet. Do not touch the current customer cluster or use customer keys.
+- Exact optimized RTX/L40S images and the internal scoped storage path passed the
+  shared-fleet drill. Real external customer IAM and strong attempt-attested
+  signing remain gates. Do not touch the customer cluster or use customer keys.
 
 Reference: [AWS SDK web-identity authentication](https://docs.aws.amazon.com/sdkref/latest/guide/access-assume-role-web.html).
 
@@ -177,6 +182,12 @@ Previously issued URLs can remain valid for at most 60 seconds after termination
 this is not instantaneous provider revocation. No signing request bodies,
 credentials or URLs are written to shared logs. The federation module remains
 an alternative once a real external AWS trust setup is supplied and tested.
+
+The current broker's bearer is **logical-job scoped**, while `attempt_id` is a
+caller-supplied field checked against S2. It is not cryptographic pod attestation:
+a stale token holder who knows the replacement's ID is not excluded by this
+comparison. Add approved pod-bound identity verification before customer/PHI
+use; wrong-ID/terminal-state denial alone does not prove this boundary.
 
 The first pilot is **one native job per operation, one GPU**. Multi-job fan-out,
 external-MPI, legacy admin integration, production identity migration, events,

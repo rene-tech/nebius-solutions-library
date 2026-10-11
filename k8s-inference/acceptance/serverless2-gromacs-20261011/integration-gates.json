@@ -2,12 +2,13 @@
   "date": "2026-10-11",
   "scope": "Scientific AI application integration with delivered Serverless 2 execution API",
   "scientific_ai_branch": "scientific-ai-serverless2-migration",
-  "serverless_source_commit": "56aaa9eb3c9b6fb1176584c73e463884473b2c17",
-  "live_api_image_observed": "registry.serverless2.local/nebius/serverless2/api:0.11.11",
+  "serverless_source_commit": "fdcbf7785dd0f46679f877eaef9c7b78d2f59ac8",
+  "initial_passing_serverless_source_commit": "56aaa9eb3c9b6fb1176584c73e463884473b2c17",
+  "live_api_image_observed": "registry.serverless2.local/nebius/serverless2/api:0.11.13",
   "fleet": "s2pr2",
   "identity": {"tenant": "sciai", "alias": "sciai-worker", "role": "user"},
   "read_only_live_discovery": "passed",
-  "application_tests": {"passed": 86, "failed": 0},
+  "application_tests": {"passed": 94, "failed": 0},
   "existing_gromacs_worker_tests": {"passed": 75, "failed": 0},
   "lint": "passed",
   "wheel_build": "passed",
@@ -17,14 +18,16 @@
     {"case": "original_handle_survives_capacity_fallback", "observed_http_status": 200, "passed": true}
   ],
   "upstream_probe_live_resources_used": false,
-  "source_inspection_fixes_requiring_live_application_drills": [
-    "application-mode PVC release now requires durable finalization acknowledgement",
-    "CHECKPOINT.json and acknowledged pointer publication while computation is still running"
+  "remaining_live_application_drills": [
+    "denied final-output transfer and lost-final-ack retain recoverable data",
+    "cryptographic attempt identity for the object signer, external IAM and PHI boundaries"
   ],
-  "scientific_ai_api_mcp_deployed": false,
-  "gromacs_gpu_pilot_executed": false,
+  "scientific_ai_api_mcp_deployed": true,
+  "gromacs_gpu_pilot_executed": true,
+  "explicit_rtx_to_l40s_recovery_without_old_pvc": "passed",
+  "detailed_live_evidence": "live-pilot.json",
   "serverless_source_changed_by_this_task": false,
   "customer_services_changed": false,
   "original_failing_source": "069cfe712d3c44e90c74c6fa3c63fa4b891e7f61",
-  "verdict": "offline integration gates passed; live GPU qualification in progress; not customer-ready"
+  "verdict": "internal single-GPU pilot and explicit native recovery passed; broader migration/security gates remain"
 }

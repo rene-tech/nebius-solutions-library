@@ -1,0 +1,200 @@
+{
+  "date": "2026-10-11",
+  "scope": "isolated s2pr2 single-GPU GROMACS pilot; synthetic data only",
+  "branch": "scientific-ai-serverless2-migration",
+  "runtime_source": "73414081c",
+  "serverless_initial_source": "56aaa9eb3c9b6fb1176584c73e463884473b2c17",
+  "serverless_final_source": "fdcbf7785dd0f46679f877eaef9c7b78d2f59ac8",
+  "serverless_api_versions_observed": ["0.11.11", "0.11.12", "0.11.13"],
+  "serverless_final_api_image": "registry.serverless2.local/nebius/serverless2/api@sha256:fc8ee5b1ee498eead298cc893ce485b4249bd02eae4736a63560fc487204423d",
+  "unchanged_release_cohorts_scope": "Scientific AI API/worker images only; initial A on S2 0.11.11, B/recovery on 0.11.12",
+  "uploader_version": "0.1.14",
+  "rest_url": "https://api.195.242.30.226.sslip.io/scientific-ai/v1",
+  "mcp_url": "https://api.195.242.30.226.sslip.io/scientific-ai/mcp",
+  "model_id": "scientific-gromacs-pilot",
+  "runtime_revision": "gromacs-2026-4-pilot-20261011-r5",
+  "images": {
+    "api": "registry.serverless2.local/nebius/scientific-ai/api@sha256:3172bd448f88d0b7a3b305998b900754a8fe62a12a947ceb7bd2077b86fb6db3",
+    "rtx-pro-6000": "registry.serverless2.local/nebius/scientific-ai/gromacs-sm120@sha256:5908c717a8f608a7b23055dc1fcd8ef544fe74bf95e3aba24d9d716c952c9d54",
+    "l40s": "registry.serverless2.local/nebius/scientific-ai/gromacs-sm89@sha256:170e6bc4aa6fea86d79d5db70332703a17fccb786b624004983498769cfaf947"
+  },
+  "fixture": {
+    "kind": "new Lennard-Jones argon; not a biomedical or capacity benchmark",
+    "atoms": 4096,
+    "timestep_ps": 0.002,
+    "initial_temperature_k": 120,
+    "ensemble": "NVE",
+    "random_seed": 1741,
+    "trajectory_interval_steps": 1000,
+    "pme": false
+  },
+  "unchanged_release_cohorts": [
+    {
+      "name": "rest-r5-a", "cohort": "A", "path": "REST",
+      "operation_id": "bb1bd6b8-01cb-50ad-847b-1ed08302d5bd",
+      "s2_id": "op-df45f8c51f48cf53", "attempt_id": "op-df45f8c51f48cf53-l5s89",
+      "gpu_class": "l40s", "region": "eu-north1", "attempts": 1,
+      "status": "SUCCEEDED", "requested_steps": 100000, "completed_steps": 100000,
+      "verified_files": 13, "native_md_seconds": 2.267058885, "native_ns_per_day": 9210.192,
+      "accepted_to_worker_seconds": 67, "worker_seconds": 32, "operation_seconds": 112,
+      "trajectory_frames": 101, "trajectory_continuous": true
+    },
+    {
+      "name": "mcp-r5-a", "cohort": "A", "path": "MCP",
+      "operation_id": "42d4144a-aef9-500f-a7d8-568c81cb1680",
+      "s2_id": "op-3ceff2e4af9ee3b6", "attempt_id": "op-3ceff2e4af9ee3b6-jqm65",
+      "gpu_class": "rtx-pro-6000", "region": "us-central1", "attempts": 1,
+      "status": "SUCCEEDED", "requested_steps": 100000, "completed_steps": 100000,
+      "verified_files": 13, "native_md_seconds": 3.070761228, "native_ns_per_day": 7160.130,
+      "accepted_to_worker_seconds": 69, "worker_seconds": 55, "operation_seconds": 139,
+      "trajectory_frames": 101, "trajectory_continuous": true
+    },
+    {
+      "name": "rest-r5-b", "cohort": "B", "path": "REST",
+      "operation_id": "3c8b7168-1b3a-5e6d-af28-bb93cfe5491f",
+      "s2_id": "op-000b5c5857ab8b21", "attempt_id": "op-000b5c5857ab8b21-kv8n8",
+      "gpu_class": "rtx-pro-6000", "region": "us-central1", "attempts": 1,
+      "status": "SUCCEEDED", "requested_steps": 100000, "completed_steps": 100000,
+      "verified_files": 13, "native_md_seconds": 2.920592014, "native_ns_per_day": 7568.482,
+      "accepted_to_worker_seconds": 132, "worker_seconds": 55, "operation_seconds": 203,
+      "trajectory_frames": 101, "trajectory_continuous": true
+    },
+    {
+      "name": "mcp-r5-b", "cohort": "B", "path": "MCP",
+      "operation_id": "ec90358e-83de-5af0-a3dd-6c61b360a9c9",
+      "s2_id": "op-0d215056a63d507f", "attempt_id": "op-0d215056a63d507f-4gg6r",
+      "gpu_class": "rtx-pro-6000", "region": "us-central1", "attempts": 1,
+      "status": "SUCCEEDED", "requested_steps": 100000, "completed_steps": 100000,
+      "verified_files": 13, "native_md_seconds": 3.425309322, "native_ns_per_day": 6268.171,
+      "accepted_to_worker_seconds": 83, "worker_seconds": 55, "operation_seconds": 153,
+      "trajectory_frames": 101, "trajectory_continuous": true
+    }
+  ],
+  "final_s2_0_11_13_cohorts": [
+    {
+      "name": "rest-r5-s2v13-a", "cohort": "A", "path": "REST",
+      "operation_id": "5c37f482-345a-5600-ba53-7cff9b3bb8da",
+      "s2_id": "op-7b497a9d87aed851", "attempt_id": "op-7b497a9d87aed851-rzf45",
+      "gpu_class": "rtx-pro-6000", "region": "us-central1", "attempts": 1,
+      "status": "SUCCEEDED", "requested_steps": 100000, "completed_steps": 100000,
+      "verified_files": 13, "native_ns_per_day": 7443.130,
+      "accepted_to_worker_seconds": 100, "worker_seconds": 55, "operation_seconds": 170,
+      "trajectory_frames": 101, "trajectory_continuous": true
+    },
+    {
+      "name": "mcp-r5-s2v13-a", "cohort": "A", "path": "MCP",
+      "operation_id": "6fd3c829-e771-59a1-96e7-ba7820edbffd",
+      "s2_id": "op-362feda0a5a4d640", "attempt_id": "op-362feda0a5a4d640-pp2cj",
+      "gpu_class": "rtx-pro-6000", "region": "us-central1", "attempts": 1,
+      "status": "SUCCEEDED", "requested_steps": 100000, "completed_steps": 100000,
+      "verified_files": 13, "native_ns_per_day": 5681.803,
+      "accepted_to_worker_seconds": 70, "worker_seconds": 56, "operation_seconds": 141,
+      "trajectory_frames": 101, "trajectory_continuous": true
+    },
+    {
+      "name": "rest-r5-s2v13-b", "cohort": "B", "path": "REST",
+      "operation_id": "b05692b6-2404-5ca6-b612-785fd9101fd8",
+      "s2_id": "op-514817c04b490320", "attempt_id": "op-514817c04b490320-28sbg",
+      "gpu_class": "rtx-pro-6000", "region": "us-central1", "attempts": 1,
+      "status": "SUCCEEDED", "requested_steps": 100000, "completed_steps": 100000,
+      "verified_files": 13, "native_ns_per_day": 7540.426,
+      "accepted_to_worker_seconds": 56, "worker_seconds": 56, "operation_seconds": 126,
+      "trajectory_frames": 101, "trajectory_continuous": true
+    },
+    {
+      "name": "mcp-r5-s2v13-b", "cohort": "B", "path": "MCP",
+      "operation_id": "5cae8ad6-c32a-5df7-bb9f-388ba3e15db6",
+      "s2_id": "op-cee44553e7e7e23e", "attempt_id": "op-cee44553e7e7e23e-mfjlf",
+      "gpu_class": "rtx-pro-6000", "region": "us-central1", "attempts": 1,
+      "status": "SUCCEEDED", "requested_steps": 100000, "completed_steps": 100000,
+      "verified_files": 13, "native_ns_per_day": 6021.874,
+      "accepted_to_worker_seconds": 72, "worker_seconds": 55, "operation_seconds": 142,
+      "trajectory_frames": 101, "trajectory_continuous": true
+    }
+  ],
+  "recovery": {
+    "source_operation_id": "bc273a25-60c1-5d2e-ab14-76fdcc3ea682",
+    "source_s2_id": "op-0c1b75b8659e5135",
+    "source_pod": "op-0c1b75b8659e5135-nxjfz",
+    "source_pod_uid": "f13a6e85-1da8-43d2-8ec6-18f28e721776",
+    "source_gpu_class": "rtx-pro-6000", "source_region": "us-central1", "source_epoch": 1,
+    "last_durable_step_before_loss": 1281200,
+    "checkpoint_ref": "aace7ffd4c97814a07621e43f57a8f6a49c45985033d2b62c446a015d7e827b6",
+    "fault_started_at": "2026-10-11T15:35:46.420606+00:00",
+    "fault": "force-delete verified synthetic pod, then API cancel to stop racing same-class retry",
+    "old_pvc": "op-0c1b75b8659e5135-work",
+    "old_scratch_deleted_at": "2026-10-11T15:35:53.782213+00:00",
+    "continuation_operation_id": "f267dd4c-8498-546a-aabe-f214bb7218a2",
+    "continuation_s2_id": "op-0c1b75b8659e5135-r-4f374b9a",
+    "continuation_pod": "op-0c1b75b8659e5135-r-4f374b9a-l9f5p",
+    "continuation_pvc": "op-0c1b75b8659e5135-r-4f374b9a-work",
+    "target_gpu_class": "l40s", "target_region": "eu-north1", "target_epoch": 2,
+    "same_key_rest_mcp_resume_same_operation": true,
+    "native_cpi_used": true, "preparation_executions_in_durable_history": 1,
+    "completed_steps": 2000000, "verified_files": 22,
+    "accepted_to_worker_seconds": 58, "worker_seconds": 42, "operation_seconds": 113,
+    "new_native_md_seconds": 14.485262751, "new_native_ns_per_day": 8835.041,
+    "result_ref": "e18543c8afcea59b15c46786f53f462aa7706b968db2b0e8c42cd58c1bb234cf",
+    "trajectory": {
+      "real_gromacs_check": true, "atoms": 4096, "frames": 2001, "continuous": true,
+      "segments": [
+        {"frames": 648, "first_ps": 0, "last_ps": 1294, "interval_ps": 2},
+        {"frames": 634, "first_ps": 1296, "last_ps": 2562, "interval_ps": 2},
+        {"frames": 719, "first_ps": 2564, "last_ps": 4000, "interval_ps": 2}
+      ]
+    },
+    "uncommitted_steps_lost": null,
+    "actual_provider_eviction_injected": false,
+    "automatic_post_placement_cross_gpu_recovery": false
+  },
+  "completed_result_replay": {
+    "source_operation_id": "42d4144a-aef9-500f-a7d8-568c81cb1680",
+    "continuation_operation_id": "d1c87d97-5715-583d-b551-2bec48f4612a",
+    "s2_id": "op-3ceff2e4af9ee3b6-r-a8958b0f",
+    "path": "MCP", "gpu_class": "l40s", "region": "eu-north1",
+    "status": "SUCCEEDED", "identical_native_result": true, "new_native_commands": 0,
+    "verified_files": 13, "worker_seconds": 11, "operation_seconds": 91
+  },
+  "boundaries": {
+    "anonymous_rest_http": 401, "anonymous_mcp_http": 401,
+    "other_principal_operation_http": 404, "other_principal_artifact_http": 404,
+    "parallel_replays": 6, "unique_replay_operations": 1,
+    "conflicting_intent_same_key_http": 409,
+    "cross_interface_replay_same_id": true,
+    "new_signed_url_after_terminal_http": 403,
+    "previous_signed_url_residual_ttl_seconds": 60,
+    "cryptographic_requester_to_attempt_binding_proved": false
+  },
+  "validation": {
+    "application_tests_passed": 94, "legacy_worker_tests_passed": 75,
+    "s2_offline_contract_probes_passed": 3,
+    "lint": "passed", "wheel_build": "passed", "terraform_validate": "passed",
+    "terraform_final_plan": "no changes", "terraform_clean_recreate_tested": false
+  },
+  "initial_failures_retained": [
+    "Nebius conditional create returned KeyAlreadyExists; fixed and live replay retested",
+    "two r2 RTX operations retried after object-read timeout; r5 adds bounded immutable-transfer retries",
+    "Kubernetes provider container non-root default; live pilot correction and Terraform fix",
+    "driver REST resume included unknown body idempotency_key; 422, driver fixed"
+  ],
+  "still_unqualified": [
+    "automatic cross-GPU recovery after an already-placed worker loses capacity",
+    "pod-attested storage requester identity and replaced-worker impersonation",
+    "external AWS role/trust and cross-tenant IAM enforcement",
+    "live denied-output/lost-final-ack drills and large multipart trajectories",
+    "sustained multi-user capacity, PME/protein workloads and performance target",
+    "full legacy batch/MPI/identity/admin/usage compatibility and repository-wide CI",
+    "PHI, BAA/service scope, scratch/log cleanup and cross-container process isolation"
+  ],
+  "raw_evidence_directory": "/home/tux/secure-handoff/scientific-ai-s2-pilot-20261011",
+  "internal_object_prefix": "runs/scientific-ai-s2-gromacs-20261011",
+  "test_node_time_estimate": {
+    "at": "2026-10-11T15:57:00Z", "usd": 1.9,
+    "basis": "two RTX at 1.09 USD/GPU-h and one L40S at 0.85, from observed node registration times",
+    "excludes": "pre-registration boot, storage/network/API, other fleet lanes, later idle time; not invoice"
+  },
+  "retention_review_date": "2026-10-18",
+  "customer_services_changed": false,
+  "main_merged": false,
+  "verdict": "internal single-GPU pilot execution and explicit cross-GPU native recovery passed; no customer/PHI cutover"
+}

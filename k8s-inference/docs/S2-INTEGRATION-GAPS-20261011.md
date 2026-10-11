@@ -7,15 +7,17 @@ Scientific AI work remains on `scientific-ai-serverless2-migration`.
 ## Retest after Serverless integration (11 October, afternoon)
 
 All three executable probes now **pass**, against Serverless commit
-`56aaa9eb3c9b6fb1176584c73e463884473b2c17`. The shared control API is 0.11.11;
+`56aaa9eb3c9b6fb1176584c73e463884473b2c17`. The shared control API at that retest was 0.11.11;
 the jobs 0.1.14 uploader adds the live checkpoint file bridge and retains scratch
 until acknowledged delivery. The original findings below are preserved as
 incident history, not current blockers.
 
 The application now implements the file bridge, idempotent resume, REST/MCP
-compatibility routes and online request-scoped S3 object signing. Actual GPU,
-cross-cluster and failure-injection acceptance remains separate from these
-passing offline probes. No customer cutover is authorized.
+compatibility routes and online request-scoped S3 object signing. Subsequent
+[live application acceptance](../acceptance/serverless2-gromacs-20261011/LIVE-PILOT.md)
+completed two REST/MCP cohorts and abrupt RTX-pod/scratch loss followed by L40S
+resume. It preserves the exact failures, image digests, timing and remaining
+gates. No customer cutover is authorized.
 
 ## Implemented and checked here
 
@@ -30,10 +32,34 @@ than the earlier provisional discovery contract:
 - fail closed if Serverless says an application run succeeded but provides no
   durable result reference.
 
-86 application/transport tests pass. A real, read-only call using the existing
+94 application/transport tests pass. A real, read-only call using the existing
 `sciai-worker` key confirmed the live fleet's discovery and tenant configuration.
 That identity is a normal internal test user, not a customer or operator key.
-No GROMACS API/MCP endpoint has been deployed or qualified by this slice.
+The GROMACS pilot API/MCP is now deployed at the shared API's `/scientific-ai`
+path. Native single-GPU work, explicit cross-GPU resume, completed-result replay
+and bounded authorization checks passed; this is not complete compatibility or
+protected-data qualification.
+
+## Remaining joint gates after real GROMACS execution
+
+- **S2 automatic recovery:** class fallback handles unplaced work; a failed
+  already-placed run does not automatically move to another class/region when
+  its original capacity disappears. The live drill used explicit `:resume`.
+- **Scientific AI storage authorization:** the signer currently validates a
+  logical-job bearer and a caller-supplied attempt ID against S2. Bind requests
+  to a cryptographically verified pod identity before customer/PHI use. S2's
+  existing projected identity mechanism is the integration point; do not build
+  a second credential issuer. Confirm an appropriate audience and trusted issuer
+  mapping, then test a partitioned/replaced caller who knows the new attempt ID.
+- **Joint live durability/security acceptance:** inject denied final-object
+  storage and lost final acknowledgement. Completed-result replay and offline
+  denied-transfer tests passed, but are not equivalent. External AWS trust is
+  still a placeholder; provider IAM and protected scratch/log/process isolation
+  remain unqualified.
+
+These are retained integration work, not hidden passing checks. No upstream
+Serverless changes were made by this task, and no external tickets/messages were
+created from the shared fleet.
 
 ## Original blocking execution contracts (fixed upstream; retained evidence)
 
@@ -70,13 +96,17 @@ not Kubernetes credentials. Exit 0 is now expected; do not convert a regression
 to a passing or skipped test. The receipt identifies the
 Serverless source commit and reports the actual outcomes.
 
-Last complete probe: S2 source `56aaa9eb3c9b6fb1176584c73e463884473b2c17`;
+Last complete probe: S2 source `fdcbf7785dd0f46679f877eaef9c7b78d2f59ac8`;
 all three checks passed. The original failing source was
 `069cfe712d3c44e90c74c6fa3c63fa4b891e7f61`. Its checkout is shared and has active
 development, so re-run against the current candidate rather than editing or
 deploying an older copy. This application task does not modify Serverless source.
 
-## Continue after the upstream fixes
+Other lanes upgraded the shared API to 0.11.12 and then 0.11.13 during the live
+application tests. The new three-probe pass and the exact final API image digest
+are recorded in the live report; do not imply that the entire fleet was frozen.
+
+## Original continuation plan (live status is recorded above)
 
 1. Rerun the probes and finish the native-worker lifecycle/file bridge against
    the delivered acknowledgement contract; keep the model container free of
