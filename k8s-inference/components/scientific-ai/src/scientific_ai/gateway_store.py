@@ -67,6 +67,7 @@ class GatewayStore:
                 "PreconditionFailed",
                 "412",
                 "ConditionalRequestConflict",
+                "KeyAlreadyExists",  # Nebius S3's conditional-create response
             ):
                 return self.get(kind, identity)
             raise

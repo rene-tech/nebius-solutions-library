@@ -16,10 +16,11 @@ from scientific_ai.gateway_store import canonical
 class S3:
     def __init__(self):
         self.data = {}
+        self.existing_code = "PreconditionFailed"
 
     def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None, **kwargs):
         if IfNoneMatch == "*" and Key in self.data:
-            raise ClientError({"Error": {"Code": "PreconditionFailed"}}, "PutObject")
+            raise ClientError({"Error": {"Code": self.existing_code}}, "PutObject")
         self.data[Key] = Body
 
     def get_object(self, *, Bucket, Key):
@@ -144,6 +145,17 @@ def upload(client, data, media_type="application/octet-stream", compression="non
     result = client.post(f"/v1/scientific-artifacts/uploads/{aid}:finalize")
     assert result.status_code == 200, result.text
     return result.json()["artifact"]
+
+
+@pytest.mark.parametrize(
+    "code", ["PreconditionFailed", "412", "ConditionalRequestConflict", "KeyAlreadyExists"]
+)
+def test_upload_reservation_replays_provider_conditional_conflicts(gateway_fixture, code):
+    _, client, storage, *_ = gateway_fixture
+    storage.existing_code = code
+    first = upload(client, b"immutable test input")
+    second = upload(client, b"immutable test input")
+    assert first == second
 
 
 def submit_request(client, setup):
