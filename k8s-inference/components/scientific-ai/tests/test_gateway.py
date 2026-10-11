@@ -243,6 +243,20 @@ def test_job_grant_enforces_active_attempt_and_object_namespace(gateway_fixture,
     operation.update(status="RUNNING", attempt_id="pod-1")
     request = {"action": "get", "key": "blobs/" + "a" * 64, "attempt_id": "pod-1"}
     assert client.post("/internal/storage", json=request, headers=grant).status_code == 200
+    # The uploader's start record arrives before the API sees the pod as Running.
+    # Only an authenticated current attempt gets a retryable response; nobody gets an object URL yet.
+    operation.update(status="QUEUED")
+    waiting = client.post("/internal/storage", json=request, headers=grant)
+    assert waiting.status_code == 503 and waiting.json()["error"]["retryable"] is True
+    assert "url" not in waiting.json()
+    assert (
+        client.post(
+            "/internal/storage", json=request, headers={"Authorization": grant["Authorization"]}
+        ).status_code
+        == 403
+    )
+    operation.update(status="RUNNING")
+    assert client.post("/internal/storage", json=request, headers=grant).status_code == 200
     assert (
         client.post(
             "/internal/storage", json=request, headers={"Authorization": grant["Authorization"]}

@@ -485,11 +485,7 @@ class Gateway:
             follow_redirects=False,
         ) as http:
             current = ServerlessClient(http).status(operation["latest_s2_id"])
-        if (
-            current.get("attempt_id") != body.get("attempt_id")
-            or current["status"] not in {"RUNNING", "FINALIZING"}
-            or not current.get("attempt_id")
-        ):
+        if current.get("attempt_id") != body.get("attempt_id") or not current.get("attempt_id"):
             raise HTTPException(403, "job storage grant is not active for this execution attempt")
         self.pod_verifier.require_current(
             identity_token,
@@ -497,6 +493,12 @@ class Gateway:
             namespace=config.namespace,
             identity_ref=config.workload_identity_ref,
         )
+        if current["status"] == "QUEUED":
+            # The uploader's authenticated start record can precede Kubernetes' Running observation.
+            # A verified current pod retries immutable I/O; storage stays denied until the phase catches up.
+            raise ConnectionError("the current attempt's startup observation is pending")
+        if current["status"] not in {"RUNNING", "FINALIZING"}:
+            raise HTTPException(403, "job storage grant is not active for this execution attempt")
         relative = body.get("key", "")
         if not re.fullmatch(r"(?:blobs|manifests)/[a-f0-9]{64}", relative):
             raise HTTPException(403, "object is outside this job's artifact namespace")
