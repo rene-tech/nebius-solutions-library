@@ -40,7 +40,7 @@ class S3:
 
 
 @pytest.fixture
-def gateway_fixture(setup):
+def gateway_fixture(setup, pod_tokens, monkeypatch):
     runtime = setup[0]["profile"]
     storage = S3()
     calls, operations, bindings = [], {}, {}
@@ -67,8 +67,9 @@ def gateway_fixture(setup):
                     "execution": {
                         "io_modes": ["application"],
                         "execution_profiles": ["confidential-job-v1"],
-                        "identities": [],
+                        "identities": ["scientific-ai-storage"],
                         "private_input_dir": "/var/run/serverless2/private",
+                        "identity_token_file": "/var/run/secrets/workload-identity/token",
                     }
                 },
             )
@@ -76,6 +77,9 @@ def gateway_fixture(setup):
             bindings[path] = json.loads(request.content)["data"]
             return httpx.Response(200, json={"state": "bound"})
         if path.endswith(":invoke"):
+            assert (
+                json.loads(request.content)["execution"]["workload_identity_ref"] == "scientific-ai-storage"
+            )
             op = "op-scientific-gromacs-1"
             operations.setdefault(
                 op,
@@ -83,7 +87,15 @@ def gateway_fixture(setup):
                     "id": op,
                     "root_operation_id": op,
                     "status": "QUEUED",
-                    "execution": {"io_mode": "application"},
+                    "execution": {
+                        "io_mode": "application",
+                        "identity": {
+                            "ref": "scientific-ai-storage",
+                            "service_account": "identity-scientific-ai-storage",
+                            "audience": "https://testserver/internal/storage",
+                        },
+                    },
+                    "cluster": "test-a",
                     "attempts": [],
                 },
             )
@@ -105,6 +117,15 @@ def gateway_fixture(setup):
         public_url="https://testserver",
         runtime=runtime,
         signing_key="private-test-only-key-" + "a" * 32,
+        workload_identity={
+            "audience": "https://testserver/internal/storage",
+            "issuers": {
+                "test-a": {
+                    "issuer": "https://issuer.example/test-a",
+                    "jwks_url": "https://issuer.example/test-a/keys",
+                }
+            },
+        },
         tenants={
             "system": {
                 "endpoint": "https://storage.example",
@@ -114,6 +135,8 @@ def gateway_fixture(setup):
                 "access_key": "test",
                 "secret_key": "test",
                 "execution_key": "qa",
+                "workload_identity_ref": "scientific-ai-storage",
+                "namespace": "tenant-system",
             }
         },
     )
@@ -122,6 +145,8 @@ def gateway_fixture(setup):
         storage_factory=lambda tenant: storage,
         http_factory=lambda **kw: httpx.Client(transport=httpx.MockTransport(upstream), **kw),
     )
+    for jwks in gateway.pod_verifier.keys.values():
+        monkeypatch.setattr(jwks, "fetch_data", lambda: pod_tokens[2])
     app = create_app(gateway=gateway)
     with TestClient(app, base_url="https://testserver", headers={"Authorization": "Bearer qa"}) as client:
         yield gateway, client, storage, calls, operations, bindings
@@ -204,17 +229,26 @@ def test_api_identity_upload_submit_replay_and_cross_user_isolation(gateway_fixt
     assert "storage_token" in secret
 
 
-def test_job_grant_enforces_active_attempt_and_object_namespace(gateway_fixture, setup):
+def test_job_grant_enforces_active_attempt_and_object_namespace(gateway_fixture, setup, pod_tokens):
     gateway, client, _, _, operations, bindings = gateway_fixture
     body = submit_request(client, setup)
     response = client.post("/v1/models/gromacs:submit", json=body, headers={"Idempotency-Key": "cohort-002"})
     assert response.status_code == 202, response.text
     binding = json.loads(next(iter(bindings.values()))["run.json"])
-    grant = {"Authorization": "Bearer " + binding["storage_token"]}
+    grant = {
+        "Authorization": "Bearer " + binding["storage_token"],
+        "X-Scientific-Workload-Token": pod_tokens[1](pod_tokens[0]()),
+    }
     operation = next(iter(operations.values()))
     operation.update(status="RUNNING", attempt_id="pod-1")
     request = {"action": "get", "key": "blobs/" + "a" * 64, "attempt_id": "pod-1"}
     assert client.post("/internal/storage", json=request, headers=grant).status_code == 200
+    assert (
+        client.post(
+            "/internal/storage", json=request, headers={"Authorization": grant["Authorization"]}
+        ).status_code
+        == 403
+    )
     assert (
         client.post(
             "/internal/storage", json={**request, "key": "../another-user"}, headers=grant
@@ -225,7 +259,16 @@ def test_job_grant_enforces_active_attempt_and_object_namespace(gateway_fixture,
         client.post("/internal/storage", json={**request, "attempt_id": "old-pod"}, headers=grant).status_code
         == 403
     )
-    operation.update(status="CANCELLED")
+    # The old worker knows the replacement ID and retains its logical-job grant.
+    # It must STILL fail because it cannot mint the replacement's projected JWT.
+    operation.update(attempt_id="replacement-pod")
+    assert (
+        client.post(
+            "/internal/storage", json={**request, "attempt_id": "replacement-pod"}, headers=grant
+        ).status_code
+        == 403
+    )
+    operation.update(attempt_id="pod-1", status="CANCELLED")
     assert client.post("/internal/storage", json=request, headers=grant).status_code == 403
     claims = jwt.decode(
         binding["storage_token"],
@@ -234,6 +277,75 @@ def test_job_grant_enforces_active_attempt_and_object_namespace(gateway_fixture,
         audience="job-storage",
     )
     assert claims["owner"]["principal_id"] == "qa"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("job_id", "replica"),
+        ("performance_mode", "optimized"),
+        ("max_wall_seconds", 1209600),
+        ("gpu_class", "h100"),
+    ],
+)
+def test_resume_rejects_unimplemented_options_before_admission(gateway_fixture, setup, field, value):
+    _, client, _, calls, _, _ = gateway_fixture
+    body = submit_request(client, setup)
+    original = client.post(
+        "/v1/models/gromacs:submit", json=body, headers={"Idempotency-Key": "resume-original"}
+    ).json()["operation_id"]
+    response = client.post(
+        f"/v1/operations/{original}:resume",
+        json={field: value},
+        headers={"Idempotency-Key": "unsupported-options"},
+    )
+    assert response.status_code == 422
+    if field != "gpu_class":
+        assert response.json()["error"]["fields"][0]["path"] == ["body", field]
+    assert not any(path.endswith(":resume") for _, path in calls)
+
+
+def test_resume_rest_and_mcp_share_idempotent_continuation(gateway_fixture, setup):
+    _, client, _, calls, _, _ = gateway_fixture
+    original = client.post(
+        "/v1/models/gromacs:submit",
+        json=submit_request(client, setup),
+        headers={"Idempotency-Key": "resume-original"},
+    ).json()["operation_id"]
+    resumed = client.post(
+        f"/v1/operations/{original}:resume",
+        json={"gpu_class": "l40s"},
+        headers={"Idempotency-Key": "resume-on-l40s"},
+    )
+    assert resumed.status_code == 202, resumed.text
+    response = client.post(
+        "/mcp",
+        headers={"Accept": "application/json, text/event-stream"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "resume_gromacs_workflow",
+                "arguments": {
+                    "operation_id": original,
+                    "idempotency_key": "resume-on-l40s",
+                    "gpu_class": "l40s",
+                },
+            },
+        },
+    )
+    message = response.json()["result"]
+    assert not message.get("isError"), message
+    value = message.get("structuredContent") or json.loads(message["content"][0]["text"])
+    assert value["operation_id"] == resumed.json()["operation_id"]
+    assert len([path for _, path in calls if path.endswith(":resume")]) == 1
+    conflict = client.post(
+        f"/v1/operations/{original}:resume",
+        json={"gpu_class": "rtx-pro-6000"},
+        headers={"Idempotency-Key": "resume-on-l40s"},
+    )
+    assert conflict.status_code == 409
 
 
 def test_upload_corruption_and_foreign_artifact_are_rejected(gateway_fixture):

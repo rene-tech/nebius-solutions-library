@@ -46,6 +46,7 @@ def main() -> int:
                 url=binding.broker_url,
                 token=binding.storage_token,
                 attempt_id=attempt.attempt_id,
+                identity_token_file=Path("/var/run/secrets/workload-identity/token"),
             )
             app = GromacsApplication(
                 run=binding.run,

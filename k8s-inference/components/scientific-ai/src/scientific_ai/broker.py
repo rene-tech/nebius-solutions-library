@@ -9,6 +9,7 @@ them in API memory. No URL or bearer is logged.
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
@@ -47,14 +48,25 @@ class _Stream(io.RawIOBase):
 
 
 class BrokerObjects:
-    def __init__(self, *, http: httpx.Client, url: str, token: str, attempt_id: str):
+    def __init__(
+        self, *, http: httpx.Client, url: str, token: str, attempt_id: str, identity_token_file: Path
+    ):
         self.http, self.url = http, https_origin(url)
         self.token, self.attempt_id = token, attempt_id
+        self.identity_token_file = identity_token_file
 
     def _request(self, action: str, key: str, **values) -> dict:
+        # Kubelet rotates the projected token. Read it on every authorization,
+        # not once at process start (fourteen-day jobs outlive a token).
+        identity = self.identity_token_file.read_text().strip()
+        if not identity or len(identity) > 32768:
+            raise PermissionError("a projected workload identity is required")
         response = self.http.post(
             self.url + "/internal/storage",
-            headers={"Authorization": "Bearer " + self.token},
+            headers={
+                "Authorization": "Bearer " + self.token,
+                "X-Scientific-Workload-Token": identity,
+            },
             json={"action": action, "key": key, "attempt_id": self.attempt_id, **values},
             follow_redirects=False,
         )

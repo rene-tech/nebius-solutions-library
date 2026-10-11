@@ -27,10 +27,11 @@ from fs2_gromacs.contracts import normalize, request_schema
 from pydantic import Field, RootModel, SecretStr, model_validator
 
 from .broker import https_origin
-from .contracts import Contract, FileRecord, GromacsRun, Owner, RuntimeProfile
+from .contracts import Contract, FileRecord, GromacsRun, Identifier, Owner, RuntimeProfile
 from .gateway_store import GatewayStore, canonical, identifier, uuid
 from .runner import PrivateRun
 from .serverless import ServerlessClient, ServerlessError, _idempotency, invoke_payload
+from .workload_identity import PodVerifier, WorkloadIdentity
 
 TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "EXPORT_FAILED", "PREEMPTED"}
 RUN_SCHEMA = "fs2-serve.nebius.ai/scientific-run-request/v1"
@@ -46,6 +47,8 @@ class TenantStorage(Contract):
     secret_key: SecretStr
     # Non-admin S2 service key, used only to authorize an active job's object URL.
     execution_key: SecretStr
+    workload_identity_ref: str = Field(pattern=r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$")
+    namespace: str = Field(pattern=r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$")
 
 
 class Settings(Contract):
@@ -56,6 +59,7 @@ class Settings(Contract):
     runtime: RuntimeProfile
     signing_key: SecretStr
     tenants: dict[str, TenantStorage]
+    workload_identity: WorkloadIdentity
 
 
 class ArtifactPointer(Contract):
@@ -89,9 +93,16 @@ class Submit(Contract):
     client_context: dict = Field(default_factory=dict)
 
 
+class Resume(Contract):
+    """Only implemented continuation options; never silently ignore legacy fields."""
+
+    gpu_class: Identifier | None = None
+
+
 class Gateway:
     def __init__(self, settings: Settings, *, http_factory=httpx.Client, storage_factory=None):
         self.settings, self.http_factory = settings, http_factory
+        self.pod_verifier = PodVerifier(settings.workload_identity)
         https_origin(settings.serverless_url)
         https_origin(settings.public_url)
         if len(settings.signing_key.get_secret_value()) < 32:
@@ -157,6 +168,14 @@ class Gateway:
             "request_schema": request_schema(),
             "checkpoint_type": "native-gromacs",
             "gpu_snapshot": False,
+            "capabilities": {
+                "jobs_per_operation": 1,
+                "gpus_per_job": 1,
+                "native_checkpoint_resume": True,
+                "automatic_cross_gpu_recovery": False,
+                "resume_options": Resume.model_json_schema(),
+                "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v2",
+            },
         }
 
     def reserve(self, store: GatewayStore, body: dict):
@@ -295,7 +314,7 @@ class Gateway:
             invoke_payload(
                 profile,
                 profile_ref=self.settings.profile_ref,
-                identity_ref=None,
+                identity_ref=self.settings.tenants[store.owner.tenant_id].workload_identity_ref,
                 private_input_ref=private_ref,
             ),
             idempotency_key="sai-" + op,
@@ -416,7 +435,12 @@ class Gateway:
 
     def resume(self, client, store, op, key: str, *, gpu_class: str | None = None):
         _idempotency(key)
+        Resume(gpu_class=gpu_class)
         original = store.get("operations", op)
+        root = store.get("operations", original["root_id"])
+        profile = RuntimeProfile.model_validate(root["runtime"])
+        if gpu_class is not None and gpu_class not in profile.gpu_preference:
+            raise HTTPException(422, "GPU class is not qualified for the original runtime")
         resumed = identifier(store.owner, "resume", op + ":" + key)
         intent = hashlib.sha256(canonical([op, gpu_class])).hexdigest()
         previous = store.save(
@@ -439,7 +463,7 @@ class Gateway:
             store.save("operations", original["root_id"], {**root, "latest_s2_id": response["id"]})
         return self.status(client, store, resumed)
 
-    def sign(self, token: str, body: dict):
+    def sign(self, token: str, body: dict, identity_token: str):
         try:
             claims = jwt.decode(
                 token,
@@ -463,10 +487,16 @@ class Gateway:
             current = ServerlessClient(http).status(operation["latest_s2_id"])
         if (
             current.get("attempt_id") != body.get("attempt_id")
-            or current["status"] in TERMINAL
+            or current["status"] not in {"RUNNING", "FINALIZING"}
             or not current.get("attempt_id")
         ):
             raise HTTPException(403, "job storage grant is not active for this execution attempt")
+        self.pod_verifier.require_current(
+            identity_token,
+            current=current,
+            namespace=config.namespace,
+            identity_ref=config.workload_identity_ref,
+        )
         relative = body.get("key", "")
         if not re.fullmatch(r"(?:blobs|manifests)/[a-f0-9]{64}", relative):
             raise HTTPException(403, "object is outside this job's artifact namespace")
@@ -522,7 +552,21 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
-        return JSONResponse({"error": {"code": "INVALID_REQUEST", "retryable": False}}, status_code=422)
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "INVALID_REQUEST",
+                    "retryable": False,
+                    # No rejected values or exception context: these may be private.
+                    "fields": [{"path": list(e["loc"]), "code": e["type"]} for e in error.errors()],
+                }
+            },
+            status_code=422,
+        )
+
+    @app.exception_handler(ConnectionError)
+    async def temporarily_unavailable(request, error):
+        return JSONResponse({"error": {"code": "DEPENDENCY_UNAVAILABLE", "retryable": True}}, status_code=503)
 
     @app.exception_handler(ValueError)
     async def invalid_value(request, error):
@@ -631,18 +675,14 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
             return gateway.status(client, store, op)
 
     @app.post("/v1/operations/{op}:resume", status_code=202)
-    def resume(request: Request, op: str, body: dict):
-        if set(body) - {"gpu_class", "job_id", "performance_mode", "max_wall_seconds"}:
-            raise HTTPException(422, "unknown resume options")
-        if body.get("max_wall_seconds", 1209600) != 1209600:
-            raise HTTPException(422, "this pilot preserves the submitted native time budget on resume")
+    def resume(request: Request, op: str, body: Resume):
         with gateway.client(authorization(request)) as (client, store, _):
             return gateway.resume(
                 client,
                 store,
                 uuid(op),
                 request.headers.get("Idempotency-Key", ""),
-                gpu_class=body.get("gpu_class"),
+                gpu_class=body.gpu_class,
             )
 
     @app.get("/v1/artifacts/{aid}/content")
@@ -683,7 +723,7 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
         value = authorization(request)
         if not value.startswith("Bearer "):
             raise HTTPException(401, "a job storage grant is required")
-        return gateway.sign(value[7:], body)
+        return gateway.sign(value[7:], body, request.headers.get("X-Scientific-Workload-Token", ""))
 
     # Imported here so native workers do not initialize an MCP server.
     from .mcp_server import mount_mcp

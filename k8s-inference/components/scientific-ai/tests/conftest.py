@@ -2,12 +2,46 @@ import gzip
 import hashlib
 import io
 import tarfile
+from datetime import UTC, datetime
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from scientific_ai.contracts import Attempt, FileRecord, GromacsRun, Owner, RuntimeProfile, StorageGrant
 from scientific_ai.gromacs import GromacsApplication
 from scientific_ai.storage import Artifacts
+
+
+@pytest.fixture(scope="session")
+def pod_tokens():
+    """Real RSA signatures, with no connection to a real issuer or credentials."""
+    import json
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
+    public.update(kid="test-only", use="sig", alg="RS256")
+
+    def claims(pod="pod-1"):
+        now = int(datetime.now(UTC).timestamp())
+        return {
+            "iss": "https://issuer.example/test-a",
+            "aud": "https://testserver/internal/storage",
+            "sub": "system:serviceaccount:tenant-system:identity-scientific-ai-storage",
+            "iat": now - 1,
+            "nbf": now - 1,
+            "exp": now + 3600,
+            "kubernetes.io": {
+                "namespace": "tenant-system",
+                "pod": {"name": pod, "uid": "uid-" + pod},
+                "serviceaccount": {"name": "identity-scientific-ai-storage", "uid": "sa-uid"},
+            },
+        }
+
+    def sign(value):
+        return jwt.encode(value, key, algorithm="RS256", headers={"kid": "test-only"})
+
+    return claims, sign, {"keys": [public]}
 
 
 class MemoryObjects:

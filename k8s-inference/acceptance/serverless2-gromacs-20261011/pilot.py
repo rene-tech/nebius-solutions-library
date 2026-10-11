@@ -40,7 +40,7 @@ def command(*args):
 
 
 def keys():
-    return json.loads(command("./stack.sh", "output", "models", "control", "-json", "tenant_keys"))["sciai"]
+    return json.loads(command("./stack.sh", "output", "platform", "control", "-json", "tenant_keys"))["sciai"]
 
 
 def write(path, value, *, private=False):
@@ -110,6 +110,19 @@ def prepare(directory, tag, api_tag=None):
         "model_id": MODEL,
         "profile_ref": "confidential-job-v1",
         "signing_key": signing_key,
+        "workload_identity": {
+            "audience": PUBLIC + "/internal/storage",
+            "issuers": {
+                region: {
+                    "issuer": "https://oidc.mk8s.api.nebius.cloud/" + cluster,
+                    "jwks_url": "https://oidc.mk8s.api.nebius.cloud/" + cluster + "/openid/v1/jwks",
+                }
+                for region, cluster in {
+                    "us-central1": "mk8scluster-u00pdtgvqv6yjdjndr",
+                    "eu-north1": "mk8scluster-e00nxtpw0h8ysw9vx5",
+                }.items()
+            },
+        },
         "runtime": {
             "revision": "gromacs-2026-4-" + tag,
             "checkpoint_compatibility_id": "gromacs-2026-4-native-v1",
@@ -128,6 +141,8 @@ def prepare(directory, tag, api_tag=None):
                 "access_key": data["access_key"],
                 "secret_key": data["secret_key"],
                 "execution_key": selected["worker"],
+                "workload_identity_ref": "scientific-ai-storage",
+                "namespace": "tenant-sciai",
                 "prefix": "runs/scientific-ai-s2-gromacs-20261011",
             }
         },
@@ -530,9 +545,8 @@ def boundaries(directory, name):
 def storage_denial(directory, name):
     """Check a terminal job's equivalent private grant; never emit its token.
 
-    This tests logical-job withdrawal, NOT pod attestation. The present broker
-    has a job-bound token and caller-supplied attempt ID; replaced-worker
-    impersonation is a separate, explicitly unqualified security boundary.
+    This tests logical-job withdrawal. identity_boundaries separately exercises
+    the required projected pod identity while an operation is active.
     """
     import jwt
 
@@ -575,6 +589,100 @@ def storage_denial(directory, name):
     }
     assert response.status_code == 403
     write(directory / (name + "-storage-denial.json"), evidence)
+    print(json.dumps(evidence))
+
+
+def identity_boundaries(directory, name, stale_name=None):
+    """Use only this pilot's synthetic pod; never print its projected token.
+
+    Save a 0600 token receipt for a later replaced-pod test. With --stale-name,
+    try that old real token against the current attempt, even supplying the new
+    attempt ID and the correct logical-job capability. No data is downloaded.
+    """
+    import jwt
+
+    from scientific_ai.gateway import Gateway, Settings
+
+    receipt = json.loads((directory / (name + ".json")).read_bytes())
+    gateway = Gateway(Settings.model_validate_json((directory / "config.json").read_bytes()))
+    with gateway.client("Bearer " + keys()["worker"]) as (client, store, _):
+        record = store.get("operations", receipt["response"]["operation_id"])
+        root = store.get("operations", record["root_id"])
+        current = client.status(root["latest_s2_id"])
+        if current["status"] != "RUNNING" or not current.get("attempt_id"):
+            raise RuntimeError("identity qualification requires an active owned synthetic attempt")
+        grant = jwt.encode(
+            {
+                "iss": "scientific-ai",
+                "aud": "job-storage",
+                "owner": store.owner.model_dump(),
+                "op": record["root_id"],
+            },
+            gateway.settings.signing_key.get_secret_value(),
+            algorithm="HS256",
+        )
+    contexts = {
+        "us-central1": "nebius-mk8s-s2pr2-us-central1-u00pdtgvqv6yjdjndr",
+        "eu-north1": "nebius-mk8s-s2pr2-hub-e00nxtpw0h8ysw9vx5",
+    }
+    context, pod = contexts[current["cluster"]], current["attempt_id"]
+    metadata = json.loads(
+        command("kubectl", "--context", context, "-n", "tenant-sciai", "get", "pod", pod, "-o", "json")
+    )
+    if not pod.startswith(current["id"] + "-"):
+        raise RuntimeError("refusing another operation's pod")
+    token = command(
+        "kubectl",
+        "--context",
+        context,
+        "-n",
+        "tenant-sciai",
+        "exec",
+        pod,
+        "-c",
+        "main",
+        "--",
+        "/opt/scientific-ai/bin/python",
+        "-c",
+        "from pathlib import Path; print(Path('/var/run/secrets/workload-identity/token').read_text())",
+    ).strip()
+    write(
+        directory / (name + "-identity-private.json"),
+        {
+            "token": token,
+            "attempt_id": pod,
+            "pod_uid": metadata["metadata"]["uid"],
+            "cluster": current["cluster"],
+        },
+        private=True,
+    )
+    headers = {"Authorization": "Bearer " + grant}
+    request = {"action": "get", "key": "blobs/" + "a" * 64, "attempt_id": pod}
+    with httpx.Client(base_url=PUBLIC, timeout=60) as http:
+
+        def check(identity):
+            return http.post(
+                "/internal/storage",
+                headers={**headers, "X-Scientific-Workload-Token": identity},
+                json=request,
+            ).status_code
+
+        evidence = {
+            "at": now(),
+            "attempt_id": pod,
+            "cluster": current["cluster"],
+            "current_identity": check(token),
+            "missing_identity": check(""),
+            "forged_identity": check("not-a-signed-pod-token"),
+        }
+        assert evidence["current_identity"] == 200, evidence
+        assert evidence["missing_identity"] == evidence["forged_identity"] == 403, evidence
+        if stale_name:
+            previous = json.loads((directory / (stale_name + "-identity-private.json")).read_bytes())
+            assert previous["attempt_id"] != pod
+            evidence["stale_identity_with_current_attempt_id"] = check(previous["token"])
+            assert evidence["stale_identity_with_current_attempt_id"] == 403, evidence
+    write(directory / (name + "-identity-boundaries.json"), evidence)
     print(json.dumps(evidence))
 
 
@@ -757,13 +865,15 @@ def main():
             "interrupt",
             "storage-denial",
             "trajectories",
+            "identity-boundaries",
         ],
     )
     parser.add_argument("--private-dir", type=Path, required=True)
-    parser.add_argument("--tag", default="pilot-20261011-r5")
+    parser.add_argument("--tag", default="pilot-20261011-r6")
     parser.add_argument("--api-tag")
     parser.add_argument("--engine-image")
     parser.add_argument("--name", default="rest-cohort-1")
+    parser.add_argument("--stale-name")
     parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--path", choices=["rest", "mcp"], default="rest")
     parser.add_argument("--gpu-class", choices=["l40s", "rtx-pro-6000"], default="l40s")
@@ -786,6 +896,8 @@ def main():
         storage_denial(args.private_dir, args.name)
     elif args.action == "trajectories":
         trajectories(args.private_dir, args.name, args.engine_image)
+    elif args.action == "identity-boundaries":
+        identity_boundaries(args.private_dir, args.name, args.stale_name)
     else:
         control(args.private_dir, args.name, args.action, args.path, args.gpu_class)
 

@@ -1,7 +1,6 @@
 """Typed MCP tools over the SAME application methods as REST; no separate jobs."""
 
 from contextlib import asynccontextmanager
-from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
@@ -107,13 +106,14 @@ def mount_mcp(app, gateway):
         operation_id: str,
         idempotency_key: str,
         ctx: Context,
-        gpu_class: Literal["rtx-pro-6000", "l40s"] | None = None,
+        gpu_class: str | None = None,
     ) -> dict:
         """Continue from the last acknowledged native checkpoint on an approved GPU.
 
         Returns a NEW operation ID to poll. Reuses TPR, coordinates, velocities,
         completed preparation and output history. Does not regenerate velocities.
         This pilot preserves the submitted time budget. Reuse the key on retries.
+        GPU class must be one of the original run's qualified runtime choices.
         """
         return execute(ctx, gateway.resume, uuid(operation_id), idempotency_key, gpu_class=gpu_class)
 
