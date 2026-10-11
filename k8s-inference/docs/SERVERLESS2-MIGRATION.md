@@ -4,6 +4,33 @@ Updated 11 October 2026. **Application slice implemented locally; no customer
 cutover or fleet deployment.** All existing platform features and routes remain
 in service on the current implementation. This migration must not interrupt them.
 
+## Branch isolation and disposition
+
+Owner: Rene's Scientific AI migration workstream. Active development is on the
+single temporary branch `scientific-ai-serverless2-migration` in the personal
+fork, using `/home/tux/worktrees/scientific-ai-s2-gromacs-20261011`.
+Do not integrate this unfinished migration into `main` at routine turn closeout.
+
+The initial application commit `66c04af8337051ea81f9952df1034be7fc6ff637` was
+prematurely pushed to `main`. History-preserving revert
+`f3d651e0c9ad9dd726c26fc46d82e050105e25c1` restores its complete tree to
+`de8a2a18c8fea3da73c1905883a8cb8225119ecd`. The feature branch incorporates that
+revert and reapplies the migration as `1e6b28bacb2830bb2b464d714429b6b7230ae0f8`,
+so it remains normally mergeable; the reapplied tree matches the tested original.
+No history rewrite, customer deployment, or cloud resource change was performed.
+
+Keep production fixes on the existing implementation. Test the migration only
+on the shared dev fleet. Integration requires the real S2 bindings, agreed
+RTX-to-L40S recovery and storage-isolation acceptance, passing release checks,
+and an explicit integration decision. Production cutover is a separate decision.
+Retire this one branch after accepted integration, not before.
+
+The initial GitHub validation run
+[38136271343](https://github.com/rene-tech/nebius-solutions-library/actions/runs/38136271343)
+passed the new offline application job but failed the broader static-validation
+job, including missing `pytest` and `cryptography` dependencies. Full CI remains
+an open integration gate; local component results do not replace it.
+
 ## Agreed pilot
 
 Start a **new GROMACS job using synthetic data**, rather than copying a customer

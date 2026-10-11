@@ -6,3 +6,11 @@
 - Push only to the configured personal fork. Nebius-owned upstreams are read-only for this consolidation.
 - Keep chat summaries within 120 words and progress updates within two short sentences.
 
+## Active Serverless 2 migration exception
+
+Owner instruction, 11 October 2026: keep unfinished Scientific AI migration work
+on `scientific-ai-serverless2-migration`, not `main`. This branch is active work,
+not a completed branch to retire. Continue in its existing worktree. Do not
+integrate it automatically at turn closeout or deploy it to the customer cluster.
+Use only the shared test fleet. Follow `k8s-inference/docs/SERVERLESS2-MIGRATION.md`
+for integration gates and the eventual explicit release/cutover decision.
