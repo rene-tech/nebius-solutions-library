@@ -1,0 +1,148 @@
+# Scientific AI 2: isolated migration fleet, not the customer or s2pr2 state.
+# Run with the Serverless 2 source pinned in README.md. No credentials here.
+# All GPU pools are spot, follow the spot price, and start at zero nodes.
+# Regular CPU system nodes and managed services approved by Rene on 2026-10-12.
+fleet = {
+  name               = "scientific-ai2"
+  kubernetes_version = "1.35"
+  protect_data       = true
+  labels             = { owner = "scientific-ai", purpose = "migration", generation = "2" }
+
+  state = {
+    bucket   = "scientific-ai2-tfstate"
+    region   = "eu-north1"
+    endpoint = "https://storage.eu-north1.nebius.cloud"
+  }
+
+  control_plane = {
+    dedicated     = true
+    project_id    = "project-e00rene"
+    region        = "eu-north1"
+    subnet_id     = "vpcsubnet-e00pvprhe20fcdw2me"
+    allowed_cidrs = ["46.243.145.28/32"] # Current operator egress; amend before moving the runner.
+    system_pool   = { platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 2 }
+    database      = { platform = "cpu-e2", preset = "2vcpu-8gb", disk_gib = 64, hosts = 1 }
+  }
+
+  gpu_operator = {
+    enabled        = true
+    driver_version = "580.173.02"
+    kernel_module  = "open"
+    gds            = false # Not qualified on the current node kernel.
+  }
+
+  regions = {
+    eu-north1 = {
+      id                 = "north"
+      project_id         = "project-e00rene"
+      subnet_id          = "vpcsubnet-e00pvprhe20fcdw2me"
+      allowed_cidrs      = [] # Bootstrap: discover control-cluster source IPs from API audit logs, then restrict.
+      system_pool        = { platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 2 }
+      weights_filesystem = { enabled = true, size_gib = 2048 }
+      pools = {
+        h100-spot-1x = {
+          platform  = "gpu-h100-sxm"
+          preset    = "1gpu-16vcpu-200gb"
+          gpu_class = "h100"
+          capacity  = { type = "spot" }
+          min_nodes = 0
+          max_nodes = 8
+        }
+        h100-spot-8x = {
+          platform          = "gpu-h100-sxm"
+          preset            = "8gpu-128vcpu-1600gb"
+          gpu_class         = "h100"
+          capacity          = { type = "spot" }
+          min_nodes         = 0
+          max_nodes         = 2
+          interconnect      = "infiniband"
+          infiniband_fabric = "fabric-2"
+        }
+        l40s-spot-1x = {
+          platform  = "gpu-l40s-a"
+          preset    = "1gpu-16vcpu-64gb"
+          gpu_class = "l40s"
+          capacity  = { type = "spot" }
+          min_nodes = 0
+          max_nodes = 8
+        }
+        l40s-spot-4x = {
+          platform  = "gpu-l40s-d"
+          preset    = "4gpu-128vcpu-768gb"
+          gpu_class = "l40s"
+          capacity  = { type = "spot" }
+          min_nodes = 0
+          max_nodes = 1
+        }
+        h200-spot-1x = {
+          platform  = "gpu-h200-sxm"
+          preset    = "1gpu-16vcpu-200gb"
+          gpu_class = "h200"
+          capacity  = { type = "spot" }
+          min_nodes = 0
+          max_nodes = 2
+        }
+      }
+    }
+    eu-south1 = {
+      id                   = "south"
+      project_id           = "project-e07hsk0rma00kghvpcrxy2"
+      subnet_id            = "vpcsubnet-e07ednpd976xq8jr4n"
+      allowed_cidrs        = [] # Cross-region control traffic needs its observed API source IPs too.
+      system_pool          = { platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 2 }
+      image_cache_size_gib = 256
+      weights_filesystem   = { enabled = true, size_gib = 512 }
+      pools = {
+        rtx6000-spot-1x = {
+          platform  = "gpu-rtx6000-a"
+          preset    = "1gpu-24vcpu-218gb"
+          gpu_class = "rtx-pro-6000" # Matches existing Scientific AI per-GPU images and placement contracts.
+          capacity  = { type = "spot" }
+          min_nodes = 0
+          max_nodes = 4
+        }
+      }
+    }
+  }
+
+  images = {
+    cache = { enabled = true, size_gib = 512, keep_days = 30 }
+    versions = {
+      api        = "0.11.24"
+      dispatcher = "0.2.9"
+      jobs       = "0.1.14"
+      ops        = "0.1.11"
+      ui         = "0.6.5"
+    }
+  }
+
+  edge = {
+    mode                      = "public"
+    domain                    = null # New IP-derived names; no existing DNS or IP reassignment.
+    regional_certificates     = "fleet-ca"
+    acme                      = { email = "rene@nebius.com", staging = false }
+    api_rate_limit_per_minute = 600
+    grafana_public            = true
+  }
+
+  observability = {
+    prometheus_retention_days = 30
+    loki_retention_days       = 30
+    cost_export               = true
+  }
+
+  # Internal fleet bootstrap only; no customer keys, buckets or identities are migrated.
+  # External storage creates no customer bucket or S3 credential. The Scientific AI
+  # compatibility layer supplies request-scoped access to the existing QA workspace.
+  tenants = {
+    system = {
+      storage   = "external"
+      gpu_quota = 16
+      keys = {
+        development = { admin = true, budget_usd = 1000 }
+        qa          = { budget_usd = 500 }
+      }
+    }
+  }
+  acceptance = { probe = false, example_endpoint = false }
+}
