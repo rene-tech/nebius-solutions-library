@@ -11,7 +11,8 @@ Live test findings, exact failed-job cleanup and remaining gates are recorded in
 
 - Serverless source: `rene-tech/nebius-solutions-library`, branch
   `serverless-inference-solution`, commit
-  `184e24f80de3a5d489c0a17ee0e7fa4c109de789`.
+  `709bb41b8b914d5963a51cef1c1abb90d94d6a8c` (API 0.11.26,
+  fleet chart 0.1.5; fresh-fleet placement, cluster-ID and GPU-driver-profile fixes).
 - Isolated execution worktree:
   `/home/tux/worktrees/scientific-ai-s2-fleet-20261012/k8s-inference`.
 - Fleet input: [terraform.tfvars.example](terraform.tfvars.example). This is the
@@ -132,6 +133,15 @@ queries passed. All three clusters have two Ready CPU nodes; all six GPU pools
 were created at zero. Both worker platform plans contain 118 creates and no
 changes/deletions, each verified against its exact new API-server endpoint.
 
+Worker bootstrap access was subsequently closed through two separate, reviewed
+Terraform updates. North permits `195.242.18.145/32` (operator) and
+`195.242.11.0/24` (observed control-cluster NAT pool); south permits
+`213.239.176.243/32` and the same control NAT pool. Each update was followed by
+three successful operator queries and a Connected MultiKueue check. These are
+observed routing addresses, not guaranteed permanent egress assignments: repeat
+the audit-log check when runners or network routing change. Authentication is
+required regardless of the IP allow-list.
+
 ## Preservation and acceptance
 
 Before provisioning, the existing customer cluster
@@ -144,6 +154,15 @@ regional admission, real GPU execution and operation finalization on the exact
 release. Record cold-node delays separately from runtime speed. Then qualify
 GROMACS and its REST/MCP compatibility layer on this fleet before using it for
 customer traffic. Old pilot measurements do not qualify the new deployment.
+
+`verify-fleet.py` submits four parallel internal CUDA jobs through the public
+API, requires matching physical device names, validates 65,536 kernel outputs,
+and reads the durable results/logs. Use `--gpu-classes` for a bounded subset;
+`--cancel-after-kernel` holds the process so that running-job cancellation can
+be checked separately. Cancellation acknowledgement is not instant resource
+release: independently verify worker pod removal after the configured 120 s
+termination grace. Store receipts under private operator storage, never commit
+raw credentials, plans or state. This fixture is not a scientific-model test.
 
 No customer migration, legacy-key import, customer-bucket copying, live capacity
 draining, IP reassignment or DNS switch is part of this bootstrap. These require

@@ -26,6 +26,8 @@ def main():
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--deadline-seconds", type=int, default=1800)
+    parser.add_argument("--cancel-after-kernel", action="store_true",
+                        help="Hold after the kernel, then verify admitted cancellation through the API")
     targets = {"h100": "north", "h200": "north", "l40s": "north", "rtx-pro-6000": "south"}
     device_names = {"h100": "H100", "h200": "H200", "l40s": "L40S", "rtx-pro-6000": "RTX PRO 6000"}
     parser.add_argument("--gpu-classes", nargs="+", choices=list(targets), default=list(targets))
@@ -59,9 +61,11 @@ def main():
             return json.load(response)
 
     encoded = base64.b64encode(args.cuda_probe.read_bytes()).decode()
-    command = "python -c " + shlex.quote(
+    hold = "import time; time.sleep(300); " if args.cancel_after_kernel else ""
+    command = "python -u -c " + shlex.quote(
         "import base64,json,os; from pathlib import Path; "
         f"exec(compile(base64.b64decode({encoded!r}), 'cuda_probe.py', 'exec'), {{'__name__':'__main__'}}); "
+        f"{hold}"
         "Path('/work/RESULT.json').write_text(json.dumps({'result_ref': "
         "'/v1/operations/' + os.environ['OPERATION'] + '/logs'}))"
     )
@@ -69,6 +73,8 @@ def main():
              "sha256:5c39a7743c3f51f393943ac03356425d54e017f02fbd4d9c2212089e8edf80ff")
     receipt = {"fleet": "scientific-ai2", "run_id": args.run_id, "principal": "system/qa",
                "scope": "single-GPU kernel through S2 API; not model/customer qualification",
+               "api_origin": api, "runtime_image": image,
+               "cancel_after_kernel": args.cancel_after_kernel,
                "requested_gpu_classes": selected,
                "started_at": dt.datetime.now(dt.timezone.utc).isoformat(), "runs": []}
 
@@ -96,21 +102,25 @@ def main():
                                 f"scientific-ai2-{args.run_id}-{gpu}")
             run = {"gpu_class": gpu, "cluster": cluster, "operation_id": operation["id"],
                    "status": operation.get("status"), "cuda_kernel_passed": False,
-                   "gpu_class_matches": False}
+                   "gpu_class_matches": False, "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                   "observed_transitions": []}
             receipt["runs"].append(run)
             save()
             print(json.dumps(run), flush=True)
 
         while time.monotonic() < deadline:
             for run in receipt["runs"]:
-                if run.get("cuda_kernel_passed") or run["status"] in terminal - {"SUCCEEDED"}:
+                if (run.get("cuda_kernel_passed") and run["status"] in terminal) or run["status"] in terminal - {"SUCCEEDED"}:
                     continue
                 current = request(f"/v1/operations/{run['operation_id']}")
                 if current["status"] != run["status"]:
                     run["status"] = current["status"]
-                    print(json.dumps(run), flush=True)
+                    run["observed_transitions"].append({"status": run["status"],
+                                                       "at": dt.datetime.now(dt.timezone.utc).isoformat()})
+                    print(json.dumps({"operation_id": run["operation_id"], "gpu_class": run["gpu_class"],
+                                      "status": run["status"]}), flush=True)
                 run["operation"] = current
-                if run["status"] == "SUCCEEDED":
+                if run["status"] == "SUCCEEDED" or (args.cancel_after_kernel and run["status"] == "RUNNING"):
                     logs = request(f"/v1/operations/{run['operation_id']}/logs?limit=100")
                     for line in logs.get("lines", []):
                         try:
@@ -121,6 +131,14 @@ def main():
                             run["kernel"] = evidence
                             run["cuda_kernel_passed"] = evidence.get("validated_elements") == 65536
                             run["gpu_class_matches"] = device_names[run["gpu_class"]] in str(evidence.get("device", ""))
+                    if (args.cancel_after_kernel and run["status"] == "RUNNING"
+                            and run["cuda_kernel_passed"] and run["gpu_class_matches"]):
+                        cancelled = request(f"/v1/operations/{run['operation_id']}:cancel", {})
+                        run["cancel_requested"] = True
+                        run["cancellation_acknowledged"] = cancelled["status"] == "CANCELLED"
+                        run["status"] = cancelled["status"]
+                        print(json.dumps({"operation_id": run["operation_id"],
+                                          "cancel_status": run["status"]}), flush=True)
             save()
             if all(r["cuda_kernel_passed"] or r["status"] in terminal - {"SUCCEEDED"}
                    for r in receipt["runs"]):
@@ -148,9 +166,16 @@ def main():
                 run["operator_followup_required"] = True
         save()
 
+    expected_status = "CANCELLED" if args.cancel_after_kernel else "SUCCEEDED"
     passed = ("error_type" not in receipt and len(receipt["runs"]) == len(selected)
               and all(r["cuda_kernel_passed"] and r["gpu_class_matches"]
-                      and r["status"] == "SUCCEEDED" for r in receipt["runs"]))
+                      and r["status"] == expected_status
+                      and (not args.cancel_after_kernel or r.get("cancellation_acknowledged"))
+                      and (args.cancel_after_kernel or (
+                          r.get("operation", {}).get("attempt_id")
+                          and r.get("operation", {}).get("epoch")
+                          and r.get("operation", {}).get("result_ref")))
+                      for r in receipt["runs"]))
     receipt.update(passed=passed, finished_at=dt.datetime.now(dt.timezone.utc).isoformat())
     save()
     print(json.dumps({"passed": passed, "receipt": str(args.receipt)}), flush=True)

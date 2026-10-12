@@ -466,3 +466,390 @@ Plain operations are byte-for-byte unchanged. Regression: `tests/test_auto_recov
 (root RTX attempt measured, L40S attempt without end record kept unknown, totals and flags, root `created_at`,
 `successor_created_at`). `make check` and the console tests pass. Rollout of 0.11.24 (accounting + chain) only after
 your C2 verdict; the finalizer stays unimplemented.
+
+### Claude: C2 automatic-recovery verdict PASS (written 2026-10-12T15:18:54Z; supervised read-only, receipts untouched)
+
+Supervised `op-0a3607e35b980531` (public f8695088-8861-5289-87e4-7b196377497f) through the S2 API once a minute and the
+receipt directory; no submit, no fault, no identity or config read. Receipts preserved as written by pilot.py under
+the private pilot directory (the 0.11.23 evidence set, nothing overwritten).
+
+**Verification from the receipt set** (`r12-c2-auto-protein-native-validation.json` 15:17:14Z, `-result.json`,
+`-outputs.json`, `-files/`): final_step **500000**, particle_count 81 743, finite_coordinates true, md_segments 14,
+native_wall_seconds 863.6; result status succeeded, semantic validation (gromacs-native-workflow) passed, submitted_at
+14:47:52Z, completed_at 15:16:52Z; output manifest 49 artifacts with sha256, 48 files on disk whose content hash equals
+their name and matches the manifest (the same 48-of-49 shape as the C1 set; the 49th manifest entry has no local file,
+as in C1, so I do not claim it).
+
+**S2 side of the chain** (control cluster, API): original Job created 14:44:07Z; your injection (automatic-fault
+receipt) 14:47:39Z; `lost-at` 14:47:49Z; successor `op-0a3607e35b980531-r-ee295bde` created 14:47:52Z (3 s after the
+loss was stamped), class l40s, deadline 3377 s = the root's remaining 3600 s budget; successor attempt started
+15:01:09Z (about 13 min waiting for the second L40S node, the capacity wait you observed), ended 15:16:39Z,
+SUCCEEDED 15:16:52Z with RESULT.json (`result_ref` on record, epoch 2, checkpoint generation 16). Original handle
+resolves to the successor with `requested_id`.
+
+Together with C1 (REST and MCP) and C2 REST this closes the cohorts on 0.11.23: four of four passed, one automatic
+recovery on real MD per cohort, stale identity denied in C1. Noted for the record: the C1 terminal storage URL renewal
+with a previously accepted JWT returning 403 is your broker's post-terminal denial, not an S2 path; the 1200 s observer
+timeout is yours and stays a failed latency bound as you said.
+
+**Next release, to coordinate (not automatic)**: API 0.11.24 = the export-retry accounting fix + the chain history
+projection (commits `539558187`, `49bf3bf1b` on the fork). Same narrow plan as before (API Deployment, billing
+CronJob image, three key Jobs). I propose to build and apply it when you confirm no pilot job is running or queued;
+your app gateway can then expose the chain fields. The finalizer waits for your go and the three gates in NEXT-GAPS.md.
+No customer or main deployment is implied by any of this; the PR stays unmerged.
+
+### Claude: recommendations for the new isolated Scientific AI S2 fleet (written 2026-10-12T17:19:09Z; I touch nothing of it)
+
+**Pinned source**: fork branch `serverless-inference-solution` at `49bf3bf1b` (= PR #1229 head): the two-stage layout,
+one API tier, native rendering, keys in the fleet database, automatic recovery (0.11.21-0.11.23 fixes) plus the two
+source-only items of 0.11.24 (export-retry accounting, chain history). Check it out as `k8s-inference/` and keep
+`terraform.tfvars` and `stack/.secrets/` out of git. Versions pinned in `stack/config/variables.tf`: api 0.11.24,
+dispatcher 0.2.9, jobs 0.1.14, ops 0.1.11, ui 0.6.5. I am building and pushing `api:0.11.24` now so the pin resolves
+(push only; s2pr2 stays on 0.11.23 until we coordinate its rollout).
+
+**Images**: after your cloud stage created the fleet's own registry, copy the five images from the existing registry
+with your operator credentials: `tools/images.sh copy cr.eu-north1.nebius.cloud/e00dh8c3thpm0ptfea <new registry>`
+(crane, no build). Keep `images.cache.enabled = true` (default): the per-cluster cache is what lets the eu-south1
+nodes (other project) pull, since nodes pull only from registries of their own project and cross-project IAM permits
+are refused; the cache syncs from the fleet registry with the static key the cloud stage writes to
+`stack/.secrets/`. Setting `images.source` to the s2pr2 registry instead would make your fleet depend on a registry
+you do not own; copy instead. NGC images (Boltz-2 etc.) need `NGC_API_KEY` in the environment of every
+`./stack.sh apply` (see my note above).
+
+**Fresh-deploy blockers and facts to plan around**
+
+1. **Managed PostgreSQL is not optional** in this layout: the control plane creates one instance (keys, attempts,
+   models, LiteLLM) and automatic recovery needs it (`attempts.enabled()`). With the quota at 9/10 that is the last
+   slot, which Rene told you not to consume: raise the quota first or get his explicit word. The service must be in
+   eu-north1/eu-west1/eu-west2/me-west1/us-central1/uk-south1; eu-north1 control is fine.
+2. **System (CPU) pools are never spot** in the stack: `system_pool` is a fixed node count, on-demand (eu-south1
+   CPU spot being unsupported does not matter); "spot-only" applies to GPU pools (`capacity = { type = "spot" }`,
+   `max_price` or follow-price). Count the regular VMs: 2 system nodes per cluster by default (control, eu-north1
+   worker, eu-south1 worker = 6 of your 32).
+3. **This is the first fresh deploy of the two-stage layout.** s2pr2 was migrated live; the last from-scratch proof
+   (2026-10-08) was the three-stage layout. Expect to plan one stage at a time (`./stack.sh apply cloud`, then
+   `platform` per worker, control last) and to hit something the offline gate cannot see; the live-plan fixes I made
+   yesterday are in, but I would budget an hour of debugging. Keep `acceptance.probe = false` for speed and run
+   `tools/verify.sh` by hand.
+4. **Regional gateways**: GPU regions' public IPs may not be reachable from the internet (seen on eu-west1 and
+   eu-north2); the fleet CA for regional gateways (`edge.regional_certificates = "fleet-ca"`, ACME on control
+   only) is the working setting; ACME needs a real mailbox; the API/console/LiteLLM hostnames are the control
+   cluster's only.
+5. **Kubernetes API allow-lists**: `control_plane.allowed_cidrs` / regions' `allowed_cidrs` must contain the real
+   egress of whoever runs Terraform; a mismatch shows as timeouts at the first platform apply (my note:
+   `nebius-mk8s-allowlist-tailscale-egress` memory, same symptom).
+6. **GPU Operator mode** (`gpu_operator` in tfvars, as on s2pr2): a node is schedulable about 2.5 min after Ready,
+   about 9 min on Mellanox nodes (DOCA); plan the first cold start accordingly. Local NVMe exists only on B300 8x.
+7. **State bucket**: `stack/bootstrap/state-bucket.sh` once, credentials in `~/.config/<fleet name>/tfstate.env`;
+   one state bucket per fleet, never share s2pr2's.
+8. **Spot quota per region** (`compute.instance.preemptible.count`) is what `./stack.sh preflight` checks; eu-south1
+   RTX PRO 6000 presets were available there yesterday (us-central1 is what s2pr2 uses for RTX).
+9. Nothing in the stack creates reservations or touches other fleets; a second fleet in project-e00rene coexists with
+   s2pr2 as long as the `name` differs (it prefixes every resource) and the state bucket is its own.
+
+If you want, I can review your tfvars before the first apply (read-only) and stay available for the live-plan
+surprises of point 3.
+
+Addendum (2026-10-12T17:19:23Z): `api:0.11.24` is pushed to `cr.eu-north1.nebius.cloud/e00dh8c3thpm0ptfea/serverless2/`,
+digest `sha256:5c39a7743c3f51f393943ac03356425d54e017f02fbd4d9c2212089e8edf80ff` (source `49bf3bf1b`). Not deployed on s2pr2.
+The other four tags the pin names (dispatcher 0.2.9, jobs 0.1.14, ops 0.1.11, ui 0.6.5) are in that registry too; `tools/images.sh copy` takes all five.
+
+### Claude: understood (written 2026-10-12T17:21:30Z)
+
+The last PostgreSQL slot is the new fleet's; I will not create a database or any other resource in project-e00rene or
+eu-south1 separately. Existing fleets stay as they are (s2pr2 on 0.11.23, no rollout until you say the pilot is idle).
+Send the sanitized tfvars when ready; I will validate read-only (schema, pools against the compatibility matrix via
+`./stack.sh preflight` in your detached worktree is yours to run, I only read) and point at anything the live-plan
+notes above predict.
+
+### Claude: read-only review of `deployments/scientific-ai2/terraform.tfvars.example` (written 2026-10-12T17:25:52Z; no apply, no state touched)
+
+Checked with the pinned source (`49bf3bf1b`): schema evaluation (`./stack.sh clusters` with your file as TFVARS) and the
+read-only `./stack.sh preflight` (platforms, presets, quotas against the Nebius API) both pass: 6 GPU pools in 2
+regions, Kubernetes 1.35, state bucket `scientific-ai2-tfstate`; `gpu-rtx6000-a` and `gpu-l40s-d` are accepted and
+priced (`gpu-rtx6000-a` spot 0.95, defaults). Stage order derived from the file: `north`, `south`, then `control`
+(workers first), hub = north. Nothing in the file references existing resources.
+
+Findings, most important first:
+
+1. **GPU class name**: `gpu_class = "rtx6000"` on the south pool. The pilot's model definitions, per-class images and
+   `placement.gpu_preference` use `rtx-pro-6000` (s2pr2 and your cohorts). S2 itself does not care about the string,
+   but every `gpu_preference: ["rtx-pro-6000","l40s"]` and every `images.rtx-pro-6000` would be a 400 on this fleet.
+   Rename to `rtx-pro-6000` unless you intend to change the app side.
+2. **InfiniBand fabric**: `h100-spot-8x` names `fabric-2`; preflight does not verify fabrics, and a wrong fabric id
+   fails the node group at the cloud apply. s2pr2's eu-north1 8xH100 pool runs on `fabric-3`. Verify with the CLI
+   which fabric has H100 capacity in eu-north1 for project-e00rene, or start without the IB pool and add it later.
+3. **Empty tenants means no API key at all** after the platform apply: keys come only from `tenants.<t>.keys` (the
+   bootstrap Jobs), so no admin key exists to define models, the console cannot log in and `tools/verify.sh` has
+   nothing to run with. Bootstrap tolerates it (`first_key` null, probe off), it is a usability gap, not an error.
+   Suggest one tenant in the first platform apply with keys only (`storage = "external"` keeps buckets and
+   identities out; both can be added later), or plan a second platform apply right after.
+4. **CPU system nodes**: 2 per cluster x 3 clusters = 6 regular `cpu-d3 8vcpu-32gb` VMs, pending Rene's confirmation
+   as you noted. The stack has no spot option for system pools.
+5. **Allow-lists**: one operator IP on every cluster; the first platform apply fails with timeouts if the runner's
+   egress differs. Fine as long as you apply from that address.
+6. **Idle cost with every GPU pool at zero**: the six system VMs, the PostgreSQL instance, the two weights
+   filesystems (2 TiB north, 512 GiB south), three load balancers and the registry. Roughly the s2pr2 baseline.
+7. Cosmetics: `image_cache_size_gib` and `images.cache.size_gib` both present (the per-region value wins for that
+   region); `database.hosts = 1` is accepted; `gds = false` matches the known kernel finding.
+
+Nothing blocks the cloud plan. Points 1-3 are config decisions before the first platform apply.
+
+### Claude: Kubernetes API allow-lists for the new fleet (written 2026-10-12T17:26:32Z)
+
+Correct reading: the stack only passes `allowed_cidrs` through to each cluster's public endpoint
+(`stack/modules/cluster/main.tf` `public_endpoint.allowed_cidrs`); it adds no cluster egress by itself. Who needs what:
+
+- **Workers** (north, south): the operator's egress **and the control cluster's NAT egress**. MultiKueue, the
+  dispatcher and the control API (worker kubeconfigs: Job mirrors, pods, TokenReview of attempt records, Workload
+  deactivation for recovery) all reach the workers' Kubernetes APIs from the control cluster's nodes.
+- **Control**: the operator's egress only. Nothing in the fleet calls the control cluster's Kubernetes API from a
+  worker: uploaders and the regions' gateway ext-auth use the public API hostname (the gateway), not the API server.
+
+Verified egress: s2pr2 runs every cluster with
+`["195.242.18.145/32", "195.242.11.0/24", "213.239.184.0/25", "46.243.145.28/32"]`, the last being the operator host,
+the first three the set that was read from the kube-apiserver audit log (docs/OPERATIONS.md "API endpoint allow-list")
+after a guess locked the operator out once. Your control cluster is on the same project and subnet as s2pr2's
+control (`vpcsubnet-e00pvprhe20fcdw2me`, project-e00rene), so its NAT egress should fall into that set; I cannot
+promise it without reading the audit log of the new cluster, and the documented procedure is explicit about not
+guessing.
+
+Recommendation for the bootstrap: workers with `allowed_cidrs = []` (open endpoint, authentication still required,
+the documented recovery setting) or with the s2pr2 set plus your `/32`; control with your `/32` from the start. After
+the first platform apply on both workers, read the real source addresses of the control cluster's calls from
+`sp_mk8s_audit_logs` of project-e00rene and project-e07hsk0rma00kghvpcrxy2 (`labels.sourceIPs_0` of the `multikueue`
+and `api-agent` users), then tighten one worker at a time with the automatic check-in-the-same-shell procedure from
+OPERATIONS.md. Note the asymmetry for south: its API is in the other project, so the audit bucket to read is that
+project's.
+
+### Claude: cloud apply noted, standing by (written 2026-10-12T17:38:11Z)
+
+Read: south cluster provisioning, the managed PostgreSQL created, the fleet's own registry holding the five images with
+matching digests, the class rename, the keys-only system tenant and the open worker endpoints pending the audit IPs.
+Clusters not yet listed while the graph runs is normal for the cloud stage (the mk8s cluster resources come after the
+subnets' dependencies; Terraform prints nothing until a resource errors or completes). What to expect next, from
+s2pr2's history: clusters take 8-12 min to reach RUNNING, GPU node groups at zero nodes complete at once, the weights
+filesystems and the registry are quick; the first platform apply per worker is where the live-plan surprises would
+show. Send the first failure text verbatim with the stage and cluster and I will read it against the source. I am
+changing nothing meanwhile; s2pr2 stays on 0.11.23 until you say the pilot is idle.
+
+### Claude: per-cluster service CIDRs implemented, commit `99ab1dcfb` (written 2026-10-12T17:44:01Z; nothing applied anywhere)
+
+Pushed on `serverless-inference-solution` (fork), on top of `49bf3bf1b`: `control_plane.service_cidrs` and
+`regions.<r>.service_cidrs` (optional list of CIDRs, unset by default) flow through `stack/config` locals and
+`stack/cloud/main.tf` into the cluster module as `kube_network = { service_cidrs = [...] }` on
+`nebius_mk8s_v1_cluster`; null leaves the attribute out entirely. Checked:
+
+- provider 0.6.67 carries `kube_network.service_cidrs` (proto `KubeNetwork.service_cidrs`, repeated string);
+- `make check` green (validate, example plan, renders, tests);
+- **read-only** plan of s2pr2's cloud stage with the field unset: "No changes. Your infrastructure matches the
+  configuration." (existing clusters untouched, as required);
+- your `deployments/scientific-ai2/terraform.tfvars.example` with `service_cidrs = ["10.96.0.0/20"]` added to
+  `control_plane` evaluates to `{control: ["10.96.0.0/20"], north: null, south: null}` (schema accepted; set it on
+  the north region block the same way, the south cluster that already exists keeps its allocation if you leave its
+  block unset);
+- docs: README troubleshooting entry for `Unable to allocate private ipv4 cidr /16` / `NotEnoughResources`,
+  FLEET.md field, tfvars.example comment, CHANGELOG.
+
+Two things to know before you apply: the field is immutable after creation (a change later replaces the cluster, so
+pick the block once; it must not overlap the subnet or the pod ranges Nebius assigns); and because the two failed
+creates left nothing in state, the next cloud apply creates north and control fresh with the new block, no import
+needed. I did not check which private blocks are free in project-e00rene; that is your inspection.
+
+### Claude: docs corrected to a prefix length (written 2026-10-12T17:46:31Z)
+
+README troubleshooting, `terraform.tfvars.example` and the schema comment now say `service_cidrs = ["/20"]` (a prefix
+length: Nebius allocates a free block of that size from the project's pool, /12 to /28; an explicit CIDR also works
+but must be free in the VPC). No code change, no deployment; commit follows on the fork branch. Good to know that the
+10.0.0.0/13 VPC is reused there; my example block was never meant to be applied.
+
+### Claude: allow-list observation noted (written 2026-10-12T17:56:10Z)
+
+Read: the north cluster's audit log shows the operator's calls arriving from 195.242.18.145, not 46.243.145.28 (the
+address the operator host believes it has); the new control cluster, restricted to the latter, will be corrected
+in place to the observed /32 after the current apply. Two notes: (1) `allowed_cidrs` is an in-place update on
+`nebius_mk8s_v1_cluster` (the s2pr2 clusters were tightened that way), so the plan should show one change per cluster
+and nothing else; keep the same-shell check (`kubectl get nodes --request-timeout=20s` three times) and the
+empty-list fallback ready. (2) For the workers, the control cluster's NAT egress is the second address you need; it
+is not in the audit log until the control cluster's MultiKueue and API pods make their first calls after the control
+platform apply, so leave the workers open until then and tighten last. Allocation fix confirmed on your side; the
+option stays in the source as committed.
+
+### Claude: cloud bootstrap noted, what to watch in the worker platform applies (written 2026-10-12T18:03:39Z)
+
+Read: three clusters RUNNING, six CPU nodes Ready, six GPU pools at zero, control allow-list corrected in place with
+the three node reads, worker platform plans at 118 creates each, both applies running. Where a worker's first platform
+apply has stalled or failed before, in order of likelihood:
+
+1. **Kueue readiness wait** (`terraform_data.kueue_ready`, `rollout status deployment/kueue-controller-manager`
+   with a 15 min timeout): on a fresh cluster it is the slowest step after the Helm waves; a timeout there is
+   usually an image pull through the cache on its first use (the Zot sync of `registry.k8s.io`/`ghcr.io`), not Kueue.
+2. **GPU Operator / Network Operator releases** take several minutes; the node-config DaemonSet and the containerd
+   drop-in only matter once a GPU node exists, so nothing waits on them now.
+3. **cert-manager and the regional certificate**: with `regional_certificates = "fleet-ca"` the worker's wildcard
+   certificate is issued by the fleet CA that the control platform apply creates; the worker objects reference it by
+   name and reconcile once control is applied. A Certificate stuck "Issuing" before the control apply is expected,
+   not a failure.
+4. **Envoy Gateway**: the `Backend` API is on (`extensionApis.enableBackend`) and the `BackendTLSPolicy` for the
+   control API refers to the public API hostname of the control cluster, which only answers after the control apply.
+   Policies showing "not Accepted" until then are expected.
+
+After the control apply: the API image is 0.11.24 (digest `5c39a774...` as pinned), the LiteLLM import finds no
+keys (fresh database) and the key bootstrap Jobs create your system tenant's keys; `GET /v1/fleet` with the admin key
+is the first end-to-end check, then `tools/verify.sh` by hand. Still nothing changed by me; s2pr2 untouched.
+
+### Claude: control plan overlap is fine (written 2026-10-12T18:07:01Z)
+
+Read: both worker states expose `multikueue_kubeconfig` and `api_agent_kubeconfig`, Kueue and the GPU Operator are
+on both, the south fleet chart is in; control plan starting while the workers' late add-ons finish. That overlap is
+safe: the control stage reads the workers' remote states only for those two outputs (and the fleet document), so
+anything still converging on a worker does not change what control plans. One ordering point: apply control only
+after both worker applies have exited cleanly, because the control API's first reconciliation writes into the
+workers (catalog, LiteLLM registration of nothing yet, the Backend-referenced authorizer objects per endpoint) and
+a worker apply still running could race its own kubectl_manifest objects. Expected control plan size on s2pr2's
+history: roughly 90-110 creates, including the PostgreSQL schema Jobs, the router key, the key bootstrap Jobs of
+your system tenant, LiteLLM, the console and the acceptance pieces (probe off). Still nothing changed by me.
+
+### Claude: control apply running, first checks after it (written 2026-10-12T18:10:47Z)
+
+Read: both workers applied clean (118 creates each, south pods Ready, no patches), control apply started with 127
+creates, the existing Scientific AI suite still green on its own endpoint. For the first CUDA jobs through the new
+API, the checks that tell a platform problem from a capacity wait, in order:
+
+1. `GET /v1/fleet` with the system admin key: `execution.recovery` present, every pool listed with its class and
+   `usd_per_gpu_hour`, both regions' `oidc_issuers`.
+2. A `hello-run` (CPU, no GPU node needed) to SUCCEEDED: proves MultiKueue placement, the uploader's attempt record
+   through the public API (`POST /internal/attempts` 200 in the control API log) and the result path.
+3. The first GPU run: `reason` on the QUEUED operation carries Kueue's Workload message while the spot node comes
+   up; on this fleet a node is Ready about 3-6 min after the scale-up and schedulable about 2.5 min later (GPU
+   Operator driver build), so 6-9 min to RUNNING from zero is normal; longer with "Insufficient nvidia.com/gpu" on
+   a Ready node means the driver is still building, not a scheduling fault.
+4. Only then the worker allow-lists: the control cluster's NAT egress will now be in both workers' audit logs
+   (users `multikueue` and `api-agent`), tighten one worker at a time with the same-shell check.
+
+I remain read-only; s2pr2 untouched until you confirm the pilot idle for the 0.11.24 rollout there.
+
+### Claude: new fleet up, CUDA probes noted (written 2026-10-12T18:19:03Z)
+
+Read: three clean platform applies, database init and LiteLLM migrations done, both system key Jobs succeeded, API
+and console at two replicas, public TLS valid. Four parallel application-I/O `container-run` CUDA probes are the right
+first GPU check for an external-storage tenant (managed-storage classes need a bucket the tenant does not have).
+Two things to expect with four at once: they land on two regions' spot pools from zero, so the autoscaler adds up
+to four nodes and the first `reason` on each is Kueue's quota/nomination message until a node is Ready; and in
+application mode the operation is SUCCEEDED only with a `RESULT.json` from the probe (else FINALIZING then
+EXPORT_FAILED after 10 min), so make the probe write it. That is the first fresh deploy of the two-stage layout
+completing end to end; I will add it to the verification record once you post the probe outcomes. s2pr2 untouched.
+
+### Claude: three placement defects fixed in source, API 0.11.26 + fleet chart 0.1.5 (written 2026-10-12T18:28:30Z; no shared fleet touched)
+
+Commits on `serverless-inference-solution` (fork), source-only, nothing deployed by me:
+
+| Commit | Fix | Regression |
+|---|---|---|
+| `f356222ab` (0.11.25) | `allowed_clusters` without a top-level `region`: the API's implicit default region (the first deployment) is no request and never contradicts the list; only an explicit `region` outside the list is 400; single-cluster mode (no fleet manager) still needs its own region in the list; the GPU class is ranked among the allowed clusters only | `test_fallback.py::test_allowed_clusters_place_a_fleet_run_without_a_top_level_region`: manager + `[us-central1]` + preference -> 202, regions annotation = the list (no widening), class ranked in that cluster; explicit consistent region 202; explicit contradiction 400; two clusters -> both; single-cluster exclusion 400 |
+| `3462425f3` (0.11.26) | **generic single-image classes**: a `gpu_preference` now selects the run's queue (`prefer-<first preferred class>`) and the pod's pool affinity is the narrowed class list (every such run used to keep the model's queue, land on its first class, and carry an affinity over all pools); explicit `gpu_class` pins and fallback/recovery successors were already right | same test, generic class without per-class images: preferences `[l40s]`, `[rtx-pro-6000]`, none -> queue `prefer-l40s` / `prefer-rtx-pro-6000` / model default, `gpu-classes` annotation = the preference, pool affinity = only that class's pools, no class pin label |
+| `3462425f3` | **cluster ids -> regions through the fleet document**: `charts/fleet` 0.1.5 renders `clusters.yaml` (`<id>: {region, project}` for every region id and the control id, from the tfvars) into the `fleet-prices` ConfigMap; `kube.cluster_region` reads it, falling back to the old `hub` alias and to identity. This is what kubeconfig choice, logs/metrics clients, admitted cancellation and the attempt-record TokenReview resolve through | `test_fallback.py::test_cluster_ids_map_to_regions_through_the_fleet_document`: `north`/`south`/`control` map, an id equal to its region maps to itself, legacy document keeps the hub alias; a run admitted by `south` is read and cancelled through the `eu-south1` clients (200) |
+
+Rendered with your `terraform.tfvars.example`: `clusters.yaml` = `north: {eu-north1, project-e00rene}`, `south: {eu-south1, project-e07hsk...}`,
+`control: {eu-north1, project-e00rene}`. `make check` green (216 API tests), console tests green.
+
+**Rollout on your fleet (yours to run)**: the fleet chart change means the platform stage of **every** cluster shows
+`helm_release.fleet` updated (the ConfigMap gains `clusters.yaml`; the API caches the fleet document for 60 s, so the
+mapping is live a minute after the control apply) plus the API Deployment and the three key Jobs on control; nothing
+else. Apply workers first, then control. The three stuck QA manager Jobs: after the control apply `:cancel` works
+again (the map resolves `north`); if you already removed them with kubectl, the attempt rows stay as evidence.
+0.11.25's image (`sha256:92762aa6...`) is superseded; use 0.11.26 (digest below once pushed).
+
+Addendum (2026-10-12T18:28:39Z): `api:0.11.26@sha256:0e25bd7945a201d2e6a00c3ad22064f7abd8a8e5efdbb0804bdbd3a5ddb23661` pushed to `cr.eu-north1.nebius.cloud/e00dh8c3thpm0ptfea/serverless2/`, built from
+`3462425f3` (the build ran on the working tree that became that commit; the tree was clean afterwards). Mirror it and
+set `images.versions.api = "0.11.26"`; the fleet chart version comes from the source checkout.
+
+### Claude: noted (written 2026-10-12T18:30:52Z)
+
+Read: `3462425f3` / API 0.11.26 / fleet chart 0.1.5 for the new fleet only, digest mirrored, workers then control, then the
+four GPU classes with device identity and admitted cancellation. The three deleted QA manager Jobs leave their attempt
+rows and Workload history as evidence. One expectation for the rerun: the H200 and RTX probes scale pools from zero in
+their own regions now, so each class's first run takes the 6-9 min node bring-up independently; the queue label on
+each manager Job should read `system-prefer-<asked class>` and the pod's pool affinity only that class's pools, which
+is the quick check before the node even exists. Waiting for your evidence; nothing changes on my side.
+
+### Claude: R3 admission noted (written 2026-10-12T18:34:31Z)
+
+Read: fleet chart updated on both workers, control on 0.11.26 (both replicas on digest 0e25bd79...), all four classes
+accepted including south without a top-level region, worker pod selectors on the four intended pools, PVCs after
+admission. That is the queue and affinity fix observed live; the kernel/device-identity result and the admitted
+cancellation are still yours to call. Standing by.
+
+### Claude: R3 H100 pass and cancellation noted; PG password note recorded (written 2026-10-12T18:38:08Z)
+
+Read: H100 SUCCEEDED with real device identity, 65 536 CUDA outputs, logs and attempt records through the API; the
+other three pools' spot nodes provisioned, drivers initialising; north admitted cancellation acknowledged after
+RUNNING + kernel, pod in its 120 s grace (on SIGTERM the uploader records the attempt as `interrupted` and the API holds the
+cancel mark, so expect one `interrupted` record and the operation CANCELLED, never SUCCEEDED, even if the kernel had
+finished before the signal); north
+allow-list applied with the three reads and MultiKueue Connected, south next.
+
+Follow-up accepted, not for now: the managed PostgreSQL bootstrap password lives in state as a provider-managed
+value (`nebius_msp_postgresql_v1alpha1_cluster` `bootstrap.user_password`); when the provider ships a write-only
+field for it (Terraform 1.11+ ephemeral/write-only attributes), the cloud stage should move to it. I noted it in the
+PR's open items; no change to any fleet.
+
+### Claude: NVIDIADriver per pool platform, source fix pushed (written 2026-10-12T18:43:23Z; chart overlay only, no API image)
+
+Cause confirmed from the chart's own values (`helm show values`, gpu-operator v25.10.0): `nebius.nvidiaDriverCRDPatch.profiles`
+lists nine platforms (gpu-rtx6000, l40s-a/-d, h100/h200, b200/-a, b300, gb300); `gpu-rtx6000-a` is not among them, so
+the eu-south1 node matched no NVIDIADriver. Fix on the fork branch (commit below), platform stage only:
+
+- `clusters/common/values/gpu-operator.yaml` now carries the chart's nine profiles explicitly (Helm replaces lists, so
+  extending means supplying the whole list);
+- `stack/platform/stage.tf` appends, per cluster, a profile for every platform of that cluster's pools the list lacks:
+  `name` and `nodeSelector` = the platform, `managerEnv` = that of its longest-prefix sibling (gpu-rtx6000-a ->
+  gpu-rtx6000: no RDMA/host-MOFED, correct for RTX; a hypothetical gpu-h100-sxm-b would inherit the H100 settings).
+  Legacy selectors untouched, unrelated drivers untouched.
+
+Evaluated offline with your tfvars: **south** adds `gpu-rtx6000-a` (profile list = the nine + it); **north** adds
+nothing; s2pr2's us-central1 adds nothing (its RTX platform is the listed `gpu-rtx6000`). `make check` green.
+
+Rollout: your south platform apply shows `helm_release.wave1["gpu-operator"]` updated (values); the operator creates
+the NVIDIADriver `gpu-rtx6000-a`, the driver DaemonSet builds the module on the Ready node (about 2.5 min; it
+needs no node recreation), the toolkit's validation completes and the GPU becomes allocatable, so your queued RTX
+request (deadline 19:03Z) should admit without resubmission if the apply lands in time. North would show the same
+release update with identical objects (the list became explicit), apply it whenever convenient. Documented in
+docs/FLEET.md "GPU drivers" with the `kubectl get nvidiadrivers` check.
+
+Addendum (2026-10-12T18:43:27Z): the driver fix is commit `082de8f2a` on the fork branch (on top of `7de914531`, docs, and `3462425f3`).
+
+### Claude: longest-prefix sibling implemented as stated (written 2026-10-12T18:45:11Z; follow-up commit, no shared rollout)
+
+You were right: the comprehension took the first matching profile. The sibling is now the listed profile whose name is
+the longest prefix of the missing platform (`local.gpu_driver_sibling`, zero-padded length sort). Checked offline
+against the chart's list: `gpu-b200-sxm-a-x -> gpu-b200-sxm-a` (first match would have been `gpu-b200-sxm`),
+`gpu-b200-sxm-x -> gpu-b200-sxm`, `gpu-rtx6000-a -> gpu-rtx6000`, an unrelated platform -> no sibling (empty
+managerEnv). Your south result is unchanged (`gpu-rtx6000-a` with the RTX settings). `make check` green; commit hash
+in the addendum below. Read your admin API, keys, Grafana auth and old production routing suite passing; noted.
+
+Addendum (2026-10-12T18:45:15Z): the longest-prefix correction is commit `709bb41b8` on the fork branch (on top of `082de8f2a`).
+
+### Claude: final coordination note for this document (written 2026-10-12T18:46:50Z)
+
+Read: both worker driver-chart applies clean (one update each), the south `gpu-rtx6000-a` NVIDIADriver and driver pod
+present with the installation under way on the existing node, execution checkout at `709bb41b8`, no-drift plans running
+for the cloud and three platform states, the old customer cluster unchanged (27 Ready, 38 GPUs) with its public
+suite green.
+
+State of the Serverless side at this point, for the evidence commit:
+
+- Source: fork branch `serverless-inference-solution` (PR nebius/nebius-solutions-library#1229, open, unmerged), head
+  `709bb41b8`. Since the cohorts: 0.11.21-0.11.23 automatic recovery (deployed on s2pr2), 0.11.24 export-retry
+  accounting + chain history (source), optional `service_cidrs`, 0.11.25-0.11.26 placement (allowed_clusters without a
+  top-level region, preference-driven queue and pool affinity for generic classes, cluster ids via the fleet document,
+  fleet chart 0.1.5), NVIDIADriver per pool platform with the longest-prefix sibling. Images pushed to the source
+  registry: api 0.11.24 (`5c39a774...`), 0.11.25 (`92762aa6...`, superseded), 0.11.26 (`0e25bd79...`).
+- s2pr2: API 0.11.23 and fleet chart 0.1.4 as of the cohorts; untouched since the C2 verdict; its next rollout
+  (0.11.26 + fleet chart 0.1.5 + the driver list, same narrow plan plus one fleet-release update per cluster) waits for
+  your pilot-idle confirmation and is mine to run.
+- Open on the Serverless side: the finalizer (three gates recorded above, unimplemented by agreement); the
+  PostgreSQL bootstrap password in state (documented limit); the customer migration itself is yours.
+
+I pause edits to this file now; post your final GPU results and anything further in your own evidence or a new file,
+and I will read it there. Nothing of mine runs on any fleet.

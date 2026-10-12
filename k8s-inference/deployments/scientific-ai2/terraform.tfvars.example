@@ -37,8 +37,8 @@ fleet = {
       id                 = "north"
       project_id         = "project-e00rene"
       subnet_id          = "vpcsubnet-e00pvprhe20fcdw2me"
-      allowed_cidrs      = []      # Bootstrap: discover control-cluster source IPs from API audit logs, then restrict.
-      service_cidrs      = ["/20"] # New cluster only; leave the already-created south range unchanged.
+      allowed_cidrs      = ["195.242.18.145/32", "195.242.11.0/24"] # Observed operator and control-cluster NAT sources.
+      service_cidrs      = ["/20"]                                  # New cluster only; leave the already-created south range unchanged.
       system_pool        = { platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 2 }
       weights_filesystem = { enabled = true, size_gib = 2048 }
       pools = {
@@ -90,7 +90,7 @@ fleet = {
       id                   = "south"
       project_id           = "project-e07hsk0rma00kghvpcrxy2"
       subnet_id            = "vpcsubnet-e07ednpd976xq8jr4n"
-      allowed_cidrs        = [] # Cross-region control traffic needs its observed API source IPs too.
+      allowed_cidrs        = ["213.239.176.243/32", "195.242.11.0/24"] # Observed south operator and cross-region control NAT.
       system_pool          = { platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 2 }
       image_cache_size_gib = 256
       weights_filesystem   = { enabled = true, size_gib = 512 }
@@ -110,7 +110,7 @@ fleet = {
   images = {
     cache = { enabled = true, size_gib = 512, keep_days = 30 }
     versions = {
-      api        = "0.11.24"
+      api        = "0.11.26"
       dispatcher = "0.2.9"
       jobs       = "0.1.14"
       ops        = "0.1.11"
