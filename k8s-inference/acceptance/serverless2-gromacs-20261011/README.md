@@ -1,6 +1,14 @@
 # Scientific AI application / S2 GROMACS evidence
 
-## Current follow-up — API r10 / workers r6 / S2 0.11.20
+## Current integration — API r12 / workers r7
+
+Read [NEXT-GAPS.md](NEXT-GAPS.md) for the active recovery and public-protein
+qualification. The isolated Scientific AI pilot is deployed; Serverless's
+recovery release is being qualified jointly with its owner in tmux `claude`.
+Do not treat the pending fault tests as passed. Coordination, exact ownership
+and rollout notices are in [CLAUDE-COORDINATION.md](CLAUDE-COORDINATION.md).
+
+## Earlier follow-up — API r10 / workers r6 / S2 0.11.20
 
 Read [FOLLOW-UP.md](FOLLOW-UP.md) first. Pod-bound storage authorization,
 continuation private-input delivery, startup-status retries and strict resume
@@ -27,7 +35,9 @@ earlier CPU-only evidence below is retained as history, not substituted for live
 
 `pilot.py` is the reproducible operator driver: `prepare`, `register`, `submit`,
 `status`, `replay`, `cancel`, `resume`, `checkpoint`, `interrupt`, `boundaries`,
-`storage-denial`, `trajectories`, `identity-boundaries`, `wait`, `recovery-cycle`.
+`storage-denial`, `trajectories`, `identity-boundaries`, `wait`, `recovery-cycle`,
+`automatic-recovery-cycle`. Use `submit --benchmem-tpr <pinned-file>` for the
+public protein fixture; omit that option for the synthetic trajectory fixture.
 It reads only the existing internal
 `sciai` identity and demo storage. Private configuration/state/receipts live in
 `/home/tux/secure-handoff/scientific-ai-s2-pilot-20261011` (0700, outside Git).
