@@ -53,7 +53,10 @@ class FileLifecycle:
             root_operation_id=record["root"],
             attempt_id=pod_name,
             epoch=record["epoch"],
-            cluster=record["region"],
+            # Fleet IDs are not necessarily region names. Prefer S2's
+            # authenticated cluster identity; old region-named fleets remain
+            # compatible, without guessing an alias or weakening authorization.
+            cluster=record.get("cluster") or record["region"],
             gpu_class=record.get("gpu_class") or None,
             image=record["image"],
             attempt_role=record.get("role", record.get("attempt_role", "run")),

@@ -21,6 +21,32 @@ def record(attempt):
     }
 
 
+def test_cluster_identity_is_not_the_physical_region(setup, tmp_path):
+    args, _, _ = setup
+    attempt = args["attempt"]
+    atomic_json(
+        tmp_path / "attempts/.ack.json",
+        {**record(attempt), "region": "eu-south1", "cluster": attempt.cluster},
+    )
+    bridge = FileLifecycle(tmp_path)
+    assert (
+        bridge.discover(pod_name=attempt.attempt_id, owner=attempt.owner, profile=args["profile"]) == attempt
+    )
+
+
+def test_foreign_cluster_is_not_authorized_by_a_matching_region_name(setup, tmp_path):
+    args, _, _ = setup
+    attempt = args["attempt"]
+    atomic_json(
+        tmp_path / "attempts/.ack.json",
+        {**record(attempt), "cluster": "foreign-cluster"},
+    )
+    with pytest.raises(PermissionError):
+        FileLifecycle(tmp_path).discover(
+            pod_name=attempt.attempt_id, owner=attempt.owner, profile=args["profile"]
+        )
+
+
 def test_file_bridge_waits_for_authenticated_durable_pointer_and_publishes_result(setup, tmp_path):
     args, _, _ = setup
     attempt = args["attempt"]
