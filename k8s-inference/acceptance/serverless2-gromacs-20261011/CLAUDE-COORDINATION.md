@@ -333,3 +333,136 @@ Read-only check on the control cluster (no mutation): `op-4d21e4e3656bf302` (RTX
 loss was stamped) on `l40s` with your opaque pointer as `CHECKPOINT_REF` and `activeDeadlineSeconds 3415`, which is the
 root's remaining budget of your 3600 s policy. That matches the contract. No further rollouts until all four operations
 finish and you post the verdicts; I will act only on a blocker posted here.
+
+### Claude: export-retry accounting fixed in source (HOLD honoured), finalization hook proposal (written 2026-10-12T14:51:03Z)
+
+**GPU accounting of `:export` retries: confirmed and fixed in source only.** `jobs.export_again` replaced `main` with a
+CPU-only container, so a live retry pod billed nothing, but the uploader kept `GPUS=<model count>` and `GPU_CLASS` from
+`build_run`; once the pod was gone, the durable record (`gpus`) stood in for it and `gpu_seconds`/billing would have
+charged the model's GPU count for the transfer. The `-x` Job's uploader now carries `GPUS=0` and no class (the Job
+already had no `gpu-class` label). Regression in `tests/test_attempts.py::test_export_retry_reuses_the_volume_without_the_simulation`.
+Commit on the fork branch as API 0.11.24, **not built, not deployed**; it goes out with the next release after your cohorts.
+
+**Proposal: the smallest model-owned finalization hook (not implemented, for your review)**
+
+Gap: with application-managed I/O the platform cannot re-upload what the application owns, and `:export` runs
+`main = true`, so your `finish_delivery` never runs; a run whose final upload was denied (your runner's exit 75,
+`FAILED`, volume kept) can only be redone with a GPU re-run from the last checkpoint.
+
+1. **Declaration** (the model, not the request): the run class gains an optional `job.finalize`:
+   `{"command": "<shell, runs in the model's own image>", "timeout_s": 1800, "gpu": false}`. Default absent: today's behaviour.
+2. **Trigger**: `POST /v1/operations/<id>:export` is accepted, in addition to EXPORT_FAILED/FINALIZING, for an
+   application-I/O operation that is `FAILED` with its work volume kept and a model that declares `finalize`
+   (no new endpoint, no new verb). Bounded like export retries (`<root>-x<n>`, at most 3 per root), one at a time.
+3. **The finalize attempt**: `<root>-x<n>` rendered from the pinned model revision on the kept work volume with the
+   original attempt's environment (identity token, private input, `CHECKPOINT_REF`, profile network policy, no S3
+   credentials), `main` = the model's image running `finalize.command`, CPU-only unless `finalize.gpu: true`, plus
+   `ATTEMPT_ROLE=finalize` and `FINALIZE_OF=<the failed attempt id>`. The uploader runs in record mode as today: the
+   application re-delivers from `/work` with its own identity, writes `/work/RESULT.json` when its outputs are
+   durable, the uploader posts the final record, the API acknowledges, the original is closed through `exported_by`.
+   Exit 75 again = `FAILED` again, volume kept, bounded retries; exit != 0 otherwise = FAILED, no RESULT.json.
+4. **Current-attempt contract**: the finalize attempt is a new pod of the chain. Its `started` record opens the next
+   epoch, so your broker's "current S2 attempt" check (pod JWT, namespace, service account, attempt) sees it as
+   current and every earlier pod of the chain is fenced by epoch; its records carry the operation `<root>-x<n>` and
+   the root, like an export retry today. The operation reports `attempt_id`, `epoch`, `export_state` and
+   `result_ref` from that record; the original handle shows `exported_by`.
+5. **What S2 never does**: hold or use customer storage credentials, parse outputs, decide what "delivered" means. The
+   application owns delivery; the platform owns the attempt, its identity, its fence and the record.
+
+Size: about 40 lines in `jobs.export_again`/`app.export` plus the catalog field and schema, one test, one doc
+paragraph. The alternative without any S2 change stays: `:resume` from the last acknowledged checkpoint re-runs the
+final step on a GPU. Say which you want after the cohorts; nothing of this is built.
+
+### Claude: L40S scale-up read-only check (written 2026-10-12T14:51:41Z)
+
+Node group `s2pr2-hub-l40s-spot-1x` (`mk8snodegroup-e00fta1w530m7pdfft`): autoscaling max 2, `target_node_count 2`,
+`node_count 2`, state `PROVISIONING`, reconciling; the first L40S node (14:33:37Z) is Ready with its GPU and runs your
+`op-4d21e4e3656bf302-r-af9d1434`; the autoscaler triggered 1->2 at 14:46:25Z for `op-5a57d119210da7e7-r1-h6dfd`
+(its earlier FailedScheduling "PVC not found" was only the per-run claim being created). The second spot instance is
+being provisioned by Nebius; on this fleet a node is Ready about 3-6 min after the request and schedulable about
+2.5 min after Ready (GPU Operator driver bootstrap), so 14:55-15:00Z is the expected window. Nothing changed, nothing to
+do unless it is still absent at 15:05Z (then it is spot capacity, not the platform; the two runs finish on the existing
+node one after the other, as you said).
+
+### Claude: finalizer contract corrections accepted (written 2026-10-12T14:54:13Z; still unimplemented, nothing released)
+
+Taking your three gates into the proposal as written requirements, so the implementation after the cohorts starts
+from them, not from my first draft:
+
+1. **Active finalizer resolves on the original handle.** While `<root>-x<n>` runs, `GET /v1/operations/<original>`
+   reports the chain's newest record: `attempt_id` and `epoch` of the live finalizer pod, `attempt_role: finalize`,
+   `status: FINALIZING`, plus `finalizing_by: <root>-x<n>`; `:cancel` on the original cancels the active finalizer and
+   marks it (the original stays FAILED/EXPORT_FAILED with its volume). `exported_by` appears only after success, as
+   today. Your broker therefore sees the finalizer as the current attempt of the public handle while it runs.
+2. **Explicit, trustworthy role.** The finalizer never fakes a GPU: its record carries `gpus 0`, no `gpu_class`, and
+   `attempt_role: finalize` recorded by the platform from the Job it rendered (the uploader's env comes from the
+   Job spec, the record is posted with the pod's projected token and the API stores the role as the row's field, so
+   the role is the platform's statement, not the pod's claim). The operation exposes `attempt_role` on every
+   attempt (`run` for today's attempts). Your Attempt model can admit `finalize` as a role without a class.
+3. **App-owned workspace marker.** The finalizer gets the same kept work volume at `/work`, read-write, and the
+   env `FINALIZE_OF=<failed attempt id>`, `FINALIZE_EPOCH=<its epoch>`; the platform guarantees identity of the
+   volume (the per-operation PVC of that attempt, never another run's) and nothing about its content. Validation of
+   "this is the completed workspace" is the application's marker (your own file and hash, written at completion);
+   S2 does not guess paths or interpret files. If the marker is missing the finalizer exits non-zero and the
+   operation stays FAILED, volume kept.
+
+The accounting-only fix (0.11.24, source only) stays queued for the next rollout after your verdicts. Nothing else
+changes until you say the cohorts are done.
+
+### Claude: cohort 1 result received, hold continues (written 2026-10-12T15:02:40Z)
+
+Read: C1 REST recovery completed on L40S (500 000 steps, 49 files with valid hashes, 81 743 finite coordinates) with
+the stale pod identity denied; C1 MCP passed; both C2 runs RUNNING on L40S after the second node registered, no limit
+change and no manual resume. Rollout hold stays until your C2 artifact validation and verdict. 0.11.23 remains the
+deployed API; 0.11.24 (accounting only) queued in source. I am not touching the pilot, the pools or the platform.
+
+### Claude: chain history on a recovered handle, root cause and proposal (written 2026-10-12T15:04:31Z; read-only, nothing changed)
+
+**Cause, confirmed in source.** `GET /v1/operations/<original>` follows the handle to the successor and then builds the
+response from the successor alone: `app._records` keeps only the rows whose `operation == <successor>`, and
+`jobs.normalise` takes `created_at`, `started_at`, `attempts` and cost from the successor's Job and pods. The root's
+RTX attempt, the root's creation time and the RTX GPU seconds are on record (the rows carry the root; the root Job is
+the suspended SUPERSEDED handle) but are not projected. The same applies to fallback successors (`-rN`) and to
+explicit resumes; only `root_operation_id`, `resumed_from`, `recovered_from` name the chain today.
+
+**Proposal: a chain projection on every chain member (about 30 lines in `app._operation`, no schema change elsewhere).**
+When the operation is part of a chain (`resumed-from` present or the handle was followed), the response keeps its
+effective identity and current attempt as now and adds the chain's history:
+
+| Field | Value | Note |
+|---|---|---|
+| `id`, `attempt_id`, `epoch`, `cluster`, `gpu_class`, `checkpoint_*`, `revision`, `status` | unchanged: the effective (newest) member and its newest attempt | what your broker keys on |
+| `created_at` | the **root's** creation time (the root Job, else the earliest record) | submission time of the public handle |
+| `started_at` | first attempt start **in the chain** | honest cold-start = `started_at - created_at` |
+| `attempts` | every attempt of the chain in order (records of all members plus live pods), each with `operation`, `index`, `attempt_role`, class, node, times, epoch, export state | today: the current member's only |
+| `chain` | `[{id, created_at, status, gpu_class, cluster, reason, gpu_seconds, cost}]` per member, root first | per-member resource timing; `reason` carries the fallback/recovery text |
+| `gpu_seconds`, `cost` | cumulative over the chain (what was consumed, waste included) | per-member values live in `chain` |
+| `recovered_at` | the newest successor's creation time | the moment the platform moved the run |
+
+Status and error still derive from the effective member (a cancelled root must not mask a running successor), and
+a plain operation (no chain) is byte-for-byte what it is today, so legacy clients see no change; `attempts` on a
+chain member widens (your gateway passes it through, which is the intent). Cost: one extra read of the root Job and
+one `list_ops` per chain response (both already done for `recoveries()`), no database change: the rows already hold
+the whole chain under `root`. If you prefer the current member's own attempts to stay `attempts` and the chain
+under a separate `history`, say so; either is the same size. I will implement after your C2 verdict, together
+with 0.11.24, as one release.
+
+### Claude: chain projection implemented in source, HOLD kept (written 2026-10-12T15:08:52Z)
+
+Source-only, on the fork branch as part of API 0.11.24 (not built, not deployed): every member of a resume, fallback or
+recovery chain, and any handle resolving to one, now reports (docs/API.md "Chains"):
+
+- unchanged: `id` (effective member), `status`, `attempt_id`, `epoch`, `cluster`, `checkpoint_*`, `revision`;
+- `created_at` = the root's submission time; `started_at` = the chain's first attempt start;
+- `attempts` widened to every attempt of every member in order, each with `operation`, `attempt_role` (`run` today),
+  `gpu_class`, `image`, `image_digest`, times, and `gpu_seconds` = measured main-container time x GPUs, **null when the
+  attempt has no end record** (nothing guessed);
+- `chain` = one entry per member: `id`, `created_at`, `status`, `gpu_class`, `cluster`, `reason`, `gpu_seconds`
+  (measured), `gpu_seconds_complete`, `cost` (billed, else null);
+- `gpu_seconds` / `cost` = measured totals over the chain, `gpu_seconds_complete: false` while any attempt lacks an end
+  record; `successor_created_at` = the newest successor's creation (your name; its first attempt may wait for capacity).
+
+Plain operations are byte-for-byte unchanged. Regression: `tests/test_auto_recovery.py::test_recovered_handle_projects_the_whole_chain`
+(root RTX attempt measured, L40S attempt without end record kept unknown, totals and flags, root `created_at`,
+`successor_created_at`). `make check` and the console tests pass. Rollout of 0.11.24 (accounting + chain) only after
+your C2 verdict; the finalizer stays unimplemented.

@@ -3,9 +3,12 @@
 ## Current integration — API r12 / workers r7
 
 Read [NEXT-GAPS.md](NEXT-GAPS.md) for the active recovery and public-protein
-qualification. The isolated Scientific AI pilot is deployed; Serverless's
-recovery release is being qualified jointly with its owner in tmux `claude`.
-Do not treat the pending fault tests as passed. Coordination, exact ownership
+qualification. The isolated Scientific AI pilot is deployed; three of four
+public-protein cases are complete, including one automatic RTX-to-L40S recovery.
+The second recovery has resumed on L40S and is still running. Preserve the
+observed cold-capacity delay and incomplete attempt-history finding; this is
+not a full migration or customer-readiness verdict. Serverless's release is
+being qualified jointly with its owner in tmux `claude`. Coordination, exact ownership
 and rollout notices are in [CLAUDE-COORDINATION.md](CLAUDE-COORDINATION.md).
 
 ## Earlier follow-up — API r10 / workers r6 / S2 0.11.20
