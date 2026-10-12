@@ -60,6 +60,7 @@ class Settings(Contract):
     signing_key: SecretStr
     tenants: dict[str, TenantStorage]
     workload_identity: WorkloadIdentity
+    delivery_retry_enabled: bool = False
 
 
 class ArtifactPointer(Contract):
@@ -172,6 +173,7 @@ class Gateway:
                 "jobs_per_operation": 1,
                 "gpus_per_job": 1,
                 "native_checkpoint_resume": True,
+                "cpu_delivery_retry": self.settings.delivery_retry_enabled,
                 "automatic_cross_gpu_recovery": (
                     self.settings.runtime.recovery.on_infrastructure_loss == "recover"
                 ),
@@ -466,6 +468,15 @@ class Gateway:
             store.save("operations", original["root_id"], {**root, "latest_s2_id": response["id"]})
         return self.status(client, store, resumed)
 
+    def retry_delivery(self, client, store, op, key: str):
+        if not self.settings.delivery_retry_enabled:
+            raise UnsupportedExecution("CPU-only delivery retry is not enabled on this deployment")
+        _idempotency(key)
+        record = store.get("operations", op)
+        client.export(record["s2_id"], idempotency_key=key)
+        # Keep the caller's public handle. S2 follows its active finalizer.
+        return self.status(client, store, op)
+
     def sign(self, token: str, body: dict, identity_token: str):
         try:
             claims = jwt.decode(
@@ -702,6 +713,11 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
                 request.headers.get("Idempotency-Key", ""),
                 gpu_class=body.gpu_class,
             )
+
+    @app.post("/v1/operations/{op}:export", status_code=202)
+    def retry_delivery(request: Request, op: str):
+        with gateway.client(authorization(request)) as (client, store, _):
+            return gateway.retry_delivery(client, store, uuid(op), request.headers.get("Idempotency-Key", ""))
 
     @app.get("/v1/artifacts/{aid}/content")
     @app.get("/v1/scientific-artifacts/{aid}/content")

@@ -1,0 +1,14 @@
+{
+  "operator_stack": "/home/tux/worktrees/scientific-ai-s2-fleet-20261012/k8s-inference",
+  "tfvars": "/home/tux/worktrees/scientific-ai-s2-gromacs-20261011/k8s-inference/deployments/scientific-ai2/terraform.tfvars.example",
+  "kubeconfig": "/home/tux/secure-handoff/scientific-ai2-20261012.KvdP28/kubeconfig",
+  "control_context": "scientific-ai2-control",
+  "api_url": "https://api.89.169.122.33.sslip.io",
+  "registry": "cr.eu-north1.nebius.cloud/e00tgb3jwv3v1mx8g5",
+  "model_id": "scientific-gromacs-pilot",
+  "tenant": "system",
+  "key_names": {"admin": "development", "worker": "qa"},
+  "contexts": {"south": "scientific-ai2-south", "north": "scientific-ai2-north"},
+  "clusters": {"south": "mk8scluster-e07c01401chdyaefsf", "north": "mk8scluster-e00yh6grtrxzbr06xg"},
+  "storage_prefix": "runs/fs2-new-fleet-gromacs-acceptance-r20261012"
+}

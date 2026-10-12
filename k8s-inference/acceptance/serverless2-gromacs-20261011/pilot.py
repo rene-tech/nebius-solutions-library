@@ -34,10 +34,47 @@ API = "https://api.195.242.30.226.sslip.io"
 PUBLIC = API + "/scientific-ai"
 REGISTRY = "cr.eu-north1.nebius.cloud/e00dh8c3thpm0ptfea"
 MODEL = "scientific-gromacs-pilot"
+TENANT = "sciai"
+NAMESPACE = "tenant-sciai"
+KEY_NAMES = {"admin": "admin", "worker": "worker"}
+CONTEXTS = {
+    "us-central1": "nebius-mk8s-s2pr2-us-central1-u00pdtgvqv6yjdjndr",
+    "eu-north1": "nebius-mk8s-s2pr2-hub-e00nxtpw0h8ysw9vx5",
+}
+CLUSTERS = {
+    "us-central1": "mk8scluster-u00pdtgvqv6yjdjndr",
+    "eu-north1": "mk8scluster-e00nxtpw0h8ysw9vx5",
+}
+STORAGE_PREFIX = "runs/scientific-ai-s2-gromacs-20261011"
+OPERATOR_ENV = {}
+
+
+def configure(path):
+    """Select an explicit internal fleet; never discover or mutate customer targets."""
+    global S2_ROOT, CONTEXT, API, PUBLIC, REGISTRY, MODEL, TENANT, NAMESPACE
+    global KEY_NAMES, CONTEXTS, CLUSTERS, STORAGE_PREFIX, OPERATOR_ENV
+    target = json.loads(path.read_bytes())
+    if target["tenant"] not in {"system", "sciai"}:
+        raise ValueError("acceptance must use an existing internal tenant")
+    if not target["api_url"].startswith("https://") or not target["storage_prefix"].startswith("runs/"):
+        raise ValueError("an HTTPS fleet and owned test prefix are required")
+    if set(target["contexts"]) != set(target["clusters"]):
+        raise ValueError("every worker needs an explicit context and cluster identity")
+    S2_ROOT = Path(target["operator_stack"])
+    CONTEXT, API = target["control_context"], target["api_url"].rstrip("/")
+    PUBLIC, REGISTRY = API + "/scientific-ai", target["registry"]
+    MODEL, TENANT = target["model_id"], target["tenant"]
+    NAMESPACE, KEY_NAMES = "tenant-" + TENANT, target["key_names"]
+    CONTEXTS, CLUSTERS = target["contexts"], target["clusters"]
+    STORAGE_PREFIX = target["storage_prefix"].rstrip("/")
+    OPERATOR_ENV = {"TFVARS": target["tfvars"], "KUBECONFIG": target["kubeconfig"]}
+    keys.cache_clear()
 
 
 def command(*args):
-    result = subprocess.run(args, cwd=S2_ROOT, capture_output=True, text=True)
+    result = subprocess.run(
+        args, cwd=S2_ROOT, env={**os.environ, **OPERATOR_ENV}, capture_output=True, text=True
+    )
     if result.returncode:
         raise RuntimeError(f"operator command {args[0]} failed (details kept out of shared output)")
     return result.stdout
@@ -45,7 +82,10 @@ def command(*args):
 
 @lru_cache(maxsize=1)
 def keys():
-    return json.loads(command("./stack.sh", "output", "platform", "control", "-json", "tenant_keys"))["sciai"]
+    values = json.loads(command("./stack.sh", "output", "platform", "control", "-json", "tenant_keys"))[
+        TENANT
+    ]
+    return {role: values[name] for role, name in KEY_NAMES.items()}
 
 
 def write(path, value, *, private=False):
@@ -80,26 +120,43 @@ def call_tool(client, name, arguments):
     return value
 
 
-def prepare(directory, tag, api_tag=None, *, automatic_recovery=False):
+def prepare(
+    directory,
+    tag,
+    api_tag=None,
+    *,
+    automatic_recovery=False,
+    storage_config=None,
+    storage_tenant=None,
+    delivery_retry=False,
+):
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     if directory.stat().st_mode & 0o077:
         raise RuntimeError("private configuration directory must have mode 0700")
     selected = keys()
-    secret = json.loads(
-        command(
-            "kubectl",
-            "--context",
-            CONTEXT,
-            "-n",
-            "tenant-demo",
-            "get",
-            "secret",
-            "tenant-storage",
-            "-o",
-            "json",
+    if storage_config is not None:
+        if storage_config.stat().st_mode & 0o077 or storage_tenant not in {"system", "sciai", "demo"}:
+            raise ValueError("reuse only a private, approved internal storage configuration")
+        source = json.loads(storage_config.read_bytes())["tenants"][storage_tenant]
+        data = {key: source[key] for key in ("endpoint", "bucket", "region", "access_key", "secret_key")}
+    else:
+        if OPERATOR_ENV:
+            raise ValueError("a new target requires an explicit internal storage source")
+        secret = json.loads(
+            command(
+                "kubectl",
+                "--context",
+                CONTEXT,
+                "-n",
+                "tenant-demo",
+                "get",
+                "secret",
+                "tenant-storage",
+                "-o",
+                "json",
+            )
         )
-    )
-    data = {key: base64.b64decode(value).decode() for key, value in secret["data"].items()}
+        data = {key: base64.b64decode(value).decode() for key, value in secret["data"].items()}
     images = {}
     for name in ("api", "gromacs-sm89", "gromacs-sm120"):
         selected_tag = api_tag if name == "api" and api_tag else tag
@@ -114,6 +171,7 @@ def prepare(directory, tag, api_tag=None, *, automatic_recovery=False):
         "public_url": PUBLIC,
         "model_id": MODEL,
         "profile_ref": "confidential-job-v1",
+        **({"delivery_retry_enabled": True} if delivery_retry else {}),
         "signing_key": signing_key,
         "workload_identity": {
             "audience": PUBLIC + "/internal/storage",
@@ -122,17 +180,14 @@ def prepare(directory, tag, api_tag=None, *, automatic_recovery=False):
                     "issuer": "https://oidc.mk8s.api.nebius.cloud/" + cluster,
                     "jwks_url": "https://oidc.mk8s.api.nebius.cloud/" + cluster + "/openid/v1/jwks",
                 }
-                for region, cluster in {
-                    "us-central1": "mk8scluster-u00pdtgvqv6yjdjndr",
-                    "eu-north1": "mk8scluster-e00nxtpw0h8ysw9vx5",
-                }.items()
+                for region, cluster in CLUSTERS.items()
             },
         },
         "runtime": {
             "revision": "gromacs-2026-4-" + tag,
             "checkpoint_compatibility_id": "gromacs-2026-4-native-v1",
             "images": {"rtx-pro-6000": images["gromacs-sm120"], "l40s": images["gromacs-sm89"]},
-            "allowed_clusters": ["us-central1", "eu-north1"],
+            "allowed_clusters": list(CLUSTERS),
             "gpu_preference": ["rtx-pro-6000", "l40s"],
             # S2 only applies this to an unplaced run (both preferred slots
             # reserved), not to a placed run booting its new GPU node.
@@ -151,7 +206,7 @@ def prepare(directory, tag, api_tag=None, *, automatic_recovery=False):
             ),
         },
         "tenants": {
-            "sciai": {
+            TENANT: {
                 "endpoint": data["endpoint"],
                 "bucket": data["bucket"],
                 "region": data["region"],
@@ -159,8 +214,8 @@ def prepare(directory, tag, api_tag=None, *, automatic_recovery=False):
                 "secret_key": data["secret_key"],
                 "execution_key": selected["worker"],
                 "workload_identity_ref": "scientific-ai-storage",
-                "namespace": "tenant-sciai",
-                "prefix": "runs/scientific-ai-s2-gromacs-20261011",
+                "namespace": NAMESPACE,
+                "prefix": STORAGE_PREFIX,
             }
         },
     }
@@ -169,9 +224,10 @@ def prepare(directory, tag, api_tag=None, *, automatic_recovery=False):
         directory / "pilot.tfvars.json",
         {
             "kube_context": CONTEXT,
+            **({"kube_config_path": OPERATOR_ENV["KUBECONFIG"]} if OPERATOR_ENV else {}),
             "image": images["api"],
             "private_config_file": str(target),
-            "api_host": "api.195.242.30.226.sslip.io",
+            "api_host": API.removeprefix("https://"),
         },
         private=True,
     )
@@ -181,7 +237,7 @@ def prepare(directory, tag, api_tag=None, *, automatic_recovery=False):
             {
                 "private_config": str(target),
                 "images": images,
-                "tenant": "sciai",
+                "tenant": TENANT,
                 "storage_source": "existing internal demo workspace",
             }
         )
@@ -194,7 +250,7 @@ def register(directory):
         "id": MODEL,
         "kind": "job",
         "display_name": "Scientific AI GROMACS migration pilot",
-        "description": "Owner: scientific-ai-serverless2-migration. Internal s2pr2 acceptance only.",
+        "description": "Owner: scientific-ai-serverless2-migration. Internal fleet acceptance only.",
         "image": config["runtime"]["images"]["rtx-pro-6000"],
         "images": config["runtime"]["images"],
         "command": ["/opt/scientific-ai/bin/python", "-m", "scientific_ai.runner"],
@@ -205,9 +261,17 @@ def register(directory):
         "scratch": "network",
         "grace_seconds": 300,
         "timeout_s": 1209600,
-        "regions": ["us-central1", "eu-north1"],
+        "regions": config["runtime"]["allowed_clusters"],
         "parameters": [{"name": "protocol_ref", "type": "string", "default": config["runtime"]["revision"]}],
     }
+    if config.get("delivery_retry_enabled"):
+        spec["finalize"] = {
+            "command": "/opt/scientific-ai/bin/python -m scientific_ai.runner --finish-delivery",
+            "on_exit_codes": [75],
+            "timeout_s": 1800,
+            "cpu": "1",
+            "memory": "2Gi",
+        }
     with httpx.Client(
         base_url=API, headers={"Authorization": "Bearer " + keys()["admin"]}, timeout=120
     ) as client:
@@ -527,7 +591,7 @@ def automatic_recovery_cycle(directory, name):
     if state["gpu_class"] != "rtx-pro-6000" or state["status"] != "RUNNING":
         raise RuntimeError("automatic cross-GPU qualification must start on RTX")
     s2_id = state["serverless_operation_id"]
-    ctl = ("kubectl", "--context", CONTEXT, "-n", "tenant-sciai")
+    ctl = ("kubectl", "--context", CONTEXT, "-n", NAMESPACE)
     job = json.loads(command(*ctl, "get", "job", s2_id, "-o", "json"))
     workloads = json.loads(command(*ctl, "get", "workloads.kueue.x-k8s.io", "-o", "json"))["items"]
     owned = [
@@ -796,13 +860,9 @@ def identity_boundaries(directory, name, stale_name=None, *, multipart=False):
             gateway.settings.signing_key.get_secret_value(),
             algorithm="HS256",
         )
-    contexts = {
-        "us-central1": "nebius-mk8s-s2pr2-us-central1-u00pdtgvqv6yjdjndr",
-        "eu-north1": "nebius-mk8s-s2pr2-hub-e00nxtpw0h8ysw9vx5",
-    }
-    context, pod = contexts[current["cluster"]], current["attempt_id"]
+    context, pod = CONTEXTS[current["cluster"]], current["attempt_id"]
     metadata = json.loads(
-        command("kubectl", "--context", context, "-n", "tenant-sciai", "get", "pod", pod, "-o", "json")
+        command("kubectl", "--context", context, "-n", NAMESPACE, "get", "pod", pod, "-o", "json")
     )
     if not pod.startswith(current["id"] + "-"):
         raise RuntimeError("refusing another operation's pod")
@@ -811,7 +871,7 @@ def identity_boundaries(directory, name, stale_name=None, *, multipart=False):
         "--context",
         context,
         "-n",
-        "tenant-sciai",
+        NAMESPACE,
         "exec",
         pod,
         "-c",
@@ -890,7 +950,7 @@ with httpx.Client(timeout=120, follow_redirects=False) as http:
                 "--context",
                 context,
                 "-n",
-                "tenant-sciai",
+                NAMESPACE,
                 "exec",
                 pod,
                 "-c",
@@ -1084,8 +1144,8 @@ def interrupt(directory, name):
         or not 0 < md[-1]["checkpoint_step"] < receipt["steps"]
     ):
         raise RuntimeError("fault requires a committed, strictly mid-simulation RTX checkpoint")
-    context = "nebius-mk8s-s2pr2-us-central1-u00pdtgvqv6yjdjndr"
-    kubectl = ("kubectl", "--context", context, "-n", "tenant-sciai")
+    context = CONTEXTS[state["cluster"]]
+    kubectl = ("kubectl", "--context", context, "-n", NAMESPACE)
     pod = json.loads(command(*kubectl, "get", "pod", state["attempt_id"], "-o", "json"))
     s2_id = state["serverless_operation_id"]
     if not any(r["kind"] == "Job" and r["name"] == s2_id for r in pod["metadata"]["ownerReferences"]):
@@ -1150,11 +1210,15 @@ def main():
         ],
     )
     parser.add_argument("--private-dir", type=Path, required=True)
+    parser.add_argument("--deployment", type=Path, help="Explicit internal fleet configuration")
+    parser.add_argument("--storage-config", type=Path, help="Existing private internal storage configuration")
+    parser.add_argument("--storage-tenant", choices=["system", "sciai", "demo"])
     parser.add_argument("--tag", default="pilot-20261011-r6")
     parser.add_argument("--api-tag", default="pilot-20261011-r10")
     parser.add_argument("--engine-image")
     parser.add_argument("--benchmem-tpr", type=Path)
     parser.add_argument("--automatic-recovery", action="store_true")
+    parser.add_argument("--delivery-retry", action="store_true")
     parser.add_argument("--name", default="rest-cohort-1")
     parser.add_argument("--stale-name")
     parser.add_argument("--multipart", action="store_true")
@@ -1162,8 +1226,18 @@ def main():
     parser.add_argument("--path", choices=["rest", "mcp"], default="rest")
     parser.add_argument("--gpu-class", choices=["l40s", "rtx-pro-6000"], default="l40s")
     args = parser.parse_args()
+    if args.deployment:
+        configure(args.deployment)
     if args.action == "prepare":
-        prepare(args.private_dir, args.tag, args.api_tag, automatic_recovery=args.automatic_recovery)
+        prepare(
+            args.private_dir,
+            args.tag,
+            args.api_tag,
+            automatic_recovery=args.automatic_recovery,
+            storage_config=args.storage_config,
+            storage_tenant=args.storage_tenant,
+            delivery_retry=args.delivery_retry,
+        )
     elif args.action == "register":
         register(args.private_dir)
     elif args.action == "submit":

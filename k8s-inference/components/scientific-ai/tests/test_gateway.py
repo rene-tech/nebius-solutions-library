@@ -70,6 +70,11 @@ def gateway_fixture(setup, pod_tokens, monkeypatch):
                         "identities": ["scientific-ai-storage"],
                         "private_input_dir": "/var/run/serverless2/private",
                         "identity_token_file": "/var/run/secrets/workload-identity/token",
+                        "finalize": {
+                            "roles": ["run", "export", "finalize"],
+                            "trigger": "POST /v1/operations/{id}:export",
+                            "max_retries": 3,
+                        },
                     }
                 },
             )
@@ -106,6 +111,11 @@ def gateway_fixture(setup, pod_tokens, monkeypatch):
                 op, {"id": op, "root_operation_id": "op-scientific-gromacs-1", "status": "QUEUED"}
             )
             assert request.headers["Idempotency-Key"].startswith("sai-")
+            return httpx.Response(202, json=operations[op])
+        if path.endswith(":export"):
+            op = path.rsplit("/", 1)[-1].removesuffix(":export")
+            assert request.headers.get("Idempotency-Key")
+            operations[op].update(status="FINALIZING", finalizing_by=op + "-x1", attempt_role="finalize")
             return httpx.Response(202, json=operations[op])
         op = path.rsplit("/", 1)[-1]
         if op in operations:

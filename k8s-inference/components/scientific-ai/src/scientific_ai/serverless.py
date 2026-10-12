@@ -122,6 +122,7 @@ class ServerlessClient:
         profile_ref: str | None = None,
         identity_ref: str | None = None,
         recovery: dict | None = None,
+        finalize: bool = False,
     ) -> dict:
         response = self.http.get(self.capability_path, follow_redirects=False)
         if response.status_code != 200:
@@ -158,6 +159,13 @@ class ServerlessClient:
                 or advertised["max_recoveries"] < recovery["max_recoveries"]
             ):
                 raise UnsupportedExecution("bounded automatic checkpoint recovery is unavailable")
+        if finalize:
+            capability = supported.get("finalize") or {}
+            if (
+                "finalize" not in capability.get("roles", [])
+                or capability.get("trigger") != "POST /v1/operations/{id}:export"
+            ):
+                raise UnsupportedExecution("CPU-only application delivery retry is unavailable")
         return supported
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
@@ -255,6 +263,19 @@ class ServerlessClient:
         if document.get("status") == "SUCCEEDED" and not document.get("result_ref"):
             raise ServerlessError(503)
         return document
+
+    def export(self, operation_id: str, *, idempotency_key: str) -> dict:
+        """S2 owns deduplication, retry bounds, CPU attempt and retained scratch."""
+        from pydantic import TypeAdapter
+
+        TypeAdapter(Identifier).validate_python(operation_id)
+        _idempotency(idempotency_key)
+        self.require_capabilities(finalize=True)
+        return self._request(
+            "POST",
+            f"/v1/operations/{operation_id}:export",
+            headers={"Idempotency-Key": idempotency_key},
+        )
 
     def resume(
         self,

@@ -127,6 +127,18 @@ def mount_mcp(app, gateway):
         return execute(ctx, gateway.resume, uuid(operation_id), idempotency_key, gpu_class=gpu_class)
 
     @server.tool()
+    def retry_scientific_delivery(operation_id: str, idempotency_key: str, ctx: Context) -> dict:
+        """Retry delivery of completed scientific files using CPU only, without rerunning MD.
+
+        Use after a completed calculation could not upload its final outputs.
+        Poll the SAME operation ID. Only the model's fixed transfer command is
+        permitted; failed scientific computation cannot be promoted to success.
+        Reuse idempotency_key on network retries. Serverless bounds retries and
+        cancellation. Unconfigured deployments return a capability error.
+        """
+        return execute(ctx, gateway.retry_delivery, uuid(operation_id), idempotency_key)
+
+    @server.tool()
     def cancel_scientific_run(operation_id: str, ctx: Context) -> dict:
         """Stop this caller-owned operation. Previously committed checkpoints remain resumable."""
 

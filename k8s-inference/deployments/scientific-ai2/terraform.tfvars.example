@@ -140,6 +140,17 @@ fleet = {
     system = {
       storage   = "external"
       gpu_quota = 16
+      identities = {
+        scientific-ai-storage = {
+          audience = "https://api.89.169.122.33.sslip.io/scientific-ai/internal/storage"
+        }
+      }
+      execution_profiles = {
+        confidential-job-v1 = {
+          egress_fqdns      = ["storage.eu-north1.nebius.cloud"]
+          shared_filesystem = false
+        }
+      }
       keys = {
         development = { admin = true, budget_usd = 1000 }
         qa          = { budget_usd = 500 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import signal
@@ -14,6 +15,7 @@ from pydantic import Field
 
 from .broker import BrokerObjects
 from .contracts import Contract, GromacsRun, Owner, RuntimeProfile, StorageGrant
+from .delivery import retained_workspace
 from .gromacs import DeliveryPending, GromacsApplication
 from .lifecycle import FileLifecycle
 from .storage import Artifacts
@@ -27,7 +29,7 @@ class PrivateRun(Contract):
     storage_token: str = Field(repr=False)
 
 
-def main() -> int:
+def main(*, finish_delivery: bool = False) -> int:
     work = Path("/work")
     manifest = Path(os.environ.get("PRIVATE_INPUT_DIR", "/var/run/serverless2/private")) / "run.json"
     try:
@@ -38,6 +40,18 @@ def main() -> int:
             owner=binding.owner,
             profile=binding.profile,
         )
+        if finish_delivery != (attempt.attempt_role == "finalize"):
+            raise PermissionError("entrypoint differs from the authenticated attempt role")
+        workspace = work / ("scientific-" + attempt.attempt_id)
+        if finish_delivery:
+            workspace = retained_workspace(
+                work,
+                attempt=attempt,
+                run=binding.run,
+                profile=binding.profile,
+                compute_pod=os.environ["FINALIZE_OF"],
+                compute_epoch=int(os.environ["FINALIZE_EPOCH"]),
+            )
         # Neither request arguments nor environment can select another image,
         # executable, Kubernetes identity, or shared cache.
         with httpx.Client(timeout=httpx.Timeout(120, connect=10, read=30), follow_redirects=False) as http:
@@ -59,15 +73,20 @@ def main() -> int:
                 profile=binding.profile,
                 artifacts=Artifacts(objects),
                 lifecycle=lifecycle,
-                workspace=work / ("scientific-" + attempt.attempt_id),
+                workspace=workspace,
                 gmx="/opt/gromacs/bin/gmx",
             )
             signal.signal(signal.SIGTERM, app.worker.stop)
             signal.signal(signal.SIGINT, app.worker.stop)
             # Portable resume: S2 passes the durable reference. A fresh attempt
             # never consumes an unacknowledged old workspace or customer cache.
-            checkpoint = lifecycle.checkpoint_reference(attempt) or os.environ.get("CHECKPOINT_REF") or None
-            result = app.execute(checkpoint)
+            if finish_delivery:
+                result = app.finish_delivery()
+            else:
+                checkpoint = (
+                    lifecycle.checkpoint_reference(attempt) or os.environ.get("CHECKPOINT_REF") or None
+                )
+                result = app.execute(checkpoint)
             print(
                 json.dumps(
                     {
@@ -93,4 +112,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--finish-delivery", action="store_true")
+    sys.exit(main(finish_delivery=parser.parse_args().finish_delivery))

@@ -14,6 +14,7 @@ from fs2_gromacs.files import atomic_json
 from fs2_gromacs.worker import Workflow
 
 from .contracts import Attempt, FileRecord, GromacsRun, RuntimeProfile, Snapshot, StorageGrant
+from .delivery import publish_marker
 from .serverless import Lifecycle
 from .storage import Artifacts
 
@@ -129,6 +130,8 @@ class GromacsApplication:
         return snapshot
 
     def execute(self, checkpoint_ref: str | None = None) -> dict:
+        if self.attempt.attempt_role != "run":
+            raise PermissionError("a CPU delivery finalizer must never execute scientific work")
         previous = self.prepare(checkpoint_ref)
         if previous is not None and previous.kind == "result":
             # Recovery after export/callback loss must not run MD again.
@@ -174,6 +177,7 @@ class GromacsApplication:
             or not result.get("inventory_complete")
         ):
             raise ValueError("only verified successful computation can enter finalization")
+        publish_marker(self, result)
         atomic_json(self.workspace / "delivery.json", {"compute": "succeeded", "export": "pending"})
         try:
             self.lifecycle.require_current(self.attempt)

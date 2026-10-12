@@ -32,8 +32,19 @@ class Attempt(Contract):
     attempt_id: Identifier
     epoch: int = Field(strict=True, ge=1)
     cluster: Identifier
-    gpu_class: Identifier
+    gpu_class: Identifier | None
     image: Image
+    attempt_role: Literal["run", "finalize"] = "run"
+    gpus: int = Field(strict=True, ge=0, default=1)
+
+    @model_validator(mode="after")
+    def execution_shape(self) -> Attempt:
+        if self.attempt_role == "finalize":
+            if self.gpus != 0 or self.gpu_class is not None:
+                raise ValueError("delivery finalization must allocate no GPU")
+        elif self.gpus != 1 or self.gpu_class is None:
+            raise ValueError("this native execution requires exactly one qualified GPU")
+        return self
 
 
 class StorageGrant(Contract):
@@ -87,6 +98,10 @@ class RuntimeProfile(Contract):
         return self
 
     def authorize(self, attempt: Attempt) -> None:
+        if attempt.attempt_role == "finalize":
+            if attempt.cluster not in self.allowed_clusters or attempt.image not in self.images.values():
+                raise PermissionError("finalizer differs from its pinned runtime revision")
+            return
         if (
             attempt.cluster not in self.allowed_clusters
             or attempt.gpu_class not in self.gpu_preference

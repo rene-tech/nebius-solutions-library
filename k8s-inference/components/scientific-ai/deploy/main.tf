@@ -8,16 +8,16 @@ terraform {
 
 variable "kube_context" {
   type        = string
-  description = "Explicit shared test-fleet context. Never the Scientific AI customer cluster."
+  description = "Explicit migration-fleet context; inspect the target before apply. Never use the current customer cluster."
   validation {
-    condition     = startswith(var.kube_context, "nebius-mk8s-s2pr2-control-")
-    error_message = "This isolated pilot may deploy only to the s2pr2 control cluster."
+    condition     = length(trimspace(var.kube_context)) > 0
+    error_message = "An explicit migration-cluster context is required; implicit current-context selection is forbidden."
   }
 }
 variable "kube_config_path" {
   type        = string
   default     = "~/.kube/config"
-  description = "Operator kubeconfig; the explicit test-fleet context is still required."
+  description = "Operator kubeconfig; the explicit migration-fleet context is still required."
 }
 variable "image" {
   type = string

@@ -54,8 +54,10 @@ class FileLifecycle:
             attempt_id=pod_name,
             epoch=record["epoch"],
             cluster=record["region"],
-            gpu_class=record["gpu_class"],
+            gpu_class=record.get("gpu_class") or None,
             image=record["image"],
+            attempt_role=record.get("role", record.get("attempt_role", "run")),
+            gpus=record.get("gpus", 1),
         )
         profile.authorize(attempt)
         return attempt
