@@ -8,7 +8,7 @@ import pytest
 from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
-from scientific_ai.contracts import FileRecord, Owner, Snapshot
+from scientific_ai.contracts import FileRecord, Owner, RecoveryPolicy, Snapshot
 from scientific_ai.gateway import Gateway, Settings, create_app
 from scientific_ai.gateway_store import canonical
 
@@ -276,11 +276,22 @@ def test_job_grant_enforces_active_attempt_and_object_namespace(gateway_fixture,
     # The old worker knows the replacement ID and retains its logical-job grant.
     # It must STILL fail because it cannot mint the replacement's projected JWT.
     operation.update(attempt_id="replacement-pod")
+    operation.update(id="op-scientific-gromacs-1-r-auto", recovered_from="op-scientific-gromacs-1")
     assert (
         client.post(
             "/internal/storage", json={**request, "attempt_id": "replacement-pod"}, headers=grant
         ).status_code
         == 403
+    )
+    replacement_grant = {
+        **grant,
+        "X-Scientific-Workload-Token": pod_tokens[1](pod_tokens[0]("replacement-pod")),
+    }
+    assert (
+        client.post(
+            "/internal/storage", json={**request, "attempt_id": "replacement-pod"}, headers=replacement_grant
+        ).status_code
+        == 200
     )
     operation.update(attempt_id="pod-1", status="CANCELLED")
     assert client.post("/internal/storage", json=request, headers=grant).status_code == 403
@@ -418,7 +429,8 @@ def test_mcp_and_rest_share_submission_and_uuid_handle(gateway_fixture, setup):
     assert len([path for _, path in calls if path.endswith(":invoke")]) == 1
 
 
-def test_terminal_result_keeps_downloadable_legacy_artifact_manifest(gateway_fixture, setup):
+@pytest.mark.parametrize("auto_recovered", [False, True])
+def test_terminal_result_keeps_downloadable_legacy_artifact_manifest(gateway_fixture, setup, auto_recovered):
     gateway, client, _, _, operations, _ = gateway_fixture
     body = submit_request(client, setup)
     submitted = client.post(
@@ -431,12 +443,14 @@ def test_terminal_result_keeps_downloadable_legacy_artifact_manifest(gateway_fix
     file = FileRecord(path="md.gro", sha256=hashlib.sha256(data).hexdigest(), size_bytes=len(data))
     store.objects(op).put("blobs/" + file.sha256, io.BytesIO(data))
     current = next(iter(operations.values()))
+    if auto_recovered:
+        current.update(id=current["id"] + "-r-auto", recovered_from=current["id"], epoch=2)
     profile = setup[0]["profile"]
     reference = store.artifacts(op).commit(
         Snapshot(
             kind="result",
             owner=owner,
-            root_operation_id=current["id"],
+            root_operation_id=current["root_operation_id"],
             attempt_id="pod-1",
             epoch=1,
             runtime_revision=profile.revision,
@@ -467,3 +481,24 @@ def test_terminal_result_keeps_downloadable_legacy_artifact_manifest(gateway_fix
 
     schema = Path(__file__).parents[3] / "catalog/runtime/schema/scientific-artifact-manifest.schema.json"
     validate(response.json(), json.loads(schema.read_text()))
+
+
+def test_enabled_recovery_does_not_silently_admit_on_older_serverless(gateway_fixture, setup):
+    gateway, client, _, calls, _, _ = gateway_fixture
+    gateway.settings = gateway.settings.model_copy(
+        update={
+            "runtime": gateway.settings.runtime.model_copy(
+                update={
+                    "recovery": RecoveryPolicy(on_infrastructure_loss="recover", wait_s=0, deadline_s=3600),
+                }
+            ),
+        }
+    )
+    response = client.post(
+        "/v1/models/gromacs:submit",
+        json=submit_request(client, setup),
+        headers={"Idempotency-Key": "needs-new-serverless"},
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "EXECUTION_CAPABILITY_UNAVAILABLE"
+    assert not any(path.endswith(":invoke") for _, path in calls)

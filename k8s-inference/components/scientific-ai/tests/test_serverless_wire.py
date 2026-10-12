@@ -2,7 +2,9 @@ import json
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
+from scientific_ai.contracts import RecoveryPolicy
 from scientific_ai.serverless import ServerlessClient, ServerlessError, UnsupportedExecution, invoke_payload
 
 
@@ -40,6 +42,66 @@ def test_confidential_binding_does_not_require_placeholder_aws_identity(setup):
     assert response["status"] == "QUEUED"
     assert [r.url.path for r in seen] == ["/v1/fleet", "/v1/models/gromacs:invoke"]
     assert json.loads(seen[-1].content) == payload
+    assert payload["execution"]["recovery"] == {"on_infrastructure_loss": "retry", "checkpoint_ref": None}
+
+
+def test_automatic_recovery_is_explicit_and_checked_before_submission(setup):
+    profile = setup[0]["profile"].model_copy(
+        update={
+            "recovery": RecoveryPolicy(
+                on_infrastructure_loss="recover",
+                max_recoveries=1,
+                wait_s=0,
+                deadline_s=3600,
+            )
+        }
+    )
+    payload = invoke_payload(
+        profile,
+        profile_ref="confidential-job-v1",
+        identity_ref=None,
+        private_input_ref="job-1",
+        checkpoint_ref="a" * 64,
+    )
+    assert payload["execution"]["recovery"] == {
+        "on_infrastructure_loss": "recover",
+        "checkpoint_ref": "a" * 64,
+        "max_recoveries": 1,
+        "wait_s": 0,
+        "deadline_s": 3600,
+    }
+    seen = []
+    capabilities = discovery()
+
+    def handler(request):
+        seen.append(request.method)
+        return httpx.Response(200, json={"execution": capabilities})
+
+    c = client(handler)
+    with pytest.raises(UnsupportedExecution, match="automatic"):
+        c.submit("gromacs", payload, idempotency_key="stable-recovery-1")
+    assert seen == ["GET"]
+    capabilities["recovery"] = {"on_infrastructure_loss": ["retry", "fail", "recover"], "max_recoveries": 3}
+    c.submit("gromacs", payload, idempotency_key="stable-recovery-1")
+    assert seen == ["GET", "GET", "POST"]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"max_recoveries": 0},
+        {"max_recoveries": 4},
+        {"max_recoveries": True},
+        {"wait_s": -1},
+        {"deadline_s": 59},
+        {"deadline_s": 604801},
+        {"on_infrastructure_loss": "always"},
+        {"silent_retry": True},
+    ],
+)
+def test_recovery_policy_is_bounded_and_strict(values):
+    with pytest.raises(ValidationError):
+        RecoveryPolicy(**values)
 
 
 @pytest.mark.parametrize(

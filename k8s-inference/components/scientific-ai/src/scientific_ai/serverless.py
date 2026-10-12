@@ -93,7 +93,7 @@ def invoke_payload(
                 "allowed_clusters": list(profile.allowed_clusters),
                 "fallback_wait_s": profile.fallback_wait_s,
             },
-            "recovery": {"on_infrastructure_loss": "retry", "checkpoint_ref": checkpoint_ref},
+            "recovery": profile.recovery.wire(checkpoint_ref),
         },
     }
     if identity_ref is not None:
@@ -117,7 +117,11 @@ class ServerlessClient:
         self.http, self.capability_path = http, capability_path
 
     def require_capabilities(
-        self, *, profile_ref: str | None = None, identity_ref: str | None = None
+        self,
+        *,
+        profile_ref: str | None = None,
+        identity_ref: str | None = None,
+        recovery: dict | None = None,
     ) -> dict:
         response = self.http.get(self.capability_path, follow_redirects=False)
         if response.status_code != 200:
@@ -144,6 +148,16 @@ class ServerlessClient:
             or supported.get("identity_token_file") != "/var/run/secrets/workload-identity/token"
         ):
             raise UnsupportedExecution("the requested workload identity is unavailable")
+        if recovery and recovery.get("on_infrastructure_loss") == "recover":
+            advertised = supported.get("recovery")
+            if (
+                not isinstance(advertised, dict)
+                or not isinstance(advertised.get("on_infrastructure_loss"), list)
+                or "recover" not in advertised.get("on_infrastructure_loss", [])
+                or type(advertised.get("max_recoveries")) is not int
+                or advertised["max_recoveries"] < recovery["max_recoveries"]
+            ):
+                raise UnsupportedExecution("bounded automatic checkpoint recovery is unavailable")
         return supported
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
@@ -196,7 +210,9 @@ class ServerlessClient:
         if not execution.get("profile_ref") or not execution.get("private_input_ref"):
             raise ValueError("application execution requires a confidential profile and private binding")
         self.require_capabilities(
-            profile_ref=execution["profile_ref"], identity_ref=execution.get("workload_identity_ref")
+            profile_ref=execution["profile_ref"],
+            identity_ref=execution.get("workload_identity_ref"),
+            recovery=execution.get("recovery"),
         )
         return self._request(
             "POST",

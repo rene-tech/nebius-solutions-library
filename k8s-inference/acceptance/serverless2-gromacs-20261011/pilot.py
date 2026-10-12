@@ -25,6 +25,8 @@ from functools import lru_cache
 from pathlib import Path
 
 import httpx
+from protein_fixture import fixture as protein_fixture
+from protein_fixture import validate_coordinates, validate_native
 
 S2_ROOT = Path("/home/tux/nebius-solutions-library-pr/k8s-inference")
 CONTEXT = "nebius-mk8s-s2pr2-control-e00z83c35fh1x9my11"
@@ -78,7 +80,7 @@ def call_tool(client, name, arguments):
     return value
 
 
-def prepare(directory, tag, api_tag=None):
+def prepare(directory, tag, api_tag=None, *, automatic_recovery=False):
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     if directory.stat().st_mode & 0o077:
         raise RuntimeError("private configuration directory must have mode 0700")
@@ -135,6 +137,18 @@ def prepare(directory, tag, api_tag=None):
             # S2 only applies this to an unplaced run (both preferred slots
             # reserved), not to a placed run booting its new GPU node.
             "fallback_wait_s": 60,
+            **(
+                {
+                    "recovery": {
+                        "on_infrastructure_loss": "recover",
+                        "max_recoveries": 1,
+                        "wait_s": 0,
+                        "deadline_s": 3600,
+                    }
+                }
+                if automatic_recovery
+                else {}
+            ),
         },
         "tenants": {
             "sciai": {
@@ -302,9 +316,15 @@ def upload(client, data, media_type, compression="none"):
     return r.json()["artifact"]
 
 
-def submit(directory, name, steps, path):
+def submit(directory, name, steps, path, *, benchmem_tpr=None):
     started = now()
-    data, parameters = fixture(steps)
+    expected = None
+    if benchmem_tpr is None:
+        data, parameters = fixture(steps)
+        label = "Synthetic S2 qualification "
+    else:
+        data, parameters, expected = protein_fixture(benchmem_tpr, steps)
+        label = "Public benchMEM S2 qualification "
     with httpx.Client(
         base_url=PUBLIC, headers={"Authorization": "Bearer " + keys()["worker"]}, timeout=120
     ) as client:
@@ -312,7 +332,7 @@ def submit(directory, name, steps, path):
         manifest = json.dumps(
             {
                 "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
-                "manifest_id": "synthetic-" + name,
+                "manifest_id": "qualification-" + name,
                 "entries": [
                     {
                         "name": "gromacs-inputs",
@@ -329,7 +349,7 @@ def submit(directory, name, steps, path):
             "operation": "run-workflow",
             "input_manifest": upload(client, manifest, "application/json"),
             "parameters": parameters,
-            "client_context": {"display_name": "Synthetic S2 qualification " + name},
+            "client_context": {"display_name": label + name},
         }
         key = "s2-gromacs-20261011-" + name
         if path == "rest":
@@ -349,6 +369,7 @@ def submit(directory, name, steps, path):
                 "started_at": started,
                 "accepted_at": now(),
                 "steps": steps,
+                **({"expected": expected} if expected else {}),
             },
         )
         print(
@@ -417,16 +438,18 @@ def status(directory, name, path="rest"):
                 assert hashlib.sha256(download.content).hexdigest() == pointer["sha256"]
                 (output / pointer["sha256"]).write_bytes(download.content)
             native = result["native_result"]
-            md = [item for item in native["commands"] if item["command"][1] == "mdrun"]
-            assert native["completed_steps"] == ["prepare", "md"]
-            assert sum(item["command"][1] == "grompp" for item in native["commands"]) == 1
-            assert md[-1]["checkpoint_step"] == receipt["steps"]
+            checked = validate_native(native, receipt)
+            if receipt.get("expected", {}).get("protocol", {}).get("fixture") == "mpinat-benchMEM":
+                final = [file for file in native["files"] if file["path"] == "md.gro"]
+                assert len(final) == 1, "benchMEM must return its final coordinates"
+                checked.update(validate_coordinates((output / final[0]["sha256"]).read_bytes()))
+            write(directory / (name + "-native-validation.json"), {"at": now(), **checked})
             print(
                 json.dumps(
                     {
                         "result": "all hashes and native steps verified",
                         "files": len(manifest.json()["entries"]),
-                        "final_step": md[-1]["checkpoint_step"],
+                        **checked,
                     }
                 )
             )
@@ -1032,6 +1055,8 @@ def main():
     parser.add_argument("--tag", default="pilot-20261011-r6")
     parser.add_argument("--api-tag", default="pilot-20261011-r10")
     parser.add_argument("--engine-image")
+    parser.add_argument("--benchmem-tpr", type=Path)
+    parser.add_argument("--automatic-recovery", action="store_true")
     parser.add_argument("--name", default="rest-cohort-1")
     parser.add_argument("--stale-name")
     parser.add_argument("--multipart", action="store_true")
@@ -1040,11 +1065,11 @@ def main():
     parser.add_argument("--gpu-class", choices=["l40s", "rtx-pro-6000"], default="l40s")
     args = parser.parse_args()
     if args.action == "prepare":
-        prepare(args.private_dir, args.tag, args.api_tag)
+        prepare(args.private_dir, args.tag, args.api_tag, automatic_recovery=args.automatic_recovery)
     elif args.action == "register":
         register(args.private_dir)
     elif args.action == "submit":
-        submit(args.private_dir, args.name, args.steps, args.path)
+        submit(args.private_dir, args.name, args.steps, args.path, benchmem_tpr=args.benchmem_tpr)
     elif args.action == "status":
         status(args.private_dir, args.name, args.path)
     elif args.action == "boundaries":

@@ -30,7 +30,7 @@ from .broker import https_origin
 from .contracts import Contract, FileRecord, GromacsRun, Identifier, Owner, RuntimeProfile
 from .gateway_store import GatewayStore, canonical, identifier, uuid
 from .runner import PrivateRun
-from .serverless import ServerlessClient, ServerlessError, _idempotency, invoke_payload
+from .serverless import ServerlessClient, ServerlessError, UnsupportedExecution, _idempotency, invoke_payload
 from .workload_identity import PodVerifier, WorkloadIdentity
 
 TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "EXPORT_FAILED", "PREEMPTED"}
@@ -172,7 +172,10 @@ class Gateway:
                 "jobs_per_operation": 1,
                 "gpus_per_job": 1,
                 "native_checkpoint_resume": True,
-                "automatic_cross_gpu_recovery": False,
+                "automatic_cross_gpu_recovery": (
+                    self.settings.runtime.recovery.on_infrastructure_loss == "recover"
+                ),
+                "recovery_policy": self.settings.runtime.recovery.wire(None),
                 "resume_options": Resume.model_json_schema(),
                 "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v2",
             },
@@ -538,6 +541,19 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     def authorization(request):
         return request.headers.get("Authorization", "")
+
+    @app.exception_handler(UnsupportedExecution)
+    async def unsupported_execution(request, error):
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "EXECUTION_CAPABILITY_UNAVAILABLE",
+                    "retryable": True,
+                    "admission": "not-confirmed",
+                }
+            },
+            status_code=503,
+        )
 
     @app.exception_handler(ServerlessError)
     async def upstream_error(request, error):

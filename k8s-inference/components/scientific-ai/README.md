@@ -50,6 +50,17 @@ a fresh scratch disk on another cluster; see the [live evidence](../../acceptanc
 This does not qualify arbitrary versions/extensions. CUDA process snapshots are
 not the recovery mechanism here.
 
+Automatic cross-class recovery is a separate, operator opt-in on
+`RuntimeProfile.recovery`: `on_infrastructure_loss="recover"`,
+`max_recoveries=1`, `wait_s=300`, and optionally `deadline_s` (60–604800).
+Unconfigured profiles keep legacy `retry`. The adapter requires Serverless to
+advertise bounded recovery before submission; an older fleet returns a structured
+503 rather than silently accepting unsupported recovery. Serverless owns loss
+detection, fencing, replacement placement, root deadlines and cancellation.
+Public Scientific AI operation handles and storage grants follow its successor.
+The implementation is locally tested; live qualification for this new policy is
+tracked in [NEXT-GAPS.md](../../acceptance/serverless2-gromacs-20261011/NEXT-GAPS.md).
+
 ## Binding a request
 
 1. Authenticate with the existing Scientific AI customer identity and model grant.

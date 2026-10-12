@@ -52,6 +52,21 @@ class StorageGrant(Contract):
             raise PermissionError("storage grant does not belong to this execution")
 
 
+class RecoveryPolicy(Contract):
+    """Opt-in S2 policy; this application never schedules a replacement worker."""
+
+    on_infrastructure_loss: Literal["retry", "fail", "recover"] = "retry"
+    max_recoveries: int = Field(strict=True, ge=1, le=3, default=1)
+    wait_s: int = Field(strict=True, ge=0, le=86400, default=300)
+    deadline_s: int | None = Field(strict=True, ge=60, le=604800, default=None)
+
+    def wire(self, checkpoint_ref: str | None) -> dict:
+        values = {"on_infrastructure_loss": self.on_infrastructure_loss, "checkpoint_ref": checkpoint_ref}
+        if self.on_infrastructure_loss == "recover":
+            values.update(max_recoveries=self.max_recoveries, wait_s=self.wait_s, deadline_s=self.deadline_s)
+        return values
+
+
 class RuntimeProfile(Contract):
     """Operator-owned immutable revision, not caller-selected images or placement."""
 
@@ -61,6 +76,7 @@ class RuntimeProfile(Contract):
     allowed_clusters: tuple[Identifier, ...] = Field(min_length=1)
     gpu_preference: tuple[Identifier, ...] = ("rtx-pro-6000", "l40s")
     fallback_wait_s: int = Field(strict=True, ge=0, le=86400, default=60)
+    recovery: RecoveryPolicy = Field(default_factory=RecoveryPolicy)
 
     @model_validator(mode="after")
     def qualified_choices(self) -> RuntimeProfile:
