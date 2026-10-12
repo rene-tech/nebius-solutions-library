@@ -502,3 +502,23 @@ def test_enabled_recovery_does_not_silently_admit_on_older_serverless(gateway_fi
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "EXECUTION_CAPABILITY_UNAVAILABLE"
     assert not any(path.endswith(":invoke") for _, path in calls)
+    mcp = client.post(
+        "/mcp",
+        headers={"Accept": "application/json, text/event-stream"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "submit_gromacs_workflow",
+                "arguments": {
+                    "request": submit_request(client, setup),
+                    "idempotency_key": "needs-new-serverless-mcp",
+                },
+            },
+        },
+    ).json()["result"]
+    assert not mcp.get("isError"), "MCP must return a typed retryable error, not a generic tool exception"
+    error = (mcp.get("structuredContent") or json.loads(mcp["content"][0]["text"]))["error"]
+    assert error == {**response.json()["error"], "status_code": 503}
+    assert not any(path.endswith(":invoke") for _, path in calls)

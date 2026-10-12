@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from .gateway_store import uuid
-from .serverless import ServerlessError
+from .serverless import ServerlessError, UnsupportedExecution
 
 
 def mount_mcp(app, gateway):
@@ -38,13 +38,22 @@ def mount_mcp(app, gateway):
                     "retryable": False,
                 }
             }
+        except UnsupportedExecution:
+            return {
+                "error": {
+                    "code": "EXECUTION_CAPABILITY_UNAVAILABLE",
+                    "status_code": 503,
+                    "retryable": True,
+                    "admission": "not-confirmed",
+                }
+            }
         except ServerlessError as error:
             return {
                 "error": {
                     "code": "SERVERLESS_REQUEST_FAILED",
                     "status_code": error.status_code,
                     "retryable": error.retryable,
-                    "admission": "unknown",
+                    "admission": "unknown" if error.retryable else "not-confirmed",
                 }
             }
         except (KeyError, ValueError, PermissionError):
