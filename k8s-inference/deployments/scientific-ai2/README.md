@@ -11,10 +11,11 @@ Live test findings, exact failed-job cleanup and remaining gates are recorded in
 
 - Serverless source: `rene-tech/nebius-solutions-library`, branch
   `serverless-inference-solution`, commit
-  `8a964112d3abc0da6a4b338b42e818884a62cce2` (API 0.11.31,
-  fleet chart 0.1.7; includes canonical cluster identities, private-input
+  `0f27198912b022a4f9d6d461f0aee656a4043b3c` (API 0.11.31,
+  dispatcher 0.2.11, fleet chart 0.1.7, platform chart 0.1.2;
+  includes canonical cluster identities, private-input
   placement and same-cluster finalizers on regular CPU capacity without GPU
-  recomputation). Current GROMACS release evidence is in
+  recomputation, and safe cleanup of superseded recovery scratch). Current GROMACS release evidence is in
   [NEW-FLEET-RESULTS.md](../../acceptance/serverless2-gromacs-20261011/NEW-FLEET-RESULTS.md).
 - Isolated execution worktree:
   `/home/tux/worktrees/scientific-ai-s2-fleet-20261012/k8s-inference`.

@@ -154,6 +154,10 @@ node is left under its existing zero-minimum autoscaler, not manually pinned.
 
 ## Remaining qualification gates
 
-- Multi-node/InfiniBand performance, GROMACS, legacy REST/MCP compatibility,
-  customer-storage grants, preemption/resume and migration remain separate
-  qualification gates. Do not report them as passed from these CUDA checks.
+- GROMACS now has a separate, scoped REST/MCP, RTX/L40S portable recovery and
+  CPU-delivery gate on this fleet. See
+  [NEW-FLEET-RESULTS.md](../../acceptance/serverless2-gromacs-20261011/NEW-FLEET-RESULTS.md)
+  for the current exact release and results; these CUDA checks did not qualify it.
+- Multi-node/InfiniBand performance, full legacy batch/MPI contracts, external
+  customer-storage grants, all models and customer cutover remain separate
+  qualification gates. Do not report them as passed from either limited test.

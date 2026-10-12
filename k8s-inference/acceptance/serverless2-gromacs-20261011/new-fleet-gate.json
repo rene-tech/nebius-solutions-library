@@ -1,0 +1,134 @@
+{
+  "schema": "scientific-ai-scoped-acceptance/v1",
+  "finished_at": "2026-10-12T21:46:47Z",
+  "fleet": "scientific-ai2",
+  "scope": "fresh_internal_single_gpu_gromacs_rest_mcp_portable_recovery",
+  "status": "passed_with_separately_recorded_observer_rechecks",
+  "customer_ready": false,
+  "customer_cutover": false,
+  "identity": "system/qa",
+  "source": {
+    "application": "9f98aee00",
+    "acceptance_observer": "81878fbb2",
+    "serverless": "0f27198912b022a4f9d6d461f0aee656a4043b3c"
+  },
+  "release": {
+    "application_api": "pilot-20261012-r15",
+    "gromacs_workers": "pilot-20261012-r10",
+    "serverless_api": "0.11.31",
+    "dispatcher": "0.2.11",
+    "fleet_chart": "0.1.7",
+    "platform_chart": "0.1.2"
+  },
+  "post_final_release_cohorts": [
+    {
+      "prefix": "d11-stable",
+      "gpu": "l40s",
+      "placement": "automatic_fallback_from_busy_rtx_before_first_compute_attempt",
+      "rest": {
+        "operation_id": "c8dd5763-2bb4-5cd8-bfd4-7ec5387a653d",
+        "particle_count": 81743,
+        "completed_steps": 50000,
+        "accepted_to_main_seconds": 422,
+        "native_command_seconds": 118.882396485
+      },
+      "mcp": {
+        "operation_id": "ccafd314-ea35-5e81-930c-3e602a9c6b69",
+        "particle_count": 4096,
+        "completed_steps": 100000,
+        "accepted_to_main_seconds": 362,
+        "native_command_seconds": 2.282708,
+        "validated_trajectory_frames": 101
+      },
+      "observer_receipt": "d11-stable-observer-recheck.json",
+      "new_gpu_execution_for_observer_recheck": false
+    },
+    {
+      "prefix": "d11-post-c1",
+      "gpu": "rtx-pro-6000",
+      "placement": "preferred_gpu_on_available_capacity",
+      "rest": {
+        "operation_id": "b803394b-1651-505e-be0d-f2da43c6b9a0",
+        "particle_count": 81743,
+        "completed_steps": 50000,
+        "accepted_to_main_seconds": 60,
+        "native_command_seconds": 60.137190689
+      },
+      "mcp": {
+        "operation_id": "a829531d-bd0d-5cb6-84db-b9e987f92634",
+        "particle_count": 4096,
+        "completed_steps": 100000,
+        "accepted_to_main_seconds": 60,
+        "native_command_seconds": 3.745895,
+        "validated_trajectory_frames": 101
+      },
+      "observer_receipt": "d11-post-qualification.json",
+      "status": "passed"
+    }
+  ],
+  "automatic_recovery": {
+    "operation_id": "fe305a2f-c2ea-57a7-8b34-e5fbd886d2f3",
+    "fault": "owned_kueue_workload_interruption_not_provider_spot_revocation",
+    "checkpoint_step": 570400,
+    "from_gpu": "rtx-pro-6000",
+    "to_gpu": "l40s",
+    "fault_to_replacement_main_seconds": 248.240897,
+    "completed_steps": 2000000,
+    "validated_trajectory_frames": 2001,
+    "raw_trajectory_segments": 3,
+    "duplicate_frames": 0,
+    "continuous": true,
+    "observer_receipt": "d11-recovery-observer-recheck.json",
+    "new_gpu_execution_for_observer_recheck": false
+  },
+  "cpu_delivery": {
+    "operation_id": "ee0822ed-fcbe-560a-b358-72a51c3215d8",
+    "fault": "lost_local_delivery_ack_not_s3_outage",
+    "compute_attempts": 1,
+    "finalizer_attempts": 1,
+    "finalizer_pool": "system",
+    "finalizer_node": "computeinstance-e07derew8sdahfcqwk",
+    "finalizer_gpus": 0,
+    "finalizer_main_seconds": 52,
+    "native_commands_unchanged": 3,
+    "native_result_sha256": "ca55981c2053d257d1fc0d7f4477ff107c37d910792dae05121ff4c25ae7c048",
+    "delivery_scratch_removed": true,
+    "observer_receipt": "d11-final-qualification.json:gates.cpu_delivery"
+  },
+  "cancellation": {
+    "operation_id": "d48ac5f9-b8a6-5197-b45e-e745e708e00d",
+    "request_interface": "mcp",
+    "poll_interface": "rest",
+    "acknowledged_seconds": 1.2237099912,
+    "actual_worker_removed_seconds": 127.7371054348,
+    "termination_grace_seconds": 120,
+    "terminal_new_storage_url_http": 403,
+    "previously_accepted_projected_identity_tested": true,
+    "previously_signed_url_max_ttl_seconds": 60,
+    "observer_receipt": "d11-post-cancel-cancellation.json"
+  },
+  "closed_chain_scratch": {
+    "old_claims_removed": 3,
+    "absent_observation_min_seconds": 60,
+    "manager_handles_attempts_result_hashes_unchanged": true,
+    "failed_delivery_claim_preserved": true,
+    "observer_receipt": "dispatcher10-scratch-after.json"
+  },
+  "final_fleet_drift": "zero_changes_all_four_stacks",
+  "preserved_customer_public_routing": "15_checks_passed",
+  "original_failed_receipts_preserved": [
+    "d11-final-qualification.json:cohorts_and_cancellation_and_automatic_recovery_observer_failures",
+    "d11-stable-qualification.log:offline_observer_permissions",
+    "dispatcher11-scratch-check.log:missing_list_jobs_rbac_before_fix"
+  ],
+  "private_receipts": "/home/tux/secure-handoff/scientific-ai2-gromacs-20261012.faTMbM",
+  "not_qualified": [
+    "customer_cutover_or_existing_keys_and_history_migration",
+    "all_models_or_all_legacy_gromacs_batch_and_mpi_workflows",
+    "production_capacity_or_tuned_lynx_performance",
+    "external_customer_aws_federation_or_protected_patient_data",
+    "physical_scratch_erasure_or_immediate_revocation_of_issued_urls",
+    "live_s3_outage_or_provider_spot_revocation",
+    "gpu_memory_snapshots"
+  ]
+}

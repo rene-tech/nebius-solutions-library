@@ -111,7 +111,7 @@ fleet = {
     cache = { enabled = true, size_gib = 512, keep_days = 30 }
     versions = {
       api        = "0.11.31"
-      dispatcher = "0.2.9"
+      dispatcher = "0.2.11"
       jobs       = "0.1.14"
       ops        = "0.1.11"
       ui         = "0.6.5"

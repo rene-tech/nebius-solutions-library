@@ -18,6 +18,12 @@ is `system/qa`; private receipts are separate from all earlier pilot runs.
 the completed simulation. Do not use historical credentials or hardcoded
 shared-fleet contexts against the new deployment.
 
+Before the fixed-release gate, wait for old dispatcher Pods to disappear and
+the leader ConfigMap to name a Pod running the expected image. Deployment
+`rollout status` alone can succeed while the draining old leader still owns
+its lease. Verify the controller's required read permissions and check its
+logs; a healthy API or zero-drift plan does not prove reconciliation works.
+
 Reproduce the parallel fixed-release gate from `components/scientific-ai`:
 
 ```sh
@@ -35,6 +41,18 @@ recovery, CPU-only delivery and cancellation. A failed branch does not stop
 observation of the other branches or silently erase its receipts. It neither
 changes the deployment nor broadens capacity limits. Detailed tracebacks stay
 in private files, not public logs.
+
+Use `--cohorts-only --cohorts 1` for an additional paired cohort and cancellation
+without repeating independent fault drills. Revalidate existing outputs with
+`pilot.py`'s `trajectories` action after an observer-only repair; never rerun
+successful MD just to repair a local report. Offline readers run as the
+operator UID/GID so mode-0600 receipts stay private, and preserve native stderr
+on failure. Their regressions are in `test_pilot_trajectories.py`.
+
+`verify_scratch_cleanup.py before|after` compares real closed recovery chains
+and a retained failed-delivery claim. The after-check requires sixty seconds
+without scratch recreation, unchanged handles/history/result hashes, and the
+retained claim's original UID. It performs no cloud mutations.
 
 ## Historical shared-fleet integration — API r12 / workers r7
 

@@ -5,8 +5,7 @@ internal GROMACS REST/MCP pilot. No customer cutover.** Current release,
 automatic cross-GPU recovery, source defects and live acceptance are recorded in
 [NEW-FLEET-RESULTS.md](../acceptance/serverless2-gromacs-20261011/NEW-FLEET-RESULTS.md).
 The earlier shared-fleet evidence below is historical, not the deployment target.
-All existing platform
-features and routes remain in service on the current implementation. This
+All existing platform features and routes remain in service on the current implementation. This
 migration must not interrupt them.
 
 11 October historical update: API image r10 / GPU workers r6 add pod-bound storage authorization
@@ -113,10 +112,10 @@ keep their defaults. No customer image is rebuilt or deployed by source integrat
 | S2 requirement | Scientific AI integration action / acceptance |
 | --- | --- |
 | S2-01 identity/private bindings | Projected pod JWT authorization is implemented alongside the online attempt check. Qualify external IAM, token renewal/revocation and protected-data handling. No hardware attestation or immediate Pod-deletion guarantee is claimed. |
-| S2-02 application I/O | GPU pods use scoped object URLs, not tenant S3 keys. The trusted API holds the internal test bucket credential. Real external customer storage, large multipart artifacts and protected-data cleanup still need qualification. |
-| S2-03 durable attempt lifecycle | The authenticated file bridge, live checkpoints, explicit cancellation and same-key resume were exercised. Partitioned stale-worker and lost-ack live drills remain. Do not build a second scheduler/operation ledger. |
-| S2-04 placement/recovery | Exact SM120/SM89 builds and fresh-PVC cross-cluster native recovery passed. Automatic cross-class recovery after a placed worker loses capacity remains an S2 gate. Startup/network-volume attachment and realistic PME/protein throughput need measurement/optimization. |
-| S2-05 finalization/cleanup | Completed-result recovery ran no new engine commands. Denied final storage, missing/lost final acknowledgments, scratch protection and failure-time cleanup still require live drills. |
+| S2-02 application I/O | GPU pods use scoped object URLs, not tenant S3 keys. A real 129 MiB multipart roundtrip passed. The trusted API holds the internal test bucket credential; external customer storage, large-trajectory economics and protected-data cleanup remain separate gates. |
+| S2-03 durable attempt lifecycle | Native checkpoints, replay, cancellation, automatic recovery, stale projected-identity denial and lost-ack recovery passed on scientific-ai2. This is not a network-partition drill or complete physical GPU-allocation accounting. Do not build a second scheduler/operation ledger. |
+| S2-04 placement/recovery | Exact SM120/SM89 builds and automatic fresh-PVC RTX-to-L40S cross-cluster recovery passed with 2,001 continuous trajectory frames. Protein execution and startup were measured; these short internal tests do not establish tuned performance, MPI or production capacity. |
+| S2-05 finalization/cleanup | Lost-ack recovery passed using one regular-CPU finalizer, one GPU compute attempt and the unchanged native result. Dispatcher 0.2.11 / platform chart 0.1.2 also passed live removal of three superseded claims without changing handles, attempts, results or failed-delivery storage. Denied-S3-write and protected-data cleanup drills remain unqualified. |
 
 The initial shared S2 handoff listed RTX/L40S pools in us-central1/eu-north1.
 Current bounds/regions are in
@@ -135,16 +134,19 @@ are allowed where needed, but feature removal is not.
 
 Component tests and the fresh real-engine local recovery test are recorded in
 [the dated evidence](../acceptance/serverless2-gromacs-20261011/README.md).
-The current offline suite is 123 passing tests; AWS federation still uses SDK
-stubs. The deployed internal pilot uses the existing demo workspace under an
+The current application suite has 167 passing tests, plus 75 reused-worker
+regressions and a separately enabled exact-image native recovery test. AWS
+federation still uses SDK stubs. The deployed internal pilot uses the existing internal workspace under an
 owned run prefix, not an AWS customer role. This does not qualify AWS federation,
 HIPAA, physical scratch erasure or unrestricted production use. Previously
 signed S3 URLs can remain valid for up to 60 seconds after cancellation. No
 production key, bucket, cluster, DNS or customer job is changed by this pilot.
 
-The deployed pilot is `https://api.195.242.30.226.sslip.io/scientific-ai` (REST
-under `/v1`, MCP under `/mcp`), authenticated with existing internal S2 keys.
-Runtime source is `73414081c`; immutable image digests, operation IDs, observed
-costs, retention, exact failure history and reproduction are in the live report.
-Terraform owns only the pilot's five application resources; the final plan has
-no drift. Leave customer routes and `forge.nebius.cloud` unchanged.
+The current pilot is `https://api.89.169.122.33.sslip.io/scientific-ai` (REST
+under `/v1`, MCP under `/mcp`), authenticated with the new fleet's internal S2
+keys. Scientific AI source is `9f98aee00` (API r15, workers r10); exact S2 versions,
+immutable image digests, operation IDs, timings and failure history are in
+[NEW-FLEET-RESULTS.md](../acceptance/serverless2-gromacs-20261011/NEW-FLEET-RESULTS.md).
+The older `195.242.30.226` shared pilot and source `73414081c` are historical.
+Terraform owns only the pilot's five application resources; its final r15 plan
+has no drift. Leave customer routes and `forge.nebius.cloud` unchanged.
