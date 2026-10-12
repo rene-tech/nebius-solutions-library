@@ -4,6 +4,8 @@ Owner: Rene. Task Deck: `fs2-serverless2-isolated-fleet-r20261012`.
 This is a **new, independent deployment**, not a change to the customer fleet.
 Infrastructure provisioning started on 12 October 2026; see `deployment.json`
 for the latest verified state. Provisioning does not qualify customer migration.
+Live test findings, exact failed-job cleanup and remaining gates are recorded in
+[QUALIFICATION.md](QUALIFICATION.md).
 
 ## Source and configuration
 

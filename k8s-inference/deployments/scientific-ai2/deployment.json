@@ -1,8 +1,8 @@
 {
   "schema": "scientific-ai-fleet-deployment/v1",
-  "updated_at": "2026-10-12T18:03:00Z",
+  "updated_at": "2026-10-12T18:26:00Z",
   "fleet": "scientific-ai2",
-  "status": "worker_platform_applies_in_progress",
+  "status": "platform_deployed_execution_fixes_in_progress",
   "customer_ready": false,
   "source_commit": "184e24f80de3a5d489c0a17ee0e7fa4c109de789",
   "source_branch": "serverless-inference-solution",
@@ -51,7 +51,7 @@
   "cpu_system_capacity": "regular-owner-approved",
   "existing_customer_resources_changed": false,
   "preflight": {"passed": true, "gpu_pools": 6, "regions": 2},
-  "verification": {"cloud": "passed_three_clusters_six_cpu_nodes_six_zero_floor_spot_pools", "platform": "workers_applying_118_creates_each", "gpu_execution": "not_started"},
+  "verification": {"cloud": "passed_three_clusters_six_cpu_nodes_six_zero_floor_spot_pools", "platform": "all_applies_passed_tls_api_console_bootstrap_passed", "gpu_execution": "failed_region_and_gpu_preference_and_cluster_alias_bugs_pending_fix"},
   "preserved_customer_cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
   "preserved_public_origin": "https://89.169.99.188"
 }

@@ -26,7 +26,11 @@ def main():
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--deadline-seconds", type=int, default=1800)
+    targets = {"h100": "north", "h200": "north", "l40s": "north", "rtx-pro-6000": "south"}
+    device_names = {"h100": "H100", "h200": "H200", "l40s": "L40S", "rtx-pro-6000": "RTX PRO 6000"}
+    parser.add_argument("--gpu-classes", nargs="+", choices=list(targets), default=list(targets))
     args = parser.parse_args()
+    selected = list(dict.fromkeys(args.gpu_classes))
     env = {**os.environ, "TFVARS": str(args.tfvars.resolve())}
 
     def output(stage, *names):
@@ -65,6 +69,7 @@ def main():
              "sha256:5c39a7743c3f51f393943ac03356425d54e017f02fbd4d9c2212089e8edf80ff")
     receipt = {"fleet": "scientific-ai2", "run_id": args.run_id, "principal": "system/qa",
                "scope": "single-GPU kernel through S2 API; not model/customer qualification",
+               "requested_gpu_classes": selected,
                "started_at": dt.datetime.now(dt.timezone.utc).isoformat(), "runs": []}
 
     def save():
@@ -75,8 +80,8 @@ def main():
     terminal = {"SUCCEEDED", "FAILED", "CANCELLED", "EXPORT_FAILED"}
     try:
         # Independent jobs are submitted before polling; no sequential GPU startup.
-        for gpu, cluster in [("h100", "north"), ("h200", "north"), ("l40s", "north"),
-                             ("rtx-pro-6000", "south")]:
+        for gpu in selected:
+            cluster = targets[gpu]
             body = {
                 "mode": "run", "name": f"fleet-qualification-{args.run_id}-{gpu}",
                 "timeout_s": args.deadline_seconds,
@@ -90,7 +95,8 @@ def main():
             operation = request("/v1/models/container-run:invoke", body,
                                 f"scientific-ai2-{args.run_id}-{gpu}")
             run = {"gpu_class": gpu, "cluster": cluster, "operation_id": operation["id"],
-                   "status": operation.get("status"), "cuda_kernel_passed": False}
+                   "status": operation.get("status"), "cuda_kernel_passed": False,
+                   "gpu_class_matches": False}
             receipt["runs"].append(run)
             save()
             print(json.dumps(run), flush=True)
@@ -114,6 +120,7 @@ def main():
                         if isinstance(evidence, dict) and evidence.get("cuda_kernel_passed"):
                             run["kernel"] = evidence
                             run["cuda_kernel_passed"] = evidence.get("validated_elements") == 65536
+                            run["gpu_class_matches"] = device_names[run["gpu_class"]] in str(evidence.get("device", ""))
             save()
             if all(r["cuda_kernel_passed"] or r["status"] in terminal - {"SUCCEEDED"}
                    for r in receipt["runs"]):
@@ -141,8 +148,9 @@ def main():
                 run["operator_followup_required"] = True
         save()
 
-    passed = ("error_type" not in receipt and len(receipt["runs"]) == 4
-              and all(r["cuda_kernel_passed"] and r["status"] == "SUCCEEDED" for r in receipt["runs"]))
+    passed = ("error_type" not in receipt and len(receipt["runs"]) == len(selected)
+              and all(r["cuda_kernel_passed"] and r["gpu_class_matches"]
+                      and r["status"] == "SUCCEEDED" for r in receipt["runs"]))
     receipt.update(passed=passed, finished_at=dt.datetime.now(dt.timezone.utc).isoformat())
     save()
     print(json.dumps({"passed": passed, "receipt": str(args.receipt)}), flush=True)
