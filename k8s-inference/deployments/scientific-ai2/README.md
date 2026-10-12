@@ -9,7 +9,7 @@ for the latest verified state. Provisioning does not qualify customer migration.
 
 - Serverless source: `rene-tech/nebius-solutions-library`, branch
   `serverless-inference-solution`, commit
-  `99ab1dcfb3c90de95df78ea9485f2edde137b06f`.
+  `184e24f80de3a5d489c0a17ee0e7fa4c109de789`.
 - Isolated execution worktree:
   `/home/tux/worktrees/scientific-ai-s2-fleet-20261012/k8s-inference`.
 - Fleet input: [terraform.tfvars.example](terraform.tfvars.example). This is the
@@ -117,6 +117,18 @@ verifying operator access, MultiKueue and job submission after each change.
 Do not infer API source addresses from an external IP-checking website. See
 Serverless `docs/OPERATIONS.md`, “API endpoint allow-list”. This bootstrap state
 is not approval for protected patient data or customer cutover.
+
+The first direct north-worker API check succeeded at 17:54 UTC. Its audit event
+reports operator `serviceaccount-i00pafr0ydvbaxj952` at **195.242.18.145** (not the
+46.243.145.28 address initially selected from prior operator notes). The control
+allow-list is corrected in a separate in-place cloud update after creation;
+no Kubernetes API authorization is bypassed. Recheck this address if the
+operator runner or NAT routing changes.
+
+The update completed at 18:01 UTC and three consecutive control-cluster node
+queries passed. All three clusters have two Ready CPU nodes; all six GPU pools
+were created at zero. Both worker platform plans contain 118 creates and no
+changes/deletions, each verified against its exact new API-server endpoint.
 
 ## Preservation and acceptance
 

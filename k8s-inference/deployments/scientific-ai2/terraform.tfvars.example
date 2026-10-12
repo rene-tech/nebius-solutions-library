@@ -19,8 +19,8 @@ fleet = {
     project_id    = "project-e00rene"
     region        = "eu-north1"
     subnet_id     = "vpcsubnet-e00pvprhe20fcdw2me"
-    allowed_cidrs = ["46.243.145.28/32"] # Current operator egress; amend before moving the runner.
-    service_cidrs = ["/20"]              # Ask VPC to allocate a free block; the shared pool has no spare /16.
+    allowed_cidrs = ["195.242.18.145/32"] # Operator source observed in the new worker's Kubernetes API audit log.
+    service_cidrs = ["/20"]               # Ask VPC to allocate a free block; the shared pool has no spare /16.
     system_pool   = { platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 2 }
     database      = { platform = "cpu-e2", preset = "2vcpu-8gb", disk_gib = 64, hosts = 1 }
   }

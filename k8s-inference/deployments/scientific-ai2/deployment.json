@@ -1,10 +1,10 @@
 {
   "schema": "scientific-ai-fleet-deployment/v1",
-  "updated_at": "2026-10-12T17:49:00Z",
+  "updated_at": "2026-10-12T18:03:00Z",
   "fleet": "scientific-ai2",
-  "status": "cloud_repair_apply_in_progress",
+  "status": "worker_platform_applies_in_progress",
   "customer_ready": false,
-  "source_commit": "99ab1dcfb3c90de95df78ea9485f2edde137b06f",
+  "source_commit": "184e24f80de3a5d489c0a17ee0e7fa4c109de789",
   "source_branch": "serverless-inference-solution",
   "configuration_branch": "scientific-ai-serverless2-migration",
   "state_bucket": "scientific-ai2-tfstate",
@@ -16,7 +16,26 @@
   "south_cluster_id": "mk8scluster-e07c01401chdyaefsf",
   "north_cluster_id": "mk8scluster-e00yh6grtrxzbr06xg",
   "control_cluster_id": "mk8scluster-e00mt0vhj2y0fvycga",
-  "configuration_sha256": "30e90df4aa17655b4a1f52d92d511a07ed38706a2ec46c7f943ced16daa5c4ff",
+  "configuration_sha256": "a32f339d854891e429811c6189f53bc526f67f0f9ab1f89e3ab001003bae9349",
+  "clusters": {
+    "control": {"cluster_id": "mk8scluster-e00mt0vhj2y0fvycga", "gateway_ip": "89.169.122.33", "ready_cpu_nodes": 2},
+    "north": {
+      "cluster_id": "mk8scluster-e00yh6grtrxzbr06xg", "gateway_ip": "89.169.112.211", "ready_cpu_nodes": 2,
+      "weights_filesystem_id": "computefilesystem-e00bn550zd4hz984t3",
+      "gpu_node_groups": {
+        "h100-spot-1x": "mk8snodegroup-e00mff23bx9m402ez6",
+        "h100-spot-8x": "mk8snodegroup-e00by0961793jcmwtk",
+        "h200-spot-1x": "mk8snodegroup-e00n1w8k9ycs54ys69",
+        "l40s-spot-1x": "mk8snodegroup-e00qhpm29k5vqpn7vj",
+        "l40s-spot-4x": "mk8snodegroup-e00wggweypc24ryaq2"
+      }
+    },
+    "south": {
+      "cluster_id": "mk8scluster-e07c01401chdyaefsf", "gateway_ip": "213.239.184.204", "ready_cpu_nodes": 2,
+      "weights_filesystem_id": "computefilesystem-e07wmtedb1gxq44n0e",
+      "gpu_node_groups": {"rtx6000-spot-1x": "mk8snodegroup-e07ccx361cd4qwrmsq"}
+    }
+  },
   "images": {
     "registry": "cr.eu-north1.nebius.cloud/e00tgb3jwv3v1mx8g5/serverless2",
     "source_destination_digests_match": true,
@@ -32,7 +51,7 @@
   "cpu_system_capacity": "regular-owner-approved",
   "existing_customer_resources_changed": false,
   "preflight": {"passed": true, "gpu_pools": 6, "regions": 2},
-  "verification": {"cloud": "partial_north_service_cidr_allocation_failed", "platform": "not_started", "gpu_execution": "not_started"},
+  "verification": {"cloud": "passed_three_clusters_six_cpu_nodes_six_zero_floor_spot_pools", "platform": "workers_applying_118_creates_each", "gpu_execution": "not_started"},
   "preserved_customer_cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
   "preserved_public_origin": "https://89.169.99.188"
 }
