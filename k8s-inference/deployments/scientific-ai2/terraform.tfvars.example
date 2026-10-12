@@ -20,6 +20,7 @@ fleet = {
     region        = "eu-north1"
     subnet_id     = "vpcsubnet-e00pvprhe20fcdw2me"
     allowed_cidrs = ["46.243.145.28/32"] # Current operator egress; amend before moving the runner.
+    service_cidrs = ["/20"]              # Ask VPC to allocate a free block; the shared pool has no spare /16.
     system_pool   = { platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 2 }
     database      = { platform = "cpu-e2", preset = "2vcpu-8gb", disk_gib = 64, hosts = 1 }
   }
@@ -36,7 +37,8 @@ fleet = {
       id                 = "north"
       project_id         = "project-e00rene"
       subnet_id          = "vpcsubnet-e00pvprhe20fcdw2me"
-      allowed_cidrs      = [] # Bootstrap: discover control-cluster source IPs from API audit logs, then restrict.
+      allowed_cidrs      = []      # Bootstrap: discover control-cluster source IPs from API audit logs, then restrict.
+      service_cidrs      = ["/20"] # New cluster only; leave the already-created south range unchanged.
       system_pool        = { platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 2 }
       weights_filesystem = { enabled = true, size_gib = 2048 }
       pools = {

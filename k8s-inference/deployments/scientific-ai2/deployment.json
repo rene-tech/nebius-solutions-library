@@ -1,10 +1,10 @@
 {
   "schema": "scientific-ai-fleet-deployment/v1",
-  "updated_at": "2026-10-12T17:35:34Z",
+  "updated_at": "2026-10-12T17:49:00Z",
   "fleet": "scientific-ai2",
-  "status": "cloud_apply_in_progress",
+  "status": "cloud_repair_apply_in_progress",
   "customer_ready": false,
-  "source_commit": "49bf3bf1b9465b1a9ef7c5a144a94a2c0eb2f831",
+  "source_commit": "99ab1dcfb3c90de95df78ea9485f2edde137b06f",
   "source_branch": "serverless-inference-solution",
   "configuration_branch": "scientific-ai-serverless2-migration",
   "state_bucket": "scientific-ai2-tfstate",
@@ -14,7 +14,9 @@
   "registry_id": "registry-e00tgb3jwv3v1mx8g5",
   "database_id": "postgresql-e00kz256g0214w6x3e",
   "south_cluster_id": "mk8scluster-e07c01401chdyaefsf",
-  "configuration_sha256": "6219fdfb03249538c11fdf69cd0283f81376d188b278d03cc7a898d0cc23d3a7",
+  "north_cluster_id": "mk8scluster-e00yh6grtrxzbr06xg",
+  "control_cluster_id": "mk8scluster-e00mt0vhj2y0fvycga",
+  "configuration_sha256": "30e90df4aa17655b4a1f52d92d511a07ed38706a2ec46c7f943ced16daa5c4ff",
   "images": {
     "registry": "cr.eu-north1.nebius.cloud/e00tgb3jwv3v1mx8g5/serverless2",
     "source_destination_digests_match": true,
@@ -25,11 +27,12 @@
     "ui:0.6.5": "sha256:b70a2bc9a95244d3c7f08633902c6a77a3402a782d3d61964a4d23598933ec44"
   },
   "initial_cloud_plan": {"create": 59, "update": 0, "delete": 0},
+  "service_cidr_repair_plan": {"create": 11, "update": 0, "delete": 0},
   "gpu_capacity": "spot-follow-price-only",
   "cpu_system_capacity": "regular-owner-approved",
   "existing_customer_resources_changed": false,
   "preflight": {"passed": true, "gpu_pools": 6, "regions": 2},
-  "verification": {"cloud": "in_progress", "platform": "not_started", "gpu_execution": "not_started"},
+  "verification": {"cloud": "partial_north_service_cidr_allocation_failed", "platform": "not_started", "gpu_execution": "not_started"},
   "preserved_customer_cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
   "preserved_public_origin": "https://89.169.99.188"
 }

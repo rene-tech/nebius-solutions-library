@@ -9,7 +9,7 @@ for the latest verified state. Provisioning does not qualify customer migration.
 
 - Serverless source: `rene-tech/nebius-solutions-library`, branch
   `serverless-inference-solution`, commit
-  `49bf3bf1b9465b1a9ef7c5a144a94a2c0eb2f831`.
+  `99ab1dcfb3c90de95df78ea9485f2edde137b06f`.
 - Isolated execution worktree:
   `/home/tux/worktrees/scientific-ai-s2-fleet-20261012/k8s-inference`.
 - Fleet input: [terraform.tfvars.example](terraform.tfvars.example). This is the
@@ -100,6 +100,14 @@ quietly patch a live shared fleet.
 Existing subnets are reused; new public gateway allocations belong only to this
 fleet. No old allocation, load balancer, DNS record, HTTPRoute or listener is
 changed. `forge.nebius.cloud` remains intentionally unavailable.
+
+The initial cloud apply created south and the supporting services, but north
+and control failed because the reused VPC could not allocate the default `/16`
+Service ranges. The Serverless owner added optional per-cluster `service_cidrs`;
+existing fleets still plan with no changes. North/control now request `["/20"]`,
+letting VPC choose free 4,096-address blocks. South keeps its original default.
+The repair plan contains only 11 remaining creates, no updates or replacements.
+Do not change Service ranges on an existing cluster: they are immutable.
 
 The control Kubernetes API starts with the operator egress allow-list. Workers
 initially allow authenticated public API access so that cross-region control
