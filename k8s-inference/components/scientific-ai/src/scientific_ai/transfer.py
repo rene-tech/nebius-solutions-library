@@ -1,5 +1,6 @@
 """Bounded retries for immutable object I/O, never for execution submission."""
 
+import socket
 import time
 
 import httpx
@@ -9,13 +10,14 @@ TRANSIENT = (
     httpx.TransportError,
     ConnectionError,
     TimeoutError,
+    socket.gaierror,
     ConnectionClosedError,
     EndpointConnectionError,
     ReadTimeoutError,
 )
 
 
-def retry_transfer(action, *, attempts=3):
+def retry_transfer(action, *, attempts=6):
     """Reopen/rewind inside action; authorization and content errors are final.
 
     Each attempt obtains a fresh scoped grant. There is no retry of MD work or
@@ -28,4 +30,6 @@ def retry_transfer(action, *, attempts=3):
         except TRANSIENT:
             if attempt + 1 == attempts:
                 raise
-            time.sleep(0.2 * 2**attempt)
+            # Brief DNS/connection outages must not turn completed GPU work
+            # into another execution. Still bounded: 11.5 seconds of backoff.
+            time.sleep(min(0.5 * 2**attempt, 4))

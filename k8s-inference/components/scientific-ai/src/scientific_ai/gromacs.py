@@ -17,6 +17,7 @@ from .contracts import Attempt, FileRecord, GromacsRun, RuntimeProfile, Snapshot
 from .delivery import publish_marker
 from .serverless import Lifecycle
 from .storage import Artifacts
+from .transfer import TRANSIENT
 
 
 class DeliveryPending(RuntimeError):
@@ -53,6 +54,7 @@ class GromacsApplication:
             checkpoint_publisher=self.publish_checkpoint,
         )
         self.checkpoint_ref: str | None = None
+        self.final_checkpoint_error: str | None = None
 
     def _snapshot(self, records: tuple[FileRecord, ...], *, result: dict | None = None) -> Snapshot:
         return Snapshot(
@@ -86,12 +88,30 @@ class GromacsApplication:
 
     def publish_checkpoint(self, marker: dict) -> None:
         records = tuple(FileRecord.model_validate(item) for item in marker["files"])
-        self._upload(records)
-        reference = self.artifacts.commit(self._snapshot(records))
-        # Atomic epoch check + durable pointer publication is an S2 obligation.
-        # An old attempt may upload orphan objects but cannot promote a head.
-        self.lifecycle.checkpoint(self.attempt, reference, marker["state"]["generation"])
+        try:
+            self._upload(records)
+            reference = self.artifacts.commit(self._snapshot(records))
+            # Atomic epoch check + durable pointer publication is an S2 obligation.
+            # An old attempt may upload orphan objects but cannot promote a head.
+            self.lifecycle.checkpoint(self.attempt, reference, marker["state"]["generation"])
+        except TRANSIENT as error:
+            if self._native_work_complete():
+                # The native worker reports the whole workflow as failed if
+                # publication fails. Retain the typed cause so execute can
+                # separate completed science from undelivered bytes, without
+                # guessing from exception text or advancing a committed head.
+                self.final_checkpoint_error = type(error).__name__
+            raise
         self.checkpoint_ref = reference
+
+    def _native_work_complete(self) -> bool:
+        state = self.worker.state
+        return (
+            set(state["completed_steps"]) == {step["id"] for step in self.worker.job["steps"]}
+            and state.get("active_step") is None
+            and bool(state["commands"])
+            and all(command["exit_code"] == 0 for command in state["commands"])
+        )
 
     def _validate_snapshot(self, snapshot: Snapshot) -> None:
         if (
@@ -140,6 +160,25 @@ class GromacsApplication:
             result = previous.result
         else:
             result = self.worker.run()
+        if (
+            self.final_checkpoint_error
+            and result["status"] == "failed"
+            and result.get("inventory_complete")
+            and not result.get("error_code")
+            and not self.worker.stopped
+            and self._native_work_complete()
+        ):
+            # All native commands and output checks passed; only the final
+            # checkpoint transport failed. CPU delivery may retry this exact
+            # inventory. Interrupted/incomplete, denied or corrupt work cannot
+            # enter this path. The uncommitted checkpoint generation stays so.
+            result.update(
+                status="succeeded",
+                error=None,
+                checkpoint_commit_pending=True,
+                checkpoint_publication_error_type=self.final_checkpoint_error,
+            )
+            atomic_json(self.workspace / "result.json", result)
         if result["status"] != "succeeded":
             atomic_json(
                 self.workspace / "delivery.json",

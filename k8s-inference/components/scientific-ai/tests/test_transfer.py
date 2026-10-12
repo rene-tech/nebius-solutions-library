@@ -1,5 +1,6 @@
 import hashlib
 import io
+import socket
 
 import httpx
 import pytest
@@ -7,6 +8,21 @@ from conftest import MemoryObjects
 
 from scientific_ai.contracts import FileRecord
 from scientific_ai.storage import Artifacts
+from scientific_ai.transfer import retry_transfer
+
+
+def test_dns_outage_is_retried_with_bounded_backoff(monkeypatch):
+    delays, calls = [], []
+    monkeypatch.setattr("scientific_ai.transfer.time.sleep", delays.append)
+
+    def transient():
+        calls.append(True)
+        if len(calls) < 6:
+            raise socket.gaierror(socket.EAI_AGAIN, "temporary DNS outage")
+        return "delivered"
+
+    assert retry_transfer(transient) == "delivered"
+    assert len(calls) == 6 and delays == [0.5, 1, 2, 4, 4]
 
 
 def test_interrupted_read_restarts_only_its_partial_destination(tmp_path):
