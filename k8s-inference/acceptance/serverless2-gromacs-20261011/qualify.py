@@ -21,7 +21,15 @@ def main():
     parser.add_argument("--prefix", required=True)
     parser.add_argument("--benchmem-tpr", type=Path, required=True)
     parser.add_argument("--engine-image", required=True)
+    parser.add_argument("--cohorts", type=int, default=2)
+    parser.add_argument(
+        "--cohorts-only",
+        action="store_true",
+        help="Run fresh cohorts and cancellation without repeating independent fault drills",
+    )
     args = parser.parse_args()
+    if args.cohorts < 1:
+        parser.error("--cohorts must be positive")
     if not args.prefix.replace("-", "").isalnum():
         raise ValueError("a simple owned receipt prefix is required")
     directory, prefix = args.private_dir, args.prefix
@@ -31,7 +39,7 @@ def main():
     pilot.keys()  # Resolve internal identity once, before parallel callers.
 
     def cohorts():
-        for cohort in (1, 2):
+        for cohort in range(1, args.cohorts + 1):
 
             def execute(path, cohort=cohort):
                 name = f"{prefix}-c{cohort}-{path}"
@@ -68,15 +76,11 @@ def main():
         pilot.storage_denial(directory, name)
 
     results = {"started_at": pilot.now(), "prefix": prefix, "gates": {}}
-    with ThreadPoolExecutor(max_workers=3) as workers:
-        futures = {
-            workers.submit(fn): name
-            for name, fn in (
-                ("cohorts_and_cancellation", cohorts),
-                ("automatic_recovery", recovery),
-                ("cpu_delivery", delivery),
-            )
-        }
+    gates = [("cohorts_and_cancellation", cohorts)]
+    if not args.cohorts_only:
+        gates.extend((("automatic_recovery", recovery), ("cpu_delivery", delivery)))
+    with ThreadPoolExecutor(max_workers=len(gates)) as workers:
+        futures = {workers.submit(fn): name for name, fn in gates}
         for future in as_completed(futures):
             name = futures[future]
             try:

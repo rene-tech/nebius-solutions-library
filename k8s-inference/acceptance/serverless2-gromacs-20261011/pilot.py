@@ -1023,6 +1023,9 @@ def trajectories(directory, name, engine_image):
     result = json.loads((directory / (name + "-result.json")).read_bytes())
     receipt = json.loads((directory / (name + ".json")).read_bytes())
     checked, next_time, previous_source = [], 0.0, None
+    # Private operator receipts may be 0600. Read them as their host owner,
+    # not the image's unrelated service UID; never loosen their permissions.
+    operator_uid = f"{os.getuid()}:{os.getgid()}"
     for item in sorted(result["native_result"]["files"], key=lambda item: item["path"]):
         if not item["path"].endswith(".xtc"):
             continue
@@ -1035,6 +1038,8 @@ def trajectories(directory, name, engine_image):
                 "docker",
                 "run",
                 "--rm",
+                "--user",
+                operator_uid,
                 "--network",
                 "none",
                 "--read-only",
@@ -1053,9 +1058,19 @@ def trajectories(directory, name, engine_image):
             ],
             capture_output=True,
             text=True,
-            check=True,
             timeout=60,
         )
+        write(
+            directory / f"{name}-gmx-check-{len(checked)}.json",
+            {
+                "path": item["path"],
+                "exit_code": process.returncode,
+                "stdout": process.stdout,
+                "stderr": process.stderr,
+            },
+            private=True,
+        )
+        process.check_returncode()
         output = process.stdout + process.stderr
         atoms = int(re.search(r"# Atoms\s+(\d+)", output)[1])
         first = float(re.search(r"Reading frame\s+0 time\s+([0-9.]+)", output)[1])
@@ -1077,6 +1092,8 @@ sha256sum /tmp/previous.xtc
                     "docker",
                     "run",
                     "--rm",
+                    "--user",
+                    operator_uid,
                     "--network",
                     "none",
                     "--read-only",
@@ -1100,9 +1117,19 @@ sha256sum /tmp/previous.xtc
                 ],
                 capture_output=True,
                 text=True,
-                check=True,
                 timeout=60,
             )
+            write(
+                directory / f"{name}-gmx-boundary-{len(checked)}.json",
+                {
+                    "path": item["path"],
+                    "exit_code": duplicate.returncode,
+                    "stdout": duplicate.stdout,
+                    "stderr": duplicate.stderr,
+                },
+                private=True,
+            )
+            duplicate.check_returncode()
             overlap_sha256 = duplicate.stdout.split()[0]
             assert re.fullmatch(r"[a-f0-9]{64}", overlap_sha256)
         else:
