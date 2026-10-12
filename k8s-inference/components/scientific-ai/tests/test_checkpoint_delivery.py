@@ -9,9 +9,7 @@ from scientific_ai.gromacs import DeliveryPending, GromacsApplication
 
 
 @pytest.mark.parametrize("failure", ["dns", "denied", "incomplete", "native-error", "inventory"])
-def test_completed_native_work_is_not_recomputed_after_checkpoint_transport_loss(
-    setup, monkeypatch, failure
-):
+def test_completed_native_work_is_not_recomputed_after_checkpoint_transport_loss(setup, monkeypatch, failure):
     args, objects, lifecycle = setup
     app = GromacsApplication(**args)
     calls = []

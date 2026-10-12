@@ -26,7 +26,7 @@ legacy checkpoint recipe and local/companion modes remain unchanged.
 | Module | Responsibility |
 | --- | --- |
 | `contracts.py` | Authenticated owner/attempt context, private scientific input, job-bound grant, immutable runtime map and manifests |
-| `serverless.py` | S2 fleet discovery, private binding and idempotent execution/continuation transport; qualified with API 0.11.20 |
+| `serverless.py` | S2 fleet discovery, private binding and idempotent execution/continuation transport; new fleet uses API 0.11.31 |
 | `lifecycle.py` / `runner.py` | Authenticated uploader file bridge, epoch-fenced pointer acknowledgement and one native execution |
 | `gateway.py` / `mcp_server.py` | REST and typed MCP compatibility, S2 key authentication, same application methods for both clients |
 | `gateway_store.py` | Owner-scoped immutable artifacts and UUID compatibility references in customer object storage; no scheduling state |
@@ -58,8 +58,10 @@ advertise bounded recovery before submission; an older fleet returns a structure
 503 rather than silently accepting unsupported recovery. Serverless owns loss
 detection, fencing, replacement placement, root deadlines and cancellation.
 Public Scientific AI operation handles and storage grants follow its successor.
-The implementation is locally tested; live qualification for this new policy is
-tracked in [NEXT-GAPS.md](../../acceptance/serverless2-gromacs-20261011/NEXT-GAPS.md).
+The new-fleet deployment and live qualification are tracked in
+[NEW-FLEET-RESULTS.md](../../acceptance/serverless2-gromacs-20261011/NEW-FLEET-RESULTS.md).
+Earlier shared-fleet evidence remains historical; it does not qualify a later
+image or deployment.
 
 ## Binding a request
 
@@ -86,6 +88,12 @@ tracked in [NEXT-GAPS.md](../../acceptance/serverless2-gromacs-20261011/NEXT-GAP
    successfully. `finish_delivery()` retries export from retained approved scratch
    without recomputing. A committed result manifest also supports fresh-workspace
    recovery without calling the engine again.
+
+Transient object/DNS failures receive bounded retries. A transport failure in
+the final checkpoint is a delivery problem only when all scientific commands
+and output checks have completed. Retain that exact successful native result
+for CPU-only delivery; never claim its unacknowledged checkpoint was committed.
+Failed/incomplete science, revoked access and corrupt output are not promoted.
 
 The current worker preserves the existing typed native workflow (`jobs`, ordered
 commands, explicit arguments/selections, bundles, file budgets and fourteen-day
@@ -173,7 +181,8 @@ See [the migration handoff](../../docs/SERVERLESS2-MIGRATION.md). In particular:
 - `FileLifecycle` was exercised against the actual 0.1.14 uploader. It waits for fenced
   durable pointer acknowledgement, not file existence. Result publication is also
   a recoverable checkpoint; S2 alone decides terminal success after main exits.
-  Denied final-output and lost-ack live drills remain unqualified.
+  Lost-ack drills and their exact runtime scope are recorded in the new-fleet
+  report. Denied final-output outage qualification remains separate.
 - The pilot authenticates existing **S2** internal keys and preserves UUID-shaped
   Scientific AI handles, artifact upload, submit, status, result, cancel and
   native-resume routes. This does not migrate existing production API keys/users.

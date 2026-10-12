@@ -1,11 +1,15 @@
 # Scientific AI → Serverless 2.0: implementation handoff
 
-Updated 11 October 2026. **The internal GROMACS REST/MCP pilot is deployed;
-explicit RTX-to-L40S native recovery passed. No customer cutover.** All existing platform
+Updated 12 October 2026. **The isolated scientific-ai2 fleet now hosts the
+internal GROMACS REST/MCP pilot. No customer cutover.** Current release,
+automatic cross-GPU recovery, source defects and live acceptance are recorded in
+[NEW-FLEET-RESULTS.md](../acceptance/serverless2-gromacs-20261011/NEW-FLEET-RESULTS.md).
+The earlier shared-fleet evidence below is historical, not the deployment target.
+All existing platform
 features and routes remain in service on the current implementation. This
 migration must not interrupt them.
 
-Evening update: API image r10 / GPU workers r6 add pod-bound storage authorization
+11 October historical update: API image r10 / GPU workers r6 add pod-bound storage authorization
 and reject unsupported resume options instead of silently ignoring them. Shared
 Serverless API 0.11.20 fixes private-input delivery during fallback/resume and
 cleanup across continuation chains. r10 also treats an authenticated worker's
@@ -30,7 +34,8 @@ so it remains normally mergeable; the reapplied tree matches the tested original
 No history rewrite, customer deployment, or cloud resource change was performed.
 
 Keep production fixes on the existing implementation. Test the migration only
-on the shared dev fleet. Integration requires the real S2 bindings, agreed
+on the new isolated scientific-ai2 fleet; leave shared s2pr2 unchanged.
+Integration requires the real S2 bindings, agreed
 RTX-to-L40S recovery and storage-isolation acceptance, passing release checks,
 and an explicit integration decision. Production cutover is a separate decision.
 Retire this one branch after accepted integration, not before.
@@ -49,7 +54,8 @@ operator's placement policy. Select the GPU-specific optimized image at actual
 placement. Keep checkpoints/results in the approved customer bucket and scope
 storage access to the request/attempt. Resume native checkpoints after abrupt
 spot loss, including on another qualified GPU and cluster without the old PVC.
-Use the shared `s2pr2` test fleet and existing internal QA identities only.
+Current target: the isolated `scientific-ai2` fleet and existing `system/qa`
+identity. Shared `s2pr2` was the initial pilot; do not modify it for this phase.
 
 The S2 developer handoff is maintained locally at
 `/home/tux/nebius-serverless-2/docs/dev-fleet/SCIENTIFIC-AI-EXECUTION-REQUIREMENTS-20261011.md`.
@@ -112,9 +118,11 @@ keep their defaults. No customer image is rebuilt or deployed by source integrat
 | S2-04 placement/recovery | Exact SM120/SM89 builds and fresh-PVC cross-cluster native recovery passed. Automatic cross-class recovery after a placed worker loses capacity remains an S2 gate. Startup/network-volume attachment and realistic PME/protein throughput need measurement/optimization. |
 | S2-05 finalization/cleanup | Completed-result recovery ran no new engine commands. Denied final storage, missing/lost final acknowledgments, scratch protection and failure-time cleanup still require live drills. |
 
-The new S2 handoff lists RTX/L40S spot pools (us-central1/eu-north1), each capped
-at two nodes. Check live test capacity before scheduling this gate; do not
-substitute H100 and call it passed.
+The initial shared S2 handoff listed RTX/L40S pools in us-central1/eu-north1.
+Current bounds/regions are in
+[scientific-ai2/README.md](../deployments/scientific-ai2/README.md): RTX in
+eu-south1, L40S in eu-north1. Check live capacity; do not substitute H100
+for an RTX/L40S acceptance gate.
 Do not reprovision current Scientific AI customer nodes for migration testing.
 
 After closing these gates, migrate the remaining REST/MCP operation behavior,

@@ -1,8 +1,44 @@
 # Scientific AI application / S2 GROMACS evidence
 
-## Current integration — API r12 / workers r7
+## Current integration — new scientific-ai2 fleet
 
-Read [NEXT-GAPS.md](NEXT-GAPS.md) for the active recovery and public-protein
+Start with [NEW-FLEET-RESULTS.md](NEW-FLEET-RESULTS.md) and
+[the deployment record](../../deployments/scientific-ai2/README.md). API r15 and
+SM120/SM89 workers r10 now execute fresh internal GROMACS jobs through REST and
+typed MCP on the new fleet. The report records exact release/cohort evidence,
+recovery and delivery faults, remaining gates and real startup times.
+[NEW-FLEET-COORDINATION.md](NEW-FLEET-COORDINATION.md) tracks the source work
+with the Serverless owner. Existing customers and the shared s2pr2 fleet are
+not rollout targets.
+
+Use the explicit `--deployment` file for the new fleet. Its internal test key
+is `system/qa`; private receipts are separate from all earlier pilot runs.
+`cancellation-cycle` verifies live MCP cancellation and actual GPU-pod removal;
+`delivery_retry.py` tests same-handle REST/MCP delivery retries without rerunning
+the completed simulation. Do not use historical credentials or hardcoded
+shared-fleet contexts against the new deployment.
+
+Reproduce the parallel fixed-release gate from `components/scientific-ai`:
+
+```sh
+uv run ../../acceptance/serverless2-gromacs-20261011/qualify.py \
+  --deployment ../../deployments/scientific-ai2/gromacs-target.json \
+  --private-dir /private/existing-internal-receipts \
+  --prefix unique-new-gate \
+  --benchmem-tpr /private/public-benchmem/benchMEM.tpr \
+  --engine-image '<exact local SM89 registry image@sha256:digest>'
+```
+
+The private directory must already contain the approved deployment configuration;
+the prefix must be unused. The gate runs two REST/MCP cohorts, automated native
+recovery, CPU-only delivery and cancellation. A failed branch does not stop
+observation of the other branches or silently erase its receipts. It neither
+changes the deployment nor broadens capacity limits. Detailed tracebacks stay
+in private files, not public logs.
+
+## Historical shared-fleet integration — API r12 / workers r7
+
+Read [NEXT-GAPS.md](NEXT-GAPS.md) for the earlier recovery and public-protein
 qualification. The isolated Scientific AI pilot is deployed; three of four
 public-protein cases are complete, including one automatic RTX-to-L40S recovery.
 The second recovery has resumed on L40S and is still running. Preserve the
@@ -13,7 +49,7 @@ and rollout notices are in [CLAUDE-COORDINATION.md](CLAUDE-COORDINATION.md).
 
 ## Earlier follow-up — API r10 / workers r6 / S2 0.11.20
 
-Read [FOLLOW-UP.md](FOLLOW-UP.md) first. Pod-bound storage authorization,
+Read [FOLLOW-UP.md](FOLLOW-UP.md) for historical evidence. Pod-bound storage authorization,
 continuation private-input delivery, startup-status retries and strict resume
 validation are now deployed on the shared test fleet. The application has
 123 passing tests; the existing GROMACS regression selection has 75. Fresh

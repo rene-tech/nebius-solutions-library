@@ -468,6 +468,7 @@ def status(directory, name, path="rest"):
                         "operation_id",
                         "serverless_operation_id",
                         "status",
+                        "phase",
                         "region",
                         "cluster",
                         "gpu_class",
@@ -726,6 +727,55 @@ def control(directory, name, action, path, gpu_class):
                 }
             )
         )
+
+
+def cancellation_cycle(directory, name):
+    """Cancel only the owned live QA operation and verify worker removal."""
+    current = wait_for(directory, name, ready=True)
+    identity_boundaries(directory, name)
+    attempt = current["attempt_id"]
+    if not attempt.startswith(current["serverless_operation_id"] + "-"):
+        raise ValueError("refusing cancellation evidence for an unrelated pod")
+    started = time.monotonic()
+    control(directory, name, "cancel", "mcp", "l40s")
+    terminal = status(directory, name)
+    assert terminal["status"] == "CANCELLED"
+    acknowledged_s = time.monotonic() - started
+    deadline = time.monotonic() + 240
+    while time.monotonic() < deadline:
+        remaining = command(
+            "kubectl",
+            "--context",
+            CONTEXTS[current["cluster"]],
+            "-n",
+            NAMESPACE,
+            "get",
+            "pod",
+            attempt,
+            "--ignore-not-found",
+            "-o",
+            "name",
+        ).strip()
+        if not remaining:
+            break
+        time.sleep(5)
+    else:
+        raise TimeoutError("cancellation acknowledged but owned GPU pod still exists")
+    storage_denial(directory, name)
+    evidence = {
+        "at": now(),
+        "operation_id": current["operation_id"],
+        "attempt_id": attempt,
+        "cluster": current["cluster"],
+        "cancel_path": "mcp",
+        "status_path": "rest",
+        "status": terminal["status"],
+        "acknowledged_s": acknowledged_s,
+        "worker_removed_s": time.monotonic() - started,
+        "worker_removed": True,
+    }
+    write(directory / (name + "-cancellation.json"), evidence)
+    print(json.dumps(evidence))
 
 
 def boundaries(directory, name):
@@ -1207,6 +1257,7 @@ def main():
             "wait",
             "recovery-cycle",
             "automatic-recovery-cycle",
+            "cancellation-cycle",
         ],
     )
     parser.add_argument("--private-dir", type=Path, required=True)
@@ -1262,6 +1313,8 @@ def main():
         recovery_cycle(args.private_dir, args.name)
     elif args.action == "automatic-recovery-cycle":
         automatic_recovery_cycle(args.private_dir, args.name)
+    elif args.action == "cancellation-cycle":
+        cancellation_cycle(args.private_dir, args.name)
     else:
         control(args.private_dir, args.name, args.action, args.path, args.gpu_class)
 
