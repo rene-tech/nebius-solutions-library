@@ -494,6 +494,103 @@ def recovery_cycle(directory, name):
     wait_for(directory, resumed, "mcp")
 
 
+def automatic_recovery_cycle(directory, name):
+    """Owned Workload eviction; no customer/node mutation or manual :resume.
+
+    Deactivation holds back same-class replacement while S2 detects confirmed
+    loss. The original public handle must follow exactly one L40S successor.
+    """
+    receipt = json.loads((directory / (name + ".json")).read_bytes())
+    wait_for(directory, name, ready=True)
+    identity_boundaries(directory, name)
+    for suffix in ("-identity-private.json", "-identity-boundaries.json"):
+        write(
+            directory / (name + "-before" + suffix),
+            json.loads((directory / (name + suffix)).read_bytes()),
+            private="private" in suffix,
+        )
+    deadline = time.monotonic() + 300
+    while time.monotonic() < deadline:
+        observed = checkpoint(directory, name)
+        if observed:
+            state, snapshot = observed
+            md = [c for c in snapshot.state["commands"] if c["command"][1] == "mdrun"]
+            if (
+                snapshot.kind == "checkpoint"
+                and md
+                and 0 < md[-1].get("checkpoint_step", 0) < receipt["steps"]
+            ):
+                break
+        time.sleep(10)
+    else:
+        raise TimeoutError("no acknowledged mid-run checkpoint; no fault injected")
+    if state["gpu_class"] != "rtx-pro-6000" or state["status"] != "RUNNING":
+        raise RuntimeError("automatic cross-GPU qualification must start on RTX")
+    s2_id = state["serverless_operation_id"]
+    ctl = ("kubectl", "--context", CONTEXT, "-n", "tenant-sciai")
+    job = json.loads(command(*ctl, "get", "job", s2_id, "-o", "json"))
+    workloads = json.loads(command(*ctl, "get", "workloads.kueue.x-k8s.io", "-o", "json"))["items"]
+    owned = [
+        w
+        for w in workloads
+        if any(
+            r.get("uid") == job["metadata"]["uid"] and r.get("name") == s2_id and r.get("kind") == "Job"
+            for r in w["metadata"].get("ownerReferences", [])
+        )
+    ]
+    if len(owned) != 1 or not s2_id.startswith("op-"):
+        raise RuntimeError("cannot uniquely identify this internal operation's Workload")
+    workload = owned[0]["metadata"]["name"]
+    patch = (
+        *ctl,
+        "patch",
+        "workloads.kueue.x-k8s.io",
+        workload,
+        "--type=merge",
+        "-p",
+        '{"spec":{"active":false}}',
+    )
+    command(*patch, "--dry-run=server")
+    evidence = {
+        "at": now(),
+        "public_operation_id": state["operation_id"],
+        "old_s2_id": s2_id,
+        "workload": workload,
+        "workload_uid": owned[0]["metadata"]["uid"],
+        "old_attempt_id": state["attempt_id"],
+        "old_epoch": state["epoch"],
+        "checkpoint_ref": state["checkpoint_ref"],
+        "checkpoint_step": md[-1]["checkpoint_step"],
+        "fault": "deactivate only the owned manager Workload after durable checkpoint",
+        "manual_resume_called": False,
+    }
+    write(directory / (name + "-automatic-fault.json"), evidence)
+    command(*patch)
+    deadline = time.monotonic() + 900
+    while time.monotonic() < deadline:
+        current = status(directory, name)
+        if current["status"] in {"FAILED", "CANCELLED", "TIMED_OUT", "EXPORT_FAILED"}:
+            raise RuntimeError("automatic recovery failed; no operator resume was attempted")
+        if current["status"] == "RUNNING" and current["serverless_operation_id"] != s2_id:
+            if current["gpu_class"] != "l40s" or current["epoch"] <= state["epoch"]:
+                raise AssertionError("replacement did not move to a newer L40S attempt")
+            evidence.update(
+                recovered_at=now(),
+                new_s2_id=current["serverless_operation_id"],
+                new_attempt_id=current["attempt_id"],
+                new_epoch=current["epoch"],
+            )
+            write(directory / (name + "-automatic-fault.json"), evidence)
+            identity_boundaries(directory, name, stale_name=name + "-before")
+            break
+        time.sleep(10)
+    else:
+        raise TimeoutError("automatic recovery did not start within the bounded test interval")
+    wait_for(directory, name, "mcp")
+    evidence["completed_at"] = now()
+    write(directory / (name + "-automatic-fault.json"), evidence)
+
+
 def control(directory, name, action, path, gpu_class):
     receipt = json.loads((directory / (name + ".json")).read_bytes())
     op = receipt["response"]["operation_id"]
@@ -1049,6 +1146,7 @@ def main():
             "identity-boundaries",
             "wait",
             "recovery-cycle",
+            "automatic-recovery-cycle",
         ],
     )
     parser.add_argument("--private-dir", type=Path, required=True)
@@ -1088,6 +1186,8 @@ def main():
         wait_for(args.private_dir, args.name, args.path)
     elif args.action == "recovery-cycle":
         recovery_cycle(args.private_dir, args.name)
+    elif args.action == "automatic-recovery-cycle":
+        automatic_recovery_cycle(args.private_dir, args.name)
     else:
         control(args.private_dir, args.name, args.action, args.path, args.gpu_class)
 
