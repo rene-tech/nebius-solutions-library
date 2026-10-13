@@ -117,7 +117,9 @@ class EndpointGateway:
 
     @staticmethod
     def _binding(model: dict) -> bool:
-        return model.get("protocol") == "native" and "sync" in (model.get("modes") or [])
+        # "native" is this application's semantic contract. S2 publishes its
+        # underlying endpoint transport as "http", distinct from OpenAI/jobs.
+        return model.get("protocol") == "http" and "sync" in (model.get("modes") or [])
 
     def available(self, client, info: dict) -> dict[str, dict]:
         authorize(info, scope="read:catalog")

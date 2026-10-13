@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -20,7 +21,7 @@ def endpoint_gateway(request):
         "models": {
             mid: {
                 "id": mid,
-                "protocol": "native",
+                "protocol": "http",
                 "modes": ["sync"],
                 "image": "registry.example/test@sha256:" + "a" * 64,
                 "regions": [{"region": "test-a", "status": "scaled-to-zero", "replicas_ready": 0}],
@@ -159,6 +160,21 @@ def test_all_packaged_tools_keep_exact_public_name_and_typed_fields(endpoint_gat
     tools = {tool["name"]: tool for tool in tools}
     for contract in catalog().values():
         assert tools[contract.tool_name]["inputSchema"] == contract.schema("mcp")
+
+
+def test_frozen_live_s2_transport_is_http_not_scientific_native(endpoint_gateway):
+    gateway, client, _, state = endpoint_gateway
+    fixture = json.loads((Path(__file__).parent / "fixtures/serverless_catalog_native_20261013.json").read_text())
+    state["models"] = {row["id"]: row for row in fixture["models"]}
+    job = state["models"]["scientific-gromacs-pilot"]
+    assert not gateway.endpoints._binding(job)
+    response = client.get("/v1/models")
+    assert [row["id"] for row in response.json()["data"]] == ["admet-ai"]
+    published = response.json()["data"][0]
+    assert published["protocol"] == "native"
+    assert published["regions"] == [{"region": "north", "replicas_ready": None, "status": "unavailable"}]
+    assert published["execution"]["durable_async"] is False
+    assert invoke(client).status_code == 200
 
 
 def test_rest_and_mcp_use_original_key_and_actual_s2_id(endpoint_gateway):

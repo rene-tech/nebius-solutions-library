@@ -1,0 +1,39 @@
+{
+  "source": "Authenticated system/qa GET https://api.89.169.122.33.sslip.io/v1/models; selected public fields only",
+  "observed_date": "2026-10-13",
+  "models": [
+    {
+      "default_mode": "sync",
+      "gpu": "none",
+      "id": "admet-ai",
+      "image": "registry.serverless2.local/nebius/scientific-ai/models/admet-ai@sha256:2a6d0ee5e0f48d761d295eb20c91f25bfbb652ce5223bf9ba80425092dfeefdf",
+      "managed_by": "api",
+      "modes": ["sync", "async"],
+      "name": "ADMET-AI",
+      "protocol": "http",
+      "regions": [{"region": "north", "replicas_ready": null, "status": "unavailable"}]
+    },
+    {
+      "default_mode": "sync",
+      "gpu": "none",
+      "id": "phenoage",
+      "image": "registry.serverless2.local/nebius/scientific-ai/models/phenoage@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1",
+      "managed_by": "api",
+      "modes": ["sync", "async"],
+      "name": "Clinical PhenoAge",
+      "protocol": "http",
+      "regions": [{"region": "north", "replicas_ready": null, "status": "unavailable"}]
+    },
+    {
+      "default_mode": "run",
+      "gpu": "1x rtx-pro-6000/l40s",
+      "id": "scientific-gromacs-pilot",
+      "image": null,
+      "managed_by": "api",
+      "modes": ["run"],
+      "name": "Scientific AI GROMACS migration pilot",
+      "protocol": "kubernetes-job",
+      "regions": [{"region": "north", "status": "ready"}, {"region": "south", "status": "ready"}]
+    }
+  ]
+}
