@@ -1,4 +1,4 @@
-"""One private GROMACS execution. Called by S2, not a serving process."""
+"""One private molecular-dynamics execution. Called by S2, not a serving process."""
 
 from __future__ import annotations
 
@@ -18,12 +18,13 @@ from .contracts import Contract, GromacsRun, Owner, RuntimeProfile, StorageGrant
 from .delivery import retained_workspace
 from .gromacs import DeliveryPending, GromacsApplication
 from .lifecycle import FileLifecycle
+from .native_md import NativeMDApplication, NativeMDRun
 from .storage import Artifacts
 
 
 class PrivateRun(Contract):
     owner: Owner
-    run: GromacsRun
+    run: GromacsRun | NativeMDRun
     profile: RuntimeProfile
     broker_url: str
     storage_token: str = Field(repr=False)
@@ -62,7 +63,10 @@ def main(*, finish_delivery: bool = False) -> int:
                 attempt_id=attempt.attempt_id,
                 identity_token_file=Path("/var/run/secrets/workload-identity/token"),
             )
-            app = GromacsApplication(
+            native = isinstance(binding.run, NativeMDRun)
+            application = NativeMDApplication if native else GromacsApplication
+            options = {} if native else {"gmx": "/opt/gromacs/bin/gmx"}
+            app = application(
                 run=binding.run,
                 attempt=attempt,
                 grant=StorageGrant(
@@ -74,7 +78,7 @@ def main(*, finish_delivery: bool = False) -> int:
                 artifacts=Artifacts(objects),
                 lifecycle=lifecycle,
                 workspace=workspace,
-                gmx="/opt/gromacs/bin/gmx",
+                **options,
             )
             signal.signal(signal.SIGTERM, app.worker.stop)
             signal.signal(signal.SIGINT, app.worker.stop)
