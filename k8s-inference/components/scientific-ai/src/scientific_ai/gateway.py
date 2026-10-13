@@ -15,6 +15,7 @@ import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Literal
 
 import boto3
 import httpx
@@ -28,6 +29,16 @@ from pydantic import Field, RootModel, SecretStr, model_validator
 
 from .broker import https_origin
 from .contracts import Contract, FileRecord, GromacsRun, Identifier, Owner, RuntimeProfile
+from .endpoint_catalog import catalog, contract_for
+from .endpoint_contracts import EndpointArtifactError, EndpointInputError, NativeResultError
+from .endpoint_gateway import (
+    OPERATIONS,
+    EndpointGateway,
+    NativeCallError,
+    NativeCapabilityError,
+    authorize,
+    model_allowed,
+)
 from .gateway_store import GatewayStore, canonical, identifier, uuid
 from .runner import PrivateRun
 from .serverless import ServerlessClient, ServerlessError, UnsupportedExecution, _idempotency, invoke_payload
@@ -59,8 +70,11 @@ class Settings(Contract):
     runtime: RuntimeProfile
     signing_key: SecretStr
     tenants: dict[str, TenantStorage]
+    storage_modes: dict[str, Literal["tenant", "user"]] = Field(default_factory=dict)
+    user_storage: dict[str, dict[str, TenantStorage]] = Field(default_factory=dict)
     workload_identity: WorkloadIdentity
     delivery_retry_enabled: bool = False
+    native_timeout_seconds: int = Field(default=900, ge=1, le=900)
 
 
 class ArtifactPointer(Contract):
@@ -100,19 +114,33 @@ class Resume(Contract):
     gpu_class: Identifier | None = None
 
 
+class NativeInvocation(Contract):
+    operation: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9._-]*$")
+    payload: dict
+
+
 class Gateway:
     def __init__(self, settings: Settings, *, http_factory=httpx.Client, storage_factory=None):
         self.settings, self.http_factory = settings, http_factory
+        self.endpoints = EndpointGateway(timeout_seconds=settings.native_timeout_seconds)
         self.pod_verifier = PodVerifier(settings.workload_identity)
         https_origin(settings.serverless_url)
         https_origin(settings.public_url)
         if len(settings.signing_key.get_secret_value()) < 32:
             raise ValueError("the private job-grant signing key must have at least 32 characters")
         self.clients = {}
-        for tenant, config in settings.tenants.items():
+        bindings = {(tenant, None): config for tenant, config in settings.tenants.items()}
+        bindings.update(
+            {
+                (tenant, principal): config
+                for tenant, users in settings.user_storage.items()
+                for principal, config in users.items()
+            }
+        )
+        for binding, config in bindings.items():
             https_origin(config.endpoint)
-            self.clients[tenant] = (
-                storage_factory(tenant)
+            self.clients[binding] = (
+                storage_factory(binding[0])
                 if storage_factory
                 else boto3.client(
                     "s3",
@@ -131,7 +159,7 @@ class Gateway:
             )
 
     @contextmanager
-    def client(self, authorization: str):
+    def client(self, authorization: str, *, model_id: str | None = "gromacs", scope: str | None = None):
         if not authorization.startswith("Bearer ") or not authorization[7:].strip():
             raise HTTPException(401, "an inference bearer key is required")
         with self.http_factory(
@@ -142,19 +170,63 @@ class Gateway:
         ) as http:
             client = ServerlessClient(http)
             info = client._request("GET", "/v1/keys/me")
-            if info.get("tenant") not in self.settings.tenants:
+            if (
+                info.get("tenant") not in self.settings.tenants
+                and info.get("tenant") not in self.settings.user_storage
+            ):
                 raise HTTPException(403, "no customer storage binding is configured for this tenant")
-            allowed = info.get("models") or []
-            if allowed and self.settings.model_id not in allowed and "all-proxy-models" not in allowed:
-                raise HTTPException(403, "this key is not authorized for GROMACS")
-            owner = Owner(tenant_id=info["tenant"], principal_id=info["id"])
+            self.authorize(info, model_id=model_id, scope=scope)
+            # Imported keys keep their original principal; key rotation must not
+            # create a new private workspace. Older S2 keys retain their ID.
+            owner = Owner(tenant_id=info["tenant"], principal_id=info.get("principal_id") or info["id"])
             yield client, self.store(owner), info
 
-    def store(self, owner: Owner):
-        config = self.settings.tenants[owner.tenant_id]
-        return GatewayStore(
-            self.clients[owner.tenant_id], bucket=config.bucket, prefix=config.prefix, owner=owner
+    def authorize(self, info, *, model_id=None, scope=None):
+        actual = self.settings.model_id if model_id == "gromacs" else model_id
+        authorize(info, model_id=actual, scope=scope)
+
+    def models(self, client, info):
+        self.authorize(info, scope="read:catalog")
+        result = [self.model()] if model_allowed(info, self.settings.model_id) else []
+        result.extend(
+            self.endpoints.describe(mid, live) for mid, live in self.endpoints.available(client, info).items()
         )
+        return result
+
+    def schema(self, client, info, model_id):
+        self.authorize(info, model_id=model_id, scope="read:catalog")
+        if model_id == "gromacs":
+            return self.model()
+        live = self.endpoints.available(client, info)
+        if model_id not in live:
+            raise KeyError(model_id)
+        return self.endpoints.describe(model_id, live[model_id])
+
+    def operation_status(self, client, store, info, op, *, result=False):
+        try:
+            legacy_id = uuid(op)
+        except ValueError:
+            return self.endpoints.receipt(store, info, op, result=result)
+        self.authorize(info, model_id="gromacs", scope="read:results" if result else "read:operations")
+        return self.result(client, store, legacy_id) if result else self.status(client, store, legacy_id)
+
+    def storage_binding(self, owner: Owner):
+        private = self.settings.storage_modes.get(owner.tenant_id, "tenant") == "user"
+        key = (owner.tenant_id, owner.principal_id if private else None)
+        try:
+            config = (
+                self.settings.user_storage[owner.tenant_id][owner.principal_id]
+                if private
+                else self.settings.tenants[owner.tenant_id]
+            )
+            return config, self.clients[key]
+        except KeyError:
+            # A private user never falls back to a tenant's or sibling's bucket.
+            raise PermissionError("no storage binding for this principal") from None
+
+    def store(self, owner: Owner):
+        config, client = self.storage_binding(owner)
+        return GatewayStore(client, bucket=config.bucket, prefix=config.prefix, owner=owner)
 
     def model(self):
         return {
@@ -186,7 +258,8 @@ class Gateway:
     def reserve(self, store: GatewayStore, body: dict):
         digest, size = body.get("sha256"), body.get("size_bytes")
         FileRecord(path="input", sha256=digest, size_bytes=size)
-        if body.get("model_id", "gromacs") != "gromacs" or size > 50 * 1024**3:
+        model_id = body.get("model_id", "gromacs")
+        if model_id != "gromacs" and model_id not in catalog() or size > 50 * 1024**3:
             raise HTTPException(422, "unsupported App or upload size")
         aid = identifier(store.owner, "artifact", digest)
         record = store.save(
@@ -319,7 +392,7 @@ class Gateway:
             invoke_payload(
                 profile,
                 profile_ref=self.settings.profile_ref,
-                identity_ref=self.settings.tenants[store.owner.tenant_id].workload_identity_ref,
+                identity_ref=self.storage_binding(store.owner)[0].workload_identity_ref,
                 private_input_ref=private_ref,
             ),
             idempotency_key="sai-" + op,
@@ -491,7 +564,7 @@ class Gateway:
             operation = store.get("operations", claims["op"])
         except (jwt.PyJWTError, KeyError, ValueError):
             raise HTTPException(403, "invalid job storage grant") from None
-        config = self.settings.tenants[owner.tenant_id]
+        config, _ = self.storage_binding(owner)
         with self.http_factory(
             base_url=self.settings.serverless_url,
             headers={"Authorization": "Bearer " + config.execution_key.get_secret_value()},
@@ -552,6 +625,25 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     def authorization(request):
         return request.headers.get("Authorization", "")
+
+    @app.exception_handler(NativeCallError)
+    @app.exception_handler(NativeResultError)
+    @app.exception_handler(NativeCapabilityError)
+    @app.exception_handler(EndpointInputError)
+    async def native_error(request, error):
+        status_code = getattr(error, "status_code", 502 if isinstance(error, NativeResultError) else 422)
+        operation_id = getattr(error, "operation_id", None)
+        return JSONResponse(
+            {"error": error.public()},
+            status_code=status_code,
+            headers={"x-fs2-operation-id": operation_id} if operation_id else {},
+        )
+
+    @app.exception_handler(EndpointArtifactError)
+    async def invalid_endpoint_artifact(request, error):
+        return JSONResponse(
+            {"error": {"code": error.code, "retryable": False, "admission": "not-submitted"}}, status_code=422
+        )
 
     @app.exception_handler(UnsupportedExecution)
     async def unsupported_execution(request, error):
@@ -615,32 +707,68 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     @app.get("/v1/me")
     def me(request: Request):
-        with gateway.client(authorization(request)) as (_, store, info):
+        with gateway.client(authorization(request), model_id=None) as (client, store, info):
             return {
                 "tenant_id": store.owner.tenant_id,
                 "principal_id": store.owner.principal_id,
-                "models": ["gromacs"],
+                "models": [model["model_id"] for model in gateway.models(client, info)],
                 "role": info["role"],
             }
 
     @app.get("/v1/scientific-models")
     def models(request: Request):
-        with gateway.client(authorization(request)):
-            return {"models": [gateway.model()]}
+        with gateway.client(authorization(request), model_id=None, scope="read:catalog") as (client, _, info):
+            return {"models": gateway.models(client, info)}
 
-    @app.get("/v1/models/gromacs/schema")
-    def schema(request: Request):
-        with gateway.client(authorization(request)):
-            return gateway.model()
+    @app.get("/v1/models")
+    def public_catalog(request: Request):
+        with gateway.client(authorization(request), model_id=None, scope="read:catalog") as (client, _, info):
+            return {
+                "object": "list",
+                "data": [
+                    {"id": model["model_id"], "object": "model", **model}
+                    for model in gateway.models(client, info)
+                ],
+            }
+
+    @app.get("/v1/models/{model_id}/schema")
+    def schema(request: Request, model_id: str):
+        with gateway.client(authorization(request), model_id=model_id, scope="read:catalog") as (
+            client,
+            _,
+            info,
+        ):
+            return gateway.schema(client, info, model_id)
+
+    @app.post("/v1/models/{model_id}:invoke")
+    def native_invoke(request: Request, model_id: str, body: dict):
+        with gateway.client(authorization(request), model_id=model_id, scope="invoke:sync") as (
+            client,
+            store,
+            info,
+        ):
+            contract_for(model_id)
+            gateway.endpoints.synchronous_options(headers=request.headers, options=body)
+            if "mode" in body:
+                raise NativeCapabilityError()
+            invocation = NativeInvocation.model_validate(body)
+            if invocation.operation != OPERATIONS[model_id]:
+                raise HTTPException(422, "operation does not match the selected native App")
+            value = gateway.endpoints.invoke(client, store, info, model_id, invocation.payload)
+            return JSONResponse(
+                value, headers={"x-fs2-operation-id": value["operation"]["id"], "Cache-Control": "no-store"}
+            )
 
     @app.post("/v1/scientific-artifacts/uploads")
     def reserve(request: Request, body: dict):
-        with gateway.client(authorization(request)) as (_, store, _):
+        with gateway.client(
+            authorization(request), model_id=body.get("model_id", "gromacs"), scope="artifacts:write"
+        ) as (_, store, _):
             return gateway.reserve(store, body)
 
     @app.put("/v1/scientific-artifacts/uploads/{aid}/content")
     async def upload(request: Request, aid: str):
-        with gateway.client(authorization(request)) as (_, store, _):
+        with gateway.client(authorization(request), model_id=None, scope="artifacts:write") as (_, store, _):
             record = store.get("artifacts", aid)
             size, digest = 0, hashlib.sha256()
             with tempfile.TemporaryFile() as temporary:
@@ -658,12 +786,12 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     @app.post("/v1/scientific-artifacts/uploads/{aid}:finalize")
     def finalize_upload(request: Request, aid: str):
-        with gateway.client(authorization(request)) as (_, store, _):
+        with gateway.client(authorization(request), model_id=None, scope="artifacts:write") as (_, store, _):
             return gateway.finalize_upload(store, aid)
 
     @app.post("/v1/models/gromacs:submit", status_code=202)
     def submit(request: Request, body: Submit):
-        with gateway.client(authorization(request)) as (client, store, _):
+        with gateway.client(authorization(request), scope="run:submit") as (client, store, _):
             result = gateway.submit(client, store, body, request.headers.get("Idempotency-Key", ""))
             return JSONResponse(
                 result,
@@ -676,12 +804,16 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     @app.get("/v1/operations/{op}")
     def status(request: Request, op: str):
-        with gateway.client(authorization(request)) as (client, store, _):
-            return gateway.status(client, store, uuid(op))
+        with gateway.client(authorization(request), model_id=None, scope="read:operations") as (
+            client,
+            store,
+            info,
+        ):
+            return gateway.operation_status(client, store, info, op)
 
     @app.get("/v1/operations/{op}/checkpoints")
     def checkpoints(request: Request, op: str):
-        with gateway.client(authorization(request)) as (client, store, _):
+        with gateway.client(authorization(request), scope="read:operations") as (client, store, _):
             value = gateway.status(client, store, uuid(op))
             return {
                 "operation_id": op,
@@ -692,20 +824,24 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     @app.get("/v1/operations/{op}/result")
     def result(request: Request, op: str):
-        with gateway.client(authorization(request)) as (client, store, _):
-            return gateway.result(client, store, uuid(op))
+        with gateway.client(authorization(request), model_id=None, scope="read:results") as (
+            client,
+            store,
+            info,
+        ):
+            return gateway.operation_status(client, store, info, op, result=True)
 
     @app.delete("/v1/operations/{op}")
     @app.post("/v1/operations/{op}:cancel")
     def cancel(request: Request, op: str):
-        with gateway.client(authorization(request)) as (client, store, _):
+        with gateway.client(authorization(request), scope="run:control") as (client, store, _):
             operation = store.get("operations", uuid(op))
             client.cancel(operation["s2_id"], idempotency_key="cancel-" + op)
             return gateway.status(client, store, op)
 
     @app.post("/v1/operations/{op}:resume", status_code=202)
     def resume(request: Request, op: str, body: Resume):
-        with gateway.client(authorization(request)) as (client, store, _):
+        with gateway.client(authorization(request), scope="run:control") as (client, store, _):
             return gateway.resume(
                 client,
                 store,
@@ -716,13 +852,13 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     @app.post("/v1/operations/{op}:export", status_code=202)
     def retry_delivery(request: Request, op: str):
-        with gateway.client(authorization(request)) as (client, store, _):
+        with gateway.client(authorization(request), scope="run:control") as (client, store, _):
             return gateway.retry_delivery(client, store, uuid(op), request.headers.get("Idempotency-Key", ""))
 
     @app.get("/v1/artifacts/{aid}/content")
     @app.get("/v1/scientific-artifacts/{aid}/content")
     def download(request: Request, aid: str):
-        with gateway.client(authorization(request)) as (_, store, _):
+        with gateway.client(authorization(request), model_id=None, scope="read:results") as (_, store, _):
             artifact = store.get("artifacts", aid)
             body = store.client.get_object(Bucket=store.bucket, Key=artifact["object_key"])["Body"]
 
@@ -744,7 +880,7 @@ def create_app(settings: Settings | None = None, *, gateway: Gateway | None = No
 
     @app.get("/v1/artifacts/{aid}/download")
     def download_handle(request: Request, aid: str):
-        with gateway.client(authorization(request)) as (_, store, _):
+        with gateway.client(authorization(request), model_id=None, scope="read:results") as (_, store, _):
             artifact = store.get("artifacts", aid)
             return {
                 "artifact": gateway.pointer(artifact),
