@@ -134,6 +134,11 @@ privilege, no host path, no shared tenant mount: the alias cannot reach anything
 
 ## Resume
 
+A resumed operation names its successor: durably (the attempt marks the handle and the stage gate follow, also once
+the original Job expired) and on its Job while it exists. `GET /v1/operations/<original>` therefore answers with the
+current head of the lineage (the original stays readable through its rows), a graph child waiting on a resumed
+dependency waits on the successor's state, and a second `:resume` of the original is refused naming the head.
+
 **Automatic.** A spot interruption, node drain or eviction fails the pod with `DisruptionTarget`
 (or kills `main` with 137/143). The rule above does not count it against `backoffLimit`; the Job
 controller starts a replacement pod, which attaches the same PVC (the volume is regional, so the

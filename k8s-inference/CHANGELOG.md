@@ -4,6 +4,15 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.63.1
+
+- Manual `:resume` links its successor (docs/JOBS.md "Resume"): the resumed operation gets the durable successor mark
+  and, while its Job exists, the `successor` annotation, as fallback and recovery always did. Until now a public resume
+  of a FAILED run left the original handle on its own terminal state for ever once its Job expired (TTL), and a graph
+  child waiting on that root kept seeing the FAILED original; `GET /v1/operations/<original>` now follows to the new head
+  and the stage gate waits on the successor's state. A second resume of the original is still refused naming the head.
+  No other change against 0.11.63.
+
 ## api 0.11.63, jobs 0.1.21
 
 - Work mount aliases (docs/JOBS.md "Work mount aliases"): `job.workMountAliases` / spec `work_mount_aliases`

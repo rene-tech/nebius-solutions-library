@@ -640,3 +640,56 @@ def test_delegated_stage_needs_operator_delegation_declaration_owner_and_live_ro
         c.post("/v1/models/hello-run:invoke", headers=H, json={"input": {}, "execution": {"graph": bad}}).status_code
         == 400
     )
+
+
+def test_manual_resume_links_its_successor_so_handle_and_gate_follow_after_ttl(world, monkeypatch):
+    """Live on API63: a public `:resume` of a FAILED graph root created `<root>-r-<hash>` (202) while the original Job was
+    already gone (TTL); the original handle kept answering FAILED epoch 1 and the child waited on "root FAILED": only
+    fallback and recovery marked a successor, the manual resume never did. Now every resume marks the original's
+    successor durably (operation_marks) and on its Job (annotation while it exists): `GET /v1/operations/<original>`
+    follows to the new head, `stages.state_of` follows it too, and the gate waits on the successor's state."""
+    c, cl, fk, rows, cancelled, root = world
+    g0 = _submit(c, root, "gpu-0").json()["id"]
+    marks: dict = {}
+    monkeypatch.setattr(
+        attempts, "mark_successor", lambda operation, successor: marks.__setitem__(operation, successor)
+    )
+    monkeypatch.setattr(attempts, "successor_of", lambda operation: marks.get(operation))
+    _fail(cl, rows, root)
+    assert reconciliation.gate_stages() == []
+    assert "root FAILED" in cl.jobs[(NS, g0)]["metadata"]["annotations"][stages.WAIT_REASON]
+    # the explicit resume, idempotent (the same key replays the same successor)
+    r = c.post(f"/v1/operations/{root}:resume", headers={**H, "Idempotency-Key": "k-manual-1"}, json={})
+    assert r.status_code == 202, r.text
+    succ = r.json()["id"]
+    assert succ.startswith(f"{root}-r-") and marks == {root: succ}
+    assert (
+        cl.jobs[(NS, root)]["metadata"]["annotations"]["serverless2.nebius/successor"] == succ
+    )  # while the Job exists
+    again = c.post(f"/v1/operations/{root}:resume", headers={**H, "Idempotency-Key": "k-manual-1"}, json={})
+    # a second resume of the original is refused and names the head (stale-source rule, API48); the mark is unchanged
+    assert again.status_code == 409 and succ in again.json()["detail"] and marks == {root: succ}
+    # the original handle follows to the head while the original Job exists ...
+    op = c.get(f"/v1/operations/{root}", headers=H).json()
+    assert op["id"] == succ and op["status"] == "QUEUED" and op["root_operation_id"] == root
+    # ... and after the original Job expired (TTL): only its durable rows and the mark remain
+    del cl.jobs[(NS, root)]
+    monkeypatch.setattr(
+        attempts,
+        "synthesize",
+        lambda operation, tenant: {"status": "FAILED", "region": "eu-north1", "attempts": [], "epoch": 1}
+        if operation == root
+        else None,
+    )
+    op = c.get(f"/v1/operations/{root}", headers=H).json()
+    assert op["id"] == succ and op["status"] == "QUEUED", op
+    st = stages.state_of(NS, root)
+    assert st["operation"] == succ and st["status"] == "QUEUED"
+    assert reconciliation.gate_stages() == []
+    reason = cl.jobs[(NS, g0)]["metadata"]["annotations"][stages.WAIT_REASON]
+    assert "root QUEUED" in reason and "FAILED" not in reason  # the child follows the lineage, not the dead original
+    # the successor delivers: the child is admitted with the successor's result
+    _succeed(cl, rows, succ, "s3://b/root-again")
+    assert reconciliation.gate_stages() == [f"{g0}:admitted"]
+    bound = json.loads(cl.jobs[(NS, g0)]["spec"]["template"]["metadata"]["annotations"][stages.RESULTS])
+    assert bound["root"]["operation"] == succ and bound["root"]["result_ref"] == "s3://b/root-again"
