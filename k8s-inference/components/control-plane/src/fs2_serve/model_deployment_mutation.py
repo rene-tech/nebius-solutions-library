@@ -529,6 +529,9 @@ def _valid_tenant_choice(value: str) -> bool:
     return 1 <= len(value) <= 120 and _TENANT_PATTERN.fullmatch(value) is not None
 
 
+ONLINE_POOL_SWAP_FRESHNESS_S = 60  # a cold observation older than this is not proof of zero running replicas
+
+
 class ModelDeploymentMutationService:
     def __init__(
         self,
@@ -1085,6 +1088,24 @@ class ModelDeploymentMutationService:
             )
 
     @staticmethod
+    def _online_pool_swap(before: ModelDeploymentSpec, after: ModelDeploymentSpec) -> bool:
+        """The one runtime-material change a published, observed-cold revision may take online: its placement
+        `poolRefs` and nothing else (artifact, runtime, cache and the rest of the placement identical), on a
+        scale-to-zero availability (no hot floor, no warm window: nothing is meant to be running) that stays
+        Enabled. Everything else keeps requiring the drained cutover."""
+        if before.artifact != after.artifact or before.runtime != after.runtime or before.cache != after.cache:
+            return False
+        if before.placement.pool_refs == after.placement.pool_refs:
+            return False
+        if before.placement.model_copy(update={"pool_refs": after.placement.pool_refs}) != after.placement:
+            return False
+        return (
+            after.lifecycle.desired_state is DesiredState.ENABLED
+            and after.availability.min_replicas == 0
+            and not after.availability.warm_windows
+        )
+
+    @staticmethod
     def _requires_cold_cutover(before: ModelDeploymentSpec, after: ModelDeploymentSpec) -> bool:
         return any(
             old != new
@@ -1110,9 +1131,8 @@ class ModelDeploymentMutationService:
             tenant_id=current.tenant_id,
         )
         replicas = observation.status.replicas if observation is not None else None
-        safely_cold = bool(
-            current.spec.lifecycle.desired_state is not DesiredState.ENABLED
-            and observation is not None
+        observed_cold = bool(
+            observation is not None
             and observation.revision == current.revision
             and observation.status.spec_digest == current.etag
             and observation.status.phase is ModelDeploymentRuntimePhase.COLD
@@ -1121,12 +1141,36 @@ class ModelDeploymentMutationService:
             and replicas.ready == 0
             and replicas.available == 0
         )
-        if not safely_cold:
+        if current.spec.lifecycle.desired_state is not DesiredState.ENABLED and observed_cold:
+            return
+        if (
+            current.spec.lifecycle.desired_state is DesiredState.ENABLED
+            and observed_cold
+            and self._online_pool_swap(current.spec, proposed)
+        ):
+            # Online cold pool swap: a published scale-to-zero revision whose controller observation is cold and
+            # FRESH (the authoritative status of this exact revision/etag, zero desired/ready/available replicas,
+            # reconciled within ONLINE_POOL_SWAP_FRESHNESS_S) changes only its poolRefs without a drain, so its
+            # publication never lapses. An activation that lands in the remaining window is not lost: the append is
+            # a compare-and-swap on the etag, the next reconcile renders the new pools, a Deployment of a pool that
+            # left the placement is retired under its termination grace period, and the queued demand that scaled
+            # it keeps scaling the new pool's segment. A stale observation is refused: this never guesses.
+            assert observation is not None
+            observed_at = observation.status.last_reconcile_time or observation.observed_at
+            age = (datetime.now(UTC) - observed_at).total_seconds()
+            if 0 <= age <= ONLINE_POOL_SWAP_FRESHNESS_S:
+                return
             raise ModelDeploymentMutationProblemError(
                 409,
-                "cold_cutover_required",
-                "drain the current revision and wait for observed zero replicas before changing runtime material",
+                "online_pool_swap_stale",
+                "the cold observation of the current revision is older than "
+                f"{ONLINE_POOL_SWAP_FRESHNESS_S} s; wait for a fresh controller observation and retry with its etag",
             )
+        raise ModelDeploymentMutationProblemError(
+            409,
+            "cold_cutover_required",
+            "drain the current revision and wait for observed zero replicas before changing runtime material",
+        )
 
     async def apply(
         self,
