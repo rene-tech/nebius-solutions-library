@@ -2417,15 +2417,15 @@ def test_a_configured_mechanism_is_reported_without_claiming_a_level() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_retired_segment_is_kept_while_it_serves_zeroed_when_idle_and_deleted_when_empty() -> None:
+async def test_a_retired_segment_is_retained_untouched_until_provably_empty_and_unreachable() -> None:
     """The last-reserved-node handoff on a published model (Evo2 shape: single pool, then the bridge appended, which
-    renames the segments): the retired Deployment is never pruned while it holds pods. Its ScaledObject goes first
-    (no new pod can target it), the new segments are applied in the same pass the retirement starts, the retired
-    Deployment is scaled to zero only once the model has no active or queued operation on record (unknown evidence
-    keeps it), and it is deleted only once its status shows it empty. A running request therefore completes on its
-    pod; a queued one is served by the new segments."""
+    renames the segments): the retired Deployment is never scaled by the controller and never pruned while it holds
+    a pod. Its ScaledObject goes first (no new pod can target it), the new segments are applied in the same pass the
+    retirement starts, and the retired Deployment is deleted only once its own spec asks for zero replicas, its
+    status reports zero (current for its generation) and no pod of it exists. A request that raced the change keeps
+    its pod; the explicit drain remains the operator's path."""
     api = FakeApi(model_object())
-    active = MutableActiveOperations(1)
+    active = MutableActiveOperations(0)
     subject = controller(api, active_operations=active)
     key = ModelKey(namespace="fs2-models", name="qwen-live")
     single = model_spec().model_copy(
@@ -2436,42 +2436,39 @@ async def test_a_retired_segment_is_kept_while_it_serves_zeroed_when_idle_and_de
         await subject.reconcile(key, fence())
     old = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
     old_identity = old.observed.identity
-    assert old.observed.name == "qwen-runtime" and old.replicas == 1  # the single-pool shape (the template name), one pod serving
-    # the bridge pool is appended while a request is served and another is queued (active operations: 1)
+    assert old.observed.name == "qwen-runtime" and old.replicas == 1  # the single-pool shape, one pod serving
     api.model["spec"] = model_spec().model_dump(mode="json", by_alias=True)  # pool-b, pool-a: multipool, renamed
     api.model["metadata"]["generation"] = 2
     api.calls.clear()
     first = await subject.reconcile(key, fence())
-    scaler_deletes = [call for call in api.calls if call[0] == "delete" and "/ScaledObject/" in call[1]]
-    assert scaler_deletes and first.requeue  # the retired segment's scaler goes first: no new pod can target it
+    assert [call for call in api.calls if call[0] == "delete" and "/ScaledObject/" in call[1]] and first.requeue
     assert old_identity in api.resources and api.resources[old_identity].raw["spec"]["replicas"] == 1
-    api.calls.clear()
-    second = await subject.reconcile(key, fence())
-    assert second.requeue
-    assert not [call for call in api.calls if call[0] == "delete"]  # retained: it still serves
-    assert old_identity in api.resources and api.resources[old_identity].raw["spec"]["replicas"] == 1
+    # with a pod on record (status replicas 1), even with zero operations counted: retained, never scaled, not deleted
+    for _ in range(3):
+        api.calls.clear()
+        result = await subject.reconcile(key, fence())
+        assert result.requeue
+        assert not [call for call in api.calls if call[0] == "delete"]
+        assert old_identity in api.resources and api.resources[old_identity].raw["spec"]["replicas"] == 1
     new_segments = [
         item
         for item in api.resources.values()
         if item.observed.kind == "Deployment" and item.observed.identity != old_identity
     ]
-    assert new_segments  # the new layout is applied in the same pass: queued work has somewhere to go
-    # unknown operation evidence keeps the retired segment alive and unscaled
-    active.value = None
+    assert new_segments  # the new layout is applied in the same pass: new work has somewhere to go
+    # the operator's explicit drain scaled it to zero but the status is not current yet: still retained
+    live = api.resources[old_identity]
+    live.raw["spec"]["replicas"] = 0
+    live.raw["metadata"]["generation"] = 7
+    live.observed_generation = 6
     api.calls.clear()
     await subject.reconcile(key, fence())
-    assert old_identity in api.resources and api.resources[old_identity].raw["spec"]["replicas"] == 1
-    assert not [call for call in api.calls if call[0] == "delete"]
-    # no active or queued operation on record: scaled to zero, still present until observed empty
-    active.value = 0
-    api.calls.clear()
-    third = await subject.reconcile(key, fence())
-    assert third.requeue
-    assert old_identity in api.resources and api.resources[old_identity].raw["spec"]["replicas"] == 0
-    assert not [call for call in api.calls if call[0] == "delete"]
-    # observed empty: deleted; the new segments stay
+    assert old_identity in api.resources and not [call for call in api.calls if call[0] == "delete"]
+    # current status, zero replicas, zero ready, no pod of it: deleted; the new segments stay
+    live.observed_generation = 7
+    live.replicas = 0
+    live.ready_replicas = 0
     api.calls.clear()
     await subject.reconcile(key, fence())
-    assert old_identity not in api.resources
-    assert ("delete", old_identity) in api.calls
+    assert old_identity not in api.resources and ("delete", old_identity) in api.calls
     assert [item for item in api.resources.values() if item.observed.kind == "Deployment"]
