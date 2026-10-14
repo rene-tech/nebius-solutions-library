@@ -1148,13 +1148,15 @@ class ModelDeploymentMutationService:
             and observed_cold
             and self._online_pool_swap(current.spec, proposed)
         ):
-            # Online cold pool swap: a published scale-to-zero revision whose controller observation is cold and
-            # FRESH (the authoritative status of this exact revision/etag, zero desired/ready/available replicas,
-            # reconciled within ONLINE_POOL_SWAP_FRESHNESS_S) changes only its poolRefs without a drain, so its
-            # publication never lapses. An activation that lands in the remaining window is not lost: the append is
-            # a compare-and-swap on the etag, the next reconcile renders the new pools, a Deployment of a pool that
-            # left the placement is retired under its termination grace period, and the queued demand that scaled
-            # it keeps scaling the new pool's segment. A stale observation is refused: this never guesses.
+            # Online pool change of a published scale-to-zero revision: only its poolRefs change (append the new
+            # pool first, remove the old one later), without a drain, so its publication never lapses. The fresh
+            # cold observation (this exact revision/etag, zero desired/ready/available replicas, reconciled within
+            # ONLINE_POOL_SWAP_FRESHNESS_S) is the operator's precondition that the model is idle at the change; it
+            # is NOT the proof that no request races it. Running work is preserved by the controller itself: a
+            # Deployment the new layout no longer renders is retained while it holds pods, scaled to zero only once
+            # the model has no active or queued operation on record, and deleted only once observed empty
+            # (ModelDeploymentController._retire_workloads); the new segments are applied meanwhile. A stale
+            # observation is refused: the precondition never guesses.
             assert observation is not None
             observed_at = observation.status.last_reconcile_time or observation.observed_at
             age = (datetime.now(UTC) - observed_at).total_seconds()
