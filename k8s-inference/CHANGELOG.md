@@ -4,7 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.67 (hotfix on 0.11.63; supersedes the unapplied 0.11.65; 0.11.64 is the separate isolation candidate)
+## api 0.11.66 (= 0.11.64 + the 0.11.67 lineage hotfix), platform chart 0.1.7, jobs 0.1.22
+
+- The combined candidate after the 0.11.67 hotfix: everything of 0.11.64 (declared-port ingress isolation, same-pod
+  worker restart as a confirmed lease loss) and of 0.11.67 (a resumed operation's handle is its lineage head, also
+  with both Jobs expired; graph cancel by the original root id after TTL), nothing else. The lineage fix is the 0.11.67
+  code unchanged.
+
+## api 0.11.67 (hotfix on 0.11.63; supersedes the unapplied 0.11.65)
 
 - Manual `:resume` links its successor (docs/JOBS.md "Resume"): the resumed operation gets the durable successor mark
   and, while its Job exists, the `successor` annotation, as fallback and recovery always did. Until now a public resume
