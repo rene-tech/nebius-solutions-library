@@ -168,12 +168,13 @@ variable "fleet" {
       # Optional CPU-only pools (batch pre/post-processing without a GPU): label serverless2.nebius/pool,
       # taint serverless2.nebius/cpu-pool=present:NoSchedule, Kueue flavor like a GPU pool with 0 GPUs.
       cpu_pools = optional(map(object({
-        platform      = string
-        preset        = string
-        min_nodes     = optional(number, 0)
-        max_nodes     = number
-        boot_disk_gib = optional(number, 128)
-        labels        = optional(map(string), {})
+        platform          = string
+        preset            = string # <n>vcpu-<n>gb: the Kueue quota of the pool's flavor is max_nodes x preset minus the per-node reserve
+        min_nodes         = optional(number, 0)
+        max_nodes         = number
+        boot_disk_gib     = optional(number, 128)
+        labels            = optional(map(string), {})
+        shared_filesystem = optional(bool, true) # attach and mount the region's weights filesystem (weights/data/assets on the node)
       })), {})
     }))
 
@@ -352,6 +353,11 @@ variable "fleet" {
     }), {})
 
   })
+
+  validation {
+    condition     = alltrue([for rn, r in var.fleet.regions : alltrue([for pn, p in r.cpu_pools : can(regex("^[0-9]+vcpu-[0-9]+gb$", p.preset)) && p.max_nodes >= 1])])
+    error_message = "cpu_pools: preset is <n>vcpu-<n>gb (the pool's Kueue quota is derived from it) and max_nodes is at least 1."
+  }
 
   validation {
     condition = alltrue([for tn, t in var.fleet.tenants : contains(["managed", "external"], t.storage)
