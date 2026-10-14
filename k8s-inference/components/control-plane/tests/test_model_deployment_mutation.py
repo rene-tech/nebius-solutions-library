@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -1097,3 +1097,93 @@ async def test_kubernetes_writer_updates_post_owned_fields_with_merge_patch(tmp_
     assert live["metadata"]["labels"]["example.test/preserved"] == "label"
     assert live["metadata"]["annotations"]["example.test/preserved"] == "annotation"
     assert live["metadata"]["managedFields"][0]["operation"] == "Update"
+
+
+async def _observe_cold(store, revision, *, observed_at: datetime, replicas=(0, 0, 0), generation: int = 1) -> None:
+    desired, ready, available = replicas
+    await store.model_deployment_append_status(
+        ModelDeploymentStatusObservation(
+            observation_id=uuid4(),
+            source_uid="modeldeployment-uid-swap",
+            source_resource_version=str(generation + 10),
+            namespace=revision.namespace,
+            name=revision.name,
+            tenant_id=revision.tenant_id,
+            revision=revision.revision,
+            status=ModelDeploymentObservedStatus(
+                observed_generation=generation,
+                phase=ModelDeploymentRuntimePhase.COLD,
+                spec_digest=revision.etag,
+                replicas=ModelDeploymentReplicaStatus(desired=desired, ready=ready, available=available),
+                adoption=ModelDeploymentAdoptionStatus(state=ModelDeploymentAdoptionState.NONE),
+                last_reconcile_time=observed_at,
+            ),
+            observed_at=observed_at,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_online_cold_pool_swap_keeps_the_revision_published_and_refuses_everything_else() -> None:
+    """The last-reserved-node handoff: a published (Enabled) scale-to-zero model whose controller observation is
+    freshly Cold at zero replicas changes only its poolRefs without a drain, so its publication never lapses. The
+    same change is refused without an observation, on a stale one, with a replica on record, with a hot floor, or
+    together with any other runtime-material change (those keep the drained cutover)."""
+    store = MemoryStore(
+        PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+        KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+    )
+    service = ModelDeploymentMutationService(
+        repository=StoreModelDeploymentRepository(store),
+        writer=FakeWriter(),
+        envelope=envelope(),
+        renderer=renderer(),
+        prometheus_server_address=PROMETHEUS_ADDRESS,
+    )
+    created = await service.apply(
+        _apply_request(
+            key="pool-swap-create-0001",
+            proposal=ModelDeploymentPreviewProposal(name="evo2-live", spec=model_spec()),
+        ),
+        _actor(),
+    )
+    assert created.revision.spec.lifecycle.desired_state is DesiredState.ENABLED
+    assert created.revision.spec.placement.pool_refs == ["pool-b", "pool-a"]
+    swapped = created.revision.spec.model_copy(
+        update={"placement": created.revision.spec.placement.model_copy(update={"pool_refs": ["pool-a"]})}
+    )
+
+    def proposal(spec, *, key: str):
+        return _apply_request(
+            key=key,
+            proposal=ModelDeploymentPreviewProposal(name="evo2-live", base_etag=created.revision.etag, spec=spec),
+        )
+
+    # no controller observation at all: the drained cutover stays required
+    with pytest.raises(ModelDeploymentMutationProblemError, match="drain the current revision"):
+        await service.apply(proposal(swapped, key="pool-swap-no-observation-0002"), _actor())
+    # a stale cold observation (older than the freshness bound): refused, naming the wait
+    await _observe_cold(store, created.revision, observed_at=datetime.now(UTC) - timedelta(seconds=600))
+    with pytest.raises(ModelDeploymentMutationProblemError, match="older than"):
+        await service.apply(proposal(swapped, key="pool-swap-stale-0003"), _actor())
+    # a fresh observation with a replica on record: not cold, the drained cutover stays required
+    await _observe_cold(store, created.revision, observed_at=datetime.now(UTC), replicas=(1, 0, 0), generation=2)
+    with pytest.raises(ModelDeploymentMutationProblemError, match="drain the current revision"):
+        await service.apply(proposal(swapped, key="pool-swap-replica-0004"), _actor())
+    # fresh and cold at zero: any OTHER runtime-material change alongside is still a drained cutover
+    await _observe_cold(store, created.revision, observed_at=datetime.now(UTC), generation=3)
+    more = swapped.model_copy(
+        update={"placement": swapped.placement.model_copy(update={"accelerators_per_replica": 2})}
+    )
+    with pytest.raises(ModelDeploymentMutationProblemError, match="drain the current revision"):
+        await service.apply(proposal(more, key="pool-swap-accelerators-0005"), _actor())
+    hot = swapped.model_copy(update={"availability": swapped.availability.model_copy(update={"min_replicas": 1})})
+    with pytest.raises(ModelDeploymentMutationProblemError, match="drain the current revision"):
+        await service.apply(proposal(hot, key="pool-swap-hot-floor-0006"), _actor())
+    # fresh, cold, zero replicas, poolRefs only, still Enabled: accepted online, never unpublished
+    accepted = await service.apply(proposal(swapped, key="pool-swap-accepted-0007"), _actor())
+    assert accepted.revision.spec.placement.pool_refs == ["pool-a"]
+    assert accepted.revision.spec.lifecycle.desired_state is DesiredState.ENABLED
+    assert accepted.revision.revision == created.revision.revision + 1
+    assert accepted.revision.spec.artifact == created.revision.spec.artifact
+    assert accepted.revision.spec.runtime == created.revision.spec.runtime
