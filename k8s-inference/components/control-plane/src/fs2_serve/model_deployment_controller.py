@@ -1428,6 +1428,25 @@ def _autoscaler_handoff_complete(
     )
 
 
+def _scaler_target_identity(item: ResourceSnapshot) -> str:
+    """The Deployment identity a ScaledObject scales (`spec.scaleTargetRef`), in the discovery's identity form."""
+    ref = _mapping(_mapping(item.raw.get("spec")).get("scaleTargetRef"))
+    api_version = str(ref.get("apiVersion") or "apps/v1")
+    kind = str(ref.get("kind") or "Deployment")
+    return f"{api_version}/{kind}/{item.observed.namespace}/{ref.get('name') or ''}"
+
+
+def _pod_belongs(pod: PodSnapshot, deployment: ResourceSnapshot) -> bool:
+    """Whether a discovered pod is one of the Deployment's: by its name (ReplicaSet pods are `<deployment>-<hash>-<id>`;
+    a longer sibling name such as `<deployment>-burst-<pool>-...` is excluded by requiring exactly two trailing hash
+    segments after the Deployment's own name)."""
+    prefix = f"{deployment.observed.name}-"
+    if not pod.name.startswith(prefix):
+        return False
+    rest = pod.name[len(prefix) :]
+    return rest.count("-") == 1 and all(part.isalnum() for part in rest.split("-"))
+
+
 def _autoscaler_resources_present(discovery: Discovery) -> bool:
     return any(item.observed.kind in {"ScaledObject", HPA_ENDPOINT.kind} for item in discovery.resources)
 
@@ -2586,27 +2605,27 @@ class ModelDeploymentController:
 
     async def _retire_workloads(
         self,
-        spec: ModelDeploymentSpec,
         discovery: Discovery,
         identities: Sequence[str],
-        *,
-        owner_uid: str,
-        fence: LeaseFence,
-    ) -> tuple[list[str], list[str], bool]:
-        """Retire the stale Deployments of an Enabled revision without pruning running work.
+    ) -> tuple[list[str], list[str]]:
+        """Retire the stale Deployments of an Enabled revision without touching running work.
 
         A Deployment that the new layout no longer renders (its pool left the placement, or a single-pool model
-        became multipool and its segments were renamed) keeps serving what it holds: it is deleted only once it is
-        empty (zero observed and ready replicas on its status). While it still has pods it is retained; it is scaled
-        to zero only once the model has no active or queued operation on record (the same evidence the drain uses:
-        unknown evidence keeps compute alive). Its ScaledObject went in the handoff pass before this, so no new pod
-        can target it; the queued demand scales the new segments instead. Nothing else is deleted here.
-        Returns (deletable identities, retained identities, whether a zero scale was written)."""
+        became multipool and its segments were renamed) is deleted only when nothing of it can run or be reached:
+        its scaler is already gone (the handoff pass deleted it before any Deployment is considered here), its own
+        spec asks for zero replicas, its status reports zero replicas and zero ready replicas, that status is current
+        for its spec (observedGeneration == generation) and no pod of it is on record. Anything else is retained as
+        it is: this never scales a live retired segment to zero itself (an operation count read outside the
+        admission transaction is no proof that no request was admitted after it), so a request that raced the
+        placement change keeps its pod; the existing explicit drain remains the operator's path to release it.
+        Returns (deletable identities, retained identities)."""
         deletable: list[str] = []
         retained: list[str] = []
-        zeroed = False
-        active: int | None = None
-        asked = False
+        scaler_targets = {
+            _scaler_target_identity(item)
+            for item in discovery.resources
+            if item.observed.kind == "ScaledObject" and not item.observed.deleting
+        }
         for identity in identities:
             if "/Deployment/" not in identity:
                 deletable.append(identity)
@@ -2615,37 +2634,20 @@ class ModelDeploymentController:
             if live is None:
                 deletable.append(identity)
                 continue
-            empty = live.replicas == 0 and (live.ready_replicas or 0) == 0
-            if empty:
-                deletable.append(identity)
-                continue
-            retained.append(identity)
-            if not asked:
-                active = await self.active_operations.active_operations(
-                    tenant_id=spec.tenant_id, model_ref=spec.public_model_id
-                )
-                asked = True
-            if active == 0 and _mapping(live.raw.get("spec")).get("replicas") != 0:
-                manifest = {
-                    "apiVersion": str(live.raw.get("apiVersion") or "apps/v1"),
-                    "kind": "Deployment",
-                    "metadata": {"name": live.observed.name, "namespace": live.observed.namespace},
-                    "spec": {"replicas": 0},
-                }
-                await self.api.apply_resource(
-                    RenderedResource(
-                        api_version=manifest["apiVersion"],
-                        kind="Deployment",
-                        namespace=live.observed.namespace,
-                        name=live.observed.name,
-                        manifest=manifest,
-                        digest=canonical_digest(manifest),
-                    ),
-                    owner_uid=owner_uid,
-                    fence=fence,
-                )
-                zeroed = True
-        return deletable, retained, zeroed
+            spec_replicas = _mapping(live.raw.get("spec")).get("replicas")
+            generation = _mapping(live.raw.get("metadata")).get("generation")
+            pods_of_it = any(_pod_belongs(pod, live) for pod in discovery.pods)
+            quiet = (
+                identity not in scaler_targets
+                and spec_replicas == 0
+                and live.replicas == 0
+                and (live.ready_replicas or 0) == 0
+                and generation is not None
+                and live.observed_generation == generation
+                and not pods_of_it
+            )
+            (deletable if quiet else retained).append(identity)
+        return deletable, retained
 
     async def _drain_observation(self, spec: ModelDeploymentSpec, discovery: Discovery) -> DrainObservation:
         publication_present = any(
@@ -2933,11 +2935,9 @@ class ModelDeploymentController:
             retained: list[str] = []
             if not handoff_identities and drain is None:
                 # An Enabled revision whose layout no longer names a segment (a pool left the placement, a single-
-                # pool model became multipool): its retired Deployment is never pruned while it may still serve.
-                delete_identities, retained, zeroed = await self._retire_workloads(
-                    spec, discovery, delete_identities, owner_uid=uid, fence=fence
-                )
-                wrote = wrote or zeroed
+                # pool model became multipool): its retired Deployment is deleted only when provably empty and
+                # unreachable; otherwise it is retained untouched.
+                delete_identities, retained = await self._retire_workloads(discovery, delete_identities)
             for identity in delete_identities:
                 wrote = await self.api.delete_resource(identity, owner_uid=uid, fence=fence) or wrote
             safe_zero_cutover = (
@@ -2948,8 +2948,8 @@ class ModelDeploymentController:
                 and not _autoscaler_resources_present(discovery)
             )
             if retained and not delete_identities:
-                # The retired segments drain under the new layout: the desired resources (the new segments) are
-                # applied below in this same pass, so queued work has somewhere to go; re-observe until they are empty.
+                # Retired segments stay as they are while they hold anything: the desired resources (the new
+                # segments) are applied below in this same pass, so new work has somewhere to go; re-observe them.
                 phase_requeue = True
             elif not safe_zero_cutover:
                 return ReconcileResult(
