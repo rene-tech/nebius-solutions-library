@@ -1875,11 +1875,11 @@ def resume(
     if admit:
         admit(job)  # the run's ledger admits the member before its Job exists (app.continuation_admission)
     created, was_created = create(ns, job, region)
-    _link_successor(ns, name, new, region)
+    _link_successor(ns, name, new, region, jobset=is_jobset(orig))
     return created, was_created
 
 
-def _link_successor(ns: str, name: str, new: str, region: str) -> None:
+def _link_successor(ns: str, name: str, new: str, region: str, jobset: bool = False) -> None:
     """The resumed operation names its successor, durably and on its Job: the durable mark (operation_marks) is what
     the public handle (app._owned) and the stage gate (stages.state_of) follow once the original Job is gone (TTL), and
     it fences the original's late progress records; the annotation serves the handle while the Job still exists. Until
@@ -1892,13 +1892,12 @@ def _link_successor(ns: str, name: str, new: str, region: str) -> None:
         attempts.mark_successor(name, new)
     except Exception as e:  # noqa: BLE001 - the annotation below still links while the Job exists; the mark is retried on replay
         log.warning("successor mark %s -> %s: %s", name, new, e)
+    body = {"metadata": {"annotations": {f"{LABEL}/successor": new}}}
     try:
-        retry(
-            kube.batch(region).patch_namespaced_job,
-            name,
-            ns,
-            {"metadata": {"annotations": {f"{LABEL}/successor": new}}},
-        )
+        if jobset:
+            patch_jobset(ns, name, region, body)
+        else:
+            retry(kube.batch(region).patch_namespaced_job, name, ns, body)
     except ApiException as e:
         if e.status != 404:  # the original expired (TTL): the durable mark is the link
             raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
