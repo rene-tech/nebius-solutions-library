@@ -13,7 +13,7 @@ import copy
 import json
 import logging
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -2584,6 +2584,69 @@ class ModelDeploymentController:
     def stop(self) -> None:
         self._stop.set()
 
+    async def _retire_workloads(
+        self,
+        spec: ModelDeploymentSpec,
+        discovery: Discovery,
+        identities: Sequence[str],
+        *,
+        owner_uid: str,
+        fence: LeaseFence,
+    ) -> tuple[list[str], list[str], bool]:
+        """Retire the stale Deployments of an Enabled revision without pruning running work.
+
+        A Deployment that the new layout no longer renders (its pool left the placement, or a single-pool model
+        became multipool and its segments were renamed) keeps serving what it holds: it is deleted only once it is
+        empty (zero observed and ready replicas on its status). While it still has pods it is retained; it is scaled
+        to zero only once the model has no active or queued operation on record (the same evidence the drain uses:
+        unknown evidence keeps compute alive). Its ScaledObject went in the handoff pass before this, so no new pod
+        can target it; the queued demand scales the new segments instead. Nothing else is deleted here.
+        Returns (deletable identities, retained identities, whether a zero scale was written)."""
+        deletable: list[str] = []
+        retained: list[str] = []
+        zeroed = False
+        active: int | None = None
+        asked = False
+        for identity in identities:
+            if "/Deployment/" not in identity:
+                deletable.append(identity)
+                continue
+            live = next((item for item in discovery.resources if item.observed.identity == identity), None)
+            if live is None:
+                deletable.append(identity)
+                continue
+            empty = live.replicas == 0 and (live.ready_replicas or 0) == 0
+            if empty:
+                deletable.append(identity)
+                continue
+            retained.append(identity)
+            if not asked:
+                active = await self.active_operations.active_operations(
+                    tenant_id=spec.tenant_id, model_ref=spec.public_model_id
+                )
+                asked = True
+            if active == 0 and _mapping(live.raw.get("spec")).get("replicas") != 0:
+                manifest = {
+                    "apiVersion": str(live.raw.get("apiVersion") or "apps/v1"),
+                    "kind": "Deployment",
+                    "metadata": {"name": live.observed.name, "namespace": live.observed.namespace},
+                    "spec": {"replicas": 0},
+                }
+                await self.api.apply_resource(
+                    RenderedResource(
+                        api_version=manifest["apiVersion"],
+                        kind="Deployment",
+                        namespace=live.observed.namespace,
+                        name=live.observed.name,
+                        manifest=manifest,
+                        digest=canonical_digest(manifest),
+                    ),
+                    owner_uid=owner_uid,
+                    fence=fence,
+                )
+                zeroed = True
+        return deletable, retained, zeroed
+
     async def _drain_observation(self, spec: ModelDeploymentSpec, discovery: Discovery) -> DrainObservation:
         publication_present = any(
             item.raw.get("metadata", {}).get("labels", {}).get("fs2-serve.nebius.ai/component") == "publication-intent"
@@ -2867,6 +2930,14 @@ class ModelDeploymentController:
                     requeue=True,
                 )
             delete_identities = handoff_identities or plan.delete_resource_identities
+            retained: list[str] = []
+            if not handoff_identities and drain is None:
+                # An Enabled revision whose layout no longer names a segment (a pool left the placement, a single-
+                # pool model became multipool): its retired Deployment is never pruned while it may still serve.
+                delete_identities, retained, zeroed = await self._retire_workloads(
+                    spec, discovery, delete_identities, owner_uid=uid, fence=fence
+                )
+                wrote = wrote or zeroed
             for identity in delete_identities:
                 wrote = await self.api.delete_resource(identity, owner_uid=uid, fence=fence) or wrote
             safe_zero_cutover = (
@@ -2876,7 +2947,11 @@ class ModelDeploymentController:
                 and not drain.preserve_runtime
                 and not _autoscaler_resources_present(discovery)
             )
-            if not safe_zero_cutover:
+            if retained and not delete_identities:
+                # The retired segments drain under the new layout: the desired resources (the new segments) are
+                # applied below in this same pass, so queued work has somewhere to go; re-observe until they are empty.
+                phase_requeue = True
+            elif not safe_zero_cutover:
                 return ReconcileResult(
                     key=key,
                     action=f"{plan.action}:delete-first",
