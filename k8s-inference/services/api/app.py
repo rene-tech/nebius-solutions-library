@@ -115,7 +115,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.86", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.93", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -152,7 +152,9 @@ def _job_deadline(job: dict) -> int | None:
     return int(d) if d else None
 
 
-def continuation_admission(root: str, predecessor: str | None, transfer_only: bool = False, stage: str | None = None):
+def continuation_admission(
+    root: str, predecessor: str | None, transfer_only: bool = False, stage: str | None = None, kind: str = "stage"
+):
     """The admission a continuation builder calls with its rendered Job, right before creating it: the member joins
     the run's reservation on the root's original key (keys.prepare_run_member: key still valid, current head, budget
     for its GPU bound, the slot reused or re-acquired). The returned callable raises HTTPException with the ledger's
@@ -167,7 +169,7 @@ def continuation_admission(root: str, predecessor: str | None, transfer_only: bo
                 _job_gpus(job),
                 _job_deadline(job),
                 transfer_only,
-                **({"kind": "stage", "stage": stage} if stage else {}),
+                **({"kind": kind, "stage": stage} if stage else {}),
             )
         except keys.KeyLimit as e:
             raise HTTPException(e.status, e.detail)
@@ -185,7 +187,12 @@ def _require_current(p: Principal, source: str, root: str) -> None:
     member = keys.member_of(root)
     if member is None:
         return
-    head = keys.stage_head(member["root"], member["stage"]) if member["kind"] == "stage" else keys.run_head(root)
+    if member["kind"] == "stage":
+        head = keys.stage_head(member["root"], member["stage"])
+    elif member["kind"] == "child":
+        head = keys.child_head(member["root"], member["stage"])
+    else:
+        head = keys.run_head(root)
     if head in (None, source):
         return
     try:
@@ -195,45 +202,114 @@ def _require_current(p: Principal, source: str, root: str) -> None:
     except HTTPException as e:
         if e.status_code != 404:
             raise
+        if _pending_admission(p.namespace, member["root"] if member["kind"] in ("stage", "child") else root, head):
+            return  # a pending admission: continue_run admits only the same intent (the operation named by the head)
     raise HTTPException(
         409,
         f"operation {source} was continued by {head}; continue {head} (the current member of its lineage), not {source}",
     )
 
 
-def continue_run(root: str, build, transfer_only: bool = False):
+def continue_run(root: str, build, transfer_only: bool = False, ns: str | None = None):
     """Run a continuation builder (jobs.resume/export_again/switch_class/recover, given as a callable taking the
-    admission callback) under the run's ledger: the new member follows the current head; a builder that fails after
-    admission with no Job created rolls the member back. Without a ledger for the root (no database, a run admitted
-    before the ledger existed) the builder runs unadmitted, as for an unbounded key."""
+    admission callback) under the run's ledger: the new member follows the current head. Nothing is ever retired
+    automatically: a head that was admitted but whose Job exists nowhere and that no attempt reported (an API process
+    that died between its admission and its create, a create whose answer was lost, or a replica paused between the
+    two: indistinguishable from outside) stays PENDING, and the lineage continues only by the same intent — the
+    builder that renders that very operation name (the deterministic `-x<n>` / `-r<n>` of a replayed request) is
+    admitted as a replay of the pending member and creates its Job (AlreadyExists is the same Job); any other
+    continuation is refused (409 naming the pending admission). A builder that fails after admission is never rolled
+    back on an immediate absence either (`_reconcile_continuation`): only a definite refusal (4xx) rolls the member
+    back. `ns` (the tenant namespace) enables the pending-head judgement; without it the head is taken as is."""
     if not db.enabled():
         return build(None)
     member = keys.member_of(root)
+    kind = "stage"
     if member and member["kind"] == "stage":
         # a stage of a graph (docs/JOBS.md "Stage composition"): its continuations follow the stage's own head inside
         # the graph root's run (the root's key, slot and budget), never the root's lineage or a sibling's
         root, stage = member["root"], member["stage"]
         head = keys.stage_head(root, stage)
+    elif member and member["kind"] == "child":
+        # an endpoint child (docs/JOBS.md "Endpoint children"): its transfer-only export retry follows the child's own
+        # head (its unit's lineage) inside the parent run's ledger; nothing is inferred or counted again
+        root, stage, kind = member["root"], member["stage"], "child"
+        head = keys.child_head(root, stage)
     else:
         stage = None
         head = keys.run_head(root)
     if head is None:
         return build(None)
+    pending_head = head if ns is not None and head != root and _pending_admission(ns, root, head) else None
+    predecessor = keys.member_of(head)["predecessor"] if pending_head else head
     pending: dict = {}
 
     def admit(job: dict) -> None:
-        continuation_admission(root, head, transfer_only, stage=stage)(job)
-        pending["name"] = job["metadata"]["name"]
+        name = job["metadata"]["name"]
+        if pending_head and name != pending_head:
+            raise HTTPException(
+                409,
+                f"operation {root}: its lineage has a pending admission {pending_head} (admitted, its Job not created or "
+                "not readable yet); only a replay of the same request continues it, nothing else is admitted meanwhile",
+            )
+        continuation_admission(root, predecessor, transfer_only, stage=stage, kind=kind)(job)
+        pending["name"] = name
 
     try:
         return build(admit)
-    except Exception:
-        if pending.get("name"):
-            try:
-                keys.rollback_run_member(pending["name"])  # the builder raised at create: no Job exists
-            except Exception as e:  # noqa: BLE001
-                log.warning("rollback of continuation %s: %s", pending["name"], e)
+    except Exception as e:
+        if pending.get("name") and pending["name"] != pending_head:
+            found = _reconcile_continuation(pending["name"], ns, e)
+            if found is not None:
+                return found, True  # created; the answer was lost: the member stays, the Job is the continuation
         raise
+
+
+def _pending_admission(ns: str, root: str, head: str) -> bool:
+    """Whether the lineage head is an admission without a Job: active member, no Job anywhere (a clean 404 across the
+    regions; an unreachable cluster is not an absence), no attempt record (a Job that ran and expired has records). Such a
+    head is never retired here (another replica may be creating it right now); it is resolved by the same intent."""
+    try:
+        jobs.find(ns, head)
+        return False
+    except HTTPException as e:
+        if e.status_code != 404:
+            return False
+    if attempts.enabled() and any(r["operation"] == head for r in attempts.for_operation(root)):
+        return False
+    m = keys.member_of(head)
+    return bool(m) and m["state"] == "active" and (m["predecessor"] is not None or m["kind"] == "child")
+
+
+def _reconcile_continuation(name: str, ns: str | None, e: Exception):
+    """After a builder raised past the admission: the member is NEVER rolled back here. A definite refusal (4xx)
+    proves only that THIS caller's create was refused, not that no other replica created the operation (both may have
+    admitted the same intent: one member, two creates); an ambiguous failure (5xx, transport) may still be accepted by
+    the API server. So the member stays a pending admission in every case: the Job found is returned (the
+    continuation exists, whoever created it); otherwise the same request replays the intent (continue_run admits it as
+    a replay of the member and creates the Job). Returns the Job when it exists, else None."""
+    if ns is not None:
+        try:
+            job, _ = jobs.find(ns, name)
+            log.warning(
+                "continuation %s: its Job exists although this create failed (%s); member kept", name, str(e)[:120]
+            )
+            return job
+        except HTTPException as f:
+            if f.status_code != 404:
+                log.warning(
+                    "continuation %s: create failed (%s), cluster unreadable (%s): member kept",
+                    name,
+                    str(e)[:80],
+                    f.detail,
+                )
+                return None
+    log.warning(
+        "continuation %s: create failed (%s): member kept as a pending admission (the same request replays it)",
+        name,
+        str(e)[:120],
+    )
+    return None
 
 
 def settle_deleted(job: dict) -> None:
@@ -306,6 +382,40 @@ def _admitted_token(key_hash: str, model: str | None = None, operation: str | No
     return hmac.new((cfg.ROUTER_KEY or "").encode(), msg.encode(), hashlib.sha256).hexdigest()
 
 
+ADMITTED_BEARER_PREFIX = "s2-admitted."
+
+
+def _reservation_key_of(operation: str) -> str | None:
+    """The key (hash) an operation is admitted on: its own reservation, or, for a member of a run (a continuation, a
+    stage, an endpoint child), its root's; None when nothing live holds it (released, settled, cancelled)."""
+    h = keys.reservation_key(operation)
+    if h:
+        return h
+    member = keys.member_of(operation)
+    if not member or member.get("state") not in (None, "active"):
+        return None
+    return keys.reservation_key(member["root"]) if member.get("root") else None
+
+
+def _admitted_principal(token: str, operation: str, model: str) -> Principal:
+    """The principal of an admitted-only call: the operation's reservation names the key (by hash); the token must be
+    that key's admission for this model and operation; the key record (fleet database) gives scopes, models, budgets
+    and the tenant. 401 for anything else. The attenuation is structural: the credential is useless for any other
+    operation or model, and dies with the reservation (cancel, settlement)."""
+    if not cfg.ROUTER_KEY or not db.enabled() or not operation or not token:
+        raise HTTPException(401, "admitted credential not accepted")
+    h = _reservation_key_of(operation)
+    if not h or not hmac.compare_digest(token, _admitted_token(h, model, operation)):
+        raise HTTPException(401, "admitted credential not accepted (no live reservation for it)")
+    info = keys.info(h)
+    if not info:
+        raise HTTPException(401, "the admitted operation's key no longer exists")
+    tenant = (info.get("metadata") or {}).get("tenant") or ""
+    if not tenant:
+        raise HTTPException(401, "the admitted operation's key carries no tenant")
+    return Principal(key=f"{ADMITTED_BEARER_PREFIX}{token}", tenant=tenant, info=info, key_hash=h)
+
+
 def _is_admitted(p: Principal, token: str, model: str, operation: str, attempt: str) -> bool:
     """An exact, bounded proof that the gateway call is the API's own admitted call (docs/API.md "Endpoint calls"): the
     token is the HMAC for this key, this model and the operation named; the operation holds a live reservation on
@@ -316,12 +426,12 @@ def _is_admitted(p: Principal, token: str, model: str, operation: str, attempt: 
     key+model tokens of releases up to 0.11.53 for the callers they rendered."""
     if not cfg.ROUTER_KEY or not token:
         return False
-    key_hash = keys.key_hash(p.key)
+    key_hash = p.hash
     if operation and hmac.compare_digest(token, _admitted_token(key_hash, model, operation)):
         # the live state, on every call (never cached): the reservation and the cancel fence
         if db.enabled():
             try:
-                if keys.reservation_key(operation) != key_hash:
+                if _reservation_key_of(operation) != key_hash:
                     return False  # not admitted on this key, or released already (terminal, cancelled, billed)
                 if not operation.startswith("sync-") and attempts.enabled():
                     marks = attempts._marks(operation)
@@ -700,7 +810,18 @@ async def authorize_endpoint(model: str, request: Request, path: str = ""):
             if not token and (protocol.startswith("bearer.") or protocol.startswith("sk-")):
                 token = protocol.removeprefix("bearer.")
         key = f"Bearer {token}" if token else ""
-    p = await _principal(key, allow_router=True)  # LiteLLM's deployments call here with the fleet's router key
+    if key.startswith(f"Bearer {ADMITTED_BEARER_PREFIX}"):
+        # an operation-scoped credential (docs/JOBS.md "Endpoint children"): the admitted token itself, bound to the
+        # key's hash, the model and the operation, valid only while that operation holds a live reservation; the
+        # principal is rebuilt server-side from the key record by hash. No customer key travels, none is stored.
+        p = await asyncio.to_thread(
+            _admitted_principal,
+            key[len(f"Bearer {ADMITTED_BEARER_PREFIX}") :],
+            request.headers.get(OPERATION_HEADER, ""),
+            model,
+        )
+    else:
+        p = await _principal(key, allow_router=True)  # LiteLLM's deployments call here with the fleet's router key
     token = request.headers.get(ADMITTED_HEADER, "")
     verified = await asyncio.to_thread(
         _authorize_model,
@@ -1717,6 +1838,7 @@ def export_again(id: str, p: Principal = Depends(scoped("read:results", "run:con
             root,
             lambda admit: jobs.export_async(p.namespace, orig["metadata"]["name"], _home(orig), m, admit=admit),
             transfer_only=True,
+            ns=p.namespace,
         )
         return _continued(p, job, created, region)
     finalize = None
@@ -1761,8 +1883,84 @@ def export_again(id: str, p: Principal = Depends(scoped("read:results", "run:con
             admit=admit,
         ),
         transfer_only=True,
+        ns=p.namespace,
     )
     return _continued(p, job, created, region)
+
+
+@app.get("/v1/operations/{id}/children/{unit_id}", responses={200: {"model": schemas.ChildReadback}})
+def read_child_unit(id: str, unit_id: str, p: Principal = Depends(scoped("read:operations"))):
+    """The owner's read-only readback of one endpoint child of a run (docs/JOBS.md "Endpoint children"): the same
+    authoritative readback the live attempt gets (the durable row, the capture manifest, the attempt record, the
+    live or terminal state), fenced to the operation's owner (`id`: the root or any member of the run), without the
+    attempt-scoped download URL (an owner reads the capture through GET /v1/operations/<child>, its own operation).
+    404 for an unknown unit or another owner's run; nothing is persisted and no id is guessed."""
+    import children
+
+    if not children.enabled():
+        raise HTTPException(404, f"operation {id}: no child units (no fleet database)")
+    job, _region = _owned(p, id, follow=False)
+    root = (job["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/resumed-from") or job["metadata"]["name"]
+    out = children.readback(p.namespace, root, unit_id)
+    if out is None:
+        raise HTTPException(404, f"operation {root}: no child unit {unit_id!r}")
+    if out.get("capture"):
+        out["capture"] = {k: v for k, v in out["capture"].items() if k not in ("download_url", "download_expires_in_s")}
+    return out
+
+
+@app.post("/internal/operations/{parent}/children", include_in_schema=False)
+async def create_child(parent: str, body: dict, authorization: str = Header(default="")):
+    """Endpoint children (docs/JOBS.md "Endpoint children"): a live attempt of `parent` (its own projected pod token)
+    asks for one bounded async endpoint child of its root. 201 created, 200 read back (same unit, same request)."""
+    import children
+
+    if not children.enabled():
+        raise HTTPException(404, "endpoint children need the fleet database")
+    token = authorization.split(" ", 1)[1].strip() if authorization.lower().startswith("bearer ") else ""
+    if not token:
+        raise HTTPException(401, "the parent attempt's token is required")
+    identity = await asyncio.to_thread(children.verify_parent_token, token)
+    out, created = await asyncio.to_thread(children.create, identity, parent, body or {})
+    return JSONResponse(out, status_code=201 if created else 200)
+
+
+@app.post("/internal/operations/{child}:refresh", include_in_schema=False)
+async def refresh_child(child: str, request: Request, authorization: str = Header(default="")):
+    """The refresh broker of an endpoint child's caller (docs/JOBS.md "Endpoint children"; services/jobs/bin/call.sh
+    `refresh`): with the child's own operation-scoped token, the renewable input URL and fresh presigned PUT URLs for
+    the capture at the platform-owned destination."""
+    import children
+
+    if not children.enabled():
+        raise HTTPException(501, "endpoint children need the fleet database")
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "missing bearer token")
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    return await asyncio.to_thread(
+        children.refresh, child, authorization[7:].strip(), body if isinstance(body, dict) else {}
+    )
+
+
+@app.get("/internal/operations/{parent}/children/{unit_id}", include_in_schema=False)
+async def read_child(parent: str, unit_id: str, authorization: str = Header(default="")):
+    """Authoritative readback of a unit's child by any live attempt of the root (a successor included)."""
+    import children
+
+    if not children.enabled():
+        raise HTTPException(404, "endpoint children need the fleet database")
+    token = authorization.split(" ", 1)[1].strip() if authorization.lower().startswith("bearer ") else ""
+    if not token:
+        raise HTTPException(401, "the parent attempt's token is required")
+    identity = await asyncio.to_thread(children.verify_parent_token, token)
+    _job, _region, root, _m = await asyncio.to_thread(children._live_parent, identity, parent)
+    out = await asyncio.to_thread(children.readback, identity["namespace"], root, unit_id)
+    if out is None:
+        raise HTTPException(404, f"unit {unit_id} of {root} has no child")
+    return out
 
 
 @app.post("/internal/attempts", include_in_schema=False)
@@ -2006,6 +2204,14 @@ def cancel(id: str, p: Principal = Depends(scoped("run:control"))):
         current = job["metadata"]["name"]
     attempts.mark_cancelled(current)  # a late "succeeded" from the cancelled attempt is refused from now on
     cancelled = jobs.cancel(p.namespace, current, _home(job))
+    try:  # endpoint children of the root go with it (docs/JOBS.md "Endpoint children"); the sweep repeats it durably
+        import children
+
+        children.cancel_for_root(
+            p.namespace, (job["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/resumed-from") or id
+        )
+    except Exception as e:  # noqa: BLE001 - the sweep cancels what this missed
+        log.warning("child cascade of %s: %s", id, e)
     settle_deleted(cancelled)
     op = jobs.normalise(cancelled)
     if op["status"] in ("QUEUED", "RUNNING"):
@@ -2114,6 +2320,7 @@ def resume(
             admit=admit,
             restart_from_inputs=bool(req.restart_from_inputs),
         ),
+        ns=p.namespace,
     )
     return _continued(p, job, created, region)
 

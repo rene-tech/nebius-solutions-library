@@ -4,6 +4,131 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.93
+
+(0.11.93 = 0.11.92 without the last post-admission rollback; jobs 0.1.26 and platform chart 0.1.10 unchanged.
+0.11.90–0.11.92 were never applied.)
+
+- Continuations: a builder that fails after its admission never rolls the member back any more, not even on a
+  definite 4xx: that 4xx proves only this caller's create was refused, while another replica that admitted the same
+  intent (one shared member) may have created the operation. In every case the member stays a pending admission:
+  the Job found is returned (whoever created it), otherwise the same request replays the intent. Regression: both
+  replicas observe the prior head, A pauses after its admission, B replays and creates the Job, A's create is refused
+  with a 4xx: nothing rolled back, one Job, one member.
+
+## api 0.11.92
+
+(0.11.92 = 0.11.91 with its automatic retirement WITHDRAWN after review; jobs 0.1.26 and platform chart 0.1.10
+unchanged. Neither 0.11.90 nor 0.11.91 was applied.)
+
+- Continuations: nothing is retired automatically any more (91's two-phase mark had a gap: the reaper's rollback was not
+  compared against the mark it had observed, and a post-create cancel is no proof a Job never ran). A lineage head
+  that was admitted but has no Job and no attempt record stays a PENDING admission; the lineage continues only by the
+  same intent: the builder that renders that very operation name (the deterministic `-x<n>` / `-r<n>` of a replayed
+  request) is admitted as a replay of the pending member and creates its Job (AlreadyExists is the same Job); any other
+  continuation is refused (409 naming the pending admission). Two replicas racing on one continuation converge on one
+  Job and one member whatever the interleaving (regression: the barrier with B's request inside A's paused create).
+  An ambiguous failure after admission (5xx, transport) keeps the member; only a definite 4xx rolls back (unchanged
+  from 91). `key_run_members.retire_marked_at` (migration 23) stays as a reserved, unused column.
+
+## api 0.11.91 (unreleased candidate, superseded by 0.11.92)
+
+(0.11.91 = 0.11.90 with its continuation reconciliation corrected after review; jobs 0.1.26 and platform chart 0.1.10
+unchanged. 0.11.90 was never applied.)
+
+- Continuations, the admission/create race (migration 23): immediate absence of a member's Job is never taken as
+  "never created" (another replica may be paused between its admission and its create, or the API server may still be
+  accepting a timed-out create). A member whose Job exists nowhere and that no attempt reported is MARKED first
+  (`key_run_members.retire_marked_at`, durable, visible to every replica) and the continuation refused with the mark
+  named; only an absence persisting `RETIRE_GRACE_S` (300 s) past the mark rolls it back. The admitting replica
+  confirms its create against the mark (`keys.confirm_member_created`): a mark is cleared by the Job's existence; a
+  member retired meanwhile makes the creator take its fresh Job back and answer 409 (replay). An ambiguous failure
+  after admission (5xx, transport) keeps the member whatever an immediate read says (the Job found is returned as
+  created); only a definite 4xx rolls back. Regressions: the barrier reproduction (replica B asking while A is paused
+  between admission and create: B marks and refuses, A lands and confirms, one Job, one member), the opposite
+  interleaving (A lands after B's rollback: A's Job taken back, 409), phase-one mark then phase-two retirement past
+  the grace, an expired head on record kept, 5xx keeps the member.
+
+## api 0.11.90
+
+(0.11.90 = 0.11.89 plus the two items below; jobs 0.1.26 and platform chart 0.1.10 unchanged.)
+
+- Endpoint children, the owner's readback: `GET /v1/operations/<run>/children/<unit_id>` (scope `read:operations`,
+  the operation's owner; `<run>` the root or any member, the unit keyed by the durable root) returns the same
+  authoritative readback the live attempt gets, without the attempt-scoped download URL; the child's own Operation
+  carries `child: {root, unit, parent}` (docs/JOBS.md "Endpoint children").
+- Continuations (resume, export retry, fallback, recovery, finalizer): a builder that fails after the admission is
+  reconciled against the cluster before anything is rolled back: a create whose answer was lost keeps its member and
+  the call returns the created Job (202); only a definite refusal (4xx) or a confirmed absence rolls the member back;
+  an unreachable cluster keeps it. A lineage head whose Job exists nowhere, with no attempt record and an active member
+  (the trace of a create that never happened) is retired, bounded, so the lineage continues from the real head instead
+  of refusing every continuation with "continued by <phantom>"; a head that ran and expired (on record) is kept.
+  Before, every exception after admission rolled the member back, so a continuation created with a lost answer ran
+  unaccounted (and an export retry was rendered twice).
+
+## api 0.11.89
+
+(0.11.89 = 0.11.88 plus the endpoint resources addendum below; jobs 0.1.26 and platform chart 0.1.10 unchanged.)
+
+- Endpoint `resources` keep optional `cpu_limit` / `memory_limit` above the `cpu` / `memory` requests and an
+  optional `ephemeral_storage` request with `ephemeral_storage_limit` (= the request unless given), the names a run
+  class uses, through the catalog projection and the native renderer (requests/limits on the endpoint container,
+  single- and multi-node); defaults unchanged (4 / 16Gi, requests = limits, no ephemeral storage), nothing rendered
+  without them (docs/API.md). The two-container shapes retained by the migration (NIM 20 CPU/160Gi + adapter 2/2Gi
+  with 8704Mi/13Gi ephemeral; NV-Segment-CT 8/64Gi requests, 24/128Gi limits, 4Gi/16Gi ephemeral) project as one
+  native container.
+
+## api 0.11.88, jobs 0.1.26, platform chart 0.1.10
+
+(0.11.88 supersedes the unreleased 0.11.87 candidate after review; everything of it is included.)
+
+- Endpoint children, the capture: the child is rendered as a native application-I/O endpoint call (docs/JOBS.md
+  "Endpoint children"): its request in a platform-written private binding (inline `input`, or `input_ref.sha256` +
+  a renewable `transport.input_url` the caller verifies against the bound sha256 before posting), ONE inference POST
+  per operation (the durable marker; a lost response is an unknown outcome, never a second POST), the response bytes
+  and their manifest (sha256, media type, size, status, producing attempt) durable on the retained work volume before
+  delivery to a platform-owned destination `s3://<bucket>/operations/<child>/{response.bin,call.json}` through
+  presigned PUT URLs the API mints on demand as the child's refresh broker (`POST /internal/operations/<child>:refresh`,
+  the child's own operation-scoped token, a live attempt of the child or of its transfer-only export retry required).
+  No tenant or bucket credential reaches the parent or the caller. `:export` of a child is admitted as a `child` member
+  after the child's own head (`keys.child_head`; no second request) and served by the same broker.
+- Endpoint children, the request: the bound request is `{model, input | input_ref.sha256, timeout_s, region}`
+  (not the input alone); renewable URLs are outside it; the allow-list and bound are the ones frozen on the parent's
+  Job (no fallback to the current class); the child model's image is recorded at admission and an intent is never
+  completed against another image.
+- Endpoint children, the readback: authoritative past the Job's TTL: the durable row, the capture manifest from the
+  destination (sha256, media type, size, HTTP status, attempt), a one-hour presigned download URL for the live
+  attempt of the root (attempt-scoped, one object), the latest attempt record, and `outcome` (`succeeded` | `failed`
+  | `undelivered` + `exportable` | `unknown` | `pending`): exit 4/3 are unknown and not exportable, never "undelivered".
+- Endpoint children, the lifecycle (migration 22): the row is a durable intent written before the member and the
+  Job (`pending` → `active` → `ended`, reason recorded); a crash in between or an ambiguous create (the Job may exist)
+  leaves the intent pending and the next replay or the sweep finishes it deterministically (found or created; one
+  Job, one member); rollback only on confirmed absence + definite refusal (`keys.rollback_run_member` now also for a
+  child member: its request leaves the root's reservation); a cancel is issued and recorded and the row stays open
+  until the terminal settlement (billing's release joined with the lease; a never-started child settles at its
+  deletion), so no next child starts while the old caller or worker drains; the sweep's cascade covers cancelled,
+  finished-without-successor and gone parents (a finished parent with a successor is judged by the successor).
+- jobs 0.1.26: call.sh verifies a fetched request against the binding's `input_sha256` (an endpoint child's bound
+  input reference) before its one POST; other bytes mean no POST (exit 2). Nothing else of the caller changed.
+
+## api 0.11.87, platform chart 0.1.10 (unreleased candidate, superseded by 0.11.88)
+
+- Endpoint children (docs/JOBS.md "Endpoint children"; migration 21): an operator-allowlisted, bounded primitive by
+  which a LIVE attempt of a run asks the platform for an asynchronous endpoint call as a child of its root. A run
+  class declares `child_endpoints` (endpoint models) and `child_max_units` (explicit bound, required); the render
+  projects a pod-bound ServiceAccount token and the control API's URL into `main` (no customer bearer in the worker).
+  `POST /internal/operations/<run>/children` / `GET …/children/<unit>`: TokenReview of the parent's pod (namespace,
+  name, exact UID), live-attempt and open-root fences, allowlist, deterministic child id per (root, unit), immutable
+  request hash (same request → readback; different → 409), one active child per root, the parent's remaining
+  deadline inherited, the root's owner/namespace/key inherited by hash: the child's caller carries only an
+  operation-scoped credential (`Bearer s2-admitted.<token>`, the admission HMAC), which the gateway hook accepts by
+  rebuilding the principal from the key record by hash while the child's reservation lives (generic authorize
+  support; no customer or admin key stored or forwarded). Ledger: the root's slot shared, one request per child
+  (`keys.prepare_run_member` kind `child`), the key's endpoint-call policy unchanged (a finite GPU-second budget gets
+  the same 501 as any endpoint call), settled as every endpoint call; the root closes only when nothing is active. Cancel cascade on the cancel route and in the reconciler's sweep; ended children recorded.
+  Platform chart 0.1.10 routes `/internal/operations` on the control API (the invariant in tools/check.sh covers it).
+  Nothing of the static stage delegation, the endpoint-stage refusal or the graph bound changed.
+
 ## api 0.11.86, jobs 0.1.25
 
 (0.11.86 / 0.1.25 supersede the unreleased 0.11.85 / 0.1.24 candidate after review; everything of it is included.)
