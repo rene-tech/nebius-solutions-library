@@ -72,7 +72,7 @@ variable "iam_token" {
 }
 
 # Secret inputs named in terraform.tfvars `secrets` (the names of environment variables): stack.sh exports each named
-# variable as TF_VAR_<input> and refuses to run when a named variable is unset. A feature is off only when its name
+# variable as TF_VAR_<input> and refuses to plan, apply or destroy this stage when a named variable is unset. A feature is off only when its name
 # is set to "" in the tfvars, never because a variable happened to be missing from the shell (an apply without the
 # NGC key used to delete the NGC Secrets and the cache's nvcr.io credentials on every worker).
 variable "ngc_api_key" {
@@ -88,6 +88,17 @@ variable "hf_token" {
 }
 
 variable "registry_credentials" {
+  type      = string
+  sensitive = true
+  default   = null
+}
+
+# The image cache's static Container Registry key (secrets.registry_key_env, default REGISTRY_STATIC_KEY): issued
+# once per fleet by the operator with stack/scripts/registry-static-key.sh, never by Terraform. Until api 0.11.78 an
+# `external` data source issued it during `terraform plan` when its gitignored cache file was missing (a fresh
+# checkout, a second worktree): a read-only plan minted a real credential, two clusters planned in the same minute
+# collided on the key's name, and every cluster's plan proposed its own rotation of registry/zot-sync-credentials.
+variable "registry_key" {
   type      = string
   sensitive = true
   default   = null
