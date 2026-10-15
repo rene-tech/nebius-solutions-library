@@ -592,3 +592,94 @@ def test_durable_rows_keep_mode_model_and_io_mode(database):
     )
     plain = attempts.synthesize("op-run", "demo")
     assert plain["mode"] == "run" and plain["execution"] is None and plain["model"] is None
+
+
+def test_stage_graph_members_bypass_the_head_rule_and_hold_the_run_open(database):
+    """Stage composition on the ledger (keys.py migration 13): a root's declared stages are sealed at admission; a
+    stage member joins without the head rule (siblings coexist), one operation per declared stage, only declared
+    stages; the run's slot and request stay until every declared stage settled (the root's own settlement does not
+    close it); after it closed or was cancelled nothing attaches; a cancelled graph closes an idle run at once."""
+    db.migrate()
+    h = "e" * 64
+    _bounded(h, budget_gpu_seconds=None)
+    keys.admit(h, "root", "demo", run_member=True)
+    keys.declare_graph("root", "demo", "owner-1", {"a": [], "b": ["a"]})
+    keys.declare_graph("root", "demo", "owner-1", {"zzz": []})  # a replay of the root: the first declaration stands
+    g = keys.graph_of("root")
+    assert g["stages"] == {"a": [], "b": ["a"]} and g["owner"] == "owner-1" and g["cancelled_at"] is None
+    assert [x["root"] for x in keys.open_graphs()] == ["root"]
+    with pytest.raises(keys.KeyLimit) as e:
+        keys.prepare_run_member("root", "root-s-x", None, 0, None, kind="stage", stage="x")
+    assert e.value.status == 400 and "not declared" in e.value.detail
+    with pytest.raises(keys.KeyLimit) as e:  # a graph is needed for a stage
+        keys.prepare_run_member("other", "other-s-a", None, 0, None, kind="stage", stage="a")
+    assert e.value.status == 409
+    a = keys.prepare_run_member("root", "root-s-a", None, 1, 100, kind="stage", stage="a")
+    assert a["replay"] is False and a["gpu_bound"] == 0.0  # no GPU-second budget on this key: no bound
+    assert keys.prepare_run_member("root", "root-s-a", None, 1, 100, kind="stage", stage="a")["replay"] is True
+    with pytest.raises(keys.KeyLimit) as e:  # one operation per declared stage
+        keys.prepare_run_member("root", "root-s-a2", None, 1, 100, kind="stage", stage="a")
+    assert e.value.status == 409 and "already has an operation" in e.value.detail
+    b = keys.prepare_run_member("root", "root-s-b", None, 1, 100, kind="stage", stage="b")  # a sibling: no head rule
+    assert b["replay"] is False
+    members = {m["operation"]: m for m in keys.run_members("root")}
+    assert members["root-s-a"]["kind"] == "stage" and members["root-s-a"]["stage"] == "a"
+    assert members["root"]["kind"] == "continuation" and members["root"]["stage"] is None
+    # the root settles: the run stays open (its declared stages have not settled), the request is not spent
+    assert keys.release("root", 30) is True
+    assert _reservation() is not None and keys.info(h)["spent_requests"] == 0
+    assert keys.settle_run_member("root-s-a", 10.0)["closed"] is False
+    keys.note_member("root-s-a", "ran")
+    assert next(m for m in keys.run_members("root") if m["operation"] == "root-s-a")["note"] == "ran"
+    assert keys.settle_run_member("root-s-b", 0.0)["closed"] is True  # the last declared stage: the run closes
+    assert _reservation() is None and keys.info(h)["spent_requests"] == 1
+    g = keys.graph_of("root")
+    assert g["closed_at"] is not None and keys.open_graphs() == []
+    with pytest.raises(keys.KeyLimit) as e:  # a declared stage is submitted once: its lineage exists
+        keys.prepare_run_member("root", "root-s-b2", None, 1, 100, kind="stage", stage="b")
+    assert e.value.status == 409 and "already has an operation" in e.value.detail
+    # lineages: a stage's continuation follows that stage's head (never the root's, never a sibling's) and is admitted
+    # on the root's key even after the graph closed (the slot is re-acquired, as for any continuation of a closed run)
+    assert keys.member_of("root-s-a") == {
+        "root": "root",
+        "kind": "stage",
+        "stage": "a",
+        "state": "settled",
+        "predecessor": None,
+    }
+    assert (
+        keys.stage_head("root", "a") == "root-s-a" and keys.run_head("root") == "root"
+    )  # stages are not the root's head
+    with pytest.raises(keys.KeyLimit) as e:  # a sibling's head is not this stage's
+        keys.prepare_run_member("root", "root-s-a-r1", "root-s-b", 1, 100, kind="stage", stage="a")
+    assert e.value.status == 409 and "head of stage 'a'" in e.value.detail
+    with pytest.raises(keys.KeyLimit) as e:  # a stage member is never the root lineage's head
+        keys.prepare_run_member("root", "root-r1", "root-s-b", 1, 100)
+    assert e.value.status == 409 and "run head" in e.value.detail
+    m = keys.prepare_run_member("root", "root-s-a-r1", "root-s-a", 1, 100, kind="stage", stage="a")
+    assert m["replay"] is False and keys.stage_head("root", "a") == "root-s-a-r1" and _reservation() is not None
+    with pytest.raises(keys.KeyLimit) as e:  # the lineage moved: the old head is not continued twice
+        keys.prepare_run_member("root", "root-s-a-r2", "root-s-a", 1, 100, kind="stage", stage="a")
+    assert e.value.status == 409
+    assert keys.prepare_run_member("root", "root-r1", "root", 1, 100)["replay"] is False  # the root's own lineage
+    assert keys.run_head("root") == "root-r1" and keys.stage_head("root", "b") == "root-s-b"
+    assert keys.settle_run_member("root-s-a-r1", 5.0)["closed"] is False  # root-r1 still active
+    assert keys.settle_run_member("root-r1", 5.0)["closed"] is True and keys.info(h)["spent_requests"] == 1
+    # a new declared stage cannot attach to a closed graph (declared but never submitted, then the graph closed)
+    # a cancelled graph: an idle run closes at once, the first reason stands, nothing attaches
+    keys.admit(h, "root2", "demo", run_member=True)
+    keys.declare_graph("root2", "demo", "owner-1", {"a": [], "c": []})
+    keys.prepare_run_member("root2", "root2-s-a", None, 0, None, kind="stage", stage="a")
+    assert keys.release("root2", 0) is True and _reservation("root2") is not None  # open: stage c never ran
+    assert keys.settle_run_member("root2-s-a", 0.0)["closed"] is False
+    assert keys.cancel_graph("root2", "cancelled by the caller") is True
+    with pytest.raises(keys.KeyLimit) as e:  # a cancelled graph admits nothing, not even a stage's continuation
+        keys.prepare_run_member("root2", "root2-s-a-r1", "root2-s-a", 0, None, kind="stage", stage="a")
+    assert e.value.status == 409 and "cancelled" in e.value.detail
+    assert keys.cancel_graph("root2", "later") is True and keys.graph_of("root2")["reason"] == "cancelled by the caller"
+    assert _reservation("root2") is None and keys.info(h)["spent_requests"] == 2
+    with pytest.raises(keys.KeyLimit) as e:  # a declared, never submitted stage: nothing attaches any more
+        keys.prepare_run_member("root2", "root2-s-c", None, 0, None, kind="stage", stage="c")
+    assert e.value.status == 409 and "cancelled" in e.value.detail
+    assert keys.prepare_run_member("root2", "root2-s-a", None, 0, None, kind="stage", stage="a")["replay"] is True
+    assert keys.cancel_graph("nope", "x") is False

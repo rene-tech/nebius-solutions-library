@@ -59,6 +59,17 @@ class Items:
         self.items = items
 
 
+def _merge(into: dict, patch: dict) -> dict:
+    for k, v in patch.items():
+        if v is None:
+            into.pop(k, None)
+        elif isinstance(v, dict) and isinstance(into.get(k), dict):
+            _merge(into[k], v)
+        else:
+            into[k] = v
+    return into
+
+
 class FakeCluster:
     """Jobs, pods, PVCs and Secrets of one cluster, behind the BatchV1Api / CoreV1Api methods jobs.py and
     billing.py call (dicts in, dicts out; sanitize_for_serialization is the identity)."""
@@ -137,8 +148,7 @@ class FakeCluster:
 
     def patch_namespaced_job(self, name, ns, body):
         j = self.jobs[(ns, name)]
-        j["spec"].update(body.get("spec", {}))
-        j["metadata"].setdefault("annotations", {}).update((body.get("metadata") or {}).get("annotations") or {})
+        _merge(j, body)  # a merge patch: nested maps merge, None deletes (labels, annotations, template metadata)
         return j
 
     def delete_namespaced_job(self, name, ns, propagation_policy=None):
@@ -1179,20 +1189,122 @@ class FakeKeys:
         return True
 
     # the run ledger (keys.py migration 11): members recorded in order, the head rule and budgets live in the database tests
+    def _lineage(self, root, kind, stage):
+        return [
+            m
+            for m in getattr(self, "members", [])
+            if m["root"] == root and m.get("kind", "continuation") == kind and m.get("stage") == stage
+        ]
+
     def run_head(self, root):
-        chain = [m for m in getattr(self, "members", []) if m["root"] == root]
+        chain = self._lineage(root, "continuation", None)
         return chain[-1]["operation"] if chain else None
 
-    def prepare_run_member(self, root, operation, predecessor, gpus, timeout_s, transfer_only=False):
-        self.calls.append(("prepare", root, operation, predecessor, gpus, timeout_s, transfer_only))
+    def stage_head(self, root, stage):
+        chain = self._lineage(root, "stage", stage)
+        return chain[-1]["operation"] if chain else None
+
+    def member_of(self, operation):
+        m = next((m for m in getattr(self, "members", []) if m["operation"] == operation), None)
+        return (
+            {
+                "root": m["root"],
+                "kind": m.get("kind", "continuation"),
+                "stage": m.get("stage"),
+                "state": m["state"],
+                "predecessor": m["predecessor"],
+            }
+            if m
+            else None
+        )
+
+    def prepare_run_member(
+        self, root, operation, predecessor, gpus, timeout_s, transfer_only=False, kind="continuation", stage=None
+    ):
+        self.calls.append(
+            ("prepare", root, operation, predecessor, gpus, timeout_s, transfer_only)
+            + ((kind, stage) if kind != "continuation" else ())
+        )
         self.members = getattr(self, "members", [])
         if any(m["operation"] == operation for m in self.members):
             return {"operation": operation, "replay": True}
-        self.members.append({"operation": operation, "root": root, "predecessor": predecessor, "state": "active"})
+        if kind == "stage":  # the database rules (test_database.py), in short: declared, open, one lineage per stage
+            g = self.graphs.get(root)
+            if g is None:
+                raise keys.KeyLimit(409, f"run {root} declared no stage graph")
+            if stage not in g["stages"]:
+                raise keys.KeyLimit(400, f"stage {stage!r} is not declared by {root}")
+            if g["cancelled_at"]:
+                raise keys.KeyLimit(409, f"the graph of {root} is cancelled")
+            head = self.stage_head(root, stage)
+            if predecessor is None:
+                if head is not None:
+                    raise keys.KeyLimit(409, f"stage {stage!r} of {root} already has an operation ({head})")
+                if g["closed_at"]:
+                    raise keys.KeyLimit(409, f"the graph of {root} is closed")
+            elif predecessor != head:
+                raise keys.KeyLimit(409, f"only the current head of stage {stage!r} may be continued ({head})")
+        elif predecessor != self.run_head(root):
+            raise keys.KeyLimit(409, f"only the current run head may be continued ({self.run_head(root)})")
+        self.members.append(
+            {
+                "operation": operation,
+                "root": root,
+                "predecessor": predecessor,
+                "state": "active",
+                "kind": kind,
+                "stage": stage,
+                "note": None,
+            }
+        )
         return {"operation": operation, "replay": False}
+
+    # stage graphs (keys.py migration 13)
+    @property
+    def graphs(self):
+        self._graphs = getattr(self, "_graphs", {})
+        return self._graphs
+
+    def declare_graph(self, root, tenant, owner, stages, deadline_at=None):
+        self.calls.append(("graph", root, sorted(stages)))
+        self.graphs.setdefault(
+            root,
+            {
+                "root": root,
+                "tenant": tenant,
+                "owner": owner,
+                "stages": stages,
+                "deadline_at": deadline_at,
+                "cancelled_at": None,
+                "closed_at": None,
+                "reason": None,
+            },
+        )
+
+    def graph_of(self, root):
+        return dict(self.graphs[root]) if root in self.graphs else None
+
+    def open_graphs(self):
+        return [dict(g) for g in self.graphs.values() if not g["cancelled_at"] and not g["closed_at"]]
+
+    def cancel_graph(self, root, reason):
+        g = self.graphs.get(root)
+        if g is None:
+            return False
+        g["cancelled_at"] = g["cancelled_at"] or "now"
+        g["reason"] = g["reason"] or reason
+        return True
+
+    def note_member(self, operation, note):
+        for m in getattr(self, "members", []):
+            if m["operation"] == operation:
+                m["note"] = note
 
     def settle_run_member(self, operation, gpu_seconds):
         self.calls.append(("settle", operation, gpu_seconds))
+        for m in getattr(self, "members", []):
+            if m["operation"] == operation and m["state"] == "active":
+                m["state"] = "unknown" if gpu_seconds is None else "settled"
         return {"settled": True}
 
     def rollback_run_member(self, operation):
@@ -1204,7 +1316,11 @@ class FakeKeys:
         return {"active_operations": 0, "reserved_gpu_seconds": 0.0, "unknown_gpu_seconds": 0.0}
 
     def run_members(self, root):
-        return [dict(m, gpu_bound=0.0, gpu_seconds=None) for m in getattr(self, "members", []) if m["root"] == root]
+        return [
+            {"kind": "continuation", "stage": None, "note": None, **m, "gpu_bound": 0.0, "gpu_seconds": None}
+            for m in getattr(self, "members", [])
+            if m["root"] == root
+        ]
 
     def own_operation(self, operation, tenant, owner, model):
         self.owners[operation] = (tenant, owner, model)
@@ -1302,6 +1418,13 @@ def fake_keys(monkeypatch):
         "rollback_run_member",
         "run_usage",
         "run_members",
+        "stage_head",
+        "member_of",
+        "declare_graph",
+        "graph_of",
+        "open_graphs",
+        "cancel_graph",
+        "note_member",
     ):
         monkeypatch.setattr(keys, name, getattr(fk, name))
     monkeypatch.setattr(db, "enabled", lambda: True)  # the fleet API: it has the database
@@ -2225,10 +2348,13 @@ def admin_keys(monkeypatch):
     monkeypatch.setattr(
         keys_mod, "run_head", lambda root: next((m["operation"] for m in reversed(ledger) if m["root"] == root), None)
     )
+    monkeypatch.setattr(keys_mod, "stage_head", lambda root, stage: None)
+    monkeypatch.setattr(keys_mod, "member_of", lambda op: None)
+    monkeypatch.setattr(keys_mod, "graph_of", lambda root: None)
     monkeypatch.setattr(
         keys_mod,
         "prepare_run_member",
-        lambda root, op, pred, gpus, timeout_s, transfer_only=False: (
+        lambda root, op, pred, gpus, timeout_s, transfer_only=False, kind="continuation", stage=None: (
             ledger.append({"operation": op, "root": root, "predecessor": pred}) or {"operation": op, "replay": False}
         ),
     )

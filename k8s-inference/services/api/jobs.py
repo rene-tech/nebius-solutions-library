@@ -732,6 +732,10 @@ def build_async(
         # group) and reads the private binding (a Secret volume, mode 0440): the file-system group makes both its, as
         # for a run's pod (build_run)
         "securityContext": {"fsGroup": 10001, "fsGroupChangePolicy": "OnRootMismatch", **POD_SECURITY_CONTEXT},
+        # shared PID namespace, as a run's pod: the uploader records `started` only once it sees the caller's process
+        # (upload.sh main_alive) and `finished` when it is gone; in separate namespaces it never sees either and the
+        # attempt is never opened (the application's refresh broker then refuses the caller for good: a deadlock)
+        "shareProcessNamespace": True,
         "containers": [main, _uploader(name, region, output_prefix, work)],
         "volumes": [
             {"name": "work", "persistentVolumeClaim": {"claimName": work}}
@@ -862,6 +866,9 @@ def _inherit_owner(job: dict, ann: dict) -> None:
     owner = ann.get(f"{LABEL}/owner")
     if owner:
         job["metadata"]["annotations"][f"{LABEL}/owner"] = owner
+    import stages
+
+    stages.inherit(job, ann)  # a stage's continuation stays that stage (lineage, dependency results)
 
 
 def operation_owner(ann: dict, root: str) -> str | None:
@@ -894,15 +901,18 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
     ann = job["metadata"]["annotations"]
     ex = json.loads(ann.get(f"{LABEL}/execution") or "null")
     root = ann.get(f"{LABEL}/resumed-from") or name
-    execution.deliver(
-        ex,
-        name,
-        root,
-        ns,
-        job["metadata"]["labels"][f"{LABEL}/tenant"],
-        placement_regions(job) or [region],
-        owner=operation_owner(ann, root),
-    )
+    if job["metadata"].get("labels", {}).get(f"{LABEL}/stage-waiting") != "true":
+        # a waiting stage (docs/JOBS.md "Stage composition") gets its binding from the gate when its dependencies
+        # delivered: its request-scoped credentials are not consumed while it waits
+        execution.deliver(
+            ex,
+            name,
+            root,
+            ns,
+            job["metadata"]["labels"][f"{LABEL}/tenant"],
+            placement_regions(job) or [region],
+            owner=operation_owner(ann, root),
+        )
     was_created = True
     try:
         if is_jobset(job):

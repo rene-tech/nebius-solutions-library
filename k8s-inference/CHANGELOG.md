@@ -4,6 +4,46 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.49
+
+- A stage of a closed graph (every stage settled) replays as its durable lineage head (200) instead of 409; a stage never
+  submitted before the graph closed, or any stage of a cancelled graph, stays 409 and no Job is created.
+
+## api 0.11.48
+
+- Stage lineages, two seams found on 0.11.47 (never deployed): a stage's successor carries the stage root as an
+  annotation too, so the second and every later continuation (resume of a resume, export of a resume) keeps the stage
+  identity and the bound dependency results; a public `:resume` or `:export` names the current member of its lineage:
+  an older member that a newer compute successor continued is refused (409, the head named), never reopened silently
+  (an export retry or finalizer of the named member is still followed on the member itself).
+
+## api 0.11.47
+
+- Stage lineages (docs/JOBS.md "Stage composition"; 0.11.46 was never deployed): a stage's `:resume`, `:export`,
+  finalizer, fallback and recovery members are admitted on the graph root's key and budget as the next member of that
+  stage's own lineage (`keys.stage_head`, `keys.member_of`; the root's own continuations keep their head, stage
+  members never become it), siblings continue meanwhile, the successor carries the stage identity and the bound
+  dependency results, the gate judges a dependency by the head of its lineage, a FAILED dependency holds its
+  dependents (resumable) while a CANCELLED one cancels them once, and a declared stage is submitted once (a
+  resubmission answers with its lineage head). Up to 256 stages; graph deadline default 14 days, up to 30.
+- An endpoint call's caller pod shares its process namespace between main and the uploader, as a run's pod: the
+  attempt's `started` and `finished` records are written from what the uploader sees (upload.sh main_alive); in
+  separate namespaces no attempt was ever opened and a broker that grants nothing before the authoritative start
+  record held the caller for good.
+
+## api 0.11.46
+
+- Stage composition (docs/JOBS.md "Stage composition"): a root declares its stages at submission (`execution.graph`:
+  ids → dependencies, acyclic, at most 64, sealed), each stage is submitted as its own run (`execution.stage`:
+  deterministic id `<root>-s-<id>`, same owner, admitted on the root's key as a member of the root's run without the
+  head rule); a stage waits as a suspended Job without a Kueue queue (no node, no binding claimed, no credential
+  consumed) until the control API's gate finds every dependency `SUCCEEDED` with a `result_ref` on durable records,
+  then delivers its binding, binds the dependencies' results into the pod (`DEPENDENCY_RESULTS`) and hands it to
+  Kueue; a failed or cancelled dependency, or a success without a result, cancels the stage; the root's `:cancel`
+  fans out; the graph's deadline cancels what waits and closes the graph; the root's slot and request are released
+  only when every declared stage settled; the root's handle reports `graph` and is terminal only with its stages; a
+  stage that settled is never run again (ledger migration 13: `run_graphs`, member `kind`/`stage`/`note`).
+
 ## platform chart 0.1.4
 
 - The gateways' access logs use an explicit format: the path without its query string, no credential headers
