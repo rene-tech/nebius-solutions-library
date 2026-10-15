@@ -4,6 +4,54 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.112
+
+- Endpoint children commit their inherited tenant/owner and actual endpoint model
+  in `operation_owners` before creating a callable Job. Previously only the Job
+  annotation was inherited: native attach returned `owner: null`, and Cosmos
+  correctly stopped before inference with `runtime_draining` (LeRobot R7,
+  2026-10-14). The write is outside the graph transaction, so an immediately
+  attaching worker sees the committed record. Replays are idempotent; conflicting
+  ownership is refused without creating or reassigning a Job. No model rebuild,
+  new database migration, access grant, or automatic inference retry.
+
+## api 0.11.111
+
+(0.11.111 = 0.11.110 plus bounded owner reads, the failure settlement of stage graphs and the Terraform-bootstrapped
+fleet operator key; platform chart 0.1.12: the API container's memory 512Mi requested / 2Gi limit (both API pods were
+OOM-killed at 512Mi on 2026-10-14 20:45 and 20:48 under concurrent owner reads); jobs 0.1.27 unchanged; no migration.)
+
+- Owner reads of an operation are bounded by what the operation has, not by what its tenant has (`jobs.list_related`):
+  the handle's finalizer view (`_finalizers`, every FAILED/FINALIZING read), its lineage view and the finalizer and
+  continuation counters of `:export`, `:resume` and the class switches selected their few relatives (`<root>-x<n>`,
+  `<root>-r<n>`) from `jobs.list_ops`, which listed and completed the tenant's EVERY operation on every region (every
+  pod, one Kueue Workload read per manager Job: 7.5 s of a 14.4 s unloaded read of a FAILED boltzgen root with 237 Jobs
+  in the tenant, 24-35 s under the console's polling, api 0.11.110, 2026-10-14). They now select from the Job lists
+  alone and complete only the selected ones. The Workload list of a namespace is one read per 2 s
+  (`kube.WORKLOADS_CACHE_S`, 0 disables) instead of one per manager Job of every listing, and a graph's view and the
+  gate remember each lineage head's lookup within the read or pass (the state, then the gated check: 14 reads for 7
+  stages before). The tenant's own listing (`GET /v1/operations`) is unchanged.
+
+- Stage composition (docs/JOBS.md "Failure settlement"): a graph in `action_required` (nothing active, a lineage
+  head FAILED, the rest parked on it) for `GRAPH_FAILURE_GRACE_S` (default 1800 s) after its newest failure is closed
+  by the gate as the deadline closes it: parked stages retired (deleted, settled at zero, the reason on record), the
+  graph cancelled with the reason, the root's slot released. The failed head's Job, volume, attempts and charges stay;
+  its lineage may still be continued. A root that FAILED on its own before its stages ran now counts as a blocking head
+  (`blocked_on[].stage` = `root`; before, such a graph showed no signal at all), and every `blocked_on` entry carries
+  `failed_at`. Observed: boltzgen root op-b60c9ff341028d80 FAILED at 20:23 with 7 never-launched stages active and its
+  slot held until an owner cancel 21 minutes later; the deadline was 4.5 days away.
+
+- Gang status (docs/JOBS.md "Multi-node runs"): a gang's delivery authority is its newest incarnation's rank 0 record
+  (`attempts.authority`), never a peer's: every peer records `export_state` `n/a`, and the handle took the newest
+  SUCCEEDED record with an export state as the delivering one, so a 2x1 MPI epoch whose rank 0 had committed its
+  result and whose rank 1 recorded afterwards read EXPORT_FAILED "missing RESULT" (op-1309949ff76ab3c3 epoch 5, 2026-10-14). A
+  new incarnation with only a peer on record stays FINALIZING instead of borrowing the previous coordinator's result.
+
+- Fleet operator keys from Terraform (docs/API.md "Fleet operators"): `fleet_operator_keys` (a set of names, default
+  empty) bootstraps keys of tenant `platform` with role `fleet` through the existing key machinery (random_password,
+  Secret, `python -m keys bootstrap` Job) and prints them in the sensitive output `fleet_operator_keys`; tenant keys,
+  the acceptance probe's first key and every key's rotation and expiry are unchanged.
+
 ## api 0.11.110
 
 (0.11.110 = 0.11.109 plus the fleet operator surface, the provisioning of a gang's shared checkpoint leaf and the
