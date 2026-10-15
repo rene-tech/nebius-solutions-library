@@ -114,7 +114,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.78", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.79", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -746,6 +746,25 @@ def _authorize_model(
         )
     if m["mode"] == "run":
         raise HTTPException(404, "not an endpoint")
+    if method.upper() == "POST":
+        if admitted:
+            # one line per admitted inference (never per readiness probe): the proof that the markers left the hook
+            # towards the gateway at this instant; a prepared-never-attached execution after this line is a loss
+            # downstream of the hook (policy, Knative data path, the worker's reading), never a missing emission
+            log.info(
+                "authorize %s: admitted POST of %s attempt %s: markers emitted (x-serverless2-operation/-attempt)",
+                m["name"],
+                operation,
+                attempt or "-",
+            )
+        elif leases.mode_of(m) == "required":
+            # a direct POST to an endpoint whose worker requires a lease carries no markers: the worker refuses it
+            # (required mode fails closed, unchanged); named here so the refusal is attributable from the API log
+            log.info(
+                "authorize %s: direct POST by %s carries no markers (the model requires a native lease: the worker refuses it)",
+                m["name"],
+                p.info.get("key_alias") or p.tenant,
+            )
     if not admitted and p.role != keys.ROUTER["role"]:
         # a direct call to the endpoint's hostname: one request against the key's budget and rate window (the slot is
         # not held: the hook cannot see the call end); the API's own proxied call was admitted already
@@ -1445,7 +1464,7 @@ def _chain(p: Principal, op: dict, job: dict, root: str) -> dict:
                 "reason": ann.get(f"{cfg.LABEL}/fallback") or ann.get(f"{cfg.LABEL}/recovery"),
                 "gpu_seconds": round(sum(measured), 1) if measured else (None if unknown else 0.0),
                 "gpu_seconds_complete": not unknown,
-                "cost": float(ann[f"{cfg.LABEL}/billed"]) if f"{cfg.LABEL}/billed" in ann else None,
+                "cost": st.measured(ann.get(f"{cfg.LABEL}/billed")),  # "unknown" (settled without a measurement) = null
             }
         )
         total += sum(measured)
