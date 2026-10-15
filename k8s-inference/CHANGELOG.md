@@ -13,16 +13,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
   get/list only. The KServe rollout witness of api 0.11.109 (`kube._rollout`) reads the predictor Knative Service's
   generation, observedGeneration and template image and reports an unreadable Service as "not converged"; without
   the grant that read was 403 on every Knative-mode endpoint, so a call with `execution.require_converged` (the
-  Scientific App's whole native-async path) was refused 409 "rollout not converged … predictor Service … not readable
-  (403)" before admission (Cosmos3 Nano transfer-video, 2026-10-14 22:07 UTC; RawDeployment endpoints were not
+  an application's whole native-async path) was refused 409 "rollout not converged … predictor Service … not readable
+  (403)" before admission (a Knative-mode endpoint, 2026-10-14; RawDeployment endpoints were not
   affected). tools/check.sh's render test now requires both resources on both Roles and nothing wider.
 
 ## api 0.11.112
 
 - Endpoint children commit their inherited tenant/owner and actual endpoint model
   in `operation_owners` before creating a callable Job. Previously only the Job
-  annotation was inherited: native attach returned `owner: null`, and Cosmos
-  correctly stopped before inference with `runtime_draining` (LeRobot R7,
+  annotation was inherited: native attach returned `owner: null`, and the worker
+  correctly stopped before inference with `runtime_draining` (a child endpoint call,
   2026-10-14). The write is outside the graph transaction, so an immediately
   attaching worker sees the committed record. Replays are idempotent; conflicting
   ownership is refused without creating or reassigning a Job. No model rebuild,
@@ -38,7 +38,7 @@ OOM-killed at 512Mi on 2026-10-14 20:45 and 20:48 under concurrent owner reads);
   the handle's finalizer view (`_finalizers`, every FAILED/FINALIZING read), its lineage view and the finalizer and
   continuation counters of `:export`, `:resume` and the class switches selected their few relatives (`<root>-x<n>`,
   `<root>-r<n>`) from `jobs.list_ops`, which listed and completed the tenant's EVERY operation on every region (every
-  pod, one Kueue Workload read per manager Job: 7.5 s of a 14.4 s unloaded read of a FAILED boltzgen root with 237 Jobs
+  pod, one Kueue Workload read per manager Job: 7.5 s of a 14.4 s unloaded read of a FAILED graph root with 237 Jobs
   in the tenant, 24-35 s under the console's polling, api 0.11.110, 2026-10-14). They now select from the Job lists
   alone and complete only the selected ones. The Workload list of a namespace is one read per 2 s
   (`kube.WORKLOADS_CACHE_S`, 0 disables) instead of one per manager Job of every listing, and a graph's view and the
@@ -51,13 +51,13 @@ OOM-killed at 512Mi on 2026-10-14 20:45 and 20:48 under concurrent owner reads);
   graph cancelled with the reason, the root's slot released. The failed head's Job, volume, attempts and charges stay;
   its lineage may still be continued. A root that FAILED on its own before its stages ran now counts as a blocking head
   (`blocked_on[].stage` = `root`; before, such a graph showed no signal at all), and every `blocked_on` entry carries
-  `failed_at`. Observed: boltzgen root op-b60c9ff341028d80 FAILED at 20:23 with 7 never-launched stages active and its
+  `failed_at`. Observed: a graph root FAILED at 20:23 with 7 never-launched stages active and its
   slot held until an owner cancel 21 minutes later; the deadline was 4.5 days away.
 
 - Gang status (docs/JOBS.md "Multi-node runs"): a gang's delivery authority is its newest incarnation's rank 0 record
   (`attempts.authority`), never a peer's: every peer records `export_state` `n/a`, and the handle took the newest
   SUCCEEDED record with an export state as the delivering one, so a 2x1 MPI epoch whose rank 0 had committed its
-  result and whose rank 1 recorded afterwards read EXPORT_FAILED "missing RESULT" (op-1309949ff76ab3c3 epoch 5, 2026-10-14). A
+  result and whose rank 1 recorded afterwards read EXPORT_FAILED "missing RESULT" (epoch 5, 2026-10-14). A
   new incarnation with only a peer on record stays FINALIZING instead of borrowing the previous coordinator's result.
 
 - Fleet operator keys from Terraform (docs/API.md "Fleet operators"): `fleet_operator_keys` (a set of names, default
@@ -92,9 +92,9 @@ member-aware reservation fence of the worker's attach; jobs 0.1.27 and platform 
 - Native execution leases (docs/API.md "Native execution leases"): the worker's attach checks the operation's LIVE
   reservation through the durable run ledger (`keys.reservation_key_of`: its own reservation, or its root's for an
   ACTIVE member: a continuation, a stage, an endpoint child); before, it looked for the operation's own reservation
-  row, which an endpoint child never has (it shares its root's slot), so the first LeRobot child's inference POST on
+  row, which an endpoint child never has (it shares its root's slot), so the first child's inference POST on
   109 reached the hook, was prepared, and the worker's attach was refused "reservation is released" with the root
-  live (op-82b6134819bee769). The gateway's admission proof already resolved members this way; both now share the one
+  live. The gateway's admission proof already resolved members this way; both now share the one
   resolver. A settled member never borrows its root's live slot; a released root resolves to nothing for itself and
   its members. Tests: root, child, foreign, settled child, released root, the child's attach.
 
@@ -107,14 +107,14 @@ member-aware reservation fence of the worker's attach; jobs 0.1.27 and platform 
   the start ACK froze the pointer) carries `resume_checkpoint_ref`, `resume_source_epoch` and `resume_source`, all
   three null when the ACK decided there is nothing to restore (a fresh start); before, null keys were omitted, so a
   fresh gang's peers showed no triple while the current attempt did, and a restore that reads every peer's triple
-  refused it (op-a229254b4a059926, 2026-10-14). Rows the ACK never decided (a single-pod attempt, a live pod without
+  refused it (2026-10-14). Rows the ACK never decided (a single-pod attempt, a live pod without
   its record) carry no such keys: absent is not fresh. A resumed incarnation shows the identical frozen triple on
   every peer; earlier incarnations keep their own.
 - Endpoints (docs/API.md "Execution identity and rollout state"): the rollout's reconciliation witness is the predictor
   Knative Service (its `generation == observedGeneration` and its template image equal to the InferenceService's
   desired image), reported as `service_generation`, `service_observed_generation`, `service_image`; KServe 0.20 writes
   the Service's observedGeneration onto the InferenceService, so a never edited ISVC showed `generation 1 / observed
-  2` for good and every ready Knative app read as "not reconciled" in the admin display (SAM2 proof, 2026-10-14).
+  2` for good and every ready Knative app read as "not reconciled" in the admin display (2026-10-14).
   In proven RawDeployment mode (the ISVC's own `deploymentMode`) the ISVC generations decide as before; in Knative
   mode an unreadable predictor Service is "not converged" with the reason, never a fallback. Nothing weakened: the
   revision identity, the ready Revision's image and the serving pods' images are still all required.
@@ -143,7 +143,7 @@ platform chart 0.1.12 unchanged; migration 28.)
   `<root>-c-<sha>-r<n>` (a new Job, binding and ledger member of kind `child` for the same unit; the earlier child's
   Job and records stay as history), the row back to `pending`/`active` with the new parent, `incarnation` and
   `previous_child` in the readback and the owner route. Before, the same request replayed the ended row (200, no
-  capture) and the unit could never run again under that root: the first LeRobot resume chain (2026-10-14) failed
+  capture) and the unit could never run again under that root: the first resume chain (2026-10-14) failed
   its stage for exactly that. Unchanged: an ended unit WITH a capture is final (replay, never a second inference), a
   different request is 409, one open child per root, `child_max_units` counts units. Migration 28:
   `endpoint_children.incarnation`, `previous_child`.
@@ -197,7 +197,7 @@ and platform chart 0.1.12 unchanged; no migration.)
   to a live child (`keys.member_of` kind `child`, active); scope (`invoke:sync` or `invoke:async`) and budget checks
   stay, the key itself still cannot call the child endpoint directly, and the credential is still refused for another
   model, unit or attempt, a cancelled child and a settled one. Before, readiness answered 403 "key is not allowed to
-  use model <child>" and the parent failed ChildUnresolved (the first LeRobot child on a QA grant, 2026-10-14).
+  use model <child>" and the parent failed ChildUnresolved (the first child on a QA grant, 2026-10-14).
 - Multi-node runs (docs/JOBS.md "Delivery pending never restarts the gang"): the JobSet failure-policy rule is named
   `delivery_pending`; the JobSet validating webhook accepts rule names of `[A-Za-z0-9_:]+` only, so 0.11.104's
   `delivery-pending` had every gang with a finalizer refused 422 at creation (ADMISSION_PENDING, no JobSet: the first
@@ -244,7 +244,7 @@ and platform chart 0.1.12 unchanged; migration 27.)
   that cluster explicitly; the `<child>-private` copy still lands in the child's region with its Job. Before, a
   control-cluster API wrote the binding in the child's region and the delivery looked on the control cluster: every
   child of a fleet-placed run was refused 404 "no such binding", the intent rolled back and an orphan `binding-<child>`
-  Secret stayed in the region (the first live LeRobot child, 2026-10-14). Regression: a control API, the parent and the
+  Secret stayed in the region (the first live child, 2026-10-14). Regression: a control API, the parent and the
   child endpoint in a region; the binding on control, claimed and owned; the copy and the Job in the region; nothing
   orphaned; the replay reads the same child back.
 - Logs (docs/OBSERVABILITY.md): the Alloy log shipper tolerates the CPU-pool taint (`serverless2.nebius/cpu-pool`), so
@@ -631,7 +631,7 @@ new tag; everything of 0.11.80 is included.)
   that ended without a trustworthy measurement with the literal `unknown` in the `<LABEL>/gpu-seconds` and
   `<LABEL>/billed` annotations (the key's reservation is kept as unknown GPU time, never zero), but `status.normalise`
   and the chain view parsed both with `float()` and raised `ValueError` → `GET /v1/operations/<id>` and `:result`
-  answered 500 (seen on a Cosmos native call on 0.11.78: readiness 200, one inference POST 403, the response uploaded,
+  answered 500 (seen on a native call on 0.11.78: readiness 200, one inference POST 403, the response uploaded,
   the owner's status unreadable). One parser (`status.measured`) now reads the accounting annotations: a finite
   non-negative number is the measurement; absent, `unknown`, NaN/inf, negative or any malformed value is `null`,
   never zero and never an error. The operation carries `usage`: `measured`, `unknown` (settled without a
@@ -642,7 +642,7 @@ new tag; everything of 0.11.80 is included.)
   sessions) are routed to the API. 0.1.8 routed only `/internal/attempts` and `/internal/authorize` and answered
   every other `/internal` path with the 404 direct response, so a worker's `POST /internal/executions/<op>:attach`
   through `S2_API_URL` got 404 from Envoy (no upstream), the shared client surfaced it as a refusal and the worker
-  failed closed: every native-lease endpoint call was refused (Cosmos first case on 0.11.78, proven from the control
+  failed closed: every native-lease endpoint call was refused (first case on 0.11.78, proven from the control
   gateway's access log). Authentication of those routes is unchanged (the pod's projected token, TokenReview,
   nothing from headers); the `/internal` catch-all stays a 404 for everything else; the per-key rate limit of the
   route applies per worker token as it does to `/internal/attempts`. `tools/check.sh` asserts the four prefixes and
@@ -968,7 +968,7 @@ new tag; everything of 0.11.80 is included.)
   default. Endpoint SecurityPolicies forward the two headers (re-rendered on the next model apply).
 - A waiting stage carries the Kueue queue label naming a queue that never exists (`serverless2-stage-waiting`) instead
   of no label: with a LocalQueue `default` in the tenant namespace Kueue's LocalQueueDefaulting injected `default` into
-  the label-less Job and admitted the stage before its dependencies and bindings (API51, op-976ec83a3939e974-s-gpu-0).
+  the label-less Job and admitted the stage before its dependencies and bindings (API51).
   The gate sets the real profile when the stage is admitted; charts/tenant refuses a profile of the waiting queue's name.
 
 ## api 0.11.53

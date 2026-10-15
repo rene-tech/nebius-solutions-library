@@ -164,7 +164,7 @@ fleet = {
   # (`./stack.sh output platform control -json tenant_keys`).
   # Optional separate fleet-operator logins for cross-tenant key/usage management.
   # Sensitive values: ./stack.sh output platform control -json fleet_operator_keys
-  fleet_operator_keys = [] # e.g. ["rene"]; never elevates a tenant admin
+  fleet_operator_keys = [] # e.g. ["ops"]; never elevates a tenant admin
   tenants = {
     demo = {
       lifecycle_days = 90                  # run outputs expire after N days (0 = keep)

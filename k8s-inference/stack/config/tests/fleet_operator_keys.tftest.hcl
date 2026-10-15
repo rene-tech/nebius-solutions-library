@@ -9,10 +9,10 @@ run "default_no_fleet_operator" {
 run "explicit_operator_preserves_tenants" {
   command = plan
   variables {
-    fleet = merge(var.fleet, { fleet_operator_keys = ["rene"] })
+    fleet = merge(var.fleet, { fleet_operator_keys = ["ops"] })
   }
   assert {
-    condition     = output.fleet.fleet_operator_keys == toset(["rene"]) && keys(output.fleet.tenants) == keys(var.fleet.tenants)
+    condition     = output.fleet.fleet_operator_keys == toset(["ops"]) && keys(output.fleet.tenants) == keys(var.fleet.tenants)
     error_message = "An operator must not create a tenant or change tenant definitions."
   }
 }
@@ -29,9 +29,9 @@ run "operator_alias_collision" {
   command = plan
   variables {
     fleet = merge(var.fleet, {
-      fleet_operator_keys = ["rene"]
+      fleet_operator_keys = ["ops"]
       tenants = merge(var.fleet.tenants, {
-        platform = { keys = { operator-rene = {} } }
+        platform = { keys = { operator-ops = {} } }
       })
     })
   }
