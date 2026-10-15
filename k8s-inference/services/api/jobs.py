@@ -1229,6 +1229,9 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
             )
         else:
             retry(kube.batch(region).create_namespaced_job, ns, job)
+        import admissions
+
+        admissions.record(job, region, output_prefix(job))  # docs/JOBS.md "Resume": kept past the Job's TTL
     except ApiException as e:
         if e.status == 409:
             was_created = False
@@ -1907,6 +1910,7 @@ def resume(
     _orig: dict | None = None,
     timeout_s: int | None = None,
     admit=None,
+    restart_from_inputs: bool = False,
 ) -> tuple[dict, bool]:
     """A new Job `<root>-rN` rendered again from the catalog entry with the original input, on the
     original PVC (same region: the volume is regional), linked through the resumed-from annotation.
@@ -1916,7 +1920,28 @@ def resume(
     from (the manager for a fleet-placed run); the new Job is pinned to the worker's region.
     `superseding`: automatic recovery (jobs.recover) continues a run the platform fenced itself; its annotations
     go onto the successor and the original's state is not a precondition."""
-    orig = _orig or get(ns, name, region)
+    try:
+        orig = _orig or get(ns, name, region)
+    except HTTPException as e:
+        if e.status_code != 404:
+            raise
+        # the Job expired (TTL): the admission record (api 0.11.74+) is what remains of its inputs; without one the
+        # resume is refused as before, never reconstructed from thin air (docs/JOBS.md "Resume")
+        import admissions
+
+        rec = admissions.get(name)
+        if rec is None:
+            raise HTTPException(
+                404,
+                f"operation {name}: its Job expired and it has no admission record (admitted before api 0.11.74); submit a new run",
+            )
+        import attempts
+
+        durable = attempts.synthesize(name, rec["tenant"]) if attempts.enabled() else None
+        orig = admissions.as_job(rec, (durable or {}).get("status"))
+        if (durable or {}).get("status") == "SUCCEEDED":
+            raise HTTPException(409, f"operation {name} SUCCEEDED; its result stands, nothing to restart")
+    expired = bool(orig.get("_expired"))
     op = normalise(orig)
     md = orig["metadata"]
     labels, ann = md.get("labels", {}), md.get("annotations", {})
@@ -1950,10 +1975,23 @@ def resume(
         # the new attempt needs neither the old volume nor the old region: a fresh volume where the fleet places it
         ex = {**(ex or {}), "recovery": {**((ex or {}).get("recovery") or {}), "checkpoint_ref": checkpoint_ref}}
         pvc, worker = None, (worker if not placement else None)
+    elif expired:
+        # the work volume went with the Job (it owned the claim): a restart from the recorded inputs on a fresh volume,
+        # asked for explicitly so a checkpoint is never dropped unnoticed; a fleet-placed run is placed by the fleet
+        # again (manager Job, no worker pin), a single-cluster run restarts on its own cluster
+        if not restart_from_inputs:
+            raise HTTPException(
+                409,
+                f"operation {name}: its Job and work volume expired; a resume renders it again from its recorded inputs "
+                "on a fresh volume: pass restart_from_inputs: true (or a checkpoint_ref)",
+            )
+        pvc, worker = None, (None if is_manager_job(orig) else worker)
     elif not worker:
         raise HTTPException(409, f"operation {name} never reached a worker; submit a new run")
     if checkpoint_ref:
         pass
+    elif expired:
+        pass  # decided above: fresh volume, fleet placement for a manager run
     elif is_jobset(orig):
         if ann.get(f"{LABEL}/checkpoints") != "shared":
             raise HTTPException(
@@ -2018,6 +2056,8 @@ def resume(
         job["metadata"]["annotations"].update(superseding)
     if pvc and not checkpoint_ref and not is_jobset(orig):
         _pin_to_worker(job, orig)  # the same volume: the same cluster, by id
+    if expired:
+        job["metadata"]["annotations"][f"{LABEL}/restarted-from-inputs"] = name
     if is_jobset(job):  # the shared checkpoint directory is keyed by the root operation
         for c in job["spec"]["replicatedJobs"][0]["template"]["spec"]["template"]["spec"]["containers"]:
             for m in c.get("volumeMounts", []):

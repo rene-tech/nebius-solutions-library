@@ -11,7 +11,9 @@ import pytest
 
 import attempts
 import auth
+import catalog
 import execution
+import jobs
 import reconciliation
 import stages
 from test_api import KEY_INFO, H, admin_keys, client, cluster, fake_keys  # noqa: F401
@@ -822,3 +824,296 @@ def test_original_and_head_both_expired_follow_through_the_ledger_and_durable_ro
             r["role"] = "export"
     op = c.get(f"/v1/operations/{root}", headers=H).json()
     assert op.get("id") == root and op.get("epoch") == 1, op
+
+
+def test_restart_from_inputs_resumes_an_expired_failed_root_from_its_admission_record(world, monkeypatch):
+    """api 0.11.74: the root's Job and work volume are gone (TTL); its admission record remains. Without the flag the
+    resume is refused (409, says what to pass); with it the run renders again from the record on a fresh volume as a
+    continuation of the same root (lineage, owner, class, graph); a root without a record is refused (404)."""
+    import admissions
+
+    c, cl, fk, rows, cancelled, root = world
+    g0 = _submit(c, root, "gpu-0").json()["id"]
+    _fail(cl, rows, root)
+    for r in rows:
+        r.setdefault("model", "hello-run")
+    orig = cl.jobs[(NS, root)]
+    rec = {
+        "operation": root,
+        "tenant": "demo",
+        "region": "eu-north1",
+        "labels": dict(orig["metadata"]["labels"]),
+        "annotations": dict(orig["metadata"]["annotations"]),
+        "timeout_s": orig["spec"].get("activeDeadlineSeconds"),
+        "output_prefix": jobs.output_prefix(orig),
+    }
+    del cl.jobs[(NS, root)]  # TTL: the Job and its volume are gone
+    cl.pvcs.pop((NS, f"{root}-work"), None)
+    monkeypatch.setattr(
+        attempts,
+        "synthesize",
+        lambda operation, tenant: {
+            "id": operation,
+            "status": "FAILED",
+            "region": "eu-north1",
+            "attempts": [],
+            "epoch": 1,
+        }
+        if operation == root
+        else None,
+    )
+    monkeypatch.setattr(admissions, "get", lambda operation: None)
+    r = c.post(f"/v1/operations/{root}:resume", headers=H, json={"restart_from_inputs": True})
+    assert r.status_code == 404 and "no admission record" in r.json()["detail"], r.text
+    monkeypatch.setattr(admissions, "get", lambda operation: rec if operation == root else None)
+    r = c.post(f"/v1/operations/{root}:resume", headers=H, json={})
+    assert r.status_code == 409 and "restart_from_inputs" in r.json()["detail"], r.text
+    r = c.post(f"/v1/operations/{root}:resume", headers=H, json={"restart_from_inputs": True})
+    assert r.status_code == 202, r.text
+    succ = r.json()["id"]
+    assert succ == f"{root}-r1"
+    sj = cl.jobs[(NS, succ)]
+    ann, lab = sj["metadata"]["annotations"], sj["metadata"]["labels"]
+    assert ann["serverless2.nebius/resumed-from"] == root and ann["serverless2.nebius/restarted-from-inputs"] == root
+    assert ann.get("serverless2.nebius/owner") == orig["metadata"]["annotations"].get("serverless2.nebius/owner")
+    assert ann["serverless2.nebius/input"] == orig["metadata"]["annotations"]["serverless2.nebius/input"]
+    assert lab["serverless2.nebius/model"] == "hello-run" and lab["serverless2.nebius/tenant"] == "demo"
+    vol = next(v for v in sj["spec"]["template"]["spec"]["volumes"] if v["name"] == "work")
+    assert vol["persistentVolumeClaim"]["claimName"] == f"{succ}-work"  # a fresh volume, never the expired one
+    assert fk.run_head(root) == succ  # the ledger: a continuation of the same root
+    assert c.get(f"/v1/operations/{root}", headers=H).json()["id"] == succ  # the handle follows
+    assert reconciliation.gate_stages() == []
+    assert "root QUEUED" in cl.jobs[(NS, g0)]["metadata"]["annotations"][stages.WAIT_REASON]
+
+
+def _admission_from(job, region, managed_by=None):
+    return {
+        "operation": job["metadata"]["name"],
+        "tenant": "demo",
+        "region": region,
+        "labels": dict(job["metadata"]["labels"]),
+        "annotations": dict(job["metadata"]["annotations"]),
+        "timeout_s": job["spec"].get("activeDeadlineSeconds"),
+        "output_prefix": jobs.output_prefix(job),
+        "managed_by": managed_by,
+    }
+
+
+def test_restart_of_an_expired_fleet_placed_root_is_placed_by_the_fleet_again(world, monkeypatch):
+    """Root review of 0.11.74: the record was taken at creation on the manager's cluster (control), and the rebuilt
+    original carried no `managedBy`, so a restart would have rendered a plain Job pinned to control. Now the record keeps
+    `managedBy`; the restart is a manager Job placed by the fleet (regions annotation, no worker pin, no control pin),
+    on a fresh volume; the single-cluster case restarts on its own cluster."""
+    import admissions
+
+    c, cl, fk, rows, cancelled, root = world
+    m = catalog.get("hello-run")
+    fleet_job = jobs.build_run(
+        "op-fleet-1",
+        m,
+        {"output_prefix": "s3://b/p"},
+        "demo",
+        None,
+        None,
+        600,
+        None,
+        region=None,
+        placement={"manager": True, "classes": ["h100"], "regions": ["hub"]},
+    )
+    assert jobs.is_manager_job(fleet_job)
+    fleet_job["metadata"]["annotations"]["serverless2.nebius/owner"] = "p1"
+    rec = _admission_from(fleet_job, "eu-north1", managed_by=fleet_job["spec"]["managedBy"])
+    monkeypatch.setattr(admissions, "get", lambda operation: rec if operation == "op-fleet-1" else None)
+    monkeypatch.setattr(
+        attempts,
+        "synthesize",
+        lambda operation, tenant: {
+            "id": operation,
+            "status": "FAILED",
+            "region": "eu-north1",
+            "attempts": [],
+            "epoch": 1,
+        },
+    )
+    new, created = jobs.resume(
+        NS, "op-fleet-1", "eu-north1", m, {"output_prefix": "s3://b/p"}, idem="k-fleet", restart_from_inputs=True
+    )
+    assert created and new["metadata"]["name"].startswith("op-fleet-1-r-")
+    assert jobs.is_manager_job(new), "the restart is a fleet-placed manager Job again"
+    # placed by the fleet again: no region pin, no node selector; the regions annotation is the dispatcher's input, which a
+    # manager resume leaves empty (the class decides), exactly like a resume of a live manager Job
+    assert "nodeSelector" not in new["spec"]["template"]["spec"]
+    assert new["metadata"]["labels"].get("serverless2.nebius/region") in (None, "")  # the fleet decides, no pin
+    assert jobs.placement_regions(new) == []
+    assert new["metadata"]["annotations"].get("serverless2.nebius/pinned-cluster") is None
+    assert not any(k.endswith("/cluster") for k in new["metadata"]["labels"]), new["metadata"]["labels"]
+    vol = next(v for v in new["spec"]["template"]["spec"]["volumes"] if v["name"] == "work")
+    assert vol["persistentVolumeClaim"]["claimName"] == f"{new['metadata']['name']}-work"
+    assert new["metadata"]["annotations"]["serverless2.nebius/owner"] == "p1"
+    assert new["metadata"]["annotations"]["serverless2.nebius/restarted-from-inputs"] == "op-fleet-1"
+    # the same key replays the same continuation, nothing new
+    again, created2 = jobs.resume(
+        NS, "op-fleet-1", "eu-north1", m, {"output_prefix": "s3://b/p"}, idem="k-fleet", restart_from_inputs=True
+    )
+    assert not created2 and again["metadata"]["name"] == new["metadata"]["name"]
+    # single-cluster: the restart stays on its own cluster
+    single = jobs.build_run(
+        "op-single-1",
+        m,
+        {"output_prefix": "s3://b/p"},
+        "demo",
+        None,
+        None,
+        600,
+        None,
+        "eu-north1",
+        {"output_prefix": "s3://b/p"},
+    )
+    rec2 = _admission_from(single, "eu-north1")
+    monkeypatch.setattr(admissions, "get", lambda operation: rec2 if operation == "op-single-1" else None)
+    new2, _ = jobs.resume(NS, "op-single-1", "eu-north1", m, {"output_prefix": "s3://b/p"}, restart_from_inputs=True)
+    assert not jobs.is_manager_job(new2) and new2["metadata"]["labels"]["serverless2.nebius/region"] == "eu-north1"
+
+
+def test_restart_refuses_a_succeeded_root_and_keeps_the_stale_and_owner_fences(world, monkeypatch):
+    import admissions
+
+    c, cl, fk, rows, cancelled, root = world
+    _fail(cl, rows, root)
+    for r in rows:
+        r.setdefault("model", "hello-run")
+    rec = _admission_from(cl.jobs[(NS, root)], "eu-north1")
+    del cl.jobs[(NS, root)]
+    monkeypatch.setattr(admissions, "get", lambda operation: rec if operation == root else None)
+    # SUCCEEDED on the durable rows: never restarted
+    monkeypatch.setattr(
+        attempts,
+        "synthesize",
+        lambda operation, tenant: {
+            "id": operation,
+            "status": "SUCCEEDED",
+            "region": "eu-north1",
+            "attempts": [],
+            "epoch": 1,
+            "result_ref": "s3://b/r",
+        }
+        if operation == root
+        else None,
+    )
+    r = c.post(f"/v1/operations/{root}:resume", headers=H, json={"restart_from_inputs": True})
+    assert r.status_code == 409 and "SUCCEEDED" in r.json()["detail"], r.text
+    # CANCELLED: may be restarted like a FAILED one
+    monkeypatch.setattr(
+        attempts,
+        "synthesize",
+        lambda operation, tenant: {
+            "id": operation,
+            "status": "CANCELLED",
+            "region": "eu-north1",
+            "attempts": [],
+            "epoch": 1,
+        }
+        if operation == root
+        else None,
+    )
+    assert (
+        c.post(
+            f"/v1/operations/{root}:resume",
+            headers={**H, "Authorization": "Bearer sk-other"},
+            json={"restart_from_inputs": True},
+        ).status_code
+        == 404
+    )
+    r = c.post(f"/v1/operations/{root}:resume", headers=H, json={"restart_from_inputs": True})
+    assert r.status_code == 202, r.text
+    succ = r.json()["id"]
+    # the original is a stale handle now: a further resume names the head
+    r = c.post(f"/v1/operations/{root}:resume", headers=H, json={"restart_from_inputs": True})
+    assert r.status_code == 409 and succ in r.json()["detail"], r.text
+    assert c.get(f"/v1/operations/{root}", headers=H).json()["id"] == succ
+
+
+def _view(c, root):
+    return c.get(f"/v1/operations/{root}", headers=H).json()
+
+
+def test_action_required_signal_appears_when_nothing_is_active_and_clears_on_resume(world):
+    """Projection only (api 0.11.76): a FAILED stage with its collector parked by the gate → action_required with the
+    head, the actions and the parked dependents; a parked (gated) collector never counts as active; a resume of the
+    head clears it; the terminal outcomes are unchanged."""
+    c, cl, fk, rows, cancelled, root = world
+    g0 = _submit(c, root, "gpu-0").json()["id"]
+    g1 = _submit(c, root, "gpu-1").json()["id"]
+    col = _submit(c, root, "collect").json()["id"]
+    _succeed(cl, rows, root, "s3://b/root")
+    reconciliation.gate_stages()
+    _succeed(cl, rows, g0, "s3://b/g0")
+    _fail(cl, rows, g1)
+    assert reconciliation.gate_stages() == []
+    op = _view(c, root)
+    g = op["graph"]
+    assert op["status"] == "RUNNING" and op["phase"] == "action_required", op
+    assert g["status"] == "PENDING" and g["action_required"] is True
+    assert g["waiting"] == ["collect"]
+    assert g["blocked_on"] == [
+        {
+            "stage": "gpu-1",
+            "operation": g1,
+            "status": "FAILED",
+            "attempt_id": f"{g1}-a",
+            "actions": [f":resume {g1}", f":cancel {root}"],
+            "dependents": ["collect"],
+        }
+    ]
+    st = {s["id"]: s for s in g["stages"]}
+    assert st["collect"]["status"] == "QUEUED" and st["collect"]["gated"] is True
+    assert (
+        "gpu-1 FAILED" in op["reason"]
+        and "resume it or cancel the root" in op["reason"]
+        and "waiting: collect" in op["reason"]
+    )
+    # the resume clears it: the successor is an admitted QUEUED member, active
+    r = c.post(f"/v1/operations/{g1}:resume", headers=H, json={})
+    assert r.status_code == 202, r.text
+    succ = r.json()["id"]
+    op = _view(c, root)
+    assert op["phase"] == "stages" and op["graph"]["action_required"] is False and op["graph"]["blocked_on"] == []
+    st = {s["id"]: s for s in op["graph"]["stages"]}
+    assert st["gpu-1"]["status"] == "QUEUED" and st["gpu-1"]["operation"] == succ and st["gpu-1"].get("gated") is False
+    # terminal outcomes unchanged: the successor delivers, the collector runs and delivers, the graph SUCCEEDED
+    _succeed(cl, rows, succ, "s3://b/g1")
+    assert reconciliation.gate_stages() == [f"{col}:admitted"]
+    _succeed(cl, rows, col, "s3://b/col")
+    op = _view(c, root)
+    assert (
+        op["status"] == "SUCCEEDED" and op["graph"]["status"] == "SUCCEEDED" and op["graph"]["action_required"] is False
+    )
+
+
+def test_an_active_sibling_suppresses_the_signal_and_multiple_failures_are_all_listed(world):
+    c, cl, fk, rows, cancelled, root = world
+    g0 = _submit(c, root, "gpu-0").json()["id"]
+    g1 = _submit(c, root, "gpu-1").json()["id"]
+    _submit(c, root, "collect")
+    _succeed(cl, rows, root, "s3://b/root")
+    reconciliation.gate_stages()
+    cl.jobs[(NS, g0)]["status"] = {"startTime": "2026-10-13T20:00:00Z", "active": 1}  # gpu-0 RUNNING
+    _fail(cl, rows, g1)
+    assert reconciliation.gate_stages() == []
+    op = _view(c, root)
+    assert op["phase"] == "stages" and op["graph"]["action_required"] is False  # gpu-0 may still deliver
+    assert [b["stage"] for b in op["graph"]["blocked_on"]] == ["gpu-1"]  # the failure is still named, not hidden
+    # gpu-0 fails too: two failed dependencies, nothing active, the collector parked on both
+    _fail(cl, rows, g0)
+    assert reconciliation.gate_stages() == []
+    op = _view(c, root)
+    assert op["phase"] == "action_required" and op["graph"]["action_required"] is True
+    assert [(b["stage"], b["dependents"]) for b in op["graph"]["blocked_on"]] == [
+        ("gpu-0", ["collect"]),
+        ("gpu-1", ["collect"]),
+    ]
+    assert "gpu-0 FAILED" in op["reason"] and "gpu-1 FAILED" in op["reason"]
+    # the owner's cancel: the graph is CANCELLED as before, the signal is gone with it
+    assert c.post(f"/v1/operations/{root}:cancel", headers=H).status_code == 200
+    op = _view(c, root)
+    assert op["graph"]["status"] == "CANCELLED" and op["graph"]["action_required"] is False

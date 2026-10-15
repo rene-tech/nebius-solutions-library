@@ -138,7 +138,19 @@ privilege, no host path, no shared tenant mount: the alias cannot reach anything
 A resumed operation names its successor: durably (the attempt marks the handle and the stage gate follow, also once
 the original Job expired) and on its Job while it exists. `GET /v1/operations/<original>` therefore answers with the
 current head of the lineage (the original stays readable through its rows), a graph child waiting on a resumed
-dependency waits on the successor's state, and a second `:resume` of the original is refused naming the head. The run
+dependency waits on the successor's state, and a second `:resume` of the original is refused naming the head.
+
+**Restart from inputs** (api 0.11.74): every run admitted leaves an admission record in the ledger (the Job's labels
+and annotations, region, timeout, output prefix), kept past the Job's TTL. When a FAILED root's Job and work volume are
+gone (the Job's TTL garbage-collects the claim it owns) and no checkpoint pointer exists, `:resume` with
+`restart_from_inputs: true` renders the run again from that record on a fresh work volume on the same cluster, as a
+continuation of the same root (`<root>-rN`, annotation `restarted-from-inputs`): same owner, key, class binding and
+execution block, the current placement rules. A fleet-placed root restarts as a manager Job placed by the fleet again
+(the record keeps its `managedBy`; never a plain Job on the manager's cluster, never the old worker pin); a
+single-cluster root restarts on its own cluster. The terminal state comes from the durable attempt rows: a SUCCEEDED
+root is never restarted (409, its result stands), CANCELLED and FAILED may be. Without the flag the resume is refused
+(409) so a checkpoint is never dropped unnoticed; a root admitted before 0.11.74 has no record and is refused (404
+"submit a new run"): nothing is reconstructed from thin air. The run
 ledger's lineage head (`keys.run_head`, `stage_head`) is the authority behind the link: the handle follows it even
 without an annotation or mark, and the owner check applies to the named operation and to the head. `:cancel` by a
 graph root's id cancels the graph (its stages and the root lineage's head) also once the root's Job expired.
@@ -403,7 +415,15 @@ POST /v1/models/md-class:invoke
 | deadline | `deadline_s` (default 14 days, 60 s to 30 days) bounds how long the graph stays open: when it passes, waiting stages are cancelled, never-submitted stages are recorded in the graph's reason, the graph closes and the root's run releases its slot (running stages settle through billing as usual) |
 | limits | a stage is a single-node run (no JobSet); stages are not endpoint calls; after the graph closed, no new stage attaches but the stages' lineages may still be continued (the slot is re-acquired as for any closed run); the gate reads durable attempt records, so a dependency that delivered through a retry or finalizer counts once that is on record |
 
-### Delegated stages
+#**Action required.** While the graph is open, a FAILED stage does not fail the graph (it may be resumed); when nothing
+is active any more (no admitted QUEUED, RUNNING, FINALIZING or delivery-retryable stage: a dependency-gated QUEUED
+member counts as parked, never as active) and a stage FAILED, the root handle reads `phase: action_required` with the
+remedy in `reason`, and `graph.action_required`, `graph.blocked_on` (the failed lineage heads, their attempts, the
+actions `:resume <operation>` or `:cancel <root>`, their parked dependents) and `graph.waiting` say exactly what is
+blocked on whom. `status` stays `RUNNING`; nothing is failed or retried by the platform; the graph's deadline still
+closes an unattended graph. A `:resume` of the failed head clears the signal (the successor is active).
+
+## Delegated stages
 
 A stage may run on a run class the caller's key is not granted, but only when four things meet, none of which the
 caller can mint alone: the root's run class lists the class among its `delegates` (operator-owned: the model spec of

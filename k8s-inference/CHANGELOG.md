@@ -4,6 +4,56 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.78, platform chart 0.1.8
+
+- Lease clients (docs/API.md "Lease clients"): on a fleet with a CA bundle, the bundle is projected as a FILE
+  (`/var/run/secrets/serverless2/ca-bundle.pem`, a second source of the `s2-lease` projected volume, from the
+  endpoint's own ConfigMap `<name>-trust` in `models`, applied before and removed with the endpoint's other objects)
+  and named by the standard variables `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `AWS_CA_BUNDLE` (the
+  async caller's set) plus `S2_CA_FILE`. `S2_CA_PEM` is no longer rendered: the full bundle (467 KB on the live
+  fleet) as an environment value exceeded the kernel's single-argument bound and the container never execed
+  (`exec /app/.venv/bin/python: argument list too long`). The bundle is projected whole (a render refuses above the
+  ConfigMap bound instead of cutting it). The shared client is unchanged (`services/lease-client/s2lease.py`,
+  sha256 `f96b274b…53885`): `ssl.create_default_context()` reads `SSL_CERT_FILE`, so an image built with it trusts
+  the fleet without a rebuild; verified against a live TLS listener in the tests. Platform chart 0.1.8: the two
+  endpoint Roles in `models` (`serverless2-api-endpoints`, `serverless2-api-agent-models`) gain `configmaps`
+  get/list/create/patch/delete (never secrets; `tools/check.sh` asserts the bound).
+
+## api 0.11.77
+
+- Endpoint scratch (`empty_dirs`): a mount path may contain dots in its components (`/app/.cache`, an engine's hidden
+  cache directory, is ordinary bounded scratch); the path must still be canonical and absolute: no `.` or `..`
+  component, no empty component (`//`), no trailing slash, not `/`; the reserved roots and the weights/shm overlap are
+  refused as before. Interfaces unchanged.
+
+## api 0.11.76
+
+- Graph "action required" (docs/API.md "Operations"): the root handle's `graph` carries `action_required`, `blocked_on`
+  (each FAILED lineage head with its attempt, the two actions `:resume <operation>` / `:cancel <root>`, and its parked
+  dependents) and `waiting` (dependency-gated stages); a QUEUED member reports `gated` when the gate parks it. The root
+  reads `phase: action_required` with the remedy in `reason` when the graph is open, nothing is active (admitted QUEUED,
+  RUNNING, FINALIZING or a delivery retry) and a stage FAILED; `status` stays RUNNING (resumable), nothing is failed or
+  retried, the gate and the ledger are untouched. An active sibling suppresses the signal; a resume clears it.
+
+## api 0.11.75 (supersedes the unapplied 0.11.74)
+
+- Restart from inputs, placement-correct: the admission record keeps the run's MultiKueue `managedBy`, so the restart of
+  an expired fleet-placed root is a manager Job placed by the fleet again (never a plain Job on the manager's cluster,
+  never a worker pin from before); a single-cluster root restarts on its own cluster. The terminal state comes from the
+  durable attempt rows: a SUCCEEDED root is never restarted (409, its result stands); CANCELLED and FAILED may be.
+  Regressions: fleet-manager admission → worker → TTL → restart; SUCCEEDED refused; stale handle after the restart names
+  the head; another principal 404; the same idempotency key replays the same continuation.
+
+## api 0.11.74
+
+- Restart from inputs (docs/JOBS.md "Resume"): every run admitted from this version on leaves an admission record in the
+  ledger (migration 19: the Job's labels and annotations, region, timeout, output prefix), kept past the Job's TTL.
+  `:resume` of a FAILED root whose Job and work volume expired renders it again from that record on a fresh volume on
+  the same cluster when the caller passes `restart_from_inputs: true` (or a `checkpoint_ref`), as a continuation of the
+  same root (lineage, handle and graph follow; owner, key and class binding inherited; the new render gets the current
+  placement rules). Without the flag: 409 saying what to pass; a root admitted before this version, with no record:
+  404 "submit a new run", never a reconstruction. Nothing else changes against 0.11.73.
+
 ## api 0.11.73
 
 - Export retries and finalizers keep the shared-filesystem placement: the transfer render drops the compute attempt's
