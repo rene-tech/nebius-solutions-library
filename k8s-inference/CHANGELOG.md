@@ -4,6 +4,66 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.73
+
+- Export retries and finalizers keep the shared-filesystem placement: the transfer render drops the compute attempt's
+  class, pool and NVMe constraints and re-adds exactly the `serverless2.nebius/shared-fs` requirement when the volumes
+  it retains (weights, data, shared checkpoints) live on the shared filesystem, recomputed from those volumes, never
+  from the stripped restricted assets. Without it a delivery of a class that mounts weights/data landed on an unmounted
+  system node again (root review of 0.11.72). Nothing else changes.
+
+## api 0.11.72, fleet chart 0.1.11, cluster module: filesystem-aware placement
+
+- A run that mounts the region's shared filesystem (`weights`, `data`, `checkpoints: shared`, `assets`) now requires a
+  node that mounts it: the cluster module labels every node group `serverless2.nebius/shared-fs=true|false` by its
+  attachment (GPU pools true when the region has the filesystem, CPU pools by `shared_filesystem`, the system pool only
+  with `mount_on_system`), every worker flavor carries the same label in `nodeLabels`, and the API renders a required
+  node affinity on such runs, so Kueue never assigns them the system flavor of an unmounted system pool (the FailedMount
+  of 14 Oct). Runs that mount none of these are unchanged. docs/FLEET.md "Filesystem-aware placement" and
+  docs/OPERATIONS.md "Repair a run admitted on an unmounted flavor" (the scoped repair of an existing Job, no new
+  controller). check.sh asserts the flavor label; module tests cover the label.
+
+## api 0.11.71
+
+- Export of a run class with work mount aliases: the transfer-only export render read the finalizer's attempt record
+  (UnboundLocalError on 0.11.63–0.11.70 for a class with aliases and no finalizer); the export now keeps the rendered
+  alias expression (its main only exits 0), and the literal finalized pod name is set on the finalizer's main, where it
+  belongs. Nothing else changes against 0.11.70.
+
+## api 0.11.70
+
+- Restricted assets: a class may name up to eight assets (was four; work mount aliases keep four), one bound for the
+  registration and the render (`jobs.MAX_ASSETS`). BindCraft declares five. The registry, grant, reserved-path,
+  overlap and single-node guards are unchanged. Nothing else changes against 0.11.69.
+
+## api 0.11.69
+
+- Restricted assets are main-compute-only (root review of 0.11.68): a transfer-only export retry and the application
+  finalizer, which render the class again on the kept volume with a CPU container in main's place, drop the asset
+  volumes, main's asset mounts, the supplemental groups they brought and the identity annotation; the compute Job is
+  unchanged. Nothing else changes against 0.11.68.
+
+## fleet chart 0.1.10, cluster module: CPU pools scheduled and mounted
+
+- CPU pools (docs/FLEET.md "CPU pools"): `regions.<r>.cpu_pools` now reach the scheduler: one Kueue ResourceFlavor per
+  pool (node label, the pool's taint tolerated, no GPU toleration) listed in every ClusterQueue after `system` with
+  `nvidia.com/gpu: 0` and CPU/memory = max_nodes x preset minus the per-node reserve, on the workers and mirrored on
+  the manager; a GPU-free run that does not fit the system nodes is admitted there and the pool scales from zero. The
+  cluster module attaches and mounts the region's weights filesystem on the pool's nodes like a GPU pool
+  (`shared_filesystem`, default true), so `weights`/`data`, shared checkpoints and restricted assets work there.
+  tfvars validation of the preset shape; check.sh asserts the flavor order and tolerations. No API change.
+
+## api 0.11.66 (= 0.11.64 + the 0.11.67 lineage hotfix), platform chart 0.1.7, jobs 0.1.22
+## api 0.11.68, fleet chart 0.1.9, tenant chart 0.3.4 (= 0.11.64 + the 0.11.67 lineage hotfix + restricted assets)
+
+- Restricted assets (docs/JOBS.md "Restricted assets"): an operator registry in the fleet document (`assets`: file or
+  pinned tree on the weights filesystem, gid, sha256, size), a per-tenant grant (`tenants.<name>.assets`) that the
+  tenant chart renders as a static read-only volume rooted at the asset itself (`hostPath` File/Directory, claim
+  `asset-<alias>`), and a run-class binding (`job.assets` / spec `assets: [{alias, mount_path}]`) that mounts the claim
+  on `main` only, read-only twice, at a bounded path overlapping no other mount, with the asset's group as a supplemental
+  group; no fsGroup rewrite (hostPath volumes are never chowned); identity recorded on the Job. `weights`/`data` paths that
+  reach a registered asset (itself, below it, or an ancestor) are refused. Single-node runs only.
+
 ## api 0.11.67 (hotfix on 0.11.63; supersedes the unapplied 0.11.65; 0.11.64 is the separate isolation candidate)
 
 - Manual `:resume` links its successor (docs/JOBS.md "Resume"): the resumed operation gets the durable successor mark

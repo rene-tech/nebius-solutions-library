@@ -359,6 +359,28 @@ adds the cluster and the tenants' buckets there, the platform stage follows on i
 the worker (docs/FLEET.md "Change recipes"). The platform images need no per-region copy: the new cluster's
 cache fetches them from the source registry on first use.
 
+## Repair a run admitted on an unmounted flavor
+
+A run that mounts the shared filesystem but was admitted, before filesystem-aware placement (api 0.11.72, fleet chart
+0.1.11), on the `system` flavor of a system pool without the mount sits in `FailedMount`; its pod never started, its
+volume is untouched, its lineage and graph are intact. Existing Jobs do not gain the new affinity from a rollout.
+Two ways keep the same operation (no resume, no new root):
+
+1. **Equip the pool the Job is pinned to (the safe path):** `regions.<r>.weights_filesystem.mount_on_system = true`
+   attaches and mounts the filesystem on the region's system pool (the cloud stage changes the node group's cloud-init
+   and attachment; the provider replaces its nodes one at a time, the platform add-ons move; the system nodes then also
+   carry the snapshot-store label). The pending pod schedules on a replaced node and runs; nothing on the Job changes.
+   Review the plan before applying: a system-pool replacement is a controlled rolling of two nodes.
+2. **Patch the suspended Job's scheduling directives (only if the cluster allows it):** Kubernetes mutates a Job's
+   node affinity, node selector and tolerations only while the Job is suspended, in a request that changes nothing
+   else, and only when the cluster enables that mutation (check with a server-side dry run of the patch on a suspended
+   Job before relying on it). If allowed: deactivate the Kueue Workload (`kubectl -n tenant-<t> patch workload <wl>
+   --type merge -p '{"spec":{"active":false}}'`, wait for `job.spec.suspend: true`), add the affinity
+   `serverless2.nebius/shared-fs In [true]` to the Job's pod template, let Kueue recreate the Workload (delete the
+   Workload object, never the Job, if it keeps the old pod set), then reactivate. Kueue re-admits against the labelled
+   flavors; a new pod of the same operation runs.
+The static PVs keep no node affinity (immutable once created; the flavor label is the guard for new runs).
+
 ## Patching
 
 - CI (`.github/workflows/k8s-inference.yml` at the library's root) runs on every pull request and push

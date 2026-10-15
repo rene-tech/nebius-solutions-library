@@ -71,6 +71,54 @@ from status import is_jobset, is_manager_job, is_mirror, normalise
 log = logging.getLogger("api.jobs")
 
 
+SHARED_FS_VOLUMES = ("weights", "data", "checkpoints")  # the claims that live on the region's shared filesystem
+
+
+def _mounts_shared_fs(spec: dict) -> bool:
+    """Whether a rendered pod spec still mounts the shared filesystem through one of its claims (the asset claims are
+    not counted: an export or finalizer has them stripped)."""
+    return any(v.get("name") in SHARED_FS_VOLUMES and v.get("persistentVolumeClaim") for v in spec.get("volumes") or [])
+
+
+def needs_shared_fs(r: dict) -> bool:
+    """Whether a run class mounts the region's shared filesystem (docs/FLEET.md "Filesystem-aware placement")."""
+    return bool(
+        str(r.get("weights") or "").strip("/")
+        or str(r.get("data") or "").strip("/")
+        or r.get("assets")
+        or str(r.get("checkpoints") or "local") == "shared"
+    )
+
+
+def _assets_registry() -> dict:
+    """The fleet's restricted assets (docs/JOBS.md "Restricted assets"): alias -> {kind, host_path, gid, sha256, size}."""
+    return dict(kube.fleet().get("assets") or {})
+
+
+def _asset_shared_path(a: dict) -> str | None:
+    """An asset's path relative to the shared weights filesystem root (what `weights`/`data` subPaths are relative to);
+    None when the asset lives elsewhere."""
+    hp = str(a.get("host_path") or "")
+    for root in ("/mnt/weights",):
+        if hp.startswith(root + "/"):
+            return hp[len(root) + 1 :]
+    return None
+
+
+def _private_guard(path: str, what: str) -> None:
+    """A `weights` or `data` subPath (caller-selectable through parameters) may not reach a registered asset: not its
+    path, nothing under it, and no ancestor of it (the parent is root-only, but a container running as root reads a
+    0440 root-owned file through an ancestor mount: the kubelet bind-mounts the subPath as root). Assets are mounted
+    through `assets`, with a grant, main-only, read-only, never through the shared claims."""
+    for alias, a in _assets_registry().items():
+        rel = _asset_shared_path(a)
+        if rel and _overlaps(path, rel):
+            raise HTTPException(
+                400,
+                f"{what}: {path!r} reaches the restricted asset {alias!r}; assets are mounted through `assets` with a grant",
+            )
+
+
 def _mount_data(r: dict, pod: dict, containers: list) -> None:
     """`job.data` (docs/JOBS.md "Shared data"): a directory of the tenant's area on the region's shared filesystem
     (the tenant's RWX claim, the one `checkpoints: shared` uses), mounted read-only at `dataMountPath` (default /data)
@@ -82,6 +130,7 @@ def _mount_data(r: dict, pod: dict, containers: list) -> None:
     if ".." in path.split("/"):
         raise HTTPException(400, "data: a relative directory, no parent references")
     ro = str(r.get("dataReadOnly", True)).lower() not in ("false", "0", "no")
+    _private_guard(f"tenants/{(pod.get('_tenant') or '*')}/data/{path}", "data")
     pod["volumes"].append({"name": "data", "persistentVolumeClaim": {"claimName": SHARED_SCRATCH_PVC, "readOnly": ro}})
     for c in containers:
         c["volumeMounts"].append(
@@ -112,6 +161,7 @@ def _mount_weights(r: dict, pod: dict, containers: list) -> None:
         return
     if ".." in path.split("/"):
         raise HTTPException(400, "weights: a relative directory, no parent references")
+    _private_guard(path, "weights")
     pod["volumes"].append(
         {"name": "weights", "persistentVolumeClaim": {"claimName": WEIGHTS_SHARED_PVC, "readOnly": True}}
     )
@@ -147,6 +197,9 @@ ALIAS_RESERVED = (
     "/opt/serverless2",
 )
 MAX_ALIASES = 4
+MAX_ASSETS = (
+    8  # restricted assets per class (BindCraft: AF2, vanilla and soluble MPNN, the PyRosetta tree, its inventory)
+)
 
 
 def _overlaps(a: str, b: str) -> bool:
@@ -183,6 +236,75 @@ def work_aliases(r: dict) -> list[dict]:
             raise HTTPException(400, f"workMountAliases: {path} overlaps another alias")
         out.append({"path": path, "scope": scope, "slug": re.sub(r"[^A-Za-z0-9._-]+", "-", path.strip("/"))})
     return out
+
+
+def _mount_assets(r: dict, pod: dict, main: dict, tenant: str) -> str | None:
+    """`job.assets` (docs/JOBS.md "Restricted assets"): every entry mounts the tenant's claim `asset-<alias>` (the
+    tenant chart's static read-only volume rooted at the asset) on `main` only, read-only twice (claim and mount), at a
+    bounded absolute path that overlaps no other mount (data, weights, checkpoints, shm, work aliases); the asset's
+    group goes into the pod's supplemental groups (every container carries it; only main has a mount; no ownership
+    change anywhere). Alias and grant come from the fleet document, never from the request. Returns the identity
+    string recorded on the Job (`alias@sha256:…` or `alias@inventory:…`)."""
+    specs = r.get("assets") or []
+    if not specs:
+        return None
+    if not isinstance(specs, list) or len(specs) > MAX_ASSETS:
+        raise HTTPException(400, f"assets: a list of at most {MAX_ASSETS} {{alias, mountPath}} entries")
+    registry = _assets_registry()
+    granted = set(((kube.fleet().get("tenants") or {}).get(tenant) or {}).get("assets") or [])
+    gids, identity, seen = set(), [], []
+    for x in specs:
+        if not isinstance(x, dict):
+            raise HTTPException(400, "assets: each entry is {alias, mountPath}")
+        alias, path = str(x.get("alias") or ""), str(x.get("mountPath") or "")
+        a = registry.get(alias)
+        if a is None:
+            raise HTTPException(400, f"assets: {alias!r} is not a registered asset of this fleet")
+        if alias not in granted:
+            raise HTTPException(400, f"assets: {alias!r} is not granted to tenant {tenant!r}")
+        if (
+            not path.startswith("/")
+            or path == "/"
+            or path != os.path.normpath(path)
+            or not re.fullmatch(r"[A-Za-z0-9._/-]{2,200}", path)
+        ):
+            raise HTTPException(400, f"assets: {path!r} is not a bounded absolute mount path")
+        if any(_overlaps(path, p) for p in ALIAS_RESERVED):
+            raise HTTPException(400, f"assets: {path} is under a reserved path")
+        for m in main.get("volumeMounts") or []:
+            if _overlaps(path, m["mountPath"]):
+                raise HTTPException(400, f"assets: {path} overlaps the mount {m['mountPath']}")
+        if any(_overlaps(path, p) for p in seen):
+            raise HTTPException(400, f"assets: {path} overlaps another asset mount")
+        seen.append(path)
+        pod["volumes"].append(
+            {"name": f"asset-{alias}", "persistentVolumeClaim": {"claimName": f"asset-{alias}", "readOnly": True}}
+        )
+        main["volumeMounts"].append({"name": f"asset-{alias}", "mountPath": path, "readOnly": True})
+        gids.add(int(a.get("gid") or 65532))
+        kind = "sha256" if str(a.get("kind") or "file") == "file" else "inventory"
+        identity.append(f"{alias}@{kind}:{a.get('sha256') or 'unpinned'}")
+    sc = pod.setdefault("securityContext", {})
+    sc["supplementalGroups"] = sorted(set(sc.get("supplementalGroups") or []) | gids)
+    return ";".join(identity)
+
+
+def _strip_assets(job: dict) -> None:
+    """Restricted assets are for the compute attempt's `main` only (docs/JOBS.md "Restricted assets"): a Job rendered
+    again from the same class for a transfer-only export or the application finalizer (CPU, the runner or the model's
+    finalize command) drops the asset volumes, main's asset mounts, the supplemental groups they brought and the
+    identity annotation. Nothing else of the render changes."""
+    spec = job["spec"]["template"]["spec"]
+    names = {v["name"] for v in spec.get("volumes") or [] if str(v.get("name", "")).startswith("asset-")}
+    if not names:
+        return
+    spec["volumes"] = [v for v in spec["volumes"] if v["name"] not in names]
+    for c in (spec.get("containers") or []) + (spec.get("initContainers") or []):
+        if c.get("volumeMounts"):
+            c["volumeMounts"] = [m for m in c["volumeMounts"] if m["name"] not in names]
+    if spec.get("securityContext"):
+        spec["securityContext"].pop("supplementalGroups", None)  # only assets add groups (docs/JOBS.md)
+    job["metadata"].get("annotations", {}).pop(f"{LABEL}/assets", None)
 
 
 def _alias_dir(a: dict) -> str:
@@ -422,6 +544,11 @@ def build_run(
                     f"scratch local-nvme: none of the regions {wanted} has a pool with local_nvme = true (regions with one: {nvme_regions})",
                 )
             placement = {**placement, "regions": keep}
+    if needs_shared_fs(r):
+        # the run mounts the region's shared filesystem (weights, data, shared checkpoints, a restricted asset): only a
+        # node that mounts it can run it; Kueue skips a flavor whose nodeLabels contradict this (the system flavor
+        # unless weights_filesystem.mount_on_system), docs/FLEET.md "Filesystem-aware placement"
+        terms.append({"key": f"{LABEL}/shared-fs", "operator": "In", "values": ["true"]})
     if terms:
         pod["affinity"] = {
             "nodeAffinity": {
@@ -470,10 +597,16 @@ def build_run(
             raise HTTPException(400, "retry applies to single-node runs (a multi-node run restarts as a whole)")
         if work_aliases(r):
             raise HTTPException(400, "workMountAliases apply to single-node runs (/work is node-local per pod there)")
+        if r.get("assets"):
+            raise HTTPException(400, "assets apply to single-node runs")
         return _multinode(name, model, r, values, pod, nodes, gpus, meta, timeout_s, placement)
+    pod["_tenant"] = tenant
     _mount_data(r, pod, [main])
     _mount_weights(r, pod, [main])
     _mount_aliases(r, [main], fetch)  # after the data and weights mounts: an alias may overlap none of them
+    if ident := _mount_assets(r, pod, main, tenant):  # last: an asset may overlap no mount at all, aliases included
+        meta["annotations"][f"{LABEL}/assets"] = ident
+    pod.pop("_tenant", None)
     if not local_nvme:
         meta["annotations"][f"{LABEL}/pvc"] = pvc
         meta["annotations"][f"{LABEL}/pvc-size-gi"] = str(r.get("pvcSizeGi", JOB_PVC_SIZE_GI))
@@ -542,7 +675,8 @@ def _multinode(
     main = next(c for c in pod["containers"] if c["name"] == "main")
     uploader = next(c for c in pod["containers"] if c["name"] == "uploader")
     # placement: whole nodes of the model's classes; InfiniBand pools only when required (preferred = soft). The
-    # local-NVMe term of `scratch: local-nvme` (build_run) is kept; the single-node class affinity is replaced.
+    # the local-NVMe term of `scratch: local-nvme` and the shared-filesystem term (build_run) are kept; the single-node
+    # class affinity is replaced.
     classes = gpu_classes(model)
     kept = [
         t
@@ -554,7 +688,8 @@ def _multinode(
         )
         .get("nodeSelectorTerms", [{}])[0]
         .get("matchExpressions", [])
-        if t.get("key") == f"{LABEL}/local-nvme"
+        if t.get("key")
+        in (f"{LABEL}/local-nvme", f"{LABEL}/shared-fs")  # the placement needs survive the class rewrite
     ]
     pools: list[str] = []
     if classes and gpus:
@@ -1425,6 +1560,7 @@ def export_again(
         gpu_class=labels.get(f"{LABEL}/gpu-class"),
         ex=ex,
     )
+    _strip_assets(job)  # main-compute-only: a transfer or finalizer container never sees a restricted asset
     spec = job["spec"]["template"]["spec"]
     spec["initContainers"] = []
     role = "finalize" if finalize else "export"
@@ -1455,6 +1591,12 @@ def export_again(
             # the model's own image (the finalized attempt's digest when on record, else the pinned revision's image) and
             # its fixed finalize command; CPU only; the attempt it finalizes named in the environment (docs/JOBS.md)
             done = finalize.get("attempt") or {}
+            # the canonical work aliases (docs/JOBS.md "Work mount aliases") show the finalized attempt's own directory:
+            # the pod name in the alias expression is the finalized pod's, a literal, not this pod's
+            c["env"] = [
+                {"name": POD_NAME_ENV, "value": str(done.get("pod") or "")} if e.get("name") == POD_NAME_ENV else e
+                for e in c.get("env") or []
+            ]
             c.update(
                 {
                     "image": done.get("image_digest") or c["image"],
@@ -1481,12 +1623,8 @@ def export_again(
                 {"name": "WORK_DIR", "value": "/work"},
             ]
         elif c["name"] == "main":
-            # the canonical work aliases (docs/JOBS.md "Work mount aliases") show the finalized attempt's own directory:
-            # the pod name in the alias expression is the finalized pod's, a literal, not this pod's
-            c["env"] = [
-                {"name": POD_NAME_ENV, "value": str(done.get("pod") or "")} if e.get("name") == POD_NAME_ENV else e
-                for e in c.get("env") or []
-            ]
+            # a transfer-only export: main only exits 0 on the kept volume; its work aliases keep the rendered expression
+            # (this pod's own, empty, directory), nothing of the finalizer's context applies here
             c.update(
                 {
                     "image": RUNNER_IMAGE,
@@ -1503,8 +1641,21 @@ def export_again(
                 {"name": "GPU_CLASS", "value": ""},
             ]
     spec.pop("nodeSelector", None)
-    spec.pop("affinity", None)
+    spec.pop("affinity", None)  # the compute attempt's class, pool and NVMe constraints: not the transfer's
     spec.pop("tolerations", None)
+    if _mounts_shared_fs(spec):
+        # the delivery still mounts the shared filesystem (weights, data, shared checkpoints: what the export or the
+        # finalizer reads from); the one placement need that survives, recomputed from the RETAINED volumes, never from
+        # the stripped assets (docs/FLEET.md "Filesystem-aware placement")
+        spec["affinity"] = {
+            "nodeAffinity": {
+                "requiredDuringSchedulingIgnoredDuringExecution": {
+                    "nodeSelectorTerms": [
+                        {"matchExpressions": [{"key": f"{LABEL}/shared-fs", "operator": "In", "values": ["true"]}]}
+                    ]
+                }
+            }
+        }
     job["metadata"]["labels"].pop(f"{LABEL}/gpu-class", None)
     _pin_to_worker(job, orig)
     job["metadata"]["annotations"][f"{LABEL}/resumed-from"] = root

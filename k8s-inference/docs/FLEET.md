@@ -61,6 +61,7 @@ fleet = {
         }
       }
       cpu_pools = { ... }              # optional CPU-only pools, tainted serverless2.nebius/cpu-pool
+  assets = { <alias> = { kind = "file" | "tree", host_path = "/mnt/weights/...", gid = 65532, sha256 = "...", size = N } }  # restricted assets (docs/JOBS.md)
     }
   }
   prices = { "<platform>" = { on_demand = 4.50, spot = 0.79 }, ... }   # USD per GPU-hour (a default table
@@ -300,6 +301,37 @@ cannot fit the `system` flavor and takes its pool flavor as before; a GPU-free w
 an export retry, a CPU run class) fits it first and is scheduled onto the system nodes of the cluster that admitted
 it, with the pool node selector of a GPU flavor never injected. No node is added and no GPU quota changes; the
 budget is what the system nodes already have. `tools/check.sh` asserts the rendered order and quotas.
+
+## CPU pools
+
+A run that needs more CPU or memory than the system nodes budget (an AlphaFold 3 data pipeline at 16 CPUs / 64 GiB
+on 8-vCPU system nodes) gets a CPU pool: `regions.<r>.cpu_pools.<name> = { platform, preset = "<n>vcpu-<n>gb",
+min_nodes (0), max_nodes, boot_disk_gib (128), shared_filesystem (true) }`. The cloud stage creates the node group
+(label `serverless2.nebius/pool=<name>`, taint `serverless2.nebius/cpu-pool=present:NoSchedule`, autoscaled between
+min and max) and, with `shared_filesystem`, attaches and mounts the region's weights filesystem at `/mnt/weights`
+exactly like a GPU pool (a run class's `weights`/`data`, the shared checkpoints and the restricted assets need it on
+the node; the system nodes have it only with `weights_filesystem.mount_on_system`). `charts/fleet` renders one
+ResourceFlavor per CPU pool (its node label, its taint tolerated, no GPU toleration) and lists it in every ClusterQueue
+**after `system`** with `nvidia.com/gpu: 0` and CPU/memory = `max_nodes` × preset minus the per-node `system_reserve`.
+Kueue's flavor order does the routing: a GPU request skips the GPU-free flavors; a GPU-free workload that fits the
+system nodes stays there (finalizers, export retries, small CPU classes); one that does not takes the CPU pool, is
+admitted against the pool's quota, lands Pending with the pool's node selector and toleration (Kueue injects both),
+the node group scales up, the pod runs, the group scales back down. The manager mirrors the flavors and quotas, so a
+fleet-placed CPU run goes to a region whose CPU pool has room. No class setting is needed; a class may still pin
+`pool: <name>`. `tools/check.sh` asserts the order (system, CPU pools, GPU pools) and the tolerations.
+
+## Filesystem-aware placement
+
+The shared weights filesystem is a hostPath on the nodes that mount it (every GPU pool of a region that has it, CPU
+pools with `shared_filesystem`, the system pool only with `weights_filesystem.mount_on_system`). A run that mounts it
+(`weights`, `data`, `checkpoints: shared`, `assets`) must land on such a node, else the kubelet fails the mount for
+ever. Three pieces make that structural: the cluster module labels every node group `serverless2.nebius/shared-fs`
+`true` or `false` by its attachment; every worker ResourceFlavor carries the same label in `nodeLabels`; the API
+renders a required node affinity `serverless2.nebius/shared-fs In [true]` on such runs (as it does `local-nvme` for
+`scratch: local-nvme`). Kueue never assigns a flavor whose `nodeLabels` contradict a pod's required affinity, so such a
+run skips the unmounted `system` flavor and takes a CPU pool or its GPU pool; a run that mounts nothing shared keeps
+`system`. Existing Jobs do not gain the affinity by a rollout (docs/OPERATIONS.md "Repair a run admitted on an unmounted
+flavor"); the static PVs keep no node affinity (immutable once created; the flavor label is the guard).
 
 ## GPU drivers: the node image or the NVIDIA GPU Operator
 

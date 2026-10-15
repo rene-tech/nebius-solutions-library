@@ -63,7 +63,7 @@ resource "nebius_mk8s_v1_node_group" "system" {
     drain_timeout   = "300s"
   }
   template = {
-    metadata             = { labels = merge({ "serverless2.nebius/pool" = "system" }, local.snapshot_store_labels) }
+    metadata             = { labels = merge({ "serverless2.nebius/pool" = "system", "serverless2.nebius/shared-fs" = var.weights_filesystem.enabled && var.weights_filesystem.mount_on_system ? "true" : "false" }, local.snapshot_store_labels) }
     boot_disk            = { size_gibibytes = 128, type = "NETWORK_SSD" }
     network_interfaces   = [{ subnet_id = data.nebius_vpc_v1_subnet.target.id }]
     os                   = "ubuntu24.04"
@@ -114,8 +114,9 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
   }
   template = {
     metadata = { labels = merge({
-      "serverless2.nebius/pool"     = each.key
-      "serverless2.nebius/capacity" = each.value.capacity.type == "spot" ? "spot" : (each.value.capacity.type == "reserved" ? "reserved" : "on-demand")
+      "serverless2.nebius/pool"      = each.key
+      "serverless2.nebius/capacity"  = each.value.capacity.type == "spot" ? "spot" : (each.value.capacity.type == "reserved" ? "reserved" : "on-demand")
+      "serverless2.nebius/shared-fs" = var.weights_filesystem.enabled ? "true" : "false" # the filesystem is attached and mounted on every GPU pool
       }, each.value.local_nvme && each.value.local_nvme_mode == "kubelet-ephemeral" ? {
       "serverless2.nebius/local-nvme" = "true" # scratch: local-nvme runs and NVMe-preferring endpoints select it
       } : {}, each.value.interconnect == "infiniband" ? {
@@ -177,14 +178,19 @@ resource "nebius_mk8s_v1_node_group" "cpu" {
   }
   template = {
     metadata = { labels = merge({
-      "serverless2.nebius/pool"     = each.key
-      "serverless2.nebius/capacity" = "on-demand"
+      "serverless2.nebius/pool"      = each.key
+      "serverless2.nebius/capacity"  = "on-demand"
+      "serverless2.nebius/shared-fs" = each.value.shared_filesystem && var.weights_filesystem.enabled ? "true" : "false"
     }, each.value.labels) }
-    taints               = [{ key = "serverless2.nebius/cpu-pool", value = "present", effect = "NO_SCHEDULE" }]
-    boot_disk            = { size_gibibytes = each.value.boot_disk_gib, type = "NETWORK_SSD" }
-    network_interfaces   = [{ subnet_id = data.nebius_vpc_v1_subnet.target.id }]
-    os                   = "ubuntu24.04"
-    cloud_init_user_data = local.system_cloud_init
+    taints             = [{ key = "serverless2.nebius/cpu-pool", value = "present", effect = "NO_SCHEDULE" }]
+    boot_disk          = { size_gibibytes = each.value.boot_disk_gib, type = "NETWORK_SSD" }
+    network_interfaces = [{ subnet_id = data.nebius_vpc_v1_subnet.target.id }]
+    os                 = "ubuntu24.04"
+    # the shared weights filesystem, attached and mounted at /mnt/weights like on a GPU pool (docs/FLEET.md "CPU pools"):
+    # a run class's `weights`/`data`, the shared checkpoints and the restricted assets need it on the node; off per pool
+    # with shared_filesystem = false (a pool for runs that read nothing shared)
+    cloud_init_user_data = each.value.shared_filesystem && var.weights_filesystem.enabled ? local.cpu_pool_cloud_init : local.system_cloud_init
+    filesystems          = each.value.shared_filesystem && var.weights_filesystem.enabled ? local.weights_fs_attachment : null
     reservation_policy   = { policy = "FORBID" }
     resources            = { platform = each.value.platform, preset = each.value.preset }
     service_account_id   = nebius_iam_v1_service_account.nodepull.id
@@ -259,6 +265,9 @@ locals {
     "runcmd:",
     " - sysctl --system",
   ])
+  # CPU pools with the shared filesystem: the system cloud-init plus the mount step the GPU pools run (no snapshot directory)
+  cpu_pool_cloud_init = join("\n", concat([local.system_cloud_init], local.weights_fs_runcmd))
+
   snapshot_system_cloud_init = join("\n", concat(
     [local.system_cloud_init],
     var.weights_filesystem.mount_on_system ? concat(local.weights_fs_runcmd, local.snapshot_fs_runcmd) : [],
