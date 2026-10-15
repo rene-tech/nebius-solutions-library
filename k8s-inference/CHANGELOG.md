@@ -4,6 +4,92 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.58
+
+- Billing prices a run pinned to its admitting cluster (a resume on the kept volume: region label `north`, a cluster
+  id) by resolving the label to the Nebius region the rate snapshot is keyed by (`kube.cluster_region`), as a run
+  placed by region already was; no matching key still defers accounting as unknown (never zero). On API54 both
+  resumed members of a graph stayed accounting-active ("GPU attempt has no verified pool price") while their original
+  siblings settled.
+
+## api 0.11.57
+
+- Bounded retries (docs/JOBS.md "Retries"): a run class's `retry: {max_attempts, on_exit_codes}` and a request's
+  `execution.retry` render at most `max_attempts` pods of the same Job, a replacement only after an exit in
+  `on_exit_codes` (137/143 by default: the retained scientific policy), any other non-zero exit failing the run at once,
+  disruptions still the platform's; the same member, reservation and GPU bound, no second retry owner. `GET /v1/fleet`
+  → `execution.retry`. Single-node runs only.
+
+## api 0.11.56
+
+- `timeout_s` of a run and `recovery.deadline_s` accept up to 14 days (7 before): the long-run contract (14-day MD
+  runs, registered with 1209600 s) holds for a GPU-budgeted key, which needs the explicit timeout for its bound. No
+  quota, limit or default changes; the graph deadline (14 days default, 30 max) is unchanged.
+
+## api 0.11.55
+
+- Delegated stages (docs/JOBS.md "Delegated stages"): a run class carries an operator-owned `delegates` list; a graph
+  declares a stage bound to a model (`{"depends_on": [], "model": …}`); the root's owner may then submit that stage on
+  a model the key is not granted when the root class delegates to it, the graph is open and the root is active on the
+  key (`run:submit` required); nothing else changes, the declaration alone confers nothing. Ledger migration 15.
+- Dependency results and delivery metadata name the delivering operation, attempt and epoch (`DEPENDENCY_RESULTS`
+  `operation`/`attempt_id`/`epoch` with `producer`; the handle's `exported_by_attempt_id`/`exported_by_epoch`; the
+  graph view's `delivered_by`), never a compute attempt next to a finalizer's receipt.
+
+## api 0.11.54, jobs 0.1.20, tenant chart 0.3.3
+
+- The admission an endpoint call's caller presents at the gateway (`x-serverless2-admitted`) is an exact proof of the
+  active operation: the token is the HMAC of the key, the model and the operation; the caller names the operation and
+  its attempt (`x-serverless2-operation`, `x-serverless2-attempt`, jobs 0.1.20); the hook checks, on every call, that
+  the operation holds a live reservation on that key and is not cancelled, and (remembered 30 s) that its Job is that
+  key's and that model's, not over, and that the attempt is one of its live pods. A release, a cancel or a terminal
+  Job closes the gate at once. A proxied synchronous call is bound to its own `sync-…` admission. The key-only and
+  key+model tokens of releases up to 0.11.53 are accepted only with `admitted_legacy = true` (terraform.tfvars), off by
+  default. Endpoint SecurityPolicies forward the two headers (re-rendered on the next model apply).
+- A waiting stage carries the Kueue queue label naming a queue that never exists (`serverless2-stage-waiting`) instead
+  of no label: with a LocalQueue `default` in the tenant namespace Kueue's LocalQueueDefaulting injected `default` into
+  the label-less Job and admitted the stage before its dependencies and bindings (API51, op-976ec83a3939e974-s-gpu-0).
+  The gate sets the real profile when the stage is admitted; charts/tenant refuses a profile of the waiting queue's name.
+
+## api 0.11.53
+
+- The gateway's authorization hook honours the API's own admitted endpoint call for the scope the admission had: an
+  asynchronous-only key (`invoke:async`) reaches its own endpoint call's readiness probe and inference POST; a direct
+  call still needs `invoke:sync` and is counted at the hook. The admission token (`x-serverless2-admitted`) is bound
+  to the key and the model (`HMAC(router key, <key hash>:<model>)`): a token of one model opens no other, another
+  key cannot use it; the key-only form of earlier releases is still accepted for the callers they rendered (removed
+  with the next jobs image). (API51 ADMET: readiness GET 403 "key scope invoke:sync required".)
+
+## api 0.11.52
+
+- A public run class (`POST /v1/models`, kind job) takes separate limits and node-local scratch: `cpu_limit`,
+  `memory_limit` (the request stays what the scheduler guarantees), `ephemeral_storage`, `ephemeral_storage_limit`
+  (docs/JOBS.md "Run class"); absent, nothing changes (memory limit = request, no CPU quota, no ephemeral request).
+
+## api 0.11.51
+
+- An endpoint call's caller carries the fleet's CA bundle (the system roots plus the CAs the API itself trusts, the
+  fleet CA of the regional gateways among them: public CA material in the call's own Secret, mounted read-only,
+  `CURL_CA_BUNDLE`/`SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`/`AWS_CA_BUNDLE`): a fleet-CA-signed gateway verifies, public
+  hosts keep verifying, never an insecure switch; nothing is projected on a fleet with public certificates everywhere.
+- An API-managed model's readiness path (`health_path`, published as `endpoints.ready`) survives catalog normalisation:
+  the caller probes it (`READY_URL`) instead of the endpoint's root.
+- A chain's attempts are each member's own (live pods and records per member): a cancelled parent's handle shows its
+  running resumed child RUNNING, as the child's own handle does.
+- Weights of an endpoint: `read_only: true` mounts the verified payload readOnly and skips the prepare step (`prepare`
+  explicit when needed); defaults unchanged.
+
+## api 0.11.50
+
+- Live sessions (docs/API.md "Sessions"), off unless `sessions.enabled` in terraform.tfvars: `POST /v1/models/<id>:session`
+  admits a stream on the key (slot, request, GPU bound) and answers a one-time claim; the gateway hook binds the claim
+  exactly once (compare-and-swap, WebSocket subprotocol or `x-serverless2-session-claim` header), injects the session and
+  connection ids and refuses client-supplied ones; the worker pod attaches with its verified identity (TokenReview, pod
+  UID, the endpoint's own pod) before any GPU work and releases after its cleanup with measured or unknown usage; owner
+  cancel, deadline and disconnect are requests; the reconciler ends expired claims, unattached bindings and sessions
+  whose pod is gone (unknown), and settles once. Ledger migration 14 (`sessions`); endpoint SecurityPolicies carry the
+  session headers (re-rendered on the next model apply).
+
 ## api 0.11.49
 
 - A stage of a closed graph (every stage settled) replays as its durable lineage head (200) instead of 409; a stage never

@@ -198,9 +198,9 @@ variable "fleet" {
       })
       # Tags of the platform images under <source>/serverless2/<component>:<tag> (tools/images.sh).
       versions = optional(object({
-        api        = optional(string, "0.11.49")
+        api        = optional(string, "0.11.58")
         dispatcher = optional(string, "0.2.12")
-        jobs       = optional(string, "0.1.19")
+        jobs       = optional(string, "0.1.20")
         ops        = optional(string, "0.1.12")
       }), {})
     }), {})
@@ -254,6 +254,19 @@ variable "fleet" {
       }), {})
       api_rate_limit_per_minute = optional(number, 600)
       grafana_public            = optional(bool, true)
+    }), {})
+
+    # Transitional acceptance of the admission tokens of API releases up to 0.11.53 at the gateway hook (key-only, key+model)
+    # for the endpoint callers they rendered; false once nothing of them is in flight (docs/API.md "Endpoint calls").
+    admitted_legacy = optional(bool, false)
+
+    # Live sessions (docs/API.md "Sessions"): admitted streams to endpoints, bound to one connection and one worker pod.
+    # Off by default; the workers of a model must implement the attach/release protocol before it is switched on.
+    sessions = optional(object({
+      enabled        = optional(bool, false)
+      claim_ttl_s    = optional(number, 120) # the connection must present its claim within this
+      attach_wait_s  = optional(number, 60)  # a bound session no worker attached within this ends with usage unknown
+      token_audience = optional(string, "")  # TokenReview audience of the workers' tokens ("" = the cluster's API server)
     }), {})
 
     observability = optional(object({

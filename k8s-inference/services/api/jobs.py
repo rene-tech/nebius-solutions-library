@@ -19,6 +19,7 @@ host of fleet.yaml `images`, docs/IMAGES.md): nothing in a Job depends on the re
 
 import json
 import logging
+import os
 
 import urllib3
 from fastapi import HTTPException
@@ -214,6 +215,12 @@ def build_run(
     }
     if r.get("cpuLimit"):
         res["limits"]["cpu"] = str(r["cpuLimit"])
+    if r.get("ephemeralStorage") or r.get("ephemeralStorageLimit"):
+        # the kubelet's ephemeral storage (/work on local-nvme scratch, the container's writable layer, emptyDirs):
+        # request = limit unless both are given
+        req = r.get("ephemeralStorage") or r.get("ephemeralStorageLimit")
+        res["requests"]["ephemeral-storage"] = str(req)
+        res["limits"]["ephemeral-storage"] = str(r.get("ephemeralStorageLimit") or req)
     if gpus:
         res["requests"]["nvidia.com/gpu"] = res["limits"]["nvidia.com/gpu"] = str(gpus)
     pvc = pvc or f"{name}-work"
@@ -364,6 +371,8 @@ def build_run(
     if ex:
         execution.apply_run(pod, r, ex, name, S3_ENV_SECRET)  # io mode, identity, private input, profile (docs/JOBS.md)
     if nodes > 1:
+        if (ex or {}).get("retry") or _class_retry(r):
+            raise HTTPException(400, "retry applies to single-node runs (a multi-node run restarts as a whole)")
         return _multinode(name, model, r, values, pod, nodes, gpus, meta, timeout_s, placement)
     _mount_data(r, pod, [main])
     _mount_weights(r, pod, [main])
@@ -383,7 +392,21 @@ def build_run(
         )
     if ex:
         execution.apply_job(job, ex)
+    retry = (ex or {}).get("retry") or _class_retry(r)
+    if retry:
+        execution.apply_retry(job, retry)  # the request's policy, else the class's (docs/JOBS.md "Retries")
     return job
+
+
+def _class_retry(r: dict) -> dict | None:
+    """A run class's own retry policy (`retry: {maxAttempts, onExitCodes}` in the job block)."""
+    pol = r.get("retry")
+    if not isinstance(pol, dict) or not pol.get("maxAttempts"):
+        return None
+    return {
+        "max_attempts": int(pol["maxAttempts"]),
+        "on_exit_codes": [int(c) for c in pol.get("onExitCodes") or [137, 143]],
+    }
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -713,13 +736,24 @@ def build_async(
                 "valueFrom": {"secretKeyRef": {"name": secret_name, "key": "admitted", "optional": True}},
             }
         )
+    trust = trust_bundle()
+    if trust:
+        # the fleet's CA bundle (public CA material: the system roots plus the CAs mounted under /etc/ssl/msp, the
+        # fleet CA among them) next to the caller: the regional gateways' certificates are fleet-CA signed
+        # (edge.regional_certificates), the runner image knows the public roots only; curl, python and the AWS SDK
+        # read one file, verification stays on
+        env += [
+            {"name": k, "value": TRUST_FILE}
+            for k in ("CURL_CA_BUNDLE", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "AWS_CA_BUNDLE")
+        ]
     main = {
         "name": "main",
         "image": RUNNER_IMAGE,
         "command": ["/usr/local/bin/call.sh"],
         "env": env,
         "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}, "limits": {"cpu": "1", "memory": "512Mi"}},
-        "volumeMounts": [{"name": "work", "mountPath": "/work"}],
+        "volumeMounts": [{"name": "work", "mountPath": "/work"}]
+        + ([{"name": "trust", "mountPath": TRUST_DIR, "readOnly": True}] if trust else []),
         "securityContext": RUNNER_SECURITY_CONTEXT,
     }
     work = pvc or (f"{name}-work" if ex else None)
@@ -741,7 +775,17 @@ def build_async(
             {"name": "work", "persistentVolumeClaim": {"claimName": work}}
             if work
             else {"name": "work", "emptyDir": {"sizeLimit": "1Gi"}}
-        ],
+        ]
+        + (
+            [
+                {
+                    "name": "trust",
+                    "secret": {"secretName": secret_name, "items": [{"key": TRUST_KEY, "path": TRUST_KEY}]},
+                }
+            ]
+            if trust
+            else []
+        ),
     }
     if ex:
         execution.apply_async(pod, ex, name)
@@ -765,9 +809,35 @@ def build_async(
         "apiVersion": "v1",
         "kind": "Secret",
         "metadata": {"name": secret_name, "labels": {f"{LABEL}/tenant": tenant}},
-        "stringData": {"authorization": auth, **({"admitted": admitted} if admitted else {})},
+        "stringData": {
+            "authorization": auth,
+            **({"admitted": admitted} if admitted else {}),
+            **({TRUST_KEY: trust} if trust else {}),
+        },
     }
     return job, secret
+
+
+TRUST_DIR = "/etc/ssl/fleet"
+TRUST_KEY = "ca-bundle.pem"
+TRUST_FILE = f"{TRUST_DIR}/{TRUST_KEY}"
+
+
+def trust_bundle() -> str | None:
+    """The bundle the API itself trusts (config._trust_file: the system roots plus every CA under /etc/ssl/msp), for a
+    caller pod that must reach a fleet-CA-signed gateway; None on a fleet without extra CAs (public certificates
+    everywhere: the runner's own roots suffice). Public CA material only, never a key."""
+    import glob
+
+    path = os.environ.get("SSL_CERT_FILE")
+    if not path or not glob.glob("/etc/ssl/msp/*.pem"):
+        return None
+    try:
+        with open(path) as f:
+            pem = f.read()
+    except OSError:
+        return None
+    return pem if "BEGIN CERTIFICATE" in pem else None
 
 
 ASYNC_PVC_SIZE_GI = 2

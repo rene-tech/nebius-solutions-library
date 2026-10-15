@@ -167,3 +167,18 @@ def refresh_trust() -> None:
 
 
 _trust_file()
+
+# Live sessions (docs/API.md "Sessions"): admitted streams to an endpoint, bound to one connection and one worker pod.
+# Off unless the fleet enables it (stack tfvars `sessions.enabled`); the routes answer 404 and the gateway hook ignores
+# session claims while off.
+SESSIONS_ENABLED = os.environ.get("SESSIONS_ENABLED", "false").lower() == "true"
+SESSION_CLAIM_TTL_S = int(os.environ.get("SESSION_CLAIM_TTL_S", "120"))  # the upgrade must bind the claim within it
+SESSION_ATTACH_WAIT_S = int(
+    os.environ.get("SESSION_ATTACH_WAIT_S", "60")
+)  # a bound session unattached this long ends unknown
+SESSION_TOKEN_AUDIENCE = os.environ.get("SESSION_TOKEN_AUDIENCE", "")  # "" = the cluster's API server audience
+
+# Endpoint calls (docs/API.md "Endpoint calls"): the admission token a caller presents at the gateway is bound to its
+# key, model, operation and attempt. ADMITTED_LEGACY accepts the key-only and key+model tokens of releases up to 0.11.53
+# for the callers they rendered while they drain; off on a target where nothing of them is in flight.
+ADMITTED_LEGACY = os.environ.get("ADMITTED_LEGACY", "false").lower() == "true"

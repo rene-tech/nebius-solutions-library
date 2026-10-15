@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, SkipValidation
 
 from config import REGION
 
-INVOKE_TIMEOUT_MAX_S = 7 * 86400
+INVOKE_TIMEOUT_MAX_S = 14 * 86400  # the long-run contract: 14-day MD runs with an explicit, budgeted timeout
 RECOVERY_MAX = 3
 
 
@@ -59,8 +59,8 @@ class RecoverySpec(BaseModel):
     )  # `recover` only: automatic continuations per root
     wait_s: int | None = Field(default=None, ge=0, le=86400)  # `recover` only: time to come back on its own class first
     deadline_s: int | None = Field(
-        default=None, ge=60, le=7 * 86400
-    )  # `recover` only: no recovery past root.created_at + deadline_s
+        default=None, ge=60, le=14 * 86400
+    )  # `recover` only: no recovery past root.created_at + deadline_s (a 14-day run may recover until its end)
 
 
 MAX_STAGES = 256
@@ -71,10 +71,19 @@ class GraphSpec(BaseModel):
     (`root` = the root's own run). Sealed: no stage attaches later. Acyclic, at most MAX_STAGES stages."""
 
     model_config = ConfigDict(extra="forbid")
-    stages: dict[str, list[str]]
+    stages: dict[str, "list[str] | StageDecl"]
     deadline_s: int | None = Field(
         default=None, ge=60, le=30 * 86400
     )  # stages still waiting after it are cancelled (default 14 days)
+
+
+class StageDecl(BaseModel):
+    """A declared stage: its dependencies and, optionally, the model it is bound to (docs/JOBS.md "Delegated stages":
+    the root's owner may then submit it on that model when the root's run class delegates to it)."""
+
+    model_config = ConfigDict(extra="forbid")
+    depends_on: list[str] = Field(default_factory=list)
+    model: str | None = None
 
 
 class StageSpec(BaseModel):
@@ -83,6 +92,19 @@ class StageSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     root: str
     id: str
+
+
+RETRY_MAX_ATTEMPTS = 10
+
+
+class RetrySpec(BaseModel):
+    """Bounded application retries of one run (docs/JOBS.md "Retries"): at most `max_attempts` pods of the same Job, a
+    replacement only after an exit code in `on_exit_codes` (137/143 by default: the retained scientific policy); any
+    other non-zero exit fails the run at once. Infrastructure disruptions stay the platform's (never counted)."""
+
+    model_config = ConfigDict(extra="forbid")
+    max_attempts: int = Field(ge=1, le=RETRY_MAX_ATTEMPTS)
+    on_exit_codes: list[int] = Field(default_factory=lambda: [137, 143])
 
 
 class ExecutionSpec(BaseModel):
@@ -95,6 +117,7 @@ class ExecutionSpec(BaseModel):
     recovery: RecoverySpec | None = None
     graph: GraphSpec | None = None
     stage: StageSpec | None = None
+    retry: RetrySpec | None = None  # docs/JOBS.md "Retries": overrides the run class's own policy
 
 
 class BindingRequest(BaseModel):
@@ -110,6 +133,49 @@ class InvokeRequest(BaseModel):
     priority: str | None = None
     timeout_s: int | None = Field(default=None, ge=1, le=INVOKE_TIMEOUT_MAX_S)
     execution: ExecutionSpec | None = None  # docs/JOBS.md "Execution options" (runs; endpoint calls: docs/API.md)
+
+
+class SessionRequest(BaseModel):
+    """`POST /v1/models/{model}:session` (docs/API.md "Sessions")."""
+
+    model_config = ConfigDict(extra="forbid")
+    timeout_s: int = Field(default=3600, ge=60, le=86400)  # the session's deadline from its creation
+    region: str | None = None  # a cluster id or region of the model's deployments (docs/API.md)
+
+
+class Session(BaseModel):
+    id: str
+    model: str
+    cluster: str | None = None
+    region: str
+    status: Literal["claimed", "bound", "attached", "ended"]
+    outcome: str | None = None
+    cancel_requested: bool
+    cancel_reason: str | None = None
+    attached: bool
+    worker_session_id: str | None = None
+    created_at: str | None = None
+    expires_at: str | None = None
+    deadline_at: str | None = None
+    bound_at: str | None = None
+    attached_at: str | None = None
+    ended_at: str | None = None
+    gpu_seconds: float | None = None
+    usage: str | None = None
+    claim_token: str | None = None  # on creation only
+
+
+class SessionAttach(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    connection: str
+    worker_session_id: str | None = Field(default=None, max_length=200)
+
+
+class SessionRelease(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    connection: str
+    outcome: Literal["done", "cancelled", "disconnected", "busy", "error"]
+    gpu_seconds: float | None = Field(default=None, ge=0)  # null = unknown (no metering): the bound stays
 
 
 class ResumeRequest(BaseModel):
@@ -230,6 +296,8 @@ class WeightsSpec(BaseModel):
     path: str | None = None
     mount_path: str | None = None
     env: dict[str, str] | None = None
+    read_only: bool | None = None  # a verified, immutable payload: mounted readOnly, no prepare step (default false)
+    prepare: bool | None = None  # the init step that creates the directory (default: not read_only)
 
 
 class DataSpec(BaseModel):
@@ -309,8 +377,18 @@ class ModelSpec(BaseModel):
     display_name: SkipValidation[str | None] = None
     description: SkipValidation[str | None] = None
     task: SkipValidation[str | None] = None
-    cpu: SkipValidation[str | None] = None
-    memory: SkipValidation[str | None] = None
+    cpu: SkipValidation[str | None] = None  # request
+    memory: SkipValidation[str | None] = None  # request (= limit unless memory_limit)
+    cpu_limit: SkipValidation[str | None] = None  # optional: no CFS quota without it
+    memory_limit: SkipValidation[str | None] = None  # a limit above the request is not guaranteed memory
+    ephemeral_storage: SkipValidation[str | None] = None  # node-local scratch request (the kubelet's ephemeral storage)
+    ephemeral_storage_limit: SkipValidation[str | None] = None  # = the request unless given
+    delegates: SkipValidation[list[str] | None] = (
+        None  # run classes a graph of this root may bind stages to (operator-owned)
+    )
+    retry: SkipValidation[dict[str, Any] | None] = (
+        None  # {max_attempts, on_exit_codes}: the class's policy (docs/JOBS.md "Retries")
+    )
     disk_gi: SkipValidation[int | None] = None
     grace_seconds: SkipValidation[int | None] = None
     scratch: SkipValidation[Literal["network", "local-nvme"] | None] = None
@@ -416,7 +494,11 @@ class GraphStage(BaseModel):
     depends_on: list[str] | None = None
     operation: str | None = None
     status: str | None = None
-    attempt_id: str | None = None
+    attempt_id: str | None = None  # the delivering attempt (of `delivered_by` when a finalizer or retry delivered)
+    epoch: int | None = None
+    delivered_by: str | None = None
+    result_ref: str | None = None
+    continuations: int | None = None
     reason: str | None = None
 
 
@@ -475,6 +557,8 @@ class Operation(BaseModel):
     revision: int | None = None
     export_state: ExportState | None = None
     exported_by: str | None = None
+    exported_by_attempt_id: str | None = None  # the delivering attempt (an export retry or finalizer that delivered)
+    exported_by_epoch: int | None = None
     result_ref: str | None = None
     checkpoint_ref: str | None = None
     checkpoint_generation: int | None = None
@@ -641,6 +725,11 @@ class ExecutionCapabilitiesAsyncPrivateIO(BaseModel):
     binding_keys: list[str] | None = None
 
 
+class ExecutionCapabilitiesRetry(BaseModel):
+    max_attempts: list[int] | None = None  # [min, max]
+    default_exit_codes: list[int] | None = None
+
+
 class ExecutionCapabilities(BaseModel):
     io_modes: list[Literal["managed", "application"]] | None = None
     async_private_io: ExecutionCapabilitiesAsyncPrivateIO | None = None
@@ -651,6 +740,7 @@ class ExecutionCapabilities(BaseModel):
     identity_token_file: str | None = None
     finalize: ExecutionCapabilitiesFinalize | None = None
     recovery: ExecutionCapabilitiesRecovery | None = None
+    retry: ExecutionCapabilitiesRetry | None = None  # docs/JOBS.md "Retries"
 
 
 class FleetInfo(BaseModel):

@@ -42,7 +42,7 @@ runs (the fleet's profile queues), the key's budget bounds every call ("Keys" be
 `max_budget` on its OpenAI route), and an
 Envoy Gateway global rate limit caps each key (distinct `Authorization` header, counted in Redis
 across replicas): 600 requests per minute on the API route, 3000 per minute on the predictor hosts. Two bounds
-are the API's own: a call's `timeout_s` is 1 s to 7 days (a sync call waits, a run has a deadline, no longer), and
+are the API's own: a call's `timeout_s` is 1 s to 14 days (a run has a deadline, no longer: the long-run contract, a 14-day MD run with a GPU-second budget needs its explicit timeout; a sync call waits, bounded by the API's own proxy timeout), and
 the `input` of a run or an async call is at most 60 KB (413 above it: pass large inputs by reference, an artifact
 upload or a binding).
 
@@ -61,7 +61,7 @@ shape of a model definition: a container plus a few knobs.
 
 `protocol` is `openai | http | websocket | grpc`; `gpu.classes` lists the classes the image runs on,
 preferred first; `regions` defaults to every region with a pool of one of the classes; `kind: job`
-defines a run class instead (`cpu`, `memory`, `disk_gi`, `scratch`, `parameters`). The full field list is
+defines a run class instead (`cpu`, `memory`, `cpu_limit`, `memory_limit`, `ephemeral_storage`, `ephemeral_storage_limit`, `disk_gi`, `scratch`, `parameters`, `delegates`, `retry`; requests are what the scheduler guarantees, limits what a container may grow to; `delegates` names the run classes a graph rooted on this class may bind stages to, docs/JOBS.md "Delegated stages"). The full field list is
 the module docstring of `services/api/models.py`; the response schema is `Model` in `services/api/schemas.py`.
 
 ### Scaling
@@ -169,7 +169,7 @@ before it started settles at zero. The slot closes when no member is active; a l
 it (concurrency re-checked, no second request). `GET /v1/keys/me` reports `usage`: operations in flight, reserved and
 unknown GPU seconds. A key with any finite limit is admitted on the synchronous and run paths: a shared endpoint
 cannot measure a key's GPU time, so a finite GPU-second budget answers 501 at the endpoint hook; a direct endpoint
-call cannot hold a concurrency slot (501 unless the call is the API's own admitted proxy); bounded asynchronous calls
+call cannot hold a concurrency slot (501 unless the call is the API's own admitted call: `x-serverless2-admitted`, the HMAC of the key, the model and the operation, next to `x-serverless2-operation` and `x-serverless2-attempt`; the hook verifies on every call that the operation holds a live reservation on the key and is not cancelled, and that the caller's Job is the key's and the model's and the attempt one of its live pods, which lets an `invoke:async`-only key's endpoint call probe readiness and post its one inference through the gateway and nothing else; a release or cancel closes it at once); bounded asynchronous calls
 answer 501 until the durable async call exists. Unbounded keys and keys created through `POST /v1/keys` are not
 affected.
 
@@ -222,6 +222,13 @@ terminal only with its stages; a stage carries `stage` (`root`, `id`, `depends_o
 `phase: waiting_for_dependencies`. The rules (sealed graph, one operation per stage, same owner and key, the gate,
 failure, cancel, deadline) are in docs/JOBS.md "Stage composition".
 
+## Weights of an endpoint
+
+`weights: {path, mount_path, env, read_only, prepare}` on an API-managed model (`POST /v1/models`): the region's
+shared weights filesystem under `path` (the model id by default) at `mount_path` (`/weights`). `read_only: true` mounts
+a verified, immutable payload readOnly and skips the prepare step that would create and open the directory;
+`prepare` overrides that step explicitly. Defaults: writable, prepared.
+
 ## Variants
 
 One endpoint may run as several deployments in a region behind its one name, in priority order: a warm floor on
@@ -250,6 +257,26 @@ plain deployment the image of its pool's GPU class. Regions named under `deploym
 runs; a region without variants keeps the automatic pool choice. A redefinition that drops a variant (or a region)
 removes its service, its LiteLLM deployment and, once Knative has torn its routes down, its authorizer; a dropped
 warm variant holds no GPUs beyond that.
+
+## Sessions (live streams to an endpoint)
+
+Off unless the fleet enables it (terraform.tfvars `sessions.enabled`; `GET /v1/sessions` is 404 while off). A session is
+an admitted stream for workers that hold GPU state across one long connection (speech): one claim, one connection, one
+worker pod, released once; `services/api/sessions.py`.
+
+| Step | Who | What |
+|---|---|---|
+| `POST /v1/models/<id>:session` `{timeout_s, region}` | the caller (`invoke:sync`) | admission on the key as a run's root: one concurrency slot, one request, and for a key with a GPU-second budget the endpoint's GPUs x `timeout_s` as the bound. Answers 202 with a one-time `claim_token`, `expires_at` (the claim must be presented within `sessions.claim_ttl_s`, 120 s by default) and `deadline_at` (`timeout_s` after creation) |
+| the connection | the caller | presents the claim once: `Sec-WebSocket-Protocol: s2-session.<token>` on an upgrade, or the header `x-serverless2-session-claim: <token>` on a plain HTTP request (NDJSON streaming). The gateway's authorization hook binds it with a compare-and-swap (`claimed -> bound`, a server-generated connection id): exactly one connection ever binds a session, across API replicas; a second presentation, an expired, cancelled or foreign claim is 401. The hook injects `x-serverless2-session` and `x-serverless2-connection` towards the worker and refuses (403) any client that supplies those headers itself; the claim token is never logged |
+| `POST /internal/sessions/<id>:attach` `{connection, worker_session_id}` | the worker pod, with its own ServiceAccount token | before any decoder, reset, feed or GPU work: `bound -> attached` for the injected connection id only. The pod is verified server-side (TokenReview on the session's cluster with `sessions.token_audience` or the cluster's, the pod's namespace/name/UID from the token's claims, the pod object with the same UID, the endpoint it belongs to = the session's model); nothing is taken from headers. Idempotent for the same connection and pod UID; 409 for another connection, a second worker, or after the attach wait, a cancel or the deadline (fenced for good) |
+| `GET /internal/sessions/<id>` | the attached worker only | `status`, `cancel_requested`, `cancel_reason`, `deadline_at`: the worker polls it (or reads its own socket) to learn of a cancellation |
+| `POST /internal/sessions/<id>:release` `{connection, outcome, gpu_seconds}` | the attached worker, after its own post-done cleanup | `attached -> ended`; the key's slot goes; `gpu_seconds` measured becomes spend, `null` (no metering) leaves the session `unknown` and its bound against the budget, never a measured zero. Idempotent for the same pod. Outcomes: `done`, `cancelled`, `disconnected`, `busy`, `error` |
+| `POST /v1/sessions/<id>:cancel`, the deadline, a client disconnect | the owner, the reconciler, the transport | cancellation *requests*: nothing is released by them. A session nobody bound ends at once (zero: no worker was reached). A bound or attached one keeps its slot until its worker releases it or its pod (exact UID) is gone or finished, which the reconciler confirms every 15 s (`worker_lost`, usage unknown). Never a replica-wide drain |
+| `GET /v1/sessions`, `GET /v1/sessions/<id>` | the owner (`read:operations`) | `status` (`claimed`, `bound`, `attached`, `ended`), `outcome`, `cancel_requested`, `attached`, `worker_session_id`, the timestamps, `gpu_seconds`, `usage` (`measured`, `unknown`, `none`) |
+
+No reconnect: a dropped connection ends at the worker (`disconnected`), the token binds once, a new session is a new
+admission. A bound session no worker attached within `sessions.attach_wait_s` (60 s) ends `unattached` with usage unknown.
+Settlement on the key's ledger happens exactly once per session (the reconciler retries what a crash left unsettled).
 
 ## Bindings and execution options (runs, and endpoint calls with private I/O)
 

@@ -415,6 +415,24 @@ def _validate_variants(s: dict, kind: str) -> None:
         routing.setdefault("default", "priority")
 
 
+def _retry_policy(r) -> dict:
+    """`retry: {max_attempts 1..10, on_exit_codes [1..255] (default [137, 143])}` of a run class spec."""
+    from schemas import RETRY_MAX_ATTEMPTS
+
+    if not isinstance(r, dict) or "max_attempts" not in r:
+        raise HTTPException(400, "retry: {max_attempts (1..10), on_exit_codes (default [137, 143])}")
+    try:
+        n = int(r["max_attempts"])
+    except (TypeError, ValueError):
+        raise HTTPException(400, "retry.max_attempts: 1..10")
+    if not 1 <= n <= RETRY_MAX_ATTEMPTS:
+        raise HTTPException(400, "retry.max_attempts: 1..10")
+    codes = r.get("on_exit_codes", [137, 143])
+    if not isinstance(codes, list) or not codes or any(not isinstance(c, int) or not 1 <= c <= 255 for c in codes):
+        raise HTTPException(400, "retry.on_exit_codes: a non-empty list of exit codes 1..255")
+    return {"maxAttempts": n, "onExitCodes": sorted(set(codes))}
+
+
 def to_entry(spec: dict, managed_by: str = "api") -> dict:
     """Catalog entry (catalog/README.md schema) for a spec; the chart and the job renderer read this."""
     s = validate(spec)
@@ -505,11 +523,14 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
             runtime["imagePullSecrets"] = [s["pull_secret"]]
         w = s.get("weights") or {}
         if w:
+            read_only = bool(w.get("read_only"))
             runtime["weights"] = {
                 "sharedFilesystem": {
                     "enabled": True,
                     "path": w.get("path", mid),
                     "mountPath": w.get("mount_path", "/weights"),
+                    "readOnly": read_only,
+                    "prepare": w["prepare"] if w.get("prepare") is not None else not read_only,
                 },
                 "env": dict(w.get("env") or {}),
             }
@@ -599,6 +620,19 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
             "gpu": count,
             "cpu": str(s.get("cpu", "4")),
             "memory": str(s.get("memory", "16Gi")),
+            # separate limits and node-local scratch (docs/JOBS.md "Run class"): a request is what the scheduler
+            # guarantees, a limit what the container may grow to; absent limits keep the chart's rules (memory limit =
+            # request, no CPU quota)
+            **({"cpuLimit": str(s["cpu_limit"])} if s.get("cpu_limit") else {}),
+            **({"memoryLimit": str(s["memory_limit"])} if s.get("memory_limit") else {}),
+            **({"ephemeralStorage": str(s["ephemeral_storage"])} if s.get("ephemeral_storage") else {}),
+            **(
+                {"ephemeralStorageLimit": str(s["ephemeral_storage_limit"])} if s.get("ephemeral_storage_limit") else {}
+            ),
+            # run classes a graph rooted here may bind stages to (docs/JOBS.md "Delegated stages"): operator-owned
+            **({"delegates": [str(x) for x in s["delegates"]]} if s.get("delegates") else {}),
+            # the class's bounded retry policy (docs/JOBS.md "Retries"): {maxAttempts, onExitCodes}
+            **({"retry": _retry_policy(s["retry"])} if s.get("retry") is not None else {}),
             "pvcSizeGi": int(s.get("disk_gi", 50)),
             "graceSeconds": int(s.get("grace_seconds", 300)),
             "scratch": s.get("scratch", "network"),

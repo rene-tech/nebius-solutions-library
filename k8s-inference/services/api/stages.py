@@ -31,6 +31,11 @@ from resilience import retry
 log = logging.getLogger("api")
 LABEL = cfg.LABEL
 QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
+# The queue a waiting stage names: a LocalQueue that never exists in any tenant namespace (charts/tenant refuses a
+# profile of this name). Kueue creates a Workload for it that is never admitted and holds no quota, and keeps the Job
+# suspended; the label must be present, because Kueue's LocalQueueDefaulting injects `default` into a label-less Job
+# when the namespace has a LocalQueue `default` (the tenants' default profile), which admitted a waiting stage on API51.
+WAITING_QUEUE = "serverless2-stage-waiting"
 WAITING = f"{LABEL}/stage-waiting"  # label "true" while the stage waits for its dependencies
 STAGE_ROOT = f"{LABEL}/stage-root"  # label: the root the stage belongs to
 STAGE_ID = f"{LABEL}/stage"  # annotation: the stage's declared id
@@ -56,13 +61,14 @@ def dependencies(graph: dict, stage: str) -> list[str]:
 
 
 def mark_waiting(job: dict, root: str, stage: str, deps: list[str]) -> None:
-    """Turn a rendered run into a waiting stage: suspended, no Kueue queue (Kueue leaves a Job without the queue
-    label alone), stage labels and annotations, and the main container's DEPENDENCY_RESULTS from the pod template's
-    annotation (filled by the gate). A JobSet stage is refused (its template is not patchable the same way)."""
+    """Turn a rendered run into a waiting stage: suspended, its Kueue queue label naming a queue that does not exist
+    (WAITING_QUEUE: no admission, no quota; the gate later sets the real profile, allowed while the Job is suspended),
+    stage labels and annotations, and the main container's DEPENDENCY_RESULTS from the pod template's annotation
+    (filled by the gate). A JobSet stage is refused (its template is not patchable the same way)."""
     if job.get("kind") != "Job":
         raise HTTPException(400, "a stage must be a single-node run (multi-node stages are not supported)")
     md = job["metadata"]
-    md.setdefault("labels", {}).pop(QUEUE_LABEL, None)
+    md.setdefault("labels", {})[QUEUE_LABEL] = WAITING_QUEUE  # never a real queue: Kueue admits nothing for it
     md["labels"][WAITING] = "true"
     md["labels"][STAGE_ROOT] = root
     md.setdefault("annotations", {})[STAGE_ID] = stage
@@ -157,12 +163,7 @@ def state_of(ns: str, operation: str) -> dict:
             if op.get("status") in ("EXPORT_FAILED", "FINALIZING", "FAILED"):
                 root = op.get("resumed_from") or current
                 op.update(_delivered(op, current, root))
-            return {
-                "operation": current,
-                "status": op.get("status"),
-                "result_ref": op.get("result_ref"),
-                "attempt_id": op.get("attempt_id"),
-            }
+            return _state(current, op)
         nxt = (job["metadata"].get("annotations") or {}).get(f"{LABEL}/successor")
         if nxt and nxt != current:
             current = nxt
@@ -174,13 +175,23 @@ def state_of(ns: str, operation: str) -> dict:
             op.update(attempts.lifecycle(current, root, rows))
             if op["status"] in ("EXPORT_FAILED", "FINALIZING", "FAILED"):
                 op.update(_delivered(op, current, root))
-        return {
-            "operation": current,
-            "status": op.get("status"),
-            "result_ref": op.get("result_ref"),
-            "attempt_id": op.get("attempt_id"),
-        }
+        return _state(current, op)
     return {"operation": current, "status": None}
+
+
+def _state(current: str, op: dict) -> dict:
+    """The authoritative delivery identity: when an export retry or finalizer delivered the result, the delivering
+    operation and its attempt and epoch (never the producer's compute attempt next to the finalizer's receipt); else
+    the operation's own newest attempt. `producer` is the lineage member the result belongs to."""
+    delivered_by = op.get("exported_by")
+    return {
+        "operation": delivered_by or current,
+        "producer": current,
+        "status": op.get("status"),
+        "result_ref": op.get("result_ref"),
+        "attempt_id": (op.get("exported_by_attempt_id") if delivered_by else None) or op.get("attempt_id"),
+        "epoch": (op.get("exported_by_epoch") if delivered_by else None) or op.get("epoch"),
+    }
 
 
 def dependency_head(root: str, dep: str) -> str | None:
@@ -205,9 +216,13 @@ def evaluate(ns: str, graph: dict, deps: list[str]) -> tuple[str, dict | str]:
             if not st.get("result_ref"):
                 return "failed", f"dependency {dep} ({st['operation']}) succeeded without a result_ref: not runnable"
             results[dep] = {
-                "operation": st["operation"],
+                "operation": st[
+                    "operation"
+                ],  # the delivering operation (a finalizer or export retry when one delivered)
+                "producer": st.get("producer") or st["operation"],
                 "result_ref": st["result_ref"],
-                "attempt_id": st.get("attempt_id"),
+                "attempt_id": st.get("attempt_id"),  # the delivering attempt
+                "epoch": st.get("epoch"),
             }
         elif st["status"] is None:
             waiting.append(f"{dep} not submitted")
@@ -412,6 +427,8 @@ def graph_view(ns: str, g: dict) -> dict:
                     "operation": m["operation"],
                     "status": st.get("status") or ("CANCELLED" if m["state"] != "active" else "QUEUED"),
                     "attempt_id": st.get("attempt_id"),
+                    "epoch": st.get("epoch"),
+                    "delivered_by": st["operation"] if st.get("operation") != m["operation"] else None,
                     "result_ref": st.get("result_ref"),
                     "reason": m.get("note") or lineage[0].get("note"),
                     **({"continuations": len(lineage) - 1} if len(lineage) > 1 else {}),

@@ -31,6 +31,11 @@ def _load() -> dict:
 def normalise(doc: dict) -> dict:
     m = dict(doc)
     rt, price, gpu = m.get("runtime") or {}, m.get("price") or {}, m.get("gpu") or {}
+    # the readiness path (an API-managed model's `health_path`, published as endpoints.ready) is kept for the callers
+    # that probe the endpoint before their one inference POST (jobs.build_async READY_URL); the probe endpoints
+    # themselves are not callable endpoints
+    if not m.get("health_path") and (m.get("endpoints") or {}).get("ready"):
+        m["health_path"] = m["endpoints"]["ready"]
     eps = {k: v for k, v in (m.get("endpoints") or {}).items() if k not in ("ready", "live", "metrics")}
     m["name"] = m["id"]
     m["display_name"] = m.get("displayName", m["id"])
@@ -88,6 +93,7 @@ def normalise(doc: dict) -> dict:
         )
     if m["mode"] == "run":
         m["job"] = dict(m.get("job") or {})  # image, command, gpu, cpu, memory, ... (docs/JOBS.md)
+        m["delegates"] = [str(x) for x in (m["job"].get("delegates") or [])]  # docs/JOBS.md "Delegated stages"
         images = m["job"].get("images")  # per-GPU-class images (docs/SCHEDULING.md "Per-GPU images for runs")
         if isinstance(images, dict) and images.get("default") and not m["job"].get("image"):
             m["job"]["image"] = images["default"]

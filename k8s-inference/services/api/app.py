@@ -33,7 +33,9 @@ import monitoring
 import placement as placing
 import render
 import schemas
+import sessions
 import stages
+import status
 from auth import (
     Principal,
     _principal,
@@ -111,7 +113,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.49", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.58", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -286,10 +288,77 @@ def _gpu_reservation(gpus: int, req: "InvokeRequest", p: Principal) -> float:
     return float(gpus * req.timeout_s)
 
 
-def _admitted_token(key_hash: str) -> str:
-    """HMAC the gateway hook verifies on the API's own proxied calls (one API call + its gateway authorization is one
-    logical request); the router key is the shared secret of this fleet."""
-    return hmac.new((cfg.ROUTER_KEY or "").encode(), key_hash.encode(), hashlib.sha256).hexdigest()
+OPERATION_HEADER = "x-serverless2-operation"  # the admitted operation a caller names (with its token)
+ATTEMPT_HEADER = "x-serverless2-attempt"  # the caller's pod (an endpoint call's attempt)
+_admission_cache: dict[tuple, float] = {}  # (operation, attempt, key hash) -> verified until (the readiness loop polls)
+ADMISSION_CACHE_S = 30
+
+
+def _admitted_token(key_hash: str, model: str | None = None, operation: str | None = None) -> str:
+    """HMAC the gateway hook verifies on the API's own admitted calls: one API admission + its gateway authorization
+    is one logical request. Bound to the key, the model and the operation the admission was for
+    (`<key hash>:<model>:<operation>`: a proxied synchronous call's `sync-…` admission, an endpoint call's operation);
+    the router key is the shared secret of this fleet. The shorter forms are the tokens of releases up to 0.11.53."""
+    msg = ":".join(x for x in (key_hash, model, operation) if x)
+    return hmac.new((cfg.ROUTER_KEY or "").encode(), msg.encode(), hashlib.sha256).hexdigest()
+
+
+def _is_admitted(p: Principal, token: str, model: str, operation: str, attempt: str) -> bool:
+    """An exact, bounded proof that the gateway call is the API's own admitted call (docs/API.md "Endpoint calls"): the
+    token is the HMAC for this key, this model and the operation named; the operation holds a live reservation on
+    this key (admitted, not released: the ledger); for an endpoint call's caller the operation's Job is this key's,
+    this model's and not over, and the attempt named is one of its live pods. The reservation and the cancel fence
+    are read on every call; only the identity (Job, owner, pod) is remembered for ADMISSION_CACHE_S (the caller's
+    readiness loop), so a release or a cancel closes the gate at once. ADMITTED_LEGACY accepts the key-only and
+    key+model tokens of releases up to 0.11.53 for the callers they rendered."""
+    if not cfg.ROUTER_KEY or not token:
+        return False
+    key_hash = keys.key_hash(p.key)
+    if operation and hmac.compare_digest(token, _admitted_token(key_hash, model, operation)):
+        # the live state, on every call (never cached): the reservation and the cancel fence
+        if db.enabled():
+            try:
+                if keys.reservation_key(operation) != key_hash:
+                    return False  # not admitted on this key, or released already (terminal, cancelled, billed)
+                if not operation.startswith("sync-") and attempts.enabled():
+                    marks = attempts._marks(operation)
+                    if marks and marks[1]:
+                        return False  # cancelled: no fresh work for a cancelled operation
+            except Exception as e:  # noqa: BLE001 - no proof without the ledger
+                log.warning("admission check of %s: %s", operation, e)
+                return False
+        if operation.startswith("sync-"):
+            return True
+        # the identity, cached ADMISSION_CACHE_S (immutable while it holds): the operation's Job is this key's and this
+        # model's, not over, and the attempt named is one of its live pods
+        now = time.time()
+        if _admission_cache.get((operation, attempt, key_hash), 0) > now:
+            return True
+        try:
+            job, region = jobs.find(p.namespace, operation)
+        except HTTPException:
+            return False
+        md = job["metadata"]
+        if (md.get("annotations") or {}).get(f"{cfg.LABEL}/key") != key_hash:
+            return False
+        if (md.get("labels") or {}).get(f"{cfg.LABEL}/model") != model or status.finished(job):
+            return False
+        if not attempt:
+            return False
+        pods = [
+            x
+            for x in (job.get("_pods") or [])
+            if x["metadata"]["name"] == attempt and (x.get("status") or {}).get("phase") in ("Pending", "Running")
+        ]
+        if not pods:
+            return False
+        _admission_cache[(operation, attempt, key_hash)] = now + ADMISSION_CACHE_S
+        return True
+    if cfg.ADMITTED_LEGACY:
+        return hmac.compare_digest(token, _admitted_token(key_hash, model)) or hmac.compare_digest(
+            token, _admitted_token(key_hash)
+        )
+    return False
 
 
 def _endpoint_limits(p: Principal, mode: str, admitted: bool = False) -> None:
@@ -600,6 +669,25 @@ def get_model(model: str, p: Principal = Depends(scoped("read:catalog"))):
 )
 async def authorize_endpoint(model: str, request: Request, path: str = ""):
     """Envoy prefixes the original URI with a model identity fixed by the endpoint's SecurityPolicy."""
+    if sessions.enabled():
+        if any(request.headers.get(h) for h in sessions.INJECTED):
+            # only the hook sets these towards the worker; a client that sends them is forging a worker identity
+            raise HTTPException(403, "x-serverless2-session / x-serverless2-connection are not client headers")
+        claim = sessions.claim_of(request.headers)
+        if claim:
+            # a live session (docs/API.md "Sessions"): the claim binds exactly once, the session already holds the
+            # key's slot and request; the worker learns the session and connection ids from the injected headers
+            m = catalog.get(model) or _endpoint_model(model)
+            s = await asyncio.to_thread(sessions.bind, claim, m["name"])
+            return JSONResponse(
+                {},
+                headers={
+                    "x-serverless2-tenant": s["tenant"],
+                    "x-serverless2-key-alias": "",
+                    sessions.SESSION_HEADER: s["id"],
+                    sessions.CONNECTION_HEADER: s["connection"],
+                },
+            )
     key = request.headers.get("authorization", "")
     if not key.lower().startswith("bearer "):
         token = request.query_params.get("api_key", "")
@@ -610,20 +698,28 @@ async def authorize_endpoint(model: str, request: Request, path: str = ""):
         key = f"Bearer {token}" if token else ""
     p = await _principal(key, allow_router=True)  # LiteLLM's deployments call here with the fleet's router key
     token = request.headers.get(ADMITTED_HEADER, "")
-    admitted = (
-        bool(cfg.ROUTER_KEY) and bool(token) and hmac.compare_digest(token, _admitted_token(keys.key_hash(p.key)))
-    )
     await asyncio.to_thread(
-        _authorize_model, p, model, admitted
+        _authorize_model,
+        p,
+        model,
+        token,
+        request.headers.get(OPERATION_HEADER, ""),
+        request.headers.get(ATTEMPT_HEADER, ""),
     )  # catalog (database) and Kubernetes calls: off the event loop
     return JSONResponse(
         {}, headers={"x-serverless2-tenant": p.tenant, "x-serverless2-key-alias": str(p.info.get("key_alias") or "")}
     )
 
 
-def _authorize_model(p: Principal, model: str, admitted: bool = False) -> None:
+def _authorize_model(p: Principal, model: str, token: str = "", operation: str = "", attempt: str = "") -> None:
+    """The gateway's authorization of a call to an endpoint: the key's model allow-list and budget always; a direct
+    call needs `invoke:sync` and is counted here; the API's own admitted call (the admission token bound to this key
+    and model: a proxied synchronous call, or an endpoint call's caller probing readiness and posting its one
+    inference) was counted at admission and needs the scope that admission had, `invoke:sync` or `invoke:async`: an
+    asynchronous-only key reaches its own endpoint call, nothing else."""
     m = catalog.get(model) or _endpoint_model(model)
-    authorize(p, m["name"], "invoke:sync", budget=True)
+    admitted = _is_admitted(p, token, m["name"], operation, attempt) if p.role != keys.ROUTER["role"] else False
+    authorize(p, m["name"], ("invoke:sync", "invoke:async") if admitted else "invoke:sync", budget=True)
     _endpoint_limits(p, "gateway", admitted)
     if m["mode"] == "run":
         raise HTTPException(404, "not an endpoint")
@@ -661,7 +757,13 @@ async def invoke(
 ):
     m = _model(model)
     mode = req.mode or m["mode"]
-    authorize(p, model, {"sync": "invoke:sync", "async": "invoke:async"}.get(mode, "run:submit"), budget=True)
+    if mode == "run" and req.execution and req.execution.stage and not allows_model(p, model):
+        # a stage on a model the key is not granted: only as a delegated stage of a root the operator's run class
+        # delegates to (docs/JOBS.md "Delegated stages"); the declaration alone confers nothing
+        _require_delegation(p, model, req.execution.stage.root, req.execution.stage.id)
+        authorize(p, model, "run:submit", budget=True, model_check=False)
+    else:
+        authorize(p, model, {"sync": "invoke:sync", "async": "invoke:async"}.get(mode, "run:submit"), budget=True)
     if mode not in m["modes"]:
         raise HTTPException(400, f"model {model} supports modes {m['modes']}, not {mode}")
     if mode == "run":
@@ -685,7 +787,7 @@ async def invoke(
         sid = f"sync-{uuid.uuid4().hex[:12]}"
         await asyncio.to_thread(_admit, p, sid)  # a slot and a request for the duration of the call
         try:
-            return await _sync(m, req, p, region)
+            return await _sync(m, req, p, region, sid)
         finally:
             await asyncio.to_thread(_release, sid, None)  # no per-request GPU measurement exists for shared endpoints
     if len(json.dumps(req.input)) > INPUT_MAX_BYTES:
@@ -753,7 +855,7 @@ def _invoke_job(
             region,
             ex=ex,
             key_hash=billing.key_hash(p.key),
-            admitted=_admitted_token(keys.key_hash(p.key)) if cfg.ROUTER_KEY else None,
+            admitted=_admitted_token(keys.key_hash(p.key), m["name"], name) if cfg.ROUTER_KEY else None,
         )
     elif FLEET_MANAGER:
         _guard_run_input(m, req, p, REGION, ex)
@@ -801,6 +903,30 @@ def _invoke_job(
     return JSONResponse(
         _operation(p, created_job, created_job["metadata"]["name"], region), status_code=200
     )  # a replay: its current state
+
+
+def _require_delegation(p: Principal, model: str, root: str, stage: str) -> None:
+    """A stage on a model the caller's key is not granted is allowed only when every one of these holds: the root's graph
+    exists in this tenant and belongs to this owner, is open, and declared this stage bound to exactly this model; the
+    root's run class (operator-owned) lists this model among its `delegates`; the root holds a live reservation on the
+    caller's key (the same key, still admitted). Nothing is granted beyond that graph."""
+    if not db.enabled():
+        raise HTTPException(403, f"model {model} is not granted to this key")
+    g = keys.graph_of(root)
+    if g is None or g["tenant"] != p.tenant or g["owner"] != p.owner:
+        raise HTTPException(403, f"model {model} is not granted to this key (no delegating root {root} of yours)")
+    if g.get("cancelled_at") or g.get("closed_at"):
+        raise HTTPException(403, f"model {model} is not granted to this key (the graph of {root} is over)")
+    if (g.get("models") or {}).get(stage) != model:
+        raise HTTPException(
+            403, f"model {model} is not granted to this key (stage {stage!r} of {root} is not declared on it)"
+        )
+    record = keys.operation_owner(root)
+    root_model = _model(record[2]) if record else None
+    if not root_model or model not in (root_model.get("delegates") or []):
+        raise HTTPException(403, f"model {model} is not granted to this key (the root's class does not delegate to it)")
+    if keys.reservation_key(root) != keys.key_hash(p.key):
+        raise HTTPException(403, f"model {model} is not granted to this key (root {root} is not active on this key)")
 
 
 def _stage_request(
@@ -884,7 +1010,7 @@ def _create_admitted(p, name, job, region, secret, req, mode, stage: dict | None
         deadline = datetime.now(timezone.utc) + timedelta(
             seconds=int(ex["graph"].get("deadline_s") or stages.DEFAULT_DEADLINE_S)
         )
-        keys.declare_graph(name, p.tenant, p.owner, ex["graph"]["stages"], deadline)
+        keys.declare_graph(name, p.tenant, p.owner, ex["graph"]["stages"], deadline, ex["graph"].get("models"))
     try:
         created_job, created = jobs.create(p.namespace, job, region, secret)
     except Exception:
@@ -1004,7 +1130,7 @@ def _class_for(
     return cls
 
 
-async def _sync(m: dict, req: InvokeRequest, p: Principal, region: str):
+async def _sync(m: dict, req: InvokeRequest, p: Principal, region: str, admission: str = ""):
     """Proxy to the endpoint. Via LiteLLM's pass-through route when the model has one (budget, spend and the
     per-call price are enforced there); else straight to the predictor Service when the endpoint runs on this
     cluster, and through the region's gateway hostname (the one LiteLLM uses, TLS on the fleet CA) with the caller's
@@ -1038,7 +1164,11 @@ async def _sync(m: dict, req: InvokeRequest, p: Principal, region: str):
         v = _variant_for(m, req.input, region)
         url, headers = (
             f"https://{models.endpoint_host(m, region, v['object'])}{m['endpoint_path']}",
-            {"Authorization": f"Bearer {p.key}", ADMITTED_HEADER: _admitted_token(keys.key_hash(p.key))},
+            {
+                "Authorization": f"Bearer {p.key}",
+                ADMITTED_HEADER: _admitted_token(keys.key_hash(p.key), m["name"], admission),
+                OPERATION_HEADER: admission,
+            },
         )
     t0 = time.time()
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1202,10 +1332,20 @@ def _chain(p: Principal, op: dict, job: dict, root: str) -> dict:
         key=lambda j: str(j["metadata"].get("creationTimestamp") or ""),
     )
     name = job["metadata"]["name"]
-    all_attempts = st._attempts(job.get("_pods", []), rows)  # every member's records; the live pods are this member's
+    # every member's attempts from that member's own live pods and records (a member listed without pods, or expired,
+    # stands on its records alone); the queried member's pods are the ones its handle already carries
+    pods_by_member = {m["metadata"]["name"]: m.get("_pods") or [] for m in members}
+    pods_by_member[name] = job.get("_pods") or pods_by_member.get(name) or []
+    all_attempts = []
+    for mid, pods in pods_by_member.items():
+        for a in st._attempts(pods, rows, name=mid):
+            a["operation"] = mid
+            all_attempts.append(a)
+    for a in st._attempts([], [r for r in rows if r.get("operation") not in pods_by_member]):
+        a["operation"] = (by_pod.get(a.get("attempt_id")) or {}).get("operation") or name  # an expired member
+        all_attempts.append(a)
     for a in all_attempts:
         r = by_pod.get(a.get("attempt_id")) or {}
-        a["operation"] = r.get("operation") or name
         a["attempt_role"] = r.get("role") or a.get("attempt_role") or "run"
         a["image"] = r.get("image")
         d = st._secs(a.get("started_at"), a.get("ended_at"))
@@ -1328,6 +1468,9 @@ def _delivered(op: dict, name: str, root: str) -> dict:
     out = {
         "export_state": last.get("export_state") or "succeeded",
         "exported_by": last["operation"],
+        # the delivering attempt: what a consumer of the result (a dependent stage, DEPENDENCY_RESULTS) must name
+        "exported_by_attempt_id": last.get("pod"),
+        "exported_by_epoch": last.get("epoch"),
         "result_ref": last.get("result_ref") or op.get("result_ref"),
     }
     if last.get("exit_code") in (2, 5) or (last["status"] != "succeeded" and last.get("exit_code")):
@@ -1576,6 +1719,113 @@ def _cluster_of(region: str) -> str:
 def _home(job: dict) -> str:
     """The cluster the operation's Job object lives in: the manager for fleet-placed runs."""
     return REGION if jobs.is_manager_job(job) else (job.get("_region") or REGION)
+
+
+# ---- live sessions (docs/API.md "Sessions") -----------------------------------------------------------------------
+@app.post("/v1/models/{model}:session", responses={202: {"model": schemas.Session}}, status_code=202)
+def create_session(
+    model: str, req: schemas.SessionRequest | None = None, p: Principal = Depends(scoped("invoke:sync"))
+):
+    """An admitted stream to an endpoint: the key's slot and request are taken now (and, for a key with a GPU-second
+    budget, the endpoint's GPUs x timeout_s); the answer carries a one-time claim token the connection presents
+    (`Sec-WebSocket-Protocol: s2-session.<token>` or `x-serverless2-session-claim`) within SESSION_CLAIM_TTL_S."""
+    sessions.require()
+    req = req or schemas.SessionRequest()
+    m = _model(model)
+    authorize(p, m["name"], "invoke:sync", budget=True)
+    if m["mode"] == "run":
+        raise HTTPException(400, "sessions are streams to an endpoint; this model is a run class")
+    if p.role == keys.ROUTER["role"]:
+        raise HTTPException(403, "the router key opens no sessions")
+    cluster, region = _deployment_of(m, req.region)
+    try:
+        return sessions.create(
+            keys.key_hash(p.key),
+            p.tenant,
+            p.owner,
+            m["name"],
+            cluster,
+            region,
+            req.timeout_s,
+            sessions.gpus_per_replica(m),
+        )
+    except keys.KeyLimit as e:
+        raise HTTPException(e.status, e.detail)
+
+
+def _owned_session(p: Principal, id: str) -> dict:
+    s = sessions.get(id)
+    if s is None or s["tenant"] != p.tenant or s["owner"] != p.owner:
+        raise HTTPException(404, f"session {id}: not found")
+    return s
+
+
+@app.get("/v1/sessions", responses={200: {"model": list[schemas.Session]}})
+def list_sessions(limit: int = Query(default=100, ge=1, le=500), p: Principal = Depends(scoped("read:operations"))):
+    sessions.require()
+    return sessions.list_owner(p.tenant, p.owner, limit)
+
+
+@app.get("/v1/sessions/{id}", responses={200: {"model": schemas.Session}})
+def get_session(id: str, p: Principal = Depends(scoped("read:operations"))):
+    sessions.require()
+    return sessions.public(_owned_session(p, id))
+
+
+@app.post("/v1/sessions/{id}:cancel", responses={200: {"model": schemas.Session}})
+def cancel_session(id: str, p: Principal = Depends(scoped("invoke:sync"))):
+    """A cancellation request: a session nobody bound ends now; a bound or attached one keeps its slot until its
+    worker releases it after cleanup or its pod is confirmed gone (the reconciler)."""
+    sessions.require()
+    _owned_session(p, id)
+    return sessions.public(sessions.cancel(id, "cancelled by the owner"))
+
+
+async def _worker_session(id: str, authorization: str) -> tuple[dict, dict]:
+    """The session and the verified identity of the worker pod calling with its own bound ServiceAccount token."""
+    sessions.require()
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "a worker calls with its pod's ServiceAccount token")
+    s = sessions.get(id)
+    if s is None:
+        raise HTTPException(404, "no such session")
+    worker = await asyncio.to_thread(sessions.verify_worker, authorization[7:].strip(), s, _endpoint_model)
+    return s, worker
+
+
+@app.post("/internal/sessions/{id}:attach", include_in_schema=False)
+async def attach_session(id: str, body: schemas.SessionAttach, authorization: str = Header(default="")):
+    """The worker that accepted the connection, before any decoder, reset or GPU work: `bound -> attached` for the
+    connection id the hook injected; a retry with the same (connection, pod) is idempotent; after the attach wait,
+    a cancel or the deadline it fails for good."""
+    _s, worker = await _worker_session(id, authorization)
+    s = await asyncio.to_thread(sessions.attach, id, body.connection, worker, body.worker_session_id)
+    return {**sessions.public(s), "connection": s["connection"]}
+
+
+@app.post("/internal/sessions/{id}:release", include_in_schema=False)
+async def release_session(id: str, body: schemas.SessionRelease, authorization: str = Header(default="")):
+    """The attached worker, after its own post-done cleanup: the only release of an attached session (besides
+    confirmed pod loss). `gpu_seconds` null = unknown (unmetered): the bound stays against the budget."""
+    s, worker = await _worker_session(id, authorization)
+    if s.get("connection") and body.connection != s["connection"]:
+        raise HTTPException(409, "not this session's connection")
+    return sessions.public(await asyncio.to_thread(sessions.release, id, worker, body.outcome, body.gpu_seconds))
+
+
+@app.get("/internal/sessions/{id}", include_in_schema=False)
+async def watch_session(id: str, authorization: str = Header(default="")):
+    """The attached worker's view (only it may watch): status, `cancel_requested`, the deadline."""
+    s, worker = await _worker_session(id, authorization)
+    if s["state"] != "attached" or s["pod_uid"] != worker["uid"]:
+        raise HTTPException(403, "only the attached worker watches its session")
+    return {
+        "id": id,
+        "status": s["state"],
+        "cancel_requested": s["cancel_requested_at"] is not None,
+        "cancel_reason": s["cancel_reason"],
+        "deadline_at": sessions._ts(s["deadline_at"]),
+    }
 
 
 @app.post("/v1/operations/{id}:cancel", responses={200: {"model": schemas.Operation}})
