@@ -106,12 +106,14 @@ def _lifecycle_fields(r: dict) -> dict:
             "pod_uid",
             "gang_rank",
             "gang_restart",
-            "resume_checkpoint_ref",
-            "resume_source_epoch",
-            "resume_source",
         )
         if r.get(k) is not None
     }
+    # the incarnation-frozen restore triple (docs/JOBS.md "Restoring a gang"): present exactly on a gang's
+    # authenticated records (the start ACK froze it there; an explicit null triple = nothing to restore), absent else
+    import attempts
+
+    out.update(attempts.restore_fields(r))
     export = r.get("export_state") or r.get("export")
     if export is not None:
         out["export_state"] = export

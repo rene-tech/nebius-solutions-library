@@ -4,6 +4,60 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.110
+
+(0.11.110 = 0.11.109 plus the fleet operator surface, the provisioning of a gang's shared checkpoint leaf and the
+member-aware reservation fence of the worker's attach; jobs 0.1.27 and platform chart 0.1.12 unchanged; no migration.)
+
+- Fleet operators (docs/API.md "Fleet operators"): a key with `metadata.role=fleet` (tenant `platform`, minted only by
+  the fleet's own bootstrap, `python -m keys bootstrap` with role `fleet`; never by a tenant admin, never by an
+  import) gets the explicit cross-tenant surface `GET /v1/fleet/tenants[/{tenant}]` (the fleet document's tenants and
+  every tenant with keys on record: quota, fair share, dedicated pools, assets, key counts, spend, what the keys hold)
+  and `/v1/fleet/tenants/{tenant}/keys` (list, create, `:import`, PATCH budget/models/expiry, `:block` and unblock,
+  DELETE) through the tenant's own key functions with the same safe projection. Tenant admins stay tenant-scoped (403
+  on the fleet surface); the fleet operator is no tenant admin (403 on `/v1/keys`) and runs nothing. Same database,
+  same auth: no new identity store.
+
+- Multi-node runs (docs/JOBS.md "Multi-node runs"): with `checkpoints: shared` every rank pod (and the gang's CPU
+  finalizer) runs the trusted scratch provisioning init container on exactly the gang's checkpoint leaf
+  (`checkpoints/<root>` on the tenant's shared claim, the same mount) before main and the uploader: the kubelet
+  creates a missing subPath directory root-owned 0755 and the ranks (10001, no capability) could not write it (the
+  first real 2x1 MPI run on a fresh root, 2026-10-14: `/work/checkpoint` not writable while `/work` was). chown
+  10001:10001 and chmod 2770 of the mount point only, not recursive, CHOWN/FOWNER/DAC_OVERRIDE only, idempotent on
+  a restart or a resume; a local-checkpoint gang is untouched. A `:resume` rewrites the leaf to the ROOT's
+  (`checkpoints/<root>`) on every container of the rank pod, the provisioning init included (0c61979f9 rewrote the
+  main/uploader mounts only, so a same-root resume would have provisioned a fresh `checkpoints/<successor>`).
+
+- Native execution leases (docs/API.md "Native execution leases"): the worker's attach checks the operation's LIVE
+  reservation through the durable run ledger (`keys.reservation_key_of`: its own reservation, or its root's for an
+  ACTIVE member: a continuation, a stage, an endpoint child); before, it looked for the operation's own reservation
+  row, which an endpoint child never has (it shares its root's slot), so the first LeRobot child's inference POST on
+  109 reached the hook, was prepared, and the worker's attach was refused "reservation is released" with the root
+  live (op-82b6134819bee769). The gateway's admission proof already resolved members this way; both now share the one
+  resolver. A settled member never borrows its root's live slot; a released root resolves to nothing for itself and
+  its members. Tests: root, child, foreign, settled child, released root, the child's attach.
+
+## api 0.11.109
+
+(0.11.109 = 0.11.108 plus the restore triple on every attempt entry and the Knative Service as the rollout witness; jobs
+0.1.27 and platform chart 0.1.12 unchanged; no migration.)
+
+- Gang attempts (docs/JOBS.md "Restoring a gang"): every `attempts[]` entry of a gang record (an observed rank, where
+  the start ACK froze the pointer) carries `resume_checkpoint_ref`, `resume_source_epoch` and `resume_source`, all
+  three null when the ACK decided there is nothing to restore (a fresh start); before, null keys were omitted, so a
+  fresh gang's peers showed no triple while the current attempt did, and a restore that reads every peer's triple
+  refused it (op-a229254b4a059926, 2026-10-14). Rows the ACK never decided (a single-pod attempt, a live pod without
+  its record) carry no such keys: absent is not fresh. A resumed incarnation shows the identical frozen triple on
+  every peer; earlier incarnations keep their own.
+- Endpoints (docs/API.md "Execution identity and rollout state"): the rollout's reconciliation witness is the predictor
+  Knative Service (its `generation == observedGeneration` and its template image equal to the InferenceService's
+  desired image), reported as `service_generation`, `service_observed_generation`, `service_image`; KServe 0.20 writes
+  the Service's observedGeneration onto the InferenceService, so a never edited ISVC showed `generation 1 / observed
+  2` for good and every ready Knative app read as "not reconciled" in the admin display (SAM2 proof, 2026-10-14).
+  In proven RawDeployment mode (the ISVC's own `deploymentMode`) the ISVC generations decide as before; in Knative
+  mode an unreadable predictor Service is "not converged" with the reason, never a fallback. Nothing weakened: the
+  revision identity, the ready Revision's image and the serving pods' images are still all required.
+
 ## api 0.11.108
 
 (0.11.108 = 0.11.107 plus the whole-history rule of the unit retry; 0.11.107 was built but never applied. jobs 0.1.27 and

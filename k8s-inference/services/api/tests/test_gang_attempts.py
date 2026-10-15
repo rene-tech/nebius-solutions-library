@@ -376,6 +376,13 @@ def test_the_owner_sees_the_observed_gang_fields_on_the_current_attempt_and_ever
     assert (o["attempt_id"], o["epoch"], o["pod_uid"], o["gang_rank"], o["gang_restart"]) == (coord, 2, "uid-c0", 0, 1)
     assert o["checkpoint_ref"] == "c" * 64  # the coordinator's publication
     by = {a["attempt_id"]: a for a in o["attempts"]}
+    # the frozen restore triple is on every GANG record's entry (the start ACK froze it there): explicitly null for
+    # a fresh start on both peers; a gang restore reads each peer's triple, and an absent key is not "fresh"
+    triple = ("resume_checkpoint_ref", "resume_source_epoch", "resume_source")
+    for x in (coord, peer, f"{op}-workers-0-0-zzzzz"):
+        assert all(k in by[x] for k in triple), by[x]
+    assert all(by[x][k] is None for x in (coord, peer) for k in triple)
+    assert all(k in o for k in triple)
     assert (by[coord]["pod_uid"], by[coord]["gang_rank"], by[coord]["gang_restart"]) == ("uid-c0", 0, 1)
     assert (by[peer]["pod_uid"], by[peer]["gang_rank"], by[peer]["gang_restart"], by[peer]["epoch"]) == (
         "uid-p1",
@@ -523,3 +530,202 @@ def test_jobset_failure_policy_rule_names_are_valid_for_the_jobset_webhook(monke
     assert rules[0]["action"] == "FailJobSet" and rules[0]["onJobFailureReasons"] == ["PodFailurePolicy"]
     pod_rules = js["spec"]["replicatedJobs"][0]["template"]["spec"]["podFailurePolicy"]["rules"]
     assert pod_rules[0]["action"] == "FailJob" and pod_rules[0]["onExitCodes"]["values"] == [75]
+
+
+def test_the_owner_sees_the_same_frozen_restore_triple_on_every_peer_of_a_resumed_gang(client, monkeypatch):
+    """A resumed incarnation (epoch 2) froze its restore pointer at its first ACK and copied it to every sibling
+    (api 0.11.101): the owner's attempts[] carries the identical triple on the coordinator and on the peer, and the
+    current attempt carries it too; the earlier incarnation's entries carry their own (null) triple, never the newer
+    one. The MPI gateway restores from every peer's triple (op-a229254b4a059926, 2026-10-14)."""
+    import copy
+
+    import catalog
+    import execution
+    from test_api import MULTINODE_FLEET, H
+
+    c, fake = client
+    ns = "tenant-demo"
+    monkeypatch.setattr(kube, "fleet", lambda: MULTINODE_FLEET)
+    monkeypatch.setattr(
+        execution, "tenant_config", lambda ns, region="eu-north1": {"identities": {}, "execution_profiles": {}}
+    )
+    base = copy.deepcopy(catalog.get("distributed-run"))
+    monkeypatch.setattr(catalog, "get", lambda name, _b=base: _b if name == "distributed-run" else None)
+    body = {
+        "input": {
+            "image": "x/y:1",
+            "command": "mpirun",
+            "nodes": 2,
+            "gpus_per_node": 8,
+            "interconnect": "required",
+            "checkpoints": "shared",
+        },
+        "execution": {"io_mode": "application"},
+    }
+    r = c.post("/v1/models/distributed-run:invoke", json=body, headers=H)
+    assert r.status_code == 202, r.text
+    op = r.json()["id"]
+    coord, peer = f"{op}-workers-0-0-ccccc", f"{op}-workers-0-1-ddddd"
+    common = {
+        "operation": op,
+        "root": op,
+        "io_mode": "application",
+        "role": "run",
+        "tenant": "demo",
+        "namespace": ns,
+        "mode": "run",
+        "model": "distributed-run",
+    }
+    frozen = {"resume_checkpoint_ref": "c" * 64, "resume_source_epoch": 1, "resume_source": "committed"}
+    rows = [
+        {
+            **_record(op, f"{op}-workers-0-0-aaaaa", "failed", epoch=1, exit_code=1, region="eu-north1"),
+            **common,
+            "gang_rank": 0,
+            "gang_restart": 0,
+            "pod_uid": "uid-a",
+            "checkpoint_ref": "c" * 64,
+        },
+        {
+            **_record(op, f"{op}-workers-0-1-bbbbb", "failed", epoch=1, exit_code=1, region="eu-north1"),
+            **common,
+            "gang_rank": 1,
+            "gang_restart": 0,
+            "pod_uid": "uid-b",
+        },
+        {
+            **_record(op, coord, "started", epoch=2, region="eu-north1"),
+            **common,
+            "gang_rank": 0,
+            "gang_restart": 1,
+            "pod_uid": "uid-c",
+            **frozen,
+        },
+        {
+            **_record(op, peer, "started", epoch=2, region="eu-north1"),
+            **common,
+            "gang_rank": 1,
+            "gang_restart": 1,
+            "pod_uid": "uid-d",
+            **frozen,
+        },
+    ]
+    monkeypatch.setattr(attempts, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "for_operation", lambda root: [x for x in rows if x["root"] == root])
+    monkeypatch.setattr(attempts, "_marks", lambda operation: None)
+    got = c.get(f"/v1/operations/{op}", headers=H)
+    assert got.status_code == 200, got.text
+    o = got.json()
+    by = {a["attempt_id"]: a for a in o["attempts"]}
+    for x in (coord, peer):
+        assert (by[x]["resume_checkpoint_ref"], by[x]["resume_source_epoch"], by[x]["resume_source"]) == (
+            "c" * 64,
+            1,
+            "committed",
+        ), by[x]
+    assert by[coord]["epoch"] == 2 and by[peer]["epoch"] == 2
+    assert (o["resume_checkpoint_ref"], o["resume_source_epoch"], o["resume_source"]) == ("c" * 64, 1, "committed")
+    for x in (f"{op}-workers-0-0-aaaaa", f"{op}-workers-0-1-bbbbb"):
+        assert (by[x]["resume_checkpoint_ref"], by[x]["resume_source_epoch"], by[x]["resume_source"]) == (
+            None,
+            None,
+            None,
+        )
+
+
+def test_the_restore_triple_is_absent_not_null_where_no_gang_ack_decided_it(client, monkeypatch):
+    """Absent versus null: a record without an observed gang rank (a single-pod attempt, a row the ACK never froze a
+    pointer for) and a live pod without its record carry NO restore keys; only a gang record carries them, null
+    meaning "decided: nothing to restore". A restore authority that requires every peer's triple is never fed a
+    manufactured null for an undecided row."""
+    import copy
+
+    import catalog
+    from test_api import H
+
+    c, fake = client
+    ns = "tenant-demo"
+    base = copy.deepcopy(catalog.get("batch-example"))
+    monkeypatch.setattr(catalog, "get", lambda name, _b=base: _b if name == "batch-example" else None)
+    r = c.post(
+        "/v1/models/batch-example:invoke",
+        json={"input": {"input_prefix": "s3://serverless2-demo-eu-north1/in"}},
+        headers=H,
+    )
+    assert r.status_code == 202, r.text
+    op = r.json()["id"]
+    live = f"{op}-livepod"
+    fake.pods.append(
+        {
+            "metadata": {
+                "name": live,
+                "namespace": ns,
+                "uid": "uid-live",
+                "labels": {"job-name": op, f"{kube.LABEL}/tenant": "demo"},
+            },
+            "spec": {"nodeName": "node-1"},
+            "status": {
+                "phase": "Running",
+                "startTime": "2026-10-14T12:00:00Z",
+                "containerStatuses": [{"name": "main", "state": {"running": {"startedAt": "2026-10-14T12:00:01Z"}}}],
+            },
+        }
+    )
+    single = {
+        **_record(op, f"{op}-single", "failed", epoch=1, exit_code=1, region="eu-north1"),
+        "operation": op,
+        "root": op,
+        "role": "run",
+        "tenant": "demo",
+        "namespace": ns,
+        "mode": "run",
+        "model": "batch-example",
+        "pod_uid": "uid-s",
+        "gang_rank": None,
+        "gang_restart": None,
+    }
+    monkeypatch.setattr(attempts, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "for_operation", lambda root: [single] if root == op else [])
+    monkeypatch.setattr(attempts, "_marks", lambda operation: None)
+    o = c.get(f"/v1/operations/{op}", headers=H).json()
+    by = {a["attempt_id"]: a for a in o["attempts"]}
+    triple = ("resume_checkpoint_ref", "resume_source_epoch", "resume_source")
+    assert not any(k in by[f"{op}-single"] for k in triple), by[f"{op}-single"]  # no gang rank: undecided, absent
+    assert not any(k in by[live] for k in triple), by[live]  # a live pod without its record: absent
+    assert not any(k in o for k in triple), {k: o.get(k) for k in triple}  # the current attempt: absent as well
+
+
+def test_a_gangs_shared_checkpoint_leaf_is_provisioned_for_the_ranks_before_they_start(monkeypatch):
+    """The kubelet creates a missing subPath directory root-owned 0755; the ranks run as 10001 without any
+    capability, so a fresh root's `/work/checkpoint` was unwritable (the first real 2x1 MPI run, 2026-10-14). With
+    `checkpoints: shared` every rank pod runs the trusted scratch provisioning init on EXACTLY that leaf (the same
+    mount: the claim at `checkpoints/<root>`; chown 10001:10001 and chmod 2770 of the mount point, not recursive,
+    CHOWN/FOWNER/DAC_OVERRIDE only) before main and the uploader; a local-checkpoint gang has no such init; the
+    gang's CPU finalizer provisions the same leaf."""
+    js = _render(monkeypatch, {**FINALIZE, "checkpoints": "shared"} if "checkpoints" not in FINALIZE else FINALIZE)
+    pod = js["spec"]["replicatedJobs"][0]["template"]["spec"]["template"]["spec"]
+    assert any(v["name"] == "checkpoints" for v in pod["volumes"])
+    inits = pod.get("initContainers") or []
+    init = next((c for c in inits if c["name"] == "checkpoint-provision"), None)
+    assert init is not None, inits
+    assert [c["name"] for c in inits][-1] == "checkpoint-provision"  # after the existing inits (the input fetch first)
+    assert init["command"] == ["/usr/local/bin/scratch.sh", "provision", "/work/checkpoint"]
+    root = js["metadata"]["name"]
+    assert init["volumeMounts"] == [
+        {"name": "checkpoints", "mountPath": "/work/checkpoint", "subPath": f"checkpoints/{root}"}
+    ]
+    main = next(c for c in pod["containers"] if c["name"] == "main")
+    assert {"name": "checkpoints", "mountPath": "/work/checkpoint", "subPath": f"checkpoints/{root}"} in main[
+        "volumeMounts"
+    ]
+    sc = init["securityContext"]
+    assert sc["runAsUser"] == 0 and sc["runAsNonRoot"] is False
+    assert sc["capabilities"] == {"drop": ["ALL"], "add": ["CHOWN", "FOWNER", "DAC_OVERRIDE"]}
+    assert init["resources"]["limits"] == {"cpu": "200m", "memory": "64Mi"}
+    # the ranks themselves stay as they are: non-root, no capability added
+    assert "runAsUser" not in (main.get("securityContext") or {}) or main["securityContext"]["runAsUser"] != 0
+    # a local-checkpoint gang: no shared leaf, no provisioning init
+    local = _render(monkeypatch, {**FINALIZE, "checkpoints": "local"})
+    lpod = local["spec"]["replicatedJobs"][0]["template"]["spec"]["template"]["spec"]
+    assert not any(v["name"] == "checkpoints" for v in lpod["volumes"])
+    assert not [c for c in (lpod.get("initContainers") or []) if c["name"] == "checkpoint-provision"]
