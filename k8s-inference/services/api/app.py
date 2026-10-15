@@ -58,6 +58,7 @@ from reconciliation import fallback_switch as fallback_switch
 from reconciliation import idle_shutdown as idle_shutdown
 from reconciliation import recovery_switch as recovery_switch
 from reconciliation import release_stale_reservations as release_stale_reservations
+from reconciliation import unschedulable_switch as unschedulable_switch
 from schemas import INVOKE_TIMEOUT_MAX_S as INVOKE_TIMEOUT_MAX_S
 from schemas import (
     BindingRequest,
@@ -114,7 +115,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.79", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.86", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -760,10 +761,9 @@ def _authorize_model(
         elif leases.mode_of(m) == "required":
             # a direct POST to an endpoint whose worker requires a lease carries no markers: the worker refuses it
             # (required mode fails closed, unchanged); named here so the refusal is attributable from the API log
-            log.info(
-                "authorize %s: direct POST by %s carries no markers (the model requires a native lease: the worker refuses it)",
+            log.info(  # no caller identity in this line: the shared telemetry carries no customer identities
+                "authorize %s: a direct POST carries no markers (the model requires a native lease: the worker refuses it)",
                 m["name"],
-                p.info.get("key_alias") or p.tenant,
             )
     if not admitted and p.role != keys.ROUTER["role"]:
         # a direct call to the endpoint's hostname: one request against the key's budget and rate window (the slot is
@@ -1826,6 +1826,18 @@ def create_session(
         raise HTTPException(400, "sessions are streams to an endpoint; this model is a run class")
     if p.role == keys.ROUTER["role"]:
         raise HTTPException(403, "the router key opens no sessions")
+    bound = sessions.transport_deadline_s(m)
+    if req.timeout_s is None:
+        req.timeout_s = bound if bound is not None else 3600  # the longest the transport carries, never above it
+    if bound is not None and req.timeout_s > bound:
+        # the stream would be cut by the endpoint's transport before the session's deadline, mid-stream, with no record
+        # on the session: refused here with the number to use instead (never silently shortened)
+        raise HTTPException(
+            400,
+            f"session timeout_s {req.timeout_s} exceeds the endpoint's transport deadline of {bound} s (the model's "
+            f"timeout_s: Knative ends every request of a single-node endpoint there, WebSocket or NDJSON alike); ask for "
+            f"timeout_s <= {bound}, or raise the model's timeout_s within the fleet's Knative revision maximum",
+        )
     cluster, region = _deployment_of(m, req.region)
     try:
         return sessions.create(

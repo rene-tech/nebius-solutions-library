@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import time
 
 import urllib3
 from fastapi import HTTPException
@@ -48,6 +49,7 @@ from config import (
     RUNNER_IMAGE,
     S3_ENV_SECRET,
     SHARED_SCRATCH_PVC,
+    TENANT_NS_PREFIX,
     WEIGHTS_SHARED_PVC,
 )
 from pod_metadata import normalise as normalise_pod_metadata
@@ -342,6 +344,53 @@ def _mount_aliases(r: dict, containers: list[dict], fetch: dict) -> None:
     ]
 
 
+def _fit_terms(pod: dict, r: dict, terms: list, placement: dict | None, region: str | None, name: str):
+    """Per-node fit (docs/SCHEDULING.md "Per-node fit", services/api/fit.py): the pools whose ONE node holds the pod's
+    effective requests, conjunctive with everything already decided (an explicit `pool:`, the GPU class pools, the
+    shared-fs and local-NVMe terms stay as they are; this only narrows the pool set and the candidate clusters). No
+    pool at all: 400 `impossible shape` (nothing is enlarged or reduced on the caller's behalf). Without fit.yaml
+    (an older fleet chart) nothing changes. Returns the (possibly narrowed) placement."""
+    import fit
+
+    if not fit.table():
+        return placement
+    req = fit.pod_requests(pod)
+    if placement is not None:
+        clusters = list(placement.get("regions") or []) or None
+    else:  # pinned to a region: its clusters
+        clusters = [c for c, x in kube.fleet().get("clusters", {}).items() if (x or {}).get("region") == region] or None
+    pool_term = next((t for t in terms if t["key"] == f"{LABEL}/pool"), None)
+    candidates = {r["pool"]} if r.get("pool") else (set(pool_term["values"]) if pool_term else None)
+    # the capabilities the other terms require, intersected per (cluster, pool) BEFORE a pool counts as feasible: a
+    # pool whose node is big enough but lacks the shared filesystem (or local NVMe) the run needs is no candidate, so
+    # the affinity never names a set of pools no single node realizes
+    need_fs = any(t["key"] == f"{LABEL}/shared-fs" for t in terms)
+    need_nvme = any(t["key"] == f"{LABEL}/local-nvme" for t in terms)
+    holds = fit.fitting(req, clusters, candidates, shared_fs=need_fs, local_nvme=need_nvme)
+    if not holds:
+        what = f"the class's pool {r['pool']}" if r.get("pool") else "any eligible pool"
+        caps = " with the shared filesystem" if need_fs else ""
+        caps += " with local NVMe" if need_nvme else ""
+        raise HTTPException(
+            400,
+            f"impossible shape: the run's pod needs {fit.describe(req)} on one node{caps} and no node of {what} holds "
+            f"it; the largest candidate node admits {fit.largest(clusters, candidates, shared_fs=need_fs, local_nvme=need_nvme)} "
+            '(the per-node reserves of the fleet apply; docs/SCHEDULING.md "Per-node fit")',
+        )
+    if not r.get("pool"):
+        if pool_term:
+            pool_term["values"] = sorted(holds)
+        else:
+            terms.append({"key": f"{LABEL}/pool", "operator": "In", "values": sorted(holds)})
+    if placement is not None and placement.get("regions"):
+        fits = sorted({c for cs in holds.values() for c in cs})
+        keep = [c for c in placement["regions"] if c in fits]
+        if keep and keep != list(placement["regions"]):
+            placement = {**placement, "regions": keep}
+    log.debug("fit %s: %s -> pools %s", name, fit.describe(req), sorted(holds))
+    return placement
+
+
 def build_run(
     name: str,
     model: dict,
@@ -549,12 +598,6 @@ def build_run(
         # node that mounts it can run it; Kueue skips a flavor whose nodeLabels contradict this (the system flavor
         # unless weights_filesystem.mount_on_system), docs/FLEET.md "Filesystem-aware placement"
         terms.append({"key": f"{LABEL}/shared-fs", "operator": "In", "values": ["true"]})
-    if terms:
-        pod["affinity"] = {
-            "nodeAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": {"nodeSelectorTerms": [{"matchExpressions": terms}]}
-            }
-        }
     if r.get("imagePullSecret"):
         pod["imagePullSecrets"] = [{"name": r["imagePullSecret"]}]
     # the queue follows the class actually asked for: the pinned class, else the first of the run's (narrowed) class
@@ -592,6 +635,15 @@ def build_run(
     nodes = int(r.get("nodes", 1) or 1)
     if ex:
         execution.apply_run(pod, r, ex, name, S3_ENV_SECRET)  # io mode, identity, private input, profile (docs/JOBS.md)
+    # per-node fit over the FINAL pod (after the execution profile reshaped its containers: an application io mode drops
+    # the fetch init container, a profile may add one), then the affinity: every term above plus the fitting pools
+    placement = _fit_terms(pod, r, terms, placement, region, name)
+    if terms:
+        pod["affinity"] = {
+            "nodeAffinity": {
+                "requiredDuringSchedulingIgnoredDuringExecution": {"nodeSelectorTerms": [{"matchExpressions": terms}]}
+            }
+        }
     if nodes > 1:
         if (ex or {}).get("retry") or _class_retry(r):
             raise HTTPException(400, "retry applies to single-node runs (a multi-node run restarts as a whole)")
@@ -910,6 +962,7 @@ def build_async(
     admitted: str | None = None,
     pvc: str | None = None,
     transfer_only: bool = False,
+    scratch_leaf_of: str | None = None,
 ) -> tuple[dict, dict]:
     """(Job, Secret): a queued endpoint call through LiteLLM's pass-through route when the model has
     one (spend lands on the caller's key), else through the gateway of the endpoint's region with the caller's key
@@ -923,6 +976,13 @@ def build_async(
     import models as runtime_models
 
     env = []
+    # the durable capture's home (docs/JOBS.md "Scratch storage"): the tenant's shared-scratch leaf `calls/<op>` when the
+    # model says `call_scratch: shared` and the region and namespace can carry it, else the per-call claim; a transfer-
+    # only retry keeps whatever the original had (`pvc` or `scratch_leaf_of`)
+    leaf, fallback = None, ""
+    want_shared = bool(ex) and (
+        bool(scratch_leaf_of) or (not pvc and (model.get("runtime") or {}).get("callScratch") == "shared")
+    )
     if model.get("litellm_route"):
         url, auth = LITELLM_URL + model["litellm_route"], f"Bearer {key}"
     else:
@@ -989,7 +1049,27 @@ def build_async(
         + ([{"name": "trust", "mountPath": TRUST_DIR, "readOnly": True}] if trust else []),
         "securityContext": RUNNER_SECURITY_CONTEXT,
     }
-    work = pvc or (f"{name}-work" if ex else None)
+    uploader = _uploader(name, region, output_prefix, None)
+    pools: list[str] = []
+    if want_shared:  # judged on the caller's own requests (main, uploader, the provisioning init), retry included
+        probe = {
+            "containers": [main, uploader],
+            "initContainers": [{"name": "scratch-provision", "resources": {"requests": SCRATCH_PROVISION_REQUESTS}}],
+        }
+        ok, fallback, pools = shared_scratch_available(f"{TENANT_NS_PREFIX}{tenant}", region, probe)
+        if scratch_leaf_of:
+            # a transfer-only retry must reach the ORIGINAL's leaf: the same claim and placement rules, judged now; it
+            # cannot fall back to a per-call claim (the capture is on the leaf), so it is refused, visibly, instead
+            if not ok:
+                raise HTTPException(
+                    409, f"the retained capture on the shared-scratch leaf cannot be placed now: {fallback}"
+                )
+            leaf = scratch_leaf_of
+        else:
+            leaf = scratch_leaf(name) if ok else None
+    work = None if leaf else (pvc or (f"{name}-work" if ex else None))
+    if work:
+        uploader["env"].append({"name": "PVC_NAME", "value": work})
     pod = {
         "restartPolicy": "Never",
         "serviceAccountName": EXECUTOR_SA,
@@ -1003,9 +1083,11 @@ def build_async(
         # (upload.sh main_alive) and `finished` when it is gone; in separate namespaces it never sees either and the
         # attempt is never opened (the application's refresh broker then refuses the caller for good: a deadlock)
         "shareProcessNamespace": True,
-        "containers": [main, _uploader(name, region, output_prefix, work)],
+        "containers": [main, uploader],
         "volumes": [
-            {"name": "work", "persistentVolumeClaim": {"claimName": work}}
+            {"name": "work", "persistentVolumeClaim": {"claimName": SHARED_SCRATCH_PVC}}
+            if leaf
+            else {"name": "work", "persistentVolumeClaim": {"claimName": work}}
             if work
             else {"name": "work", "emptyDir": {"sizeLimit": "1Gi"}}
         ]
@@ -1022,10 +1104,18 @@ def build_async(
     }
     if ex:
         execution.apply_async(pod, ex, name)
+    if leaf:
+        _mount_scratch_leaf(pod, leaf, pools)
     meta = _meta(name, tenant, model["name"], "async", region, label, inp, idem, None, key_hash, execution=ex)
-    if work:  # the capture is retained for a transfer-only export retry (create() makes the claim with the Job)
+    if leaf:  # the capture is retained on the tenant's shared-scratch leaf (no claim of its own, nothing to attach)
+        meta["annotations"][f"{LABEL}/scratch"] = "shared"
+        meta["annotations"][f"{LABEL}/scratch-leaf"] = leaf
+    elif work:  # the capture is retained for a transfer-only export retry (create() makes the claim with the Job)
         meta["annotations"][f"{LABEL}/pvc"] = work
         meta["annotations"][f"{LABEL}/pvc-size-gi"] = str(ASYNC_PVC_SIZE_GI)
+        if fallback:
+            meta["annotations"][f"{LABEL}/scratch"] = "network"
+            meta["annotations"][f"{LABEL}/scratch-fallback"] = fallback
     job = _job_shell(name, meta, pod, timeout_s)
     job["spec"]["backoffLimit"] = 6
     # a 4xx from the endpoint is the caller's error (call.sh exit 2): fail the Job, no pod retries; with application
@@ -1051,6 +1141,62 @@ def build_async(
     return job, secret
 
 
+def _mount_scratch_leaf(pod: dict, leaf: str, pools: list[str]) -> None:
+    """The caller's /work on the tenant's shared-scratch claim at the leaf ONLY (a kubelet subPath on main and the
+    uploader; neither sees the tenant's directory), plus the trusted provisioning init container: the kubelet creates
+    a missing subPath directory root-owned 0755, so the runner image, as root with exactly CHOWN/FOWNER/DAC_OVERRIDE
+    (PSA baseline-allowed), makes that one directory the runner's (10001:10001, 2770) and exits; idempotent on a retry.
+    The pod lands only on nodes that mount the shared filesystem (the flavor's shared-fs label, docs/FLEET.md
+    "Filesystem-aware placement"); the uploader empties the leaf after the proven, acknowledged delivery
+    (services/jobs/bin/scratch.sh) and never deletes the claim."""
+    for c in pod["containers"]:
+        for m in c.get("volumeMounts") or []:
+            if m["name"] == "work" and m["mountPath"] == "/work":
+                m["subPath"] = leaf
+        if c["name"] == "uploader":
+            c["env"] = [e for e in c.get("env") or [] if e.get("name") != "PVC_NAME"] + [
+                {"name": "SCRATCH", "value": "shared"},
+                {"name": "SCRATCH_LEAF", "value": leaf},
+            ]
+    pod["initContainers"] = [
+        {
+            "name": "scratch-provision",
+            "image": RUNNER_IMAGE,
+            "command": ["/usr/local/bin/scratch.sh", "provision", "/work"],
+            "resources": {"requests": dict(SCRATCH_PROVISION_REQUESTS), "limits": {"cpu": "200m", "memory": "64Mi"}},
+            "volumeMounts": [{"name": "work", "mountPath": "/work", "subPath": leaf}],
+            "securityContext": {
+                **CONTAINER_HARDENING,
+                "runAsNonRoot": False,
+                "runAsUser": 0,
+                "runAsGroup": 0,
+                "capabilities": {"drop": ["ALL"], "add": ["CHOWN", "FOWNER", "DAC_OVERRIDE"]},
+            },
+        }
+    ] + list(pod.get("initContainers") or [])
+    _and_required(pod, {"key": f"{LABEL}/shared-fs", "operator": "In", "values": ["true"]})
+    # the eligible GPU-free pools only (shared_scratch_available): with the shared-fs label alone, a CPU pool at its
+    # quota lets Kueue take the next flavor whose nodes carry the label, a GPU pool; with the pool list the caller
+    # waits for its CPU pool (QUEUED), never a GPU node
+    _and_required(pod, {"key": f"{LABEL}/pool", "operator": "In", "values": sorted(pools)})
+
+
+def _and_required(pod: dict, expr: dict) -> None:
+    """Add a required node-affinity expression by CONJUNCTION with whatever the pod already requires (an execution
+    profile, a class): every existing nodeSelectorTerm gains it (terms are ORed, expressions within a term ANDed); a
+    pod without a required affinity gets one term. Nothing already required is dropped or widened."""
+    aff = pod.setdefault("affinity", {})
+    node = aff.setdefault("nodeAffinity", {})
+    req = node.setdefault("requiredDuringSchedulingIgnoredDuringExecution", {})
+    terms = req.setdefault("nodeSelectorTerms", [])
+    if not terms:
+        terms.append({"matchExpressions": []})
+    for t in terms:
+        exprs = t.setdefault("matchExpressions", [])
+        if expr not in exprs:
+            exprs.append(dict(expr))
+
+
 TRUST_DIR = "/etc/ssl/fleet"
 TRUST_KEY = "ca-bundle.pem"
 TRUST_FILE = f"{TRUST_DIR}/{TRUST_KEY}"
@@ -1074,6 +1220,85 @@ def trust_bundle() -> str | None:
 
 
 ASYNC_PVC_SIZE_GI = 2
+SCRATCH_LEAF_PREFIX = "calls"  # the tenant's shared-scratch leaf of a durable endpoint call: calls/<operation>
+
+
+def scratch_leaf(name: str) -> str:
+    """The API-derived, stable per-operation leaf on the tenant's shared-scratch claim (never caller-supplied)."""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", name):
+        raise HTTPException(400, f"operation id {name!r} cannot name a scratch leaf")
+    return f"{SCRATCH_LEAF_PREFIX}/{name}"
+
+
+_shared_scratch_cache: dict = {}
+SCRATCH_PROVISION_REQUESTS = {"cpu": "50m", "memory": "32Mi"}
+
+
+def shared_scratch_available(ns: str, region: str, pod: dict) -> tuple[bool, str, list[str]]:
+    """Whether the durable endpoint call rendered as `pod` (its containers' and init containers' requests; no GPU, no
+    GPU toleration of its own) can keep its capture on the tenant's shared-scratch leaf in `ns` on `region`: the
+    region's cluster has a GPU-FREE pool (system or CPU: an endpoint caller never occupies a GPU node) whose nodes
+    mount the shared filesystem AND whose one node holds the caller's requests (fit.yaml, docs/SCHEDULING.md
+    "Per-node fit": the judgement Kueue's flavor order and the scheduler make; a shared-fs affinity only a GPU flavor
+    satisfies would put a 100m caller on a GPU node, or leave it Pending where no flavor matches), and the tenant
+    namespace holds the claim, Bound. (True, "", [eligible pool labels]) then, and the render CONJOINS `pool In
+    [those]` into the pod's required affinity (next to shared-fs): under CPU-quota saturation Kueue would otherwise
+    take the next flavor whose nodeLabels satisfy `shared-fs In [true]`, a GPU flavor; with the pool list the caller
+    waits QUEUED for its CPU pool, never a GPU node. (False, why, []) otherwise: the per-call claim, the Job says why."""
+    import fit
+
+    cid = kube.cluster_id_or_none(region)
+    table = kube.fleet().get("fit") or {}
+    if not cid or cid not in table:
+        return False, f"no per-node fit table for {region} (fleet chart < 0.1.12 or unknown cluster)", []
+    req = fit.pod_requests(pod)
+    if req["gpu"]:
+        return False, "the caller requests a GPU (never for a shared-scratch leaf)", []
+    eligible = sorted(fit.fitting(req, [cid], shared_fs=True, gpu_free=True))
+    if not eligible:
+        gpu_free_shared = any(
+            (n or {}).get("shared_fs") and (n or {}).get("kind") != "gpu" for n in (table.get(cid) or {}).values()
+        )
+        if gpu_free_shared:
+            return (
+                False,
+                f"no GPU-free pool of {cid} that mounts the shared filesystem holds the caller ({fit.describe(req)})",
+                [],
+            )
+        if fit.fitting(req, [cid], shared_fs=True):
+            return (
+                False,
+                f"only GPU pools of {cid} mount the shared filesystem (a caller never occupies a GPU node)",
+                [],
+            )
+        return False, f"no GPU-free pool of {cid} mounts the shared filesystem", []
+    key = (ns, region)
+    hit = _shared_scratch_cache.get(key)
+    if hit and hit[0] > time.time():
+        ok, why = hit[1]
+        return ok, why, eligible if ok else []
+    try:
+        core = kube.core(region)
+        claim = core.api_client.sanitize_for_serialization(
+            retry(core.read_namespaced_persistent_volume_claim, SHARED_SCRATCH_PVC, ns)
+        )
+        phase = ((claim or {}).get("status") or {}).get("phase")
+        out = (
+            (True, "")
+            if phase == "Bound"
+            else (False, f"claim {SHARED_SCRATCH_PVC} in {ns} on {region} is not Bound ({phase or 'no status'})")
+        )
+    except ApiException as e:
+        out = (
+            False,
+            f"claim {SHARED_SCRATCH_PVC} not found in {ns} on {region}"
+            if e.status == 404
+            else f"claim lookup: {e.reason}",
+        )
+    except Exception as e:  # noqa: BLE001 - unknown is not available
+        out = (False, f"claim lookup: {e}")
+    _shared_scratch_cache[key] = (time.time() + 60, out)
+    return out[0], out[1], eligible if out[0] else []
 
 
 def export_async(ns: str, name: str, region: str, model: dict, admit=None) -> tuple[dict, bool]:
@@ -1084,16 +1309,25 @@ def export_async(ns: str, name: str, region: str, model: dict, admit=None) -> tu
     md = orig["metadata"]
     labels, ann = md.get("labels", {}), md.get("annotations", {})
     pvc = ann.get(f"{LABEL}/pvc")
+    leaf = ann.get(f"{LABEL}/scratch-leaf") if ann.get(f"{LABEL}/scratch") == "shared" else None
     try:
         ex = json.loads(ann.get(f"{LABEL}/execution") or "null")
     except ValueError:
         ex = None
-    if not pvc or not ex or ex.get("io_mode") != "application":
+    if not (pvc or leaf) or not ex or ex.get("io_mode") != "application":
         raise HTTPException(409, f"operation {name} kept no capture to export (not an application-I/O endpoint call)")
-    try:
-        retry(kube.core(region).read_namespaced_persistent_volume_claim, pvc, ns)
-    except ApiException as e:
-        raise HTTPException(409 if e.status == 404 else 502, f"work volume {pvc} is gone; nothing to export")
+    if pvc:
+        try:
+            retry(kube.core(region).read_namespaced_persistent_volume_claim, pvc, ns)
+        except ApiException as e:
+            raise HTTPException(409 if e.status == 404 else 502, f"work volume {pvc} is gone; nothing to export")
+    else:  # the shared-scratch leaf: the same claim, the same leaf; the transfer-only caller proves the capture itself
+        try:
+            retry(kube.core(region).read_namespaced_persistent_volume_claim, SHARED_SCRATCH_PVC, ns)
+        except ApiException as e:
+            raise HTTPException(
+                409 if e.status == 404 else 502, f"shared scratch claim is gone from {ns}; nothing to export"
+            )
     root = ann.get(f"{LABEL}/resumed-from", name)
     n = 1 + sum(
         1 for j in list_ops(ns, labels[f"{LABEL}/tenant"], None, 500) if j["metadata"]["name"].startswith(f"{root}-x")
@@ -1117,6 +1351,7 @@ def export_async(ns: str, name: str, region: str, model: dict, admit=None) -> tu
         key_hash=ann.get(f"{LABEL}/key"),
         pvc=pvc,
         transfer_only=True,
+        scratch_leaf_of=leaf,
     )
     secret["stringData"] = auth_secret  # the original's key and admission token, never a new one
     job["metadata"]["annotations"][f"{LABEL}/resumed-from"] = root
@@ -1776,6 +2011,197 @@ def switch_class(
             kube.activate_workload(ns, md.get("uid", ""), region)
         except Exception as e:  # noqa: BLE001
             log.warning("fallback: restoring %s/%s after a failed successor: %s", ns, name, e)
+        raise
+    import attempts
+
+    attempts.mark_successor(name, new)
+    return created, was_created
+
+
+def _started_pods(pods: list) -> list[dict]:
+    """The pods of a run that bound to a node or left Pending (an attempt that started, or ended): {name, uid, node,
+    phase, started_at}; the evidence the unschedulable switch must never pretend away."""
+    out = []
+    for p in pods or []:
+        spec, st = p.get("spec") or {}, p.get("status") or {}
+        running = next(
+            (
+                (c.get("state") or {}).get("running", {}).get("startedAt")
+                for c in st.get("containerStatuses") or []
+                if (c.get("state") or {}).get("running")
+            ),
+            None,
+        )
+        if spec.get("nodeName") or st.get("phase") != "Pending" or running:
+            out.append(
+                {
+                    "pod": p["metadata"].get("name"),
+                    "uid": p["metadata"].get("uid"),
+                    "node": spec.get("nodeName"),
+                    "phase": st.get("phase"),
+                    "started_at": running or st.get("startTime"),
+                }
+            )
+    return out
+
+
+def switch_unschedulable(
+    ns: str, name: str, region: str, model: dict, defaults: dict, why: str, admit=None
+) -> tuple[dict, bool]:
+    """Same-root recovery of an admitted run whose pod can never schedule where Kueue put it (docs/SCHEDULING.md
+    "Per-node fit", reconciliation.unschedulable_switch): nothing of it ran (every pod Pending, unbound), so the run is
+    created again as `<root>-rN` from the same input, placement and class, rendered with the per-node fit affinity;
+    the original is fenced first exactly as a fallback is (suspended, named after its successor: status SUPERSEDED, its
+    Workload deactivated so the worker's copy and its pod go and Kueue never admits it again), then the successor is
+    admitted on the run's ledger and created; a failed admission or create restores the original. The owner, the root
+    operation id and the durable handle stay the run's (lineage: resumed-from, recovered-from, the successor mark)."""
+    orig = get(ns, name, region)
+    op = normalise(orig)
+    md = orig["metadata"]
+    labels, ann = md.get("labels", {}), md.get("annotations", {})
+    started = _started_pods(orig.get("_pods"))
+    if (
+        op["status"] not in ("QUEUED", "RUNNING")
+        or started
+        or ann.get(f"{LABEL}/successor")
+        or ann.get(f"{LABEL}/cancelled")
+    ):
+        raise HTTPException(
+            409, f"operation {name} is {op['status']} with {len(started)} started attempt(s); no unschedulable switch"
+        )
+    snapshot_uids = {p["metadata"].get("uid") for p in orig.get("_pods") or []}
+    import catalog
+
+    model = catalog.pinned(model, ann)
+    try:
+        ex = json.loads(ann.get(f"{LABEL}/execution") or "{}") or {}
+    except ValueError:
+        ex = {}
+    root = ann.get(f"{LABEL}/resumed-from", name)
+    n = 1 + sum(
+        1
+        for j in list_ops(ns, labels[f"{LABEL}/tenant"], None, 500)
+        if j["metadata"].get("annotations", {}).get(f"{LABEL}/resumed-from") == root
+    )
+    new = f"{root}-r{n}"
+    d = dict(defaults)
+    out = output_prefix(orig) or ""
+    d["output_prefix"] = out.rsplit("/", 1)[0] + "/" + new if out else ""
+    gpu_class = labels.get(f"{LABEL}/gpu-class") or None
+    pl = ex.get("placement") or {}
+    tmpl_regions = ((orig.get("spec") or {}).get("template", {}).get("metadata", {}).get("annotations") or {}).get(
+        f"{LABEL}/regions"
+    )
+    placement = {
+        "manager": True,
+        "profile": labels.get("kueue.x-k8s.io/queue-name") or profile_of(model),
+        "classes": [gpu_class] if gpu_class else (pl.get("gpu_preference") or []),
+        "regions": tmpl_regions.split(",")
+        if tmpl_regions
+        else (
+            [r for r in (ann.get(f"{LABEL}/regions") or "").split(",") if r]
+            or pl.get("allowed_clusters")
+            or model["regions"]
+        ),
+    }
+    job = build_run(
+        new,
+        model,
+        op["input"],
+        labels[f"{LABEL}/tenant"],
+        ann.get(f"{LABEL}/name"),
+        None,
+        op["timeout_s"],
+        labels.get(f"{LABEL}/priority"),
+        None,
+        d,
+        ann.get(f"{LABEL}/key"),
+        placement=placement,
+        gpu_class=gpu_class,
+        ex=ex,
+    )
+    job["metadata"]["annotations"][f"{LABEL}/resumed-from"] = root
+    _inherit_owner(job, ann)
+    job["metadata"]["annotations"][f"{LABEL}/recovered-from"] = name
+    job["metadata"]["annotations"][f"{LABEL}/recovery"] = why
+    execution.deliver(
+        ex, new, root, ns, labels[f"{LABEL}/tenant"], placement["regions"] or [region], owner=operation_owner(ann, root)
+    )
+    # the snapshot-to-fence window, bounded from both sides: (1) re-read the worker's pods immediately before the
+    # fence; an attempt that bound meanwhile stops the switch here (nothing fenced, nothing created); (2) after the
+    # fence, read the same pods (by the snapshot's UIDs) once more: a binding that slipped into the last instants is
+    # evidence that is recorded on the original and on the successor's reason, never pretended away (its uploader
+    # records stay accepted: the successor mark comes last)
+    fresh = _started_pods([p for p in (get(ns, name, region).get("_pods") or [])])
+    if fresh:
+        raise HTTPException(
+            409,
+            f"operation {name}: attempt {fresh[0]['pod']} bound to {fresh[0]['node'] or 'a node'} before the fence; no "
+            "unschedulable switch (the run is proceeding)",
+        )
+    try:
+        retry(
+            kube.batch(region).patch_namespaced_job,
+            name,
+            ns,
+            {
+                "metadata": {"annotations": {f"{LABEL}/successor": new, f"{LABEL}/recovery": why}},
+                "spec": {"suspend": True},
+            },
+        )
+    except ApiException as e:
+        if e.status != 404:
+            raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
+    try:
+        kube.deactivate_workload(ns, md.get("uid", ""), region)  # the worker's copy and its Pending pod go
+    except Exception as e:  # noqa: BLE001 - the Job is suspended either way
+        log.warning("unschedulable switch: deactivate workload of %s/%s: %s", ns, name, e)
+    try:
+        late = _started_pods(
+            [p for p in (get(ns, name, region).get("_pods") or []) if p["metadata"].get("uid") in snapshot_uids]
+        )
+    except Exception:  # noqa: BLE001 - the worker's copy may be gone already: no evidence is not evidence of a start
+        late = []
+    if late:
+        note = f"attempt {late[0]['pod']} had bound to {late[0]['node'] or 'a node'} ({late[0]['phase']}) before the fence took effect; its records are retained"
+        why = f"{why}; {note}"
+        job["metadata"]["annotations"][f"{LABEL}/recovery"] = why
+        log.warning("unschedulable switch %s/%s: %s", ns, name, note)
+        try:
+            retry(
+                kube.batch(region).patch_namespaced_job,
+                name,
+                ns,
+                {
+                    "metadata": {
+                        "annotations": {
+                            f"{LABEL}/started-before-fence": json.dumps(late, sort_keys=True),
+                            f"{LABEL}/recovery": why,
+                        }
+                    }
+                },
+            )
+        except ApiException as e:
+            if e.status != 404:
+                raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
+    try:
+        if admit:
+            admit(job)
+        created, was_created = create(ns, job, region)
+    except Exception:
+        try:  # nothing was created: the original stays as it was (a recorded late start stays recorded)
+            retry(
+                kube.batch(region).patch_namespaced_job,
+                name,
+                ns,
+                {
+                    "metadata": {"annotations": {f"{LABEL}/successor": None, f"{LABEL}/recovery": None}},
+                    "spec": {"suspend": False},
+                },
+            )
+            kube.activate_workload(ns, md.get("uid", ""), region)
+        except Exception as e:  # noqa: BLE001
+            log.warning("unschedulable switch: restoring %s/%s after a failed successor: %s", ns, name, e)
         raise
     import attempts
 

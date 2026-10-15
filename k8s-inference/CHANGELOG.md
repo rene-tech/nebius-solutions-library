@@ -4,6 +4,131 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.86, jobs 0.1.25
+
+(0.11.86 / 0.1.25 supersede the unreleased 0.11.85 / 0.1.24 candidate after review; everything of it is included.)
+
+- Shared scratch placement is constrained in the rendered Pod, not only judged: `shared_scratch_available` returns
+  the eligible GPU-free shared-fs pools that hold the caller, and the render conjoins `serverless2.nebius/pool In
+  [those]` into the required node affinity next to `shared-fs In [true]`; under CPU-quota saturation Kueue therefore
+  queues the caller for its CPU pool instead of taking a shared-fs GPU flavor. The transfer-only export retry is
+  judged the same way at its own creation and refused (409, the reason) when the leaf cannot be placed then, never
+  rendered on a GPU flavor or on a per-call claim. Tests model Kueue with a saturated CPU flavor: the constrained
+  render queues (no flavor), the unconstrained one would have taken the GPU flavor.
+- `call.sh` checks the two jq writes themselves (exit status and that the file parses: a short write leaves a
+  non-empty fragment) before the rename and the sync: the capture manifest (failure → outcome unknown, marker kept,
+  nothing delivered, exit 4) and RESULT.json (failure → removed, no export state claimed, exit 6). Regression: a jq
+  stub that writes a partial document and exits 1 at each boundary.
+
+## api 0.11.85, jobs 0.1.24 (unreleased candidate, superseded by 0.11.86 / 0.1.25)
+
+(0.11.85 / 0.1.24 supersede the unreleased 0.11.84 / 0.1.23 candidate after review; everything of it is included.)
+
+- Shared scratch placement proven, not assumed: `shared_scratch_available` judges the caller's OWN requests (main,
+  uploader, the provisioning init; no GPU) against the per-node fit of the region's GPU-FREE pools that mount the
+  shared filesystem (`fit.fitting(..., shared_fs=True, gpu_free=True)`): a region whose only shared-fs pools are GPU
+  pools falls back to the per-call claim ("only GPU pools of <cluster> mount the shared filesystem": a Kueue-managed
+  caller would otherwise be admitted on a GPU flavor and occupy a GPU node for 100m, or stay Pending where no flavor
+  matches), as does a GPU-free shared-fs pool too small for the caller, and a claim that exists but is not Bound.
+  The shared-fs expression is added to the pod's required node affinity by conjunction with whatever the execution
+  profile already requires, never by overwriting it.
+- `call.sh` fails explicitly at every durability boundary (the script runs without errexit, so the 0.1.23 `durable`
+  calls were advisory): the one-POST marker not durable → no POST, marker removed, exit 6 (retryable; a marker that
+  could not even be removed makes the next attempt refuse to post); the captured response not durable → outcome
+  unknown for good, nothing delivered, exit 4 (never re-posted); the manifest not durable → nothing delivered,
+  exit 6 (a fresh attempt delivers the durable capture without posting); RESULT.json not durable → removed, no
+  export success claimed, exit 6. Tests drive the caller with a failing `sync` at each boundary and through the
+  restart that follows.
+
+## api 0.11.84, jobs 0.1.23 (unreleased candidate, superseded by 0.11.85 / 0.1.24)
+
+- Durable endpoint calls on the tenant's shared scratch (docs/JOBS.md "Scratch storage"), opt-in per endpoint model
+  (`call_scratch: shared`; default `network` unchanged): the caller's capture lives on the tenant's existing
+  `scratch-shared` claim at the API-derived leaf `calls/<op>` (a subPath; main and the uploader never see the tenant
+  directory) instead of a per-call block claim whose attach cost ~50 s per call. A trusted init container provisions
+  exactly that leaf (root with CHOWN/FOWNER/DAC_OVERRIDE only). `call.sh` fsyncs the one-POST marker, the capture,
+  the manifest and RESULT.json (jobs 0.1.23). The uploader empties the leaf only after the acknowledged delivery and
+  a proof of the capture (manifest, sha256, RESULT.json; `scratch.sh`), removes symlinks as links and never follows
+  them, refuses foreign-owned entries, never deletes the shared claim; the empty leaf is the recorded GC gap (no
+  age-based reaping, no scanning of other work). `:export` and a CPU delivery retry mount the same leaf. Fallback to
+  the per-call claim, recorded on the Job, where the region/cluster/namespace cannot carry it. `tools/scratch-test.sh`
+  in `make check`. Includes 0.11.83 (sessions cold attachment) and 0.11.82.
+
+## api 0.11.83
+
+(0.11.83 supersedes the unreleased 0.11.82 candidate: tags are immutable; everything of 0.11.82 is included.)
+
+- Cold attachment of a live session (docs/API.md "Sessions", migration 20): the attach wait no longer runs from the
+  hook's bind (before the endpoint has a pod) but from the first Ready replica the reconciler observes for the
+  session's endpoint in its region, recorded ONCE (`ready_seen_at`, a compare-and-swap; a later readiness flap never
+  moves it) together with `attach_deadline_at` (`attach_wait_s` after it, capped by the admitted `deadline_at`).
+  The hard bound stays the admitted deadline: a session that never sees a Ready replica ends `unattached` there,
+  no extra reservation, no extension. Endpoint status is read once per (model, region) per sweep; a status that
+  cannot be read is unknown (neither Ready nor idle: nothing changes). The public session carries `phase`
+  (`claimed`, `starting`, `waiting_for_worker`, `attached`, `ended`), `ready_seen_at` and `attach_deadline_at`, no
+  token, no pod identity; no GPU time is advertised for a session that never attached. PostgreSQL-backed tests:
+  cold start longer than the wait then ready and attach; ready but no worker expires at the attach deadline;
+  never-ready ends at the admitted deadline; a flap never extends; two regions judged separately; concurrent
+  sweeps record readiness once and end a session once.
+
+## api 0.11.82 (unreleased candidate, superseded by 0.11.83)
+
+- Sessions (docs/API.md "Sessions"), before any enablement: `POST /v1/models/<id>:session` refuses a `timeout_s`
+  above the endpoint's transport deadline (a single-node endpoint's revision timeout, the model's `timeout_s`, 600 s
+  by default; a multi-node endpoint has none) with a 400 naming the bound, instead of admitting a stream Knative
+  would cut mid-way with no record; nothing is shortened silently; `timeout_s` left out now defaults to that
+  deadline (3600 without one) instead of a fixed 3600 that the transport could not carry. The idle shutdown of multi-node endpoints counts
+  bound and attached sessions as activity. The no-reconnect rule is stated as kept. PostgreSQL-backed tests of the
+  session transitions (compare-and-swap bind across replicas, attach fencing, release idempotency, cancel) and of
+  the sweep (expired claim, unattached binding, deadline cancel request, lost worker, deferred settlement) run in
+  `make check` like the lease tests. Sessions stay off (`sessions.enabled` false); no interface changed.
+
+## api 0.11.81, fleet chart 0.1.12
+
+(0.11.81 supersedes the unreleased 0.11.80 candidate after review: tags are immutable, so the review fixes below are a
+new tag; everything of 0.11.80 is included.)
+
+- Review fixes to the per-node fit and the unschedulable switch: (1) the assigned pool of an admitted pod is judged on
+  the cluster that admitted it only (`fit.assigned_pool_holds(pod, cluster)`): the same pool label can be a bigger
+  preset in another cluster and must not mask an impossible actual worker. (2) The shared-filesystem and local-NVMe
+  requirements are intersected per (cluster, pool) BEFORE a pool counts as a candidate (`fit.candidates`,
+  `fit.fitting(..., shared_fs, local_nvme)`): a node big enough but without the mount (or the NVMe) the run needs is
+  no candidate, the affinity never names a set of pools no single node realizes, the refusal names the capability
+  ("on one node with the shared filesystem") and the largest candidate is the largest capable one. (3) The fit is
+  computed on the FINAL rendered pod, after the execution profile reshaped it (an application io mode drops the
+  fetch init container), never on the shell before it. (4) The snapshot-to-fence window of
+  `jobs.switch_unschedulable` is bounded from both sides: the worker's pods are re-read immediately before the fence
+  (an attempt that bound meanwhile stops the switch: 409, nothing fenced, nothing created) and once more after it by
+  the snapshot's pod UIDs (a binding in the last instants is recorded on the original as
+  `serverless2.nebius/started-before-fence` {pod, uid, node, phase, started_at} and in both `recovery` reasons,
+  "its records are retained": the successor mark comes last, so the attempt's uploader records stay accepted);
+  nothing is pretended never-started.
+
+## api 0.11.80, fleet chart 0.1.12 (unreleased candidate, superseded by 0.11.81)
+
+- Per-node fit (docs/SCHEDULING.md "Per-node fit"). Kueue admits against a flavor's aggregate quota and never checks
+  that one node holds the pod: on 2026-10-14 an AlphaFold 3 MCP pipeline (16.1 CPU, 64.25 Gi, 32 Gi ephemeral,
+  GPU-free) was refused by the CPU pool's ephemeral quota for the moment, fell through the flavor order to
+  `h100-reserved-1x`, whose aggregate CPU covered it while its nodes admit 14, and stayed Pending for ever holding
+  that flavor's quota. Fleet chart 0.1.12 publishes `fit.yaml` in the fleet document (what one node of every pool
+  admits, from the quota helpers with one node); the render constrains every run to the pools whose node holds the
+  pod's effective requests (cpu, memory, ephemeral-storage, GPUs; main + uploader; conjunctive with the explicit
+  `pool:`, the class pools, `shared-fs` and `local-nvme`; placement regions narrowed to clusters with a fitting pool)
+  and refuses at submission a shape no candidate pool holds (400 `impossible shape`, naming the largest candidate
+  node); an explicit `pool:` that cannot hold the pod is refused, never widened. A fitting pool whose quota is busy
+  stays QUEUED (temporarily unavailable). Nothing is reduced or enlarged on the caller's behalf. `tools/check.sh`
+  asserts `fit.yaml` against the ClusterQueues on every cluster. Without `fit.yaml` nothing changes.
+- Same-root recovery of an admitted-but-unschedulable run (`reconciliation.unschedulable_switch`,
+  `jobs.switch_unschedulable`): every pod Pending and unbound, the newest `Unschedulable` for `UNSCHEDULABLE_WAIT_S`
+  (600 s), the assigned pool unable to hold it → a successor `<root>-r<n>` with the fit affinity from the same input,
+  placement, class and key, the original fenced exactly as a fallback (`SUPERSEDED`, Workload deactivated, Job
+  suspended), lineage and the owner's handle preserved, a failed create restores the original; a pool that can hold
+  the pod is left waiting, a started attempt is never switched, an impossible shape is annotated once
+  (`serverless2.nebius/unschedulable`), at most two switches per root. Topology-Aware Scheduling is left for its
+  own qualification.
+- The gateway hook's direct-POST log line names the model only (no key alias, no tenant): the shared telemetry
+  carries no customer identities. The admitted-POST line (operation, attempt) is unchanged.
+
 ## api 0.11.79, platform chart 0.1.9
 
 - Operation status/result stay readable when usage is unknown: `billing.py` settles a run or a native endpoint call
