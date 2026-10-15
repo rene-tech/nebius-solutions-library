@@ -4,6 +4,88 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.99
+
+(0.11.99 = 0.11.98 plus the observer fields; jobs 0.1.26 and platform chart 0.1.11 unchanged; no migration.)
+
+- The owner-scoped operation exposes the observed durable fields of its current attempt (`pod_uid`, `gang_rank`,
+  `gang_restart`, from the authority record) and on every `attempts[]` entry (from the record; from the live pod's own
+  UID and JobSet labels while it exists; the durable view after the Job's TTL too), so an application broker can verify
+  a gang peer against the observed coordinator of the same epoch and incarnation without trusting a caller's claim.
+  No new endpoint, no ledger; owner access unchanged.
+
+## api 0.11.98
+
+(0.11.98 = 0.11.97 plus one narrow correction; jobs 0.1.26 and platform chart 0.1.11 unchanged; no migration.)
+
+- Attempt records: `pod_uid` (migration 24) is now the observed UID of EVERY recording pod (a single-node run, an
+  endpoint caller, a CPU finalizer, a gang rank), taken from the one pod read the API already does for the runtime
+  digest (`attempts._pod_facts`), never from the record or the name; a later record of a pod that cannot be read
+  any more keeps the UID and digest its row holds. 97 persisted the UID for gang pods only. The unverified-gang
+  refusal and the old-row identity rule are unchanged; ordinary unreadable pods record as before.
+
+## api 0.11.97
+
+(0.11.97 = 0.11.96 with one fence corrected after review; jobs 0.1.26 and platform chart 0.1.11 unchanged. 0.11.96 was
+never applied.)
+
+- Gang attempts: a gang pod the API cannot read and never recorded is refused (409 "membership unverifiable"), never
+  attributed to the newest gang by its missing rank (96 joined it: an old incarnation's coordinator coming back late
+  could have acquired the current epoch's publication authority); a known pod keeps its own epoch and fences.
+  Regression: incarnation 2's peer recorded, its coordinator not yet; incarnation 1's deleted coordinator sends late
+  records: stale for a start/success, closes on its own interruption promoting nothing, never epoch 2; an unrecorded
+  unreadable rank-0 claimant refused; incarnation 2's rank 0 then holds the authority.
+
+## api 0.11.96 (unreleased candidate, superseded by 0.11.97)
+
+(0.11.96 = 0.11.95 plus gang attempts for multi-node runs; jobs 0.1.26 and platform chart 0.1.11 unchanged.)
+
+- Gang attempts (migration 24; docs/JOBS.md "Gang attempts"): the pods of one JobSet incarnation share one epoch (the
+  rank and incarnation observed on the pod by the API: `batch.kubernetes.io/job-completion-index`,
+  `jobset.sigs.k8s.io/restart-attempt`, the pod UID; never caller-declared), so siblings no longer fence each other
+  (before: every sibling took the next epoch and the coordinator's checkpoint/success answered 409 "stale record
+  refused"); a prior incarnation stays fenced; only rank 0 publishes `checkpoint_ref`/`result_ref` (peers' dropped,
+  their accounting kept); the operation's `attempt_id`/`epoch` name the coordinator of the newest incarnation and the
+  gang's outcome counts every rank. Ordinary single-pod runs unchanged.
+- "Delivery pending" on a gang: a class with `finalize.on_exit_codes` now installs the `podFailurePolicy` on the
+  indexed Job AND a JobSet failure-policy rule (`FailJobSet` on reason `PodFailurePolicy`), so exit 75 ends the gang
+  instead of a whole-gang `Recreate` recompute (JobSet ≥ v0.6).
+- `:export` of a completed multi-node run (`checkpoints: shared`, application I/O): the model's finalizer as ONE CPU
+  pod on the shared checkpoint subPath, the coordinator's record as the finalized attempt (`FINALIZE_RANK`,
+  `FINALIZE_GANG_RESTART`, `FINALIZE_NODES`, `CHECKPOINT_DIR`), never the gang again; a gang without shared checkpoints
+  or without a finalizer is refused explicitly (409 naming why) instead of "no kept work volume".
+- RDMA memlock stated, not granted: an InfiniBand gang's main gets `S2_RDMA_MEMLOCK_POLICY=node-unlimited`,
+  `S2_RDMA_CAPABILITIES=none`, `S2_RDMA_DEVICES_PER_NODE`; `drop: [ALL]` stays, no IPC_LOCK.
+
+## api 0.11.95, platform chart 0.1.11
+
+(0.11.95 = 0.11.94 (the operation listing) plus the two registration checks below; the chart carries the one value
+behind them. jobs 0.1.26 unchanged; no migration.)
+
+- Endpoint registration refuses, with an actionable 400, what would store but never reconcile: a `timeout_s` above the
+  fleet's Knative max-revision-timeout-seconds (a medical pipeline at 7500 s against the hardcoded 3600: ReconcileFailed
+  on every region), and `env` / `env_field_refs` / `weights.env` names Knative Serving reserves (`PORT`, `K_SERVICE`,
+  `K_CONFIGURATION`, `K_REVISION`; Knative injects the serving port into `PORT`). Run classes are unchanged.
+- Platform chart 0.1.11: `knative.maxRevisionTimeoutSeconds` (default 3600, unchanged behaviour) renders Knative's
+  `max-revision-timeout-seconds` AND the API's `KNATIVE_MAX_REVISION_TIMEOUT_S` from the one value, so the two never
+  disagree; `fleet.knative.max_revision_timeout_s` (stack tfvars) sets it (7500 for the retained medical endpoint).
+  Other budgets reviewed and left as they are: the gateway route to a predictor has no request timeout (`0s`), the
+  ext-auth call 10 s, Knative's revision-timeout-seconds default 600 (every endpoint sets its own `timeout`), the
+  deployment progress deadline 3600 s (startup, not requests).
+
+## api 0.11.94
+
+(0.11.94 = 0.11.93 plus the operation listing below; jobs 0.1.26 and platform chart 0.1.10 unchanged.)
+
+- `GET /v1/operations`: the tenant's live operations are no longer cut to 500 BEFORE the owner filter (a caller with
+  many foreign operations in the tenant saw none of its own), and operations whose Job expired (TTL) are listed from
+  their durable attempt records (as `GET /v1/operations/{id}` already reports them), narrowed by the owner records
+  (`operation_owners`) and the records' provenance (`model`). Authorization (tenant, owner or admin, the key's model
+  allow-list) applies to every candidate before the cut. Stable order `created_at` desc, id desc; bounded paging with
+  `cursor=` (opaque, from the `X-Next-Cursor` response header; absent on the last page); `X-Regions-Skipped` names the
+  regions that could not be read. The array response and `limit`/`model` are unchanged (client-compatible). No new
+  ledger: the records and owner rows that exist.
+
 ## api 0.11.93
 
 (0.11.93 = 0.11.92 without the last post-admission rollback; jobs 0.1.26 and platform chart 0.1.10 unchanged.
