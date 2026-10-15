@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from kubernetes.client.rest import ApiException
+from psycopg.types.json import Json
 
 import db
 import kube
@@ -151,13 +152,23 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
         export = body.get("export") or (
             "n/a" if body.get("io_mode") == "application" and status != "succeeded" else None
         )
+        capture = _capture_of(body.get("capture"), operation, root, c)
+        resume = (
+            _resume_for(c, operation, root, epoch, gang, body.get("_explicit_checkpoint_ref"))
+            if gang and not cur
+            else (None, None, None)
+        )
         c.execute(
             """insert into attempts (operation, pod, root, tenant, namespace, epoch, region, node, pool, gpu_class, gpus, image,
                         image_digest, status, exit_code, started_at, ended_at, export_state, result_ref, checkpoint_ref, checkpoint_generation, updated_at, role, cluster,
-                        mode, model, io_mode, gang_rank, gang_restart, pod_uid)
-                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s)
+                        mode, model, io_mode, gang_rank, gang_restart, pod_uid, capture, resume_checkpoint_ref, resume_source_epoch, resume_source)
+                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                      on conflict (operation, pod) do update set
                         cluster = coalesce(excluded.cluster, attempts.cluster),
+                        capture = coalesce(excluded.capture, attempts.capture),
+                        resume_checkpoint_ref = coalesce(attempts.resume_checkpoint_ref, excluded.resume_checkpoint_ref),
+                        resume_source_epoch = coalesce(attempts.resume_source_epoch, excluded.resume_source_epoch),
+                        resume_source = coalesce(attempts.resume_source, excluded.resume_source),
                         gang_rank = coalesce(excluded.gang_rank, attempts.gang_rank),
                         gang_restart = coalesce(excluded.gang_restart, attempts.gang_restart),
                         pod_uid = coalesce(excluded.pod_uid, attempts.pod_uid),
@@ -202,9 +213,84 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
                 gang.get("rank") if gang else None,
                 gang.get("restart") if gang else None,
                 facts["uid"],  # the observed UID of every pod; an unreadable pod keeps the UID its row already has
+                Json(capture) if capture is not None else None,
+                resume[0],
+                resume[1],
+                resume[2],
             ),
         )
         return _row(c, operation, pod)
+
+
+def _resume_for(c, operation: str, root: str, epoch: int, gang: dict, explicit: str | None) -> tuple:
+    """The resume pointer of a gang incarnation, FROZEN per incarnation (docs/JOBS.md "Gang attempts"): when a sibling of
+    the same incarnation (observed restart-attempt) recorded already, its stored value is copied, whatever was
+    committed since; otherwise, chosen once: the newest COMMITTED checkpoint pointer of a COORDINATOR (rank 0, or an
+    ordinary attempt of the chain) of an EARLIER epoch of the same root — never the current epoch, never a peer's —
+    (`committed`, with its source epoch), else the explicit continuation reference the run was rendered with
+    (`explicit`, no epoch), else nothing. Returns (ref, source_epoch, source)."""
+    if gang.get("restart") is not None:
+        r = c.execute(
+            "select resume_checkpoint_ref, resume_source_epoch, resume_source from attempts where operation = %s and gang_restart = %s order by revision limit 1",
+            (operation, gang["restart"]),
+        ).fetchone()
+        if r is not None:
+            return (r[0], r[1], r[2])  # frozen: the incarnation's first row decided
+    r = c.execute(
+        "select checkpoint_ref, epoch from attempts where root = %s and checkpoint_ref is not null and epoch < %s "
+        "and (gang_rank = 0 or gang_rank is null) order by epoch desc, checkpoint_generation desc nulls last, revision desc limit 1",
+        (root, epoch),
+    ).fetchone()
+    if r is not None:
+        return (r[0], int(r[1]), "committed")
+    if explicit:
+        return (str(explicit), None, "explicit")
+    return (None, None, None)
+
+
+CAPTURE_SHA = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _capture_of(raw, operation: str, root: str, c) -> dict | None:
+    """The capture manifest the platform's uploader forwards from the caller's RESULT.json (docs/JOBS.md "Endpoint
+    children"): only these bounded fields, checked, and immutable per operation lineage: a transfer-only retry re-posts
+    the ORIGINAL producing attempt's manifest (same sha256, same producer: idempotent); a manifest that contradicts one
+    already on record for the lineage (`<root>` or its `-x<n>` retries) is refused (409), never an overwrite."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            400, "capture: an object {sha256, content_type, size_bytes, http_status, capture_attempt_id, ...}"
+        )
+    sha = str(raw.get("sha256") or "")
+    if not CAPTURE_SHA.match(sha):
+        raise HTTPException(400, "capture.sha256: 64 hex digits")
+    ct = str(raw.get("content_type") or "application/octet-stream")[:128]
+    size, st = raw.get("size_bytes"), raw.get("http_status")
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+        raise HTTPException(400, "capture.size_bytes: a non-negative integer")
+    if not isinstance(st, int) or isinstance(st, bool) or not 100 <= st <= 599:
+        raise HTTPException(400, "capture.http_status: an HTTP status")
+    producer = str(raw.get("capture_attempt_id") or "")[:253]
+    if not producer:
+        raise HTTPException(400, "capture.capture_attempt_id: the attempt that captured the response")
+    cap = {"sha256": sha, "content_type": ct, "size_bytes": size, "http_status": st, "capture_attempt_id": producer}
+    for k in ("posted_at", "completed_at"):
+        if raw.get(k):
+            cap[k] = str(raw[k])[:40]
+    lineage = c.execute(
+        "select capture from attempts where capture is not null and (operation = %s or operation = %s or operation like %s) limit 1",
+        (operation, root, root + "-x%"),
+    ).fetchone()
+    if lineage and lineage[0]:
+        have = lineage[0]
+        if have.get("sha256") != sha or have.get("capture_attempt_id") != producer:
+            raise HTTPException(
+                409,
+                f"capture contradicts the record of {root}: on record {have.get('sha256')} by {have.get('capture_attempt_id')}, "
+                f"posted {sha} by {producer}; a capture is immutable per operation",
+            )
+    return cap
 
 
 JOBSET_NAME_LABEL = "jobset.sigs.k8s.io/jobset-name"
@@ -296,7 +382,7 @@ def gang_status(rows: list[dict]) -> str | None:
 COLS = (
     "operation, pod, root, tenant, namespace, epoch, region, node, pool, gpu_class, gpus, image, image_digest, status, exit_code, "
     "started_at, ended_at, export_state, result_ref, checkpoint_ref, checkpoint_generation, revision, updated_at, role, cluster, "
-    "mode, model, io_mode, gang_rank, gang_restart, pod_uid"
+    "mode, model, io_mode, gang_rank, gang_restart, pod_uid, capture, resume_checkpoint_ref, resume_source_epoch, resume_source"
 )
 
 
@@ -451,6 +537,9 @@ def synthesize(operation: str, tenant: str) -> dict | None:
             "pod_uid": r.get("pod_uid"),
             "gang_rank": r.get("gang_rank"),
             "gang_restart": r.get("gang_restart"),
+            "resume_checkpoint_ref": r.get("resume_checkpoint_ref"),
+            "resume_source_epoch": r.get("resume_source_epoch"),
+            "resume_source": r.get("resume_source"),
         }
         for i, r in enumerate(rows)
     ]
@@ -578,4 +667,8 @@ def lifecycle(
         "pod_uid": latest.get("pod_uid") if latest else None,
         "gang_rank": latest.get("gang_rank") if latest else None,
         "gang_restart": latest.get("gang_restart") if latest else None,
+        # the incarnation-frozen resume pointer the gang was told to restore (the start ACK's), never "the latest"
+        "resume_checkpoint_ref": latest.get("resume_checkpoint_ref") if latest else None,
+        "resume_source_epoch": latest.get("resume_source_epoch") if latest else None,
+        "resume_source": latest.get("resume_source") if latest else None,
     }

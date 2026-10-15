@@ -59,7 +59,14 @@ Three run classes ship (`catalog/models`): `container-run` (any image and comman
 class), `hello-run` (CPU smoke test) and `distributed-run` (multi-node JobSet, "Multi-node runs"
 below). Application layers define their own run classes through the model API (`kind: job`).
 `parameters` is what a client shows and what `input` may contain (unknown names, or a missing
-`required` one, are a 400); `deployments.<cluster>.parameters` are per-region defaults the caller
+`required` one, are a 400). A parameter may carry the operator's bounds, enforced at invoke on the effective value
+(the caller's over the defaults) before any reservation or Job: a `number` with `min`/`max` (inclusive) and
+`integer: true` (whole numbers only; a string, a boolean, NaN/inf or a fraction is refused, never coerced), a `select`
+with `options` (exactly one of them). `job.maxGpus: N` bounds a class's whole shape (`nodes` x GPUs per node ≤ N) on
+the rendered values. A class declaring none of these behaves as before; the renderer's own refusals (a shape no pool
+has, the node maximum) stay. With these an operator catalog class with a templated shape (`nodes: "{{nodes}}"`,
+`gpu: "{{gpus_per_node}}"`) admits only operator-approved shapes under one model id, whatever key calls it directly.
+`deployments.<cluster>.parameters` are per-region defaults the caller
 never sees (pool, in-region image, tuning). `input_prefix` and `output_prefix` are always accepted;
 the API sets `output_prefix` to `s3://<tenant bucket of the region>/operations/<id>`.
 
@@ -308,6 +315,20 @@ render states that contract to the run, `S2_RDMA_MEMLOCK_POLICY=node-unlimited`,
 `S2_RDMA_DEVICES_PER_NODE=<n>`, so an application validator written for a capability-based host (IPC_LOCK,
 `no_new_privs=0`) can accept the native path explicitly instead of probing for capabilities the platform never grants.
 No capability is added for it.
+
+**Restoring a gang: the incarnation-frozen pointer.** A JobSet `Recreate` restarts every rank with the environment it
+was rendered with (`CHECKPOINT_REF` is the explicit continuation reference of the render, if any); the newest committed
+state lives in the records. The start ACK of EVERY rank (the API's answer to its start record, which the uploader keeps
+at `/work/attempts/.ack.json`) therefore carries `resume_checkpoint_ref`, `resume_source_epoch` and `resume_source`:
+chosen ONCE when the incarnation opens (its first start record, whichever rank), as the newest committed checkpoint
+pointer of a COORDINATOR (rank 0, or an ordinary attempt of the chain) of an EARLIER epoch of the same root
+(`committed`, with that epoch), else the explicit continuation reference (`explicit`), else null; stored on that first
+row and copied to every sibling of the incarnation (migration 26), so all ranks restore the same state, a sibling that
+records later never sees a pointer committed by its own incarnation, and a late record of a rank keeps its own row's
+value. Never a peer's pointer, never "the latest" at read time. The owner-scoped operation shows the same three fields on
+its current attempt and on every `attempts[]` entry, so a broker authorises exactly the restored inputs. The application
+decides what to do with it (restore, or fail when the expected recovery identity is missing); the platform maintains no
+application pointer.
 
 ### Limits of multi-node runs
 
@@ -744,8 +765,9 @@ renews what the broker serves, nothing else. The child model's image is recorded
 intent is never completed against another image.
 
 **The capture (the native one-POST protocol, docs/API.md "Endpoint calls").** The child is rendered as an
-application-I/O endpoint call: its request in the private binding (`binding-<child>`, platform-written, owned by the
-root's owner), `IO_MODE=application`, the readiness probe, exactly **one inference POST** per operation (the durable
+application-I/O endpoint call: its request in the private binding (`binding-<child>`, platform-written on the API's own
+cluster like a caller's `PUT /v1/bindings/{ref}`, owned by the root's owner, delivered as the `<child>-private` copy into
+the child's region with its Job), `IO_MODE=application`, the readiness probe, exactly **one inference POST** per operation (the durable
 `posted.json` marker: a lost response is an unknown outcome, `exit 4`, never a second POST, whatever the status;
 408/429-at-the-edge/5xx/000 are a capture or an unknown outcome, not retries), the response bytes and their manifest
 (`call.json`: sha256, media type from the response headers, size, HTTP status, producing attempt, timings) made
@@ -761,6 +783,26 @@ returns the parent's current `input_url`; the output phase returns one-hour PUT 
 type). A failed delivery leaves the capture on the volume: the owner's `POST /v1/operations/<child>:export` renders the
 transfer-only retry (TRANSFER_ONLY: nothing is inferred again), admitted as a `child` member after the child's own
 head in the parent run's ledger (no second request), served by the same broker with the same binding.
+
+**Application delivery (external storage).** A tenant whose storage the platform does not own (`storage = external`:
+no `tenant-storage` Secret) declares `child_delivery: application` on the class. At the PARENT's admission the API
+checks that first (`platform` on such a tenant: 400 before anything is admitted, naming the child endpoint's region and
+the fix; `application`: nothing is probed or created). Each child request then carries the application's delivery
+and reference: `transport: {refresh_url, refresh_token}` (the parent's broker: the SAME call.sh refresh contract,
+`POST refresh_url {operation_id, attempt_id, phase}` with `Bearer refresh_token` → `{input_url?, response_url,
+call_url}`; the child's caller sends its own projected identity token as `X-Workload-Identity` when the parent's
+execution had one) or static `transport: {response_url, call_url, input_url?}`, and **`result_ref`** (the application's
+immutable reference for the captured object, ≤ 512 chars, part of the bound request). The child's caller inherits the
+parent's FROZEN execution (`identity`, `profile` from the parent Job's annotation, never the current tenant config), the
+binding gets the application's keys (no platform broker, no platform destination), and no customer key or storage
+credential enters the child. The capture becomes durable through the platform's own uploader: call.sh's RESULT.json
+carries the manifest it just made durable (`capture: {sha256, content_type, size_bytes, http_status, capture_attempt_id
+= the ORIGINAL producer, posted_at, completed_at}`), the uploader posts it with the attempt record (`attempts.capture`,
+migration 25: allowlisted bounded fields, immutable per operation lineage: a transfer-only retry re-posts the same
+manifest, a contradicting one is 409). The readback then takes `capture` from that record, `result_ref` is the
+application's, there is no `download_url` (the live parent fetches the exact object through its own broker), and only a
+delivered capture makes `outcome: succeeded`. The platform's `:refresh` broker answers 409 for such a child. The
+capability block `execution.endpoint_children` (`GET /v1/fleet`) advertises `delivery: [platform, application]`.
 
 **The readback** (authoritative past the Job's TTL: the durable row, the destination, the attempt records; nothing is
 guessed from a prefix). The owner reads the same readback with its key: `GET /v1/operations/<run>/children/<unit_id>`

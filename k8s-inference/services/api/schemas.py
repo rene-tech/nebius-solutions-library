@@ -440,6 +440,9 @@ class ModelSpec(BaseModel):
     # ask the platform to call as bounded async children, and the explicit bound on their number per root
     child_endpoints: SkipValidation[list[str] | None] = None
     child_max_units: SkipValidation[int | None] = None
+    child_delivery: SkipValidation[str | None] = (
+        None  # platform (default: the tenant bucket) | application (the parent's broker)
+    )
 
 
 class Error(BaseModel):
@@ -565,6 +568,9 @@ class Attempt(BaseModel):
     pod_uid: str | None = None  # observed on the pod (docs/JOBS.md "Gang attempts")
     gang_rank: int | None = None  # a JobSet pod's completion index, observed
     gang_restart: int | None = None  # the JobSet incarnation the pod belongs to, observed
+    resume_checkpoint_ref: str | None = None  # the incarnation-frozen pointer the gang was told to restore
+    resume_source_epoch: int | None = None  # the earlier epoch that committed it (None for an explicit reference)
+    resume_source: Literal["committed", "explicit"] | None = None
 
 
 class ChainMember(BaseModel):
@@ -704,6 +710,9 @@ class Operation(BaseModel):
     pod_uid: str | None = None  # the current attempt's observed pod UID (docs/JOBS.md "Gang attempts")
     gang_rank: int | None = None  # the current attempt's observed rank (a gang's coordinator: 0)
     gang_restart: int | None = None  # the current attempt's observed JobSet incarnation
+    resume_checkpoint_ref: str | None = None  # the incarnation-frozen pointer the current gang restores from
+    resume_source_epoch: int | None = None
+    resume_source: Literal["committed", "explicit"] | None = None
     resumable: bool | None = None
     gpu_class: str | None = None
     image: str | None = None
@@ -904,6 +913,19 @@ class ExecutionCapabilitiesRetry(BaseModel):
     default_exit_codes: list[int] | None = None
 
 
+class ExecutionCapabilitiesEndpointChildren(BaseModel):
+    """Endpoint children of a run (docs/JOBS.md "Endpoint children"): absent on an API without them."""
+
+    api: str | None = None
+    delivery: list[str] | None = None  # platform | application
+    transport: list[str] | None = None  # refresh | static
+    request: list[str] | None = None  # input | input_ref
+    capture_record: bool | None = None
+    readback: list[str] | None = None
+    observed_attempt_fields: list[str] | None = None
+    preflight: str | None = None
+
+
 class ExecutionCapabilities(BaseModel):
     io_modes: list[Literal["managed", "application"]] | None = None
     async_private_io: ExecutionCapabilitiesAsyncPrivateIO | None = None
@@ -915,6 +937,7 @@ class ExecutionCapabilities(BaseModel):
     finalize: ExecutionCapabilitiesFinalize | None = None
     recovery: ExecutionCapabilitiesRecovery | None = None
     retry: ExecutionCapabilitiesRetry | None = None  # docs/JOBS.md "Retries"
+    endpoint_children: ExecutionCapabilitiesEndpointChildren | None = None
 
 
 class FleetInfo(BaseModel):

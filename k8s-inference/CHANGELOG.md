@@ -4,6 +4,65 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.103
+
+(0.11.103 = 0.11.102 plus the child binding's cluster and the log shipper on CPU pools; jobs 0.1.27 and platform chart
+0.1.12 unchanged; no migration. `clusters/common/values/alloy.yaml` changes: the Alloy DaemonSet rolls once per cluster.)
+
+- Endpoint children (docs/JOBS.md "Endpoint children"): the child's private binding is written on the API's own cluster,
+  where every delivery reads bindings (a caller's `PUT /v1/bindings/{ref}` lands there too), and `jobs.create` names
+  that cluster explicitly; the `<child>-private` copy still lands in the child's region with its Job. Before, a
+  control-cluster API wrote the binding in the child's region and the delivery looked on the control cluster: every
+  child of a fleet-placed run was refused 404 "no such binding", the intent rolled back and an orphan `binding-<child>`
+  Secret stayed in the region (the first live LeRobot child, 2026-10-14). Regression: a control API, the parent and the
+  child endpoint in a region; the binding on control, claimed and owned; the copy and the Job in the region; nothing
+  orphaned; the replay reads the same child back.
+- Logs (docs/OBSERVABILITY.md): the Alloy log shipper tolerates the CPU-pool taint (`serverless2.nebius/cpu-pool`), so
+  runs on CPU pools ship their logs; before, no shipper ran on those nodes and `GET /v1/operations/{id}/logs` was empty
+  for every CPU-pool run (the pod's files go with the worker Job). `tools/check.sh` asserts the shipper tolerates every
+  worker-pool taint the cluster module places.
+
+## api 0.11.102
+
+(0.11.102 = 0.11.101 plus operator-declared parameter bounds; jobs 0.1.27 and platform chart unchanged; no migration.)
+
+- Run classes (docs/JOBS.md "Parameters"): `parameters[].min`/`max`/`integer` for `number`, enforced `options` for
+  `select`, and `job.maxGpus` (nodes x GPUs per node) are checked at invoke on the effective values, before any
+  reservation or Job creation (400 naming the parameter and the bound): an operator catalog class with a templated
+  shape admits only operator-approved shapes under one model id, whatever key calls it directly (the app's own
+  validator was the only bound before). Malformed numerics (strings, booleans, NaN/inf, fractions where an integer is
+  declared) are refused, never coerced. Classes declaring no bounds are untouched (the bundled classes included).
+
+## api 0.11.101
+
+(0.11.101 = 0.11.100 plus the gang resume pointer; jobs 0.1.27 and platform chart 0.1.11 unchanged; migration 26.)
+
+- Gang attempts (docs/JOBS.md "Restoring a gang"): the start ACK of every rank carries `resume_checkpoint_ref`,
+  `resume_source_epoch` and `resume_source` (`committed` | `explicit`), chosen once when the incarnation opens from the
+  newest committed coordinator pointer of an EARLIER epoch of the same root, else the explicit continuation reference
+  the run was rendered with; frozen on the incarnation's first row and copied to every sibling, so all ranks restore the
+  same state and no rank ever reads a same-epoch or peer pointer; the owner-scoped operation exposes the same three
+  fields on the current attempt and every `attempts[]` entry. Ordinary single-pod runs carry none. No application
+  pointer or ledger; the uploader's ACK handling is unchanged (the ACK already lands in `/work/attempts/.ack.json`).
+
+## api 0.11.100, jobs 0.1.27
+
+(0.11.100 = 0.11.99 plus application delivery for endpoint children; platform chart 0.1.11 unchanged; migration 25.)
+
+- Endpoint children on a tenant with external storage (docs/JOBS.md "Endpoint children", "Application delivery"): a
+  class declares `child_delivery: application`; the PARENT's admission preflights the capture backend (platform mode on
+  an external tenant: 400 before admission, naming the region/model/fix; application mode: no storage probe at all;
+  before: the child POST answered 404 after admission); each child request carries the application's delivery
+  (`transport.refresh_url` + `refresh_token`, the existing call.sh refresh contract, or static URLs) and an immutable
+  `result_ref` bound into the request; the child's caller inherits the parent's frozen execution (identity, profile)
+  so the broker receives the child's own projected identity token; no customer key or storage credential enters the
+  child; the capture is recorded durably by the platform's uploader (`attempts.capture`: sha256, media type, size,
+  status, the ORIGINAL producing attempt, timings; allowlisted, immutable per lineage, 409 on contradiction) and the
+  readback takes it from there with no download URL; the platform broker refuses such a child (409); replay with
+  renewed transport rewrites only the binding's URL/token keys. `execution.endpoint_children` capability block.
+- jobs 0.1.27: call.sh's RESULT.json carries the capture manifest (`capture` object) it just made durable; upload.sh
+  forwards it with the attempt record. Nothing else of the one-POST protocol changed.
+
 ## api 0.11.99
 
 (0.11.99 = 0.11.98 plus the observer fields; jobs 0.1.26 and platform chart 0.1.11 unchanged; no migration.)
