@@ -97,6 +97,14 @@ for n in system:
     if n == "system":
         assert spec.get("nodeLabels") == {"serverless2.nebius/pool": "system"}, f"{cid}: {n} must select the system nodes"
 for q in queues:
+    covered = q["spec"]["resourceGroups"][0]["coveredResources"]
+    assert "ephemeral-storage" in covered, f"{cid}: {q['metadata']['name']} does not cover ephemeral-storage (a run requesting node-local scratch would be NoMatchingFlavor)"
+    for f in q["spec"]["resourceGroups"][0]["flavors"]:
+        res = {r["name"]: r for r in f["resources"]}
+        assert "ephemeral-storage" in res, f"{cid}: {q['metadata']['name']}/{f['name']}: no ephemeral-storage entry"
+        e = res["ephemeral-storage"]
+        budget = e.get("nominalQuota") if e.get("nominalQuota") not in (None, 0) else e.get("borrowingLimit", e.get("nominalQuota"))
+        assert str(budget).endswith("Gi") and int(str(budget)[:-2]) >= 0, f"{cid}: {q['metadata']['name']}/{f['name']}: ephemeral-storage budget {budget!r} (a quantity in Gi, zero allowed: a fleet may reserve the whole disk)"
     fl = q["spec"]["resourceGroups"][0]["flavors"]
     first = [f for f in fl if f["name"] in system]
     rest = [f for f in fl if f["name"] not in system]
@@ -110,7 +118,7 @@ for q in queues:
         assert (res["nvidia.com/gpu"].get("nominalQuota") or res["nvidia.com/gpu"].get("borrowingLimit") or 0) > 0, f"{cid}: {q['metadata']['name']}/{f['name']}: a GPU pool flavor without GPUs"
         if f["name"] in flavors and flavors[f["name"]]["spec"].get("nodeLabels"):
             assert flavors[f["name"]]["spec"]["nodeLabels"]["serverless2.nebius/pool"] == f["name"], f"{cid}: {f['name']} selects another pool"
-print(f"   ok charts/fleet {cid}: system flavor first ({len(system)}), {sum(len(q['spec']['resourceGroups'][0]['flavors']) for q in queues)} flavor entries in {len(queues)} queues")
+print(f"   ok charts/fleet {cid}: system flavor first ({len(system)}), {sum(len(q['spec']['resourceGroups'][0]['flavors']) for q in queues)} flavor entries in {len(queues)} queues, ephemeral-storage covered and budgeted on every flavor")
 PYEOF2
     helm template tenant "$ROOT/charts/tenant" -f "$TMP/tenant-$cid.yaml" > /dev/null; echo "   ok charts/tenant $cid"
     for f in "$TMP"/endpoint-*-"$cid".yaml; do
@@ -247,6 +255,35 @@ for cid in open(f"{tmp}/clusters.txt").read().split():
     print(f"   ok dispatcher RBAC {cid}: batch/jobs {sorted(verbs)} covers the source's calls {sorted(called)}, read-only")
 assert found, "no cluster rendered the dispatcher ClusterRole"
 EOF3
+  "$PYTHON" - "$TMP" <<'EOF5'
+import sys, yaml
+tmp = sys.argv[1]
+# the API reads Knative Revisions in `models` on every cluster that runs endpoints (services/api/kube.py _rollout: the
+# ready Revision's stored image is the convergence proof): the control API's own Role and the regional agent's Role
+# both carry the read-only rule, and nothing wider on that group
+seen = 0
+for cid in open(f"{tmp}/clusters.txt").read().split():
+    objs = [o for o in yaml.safe_load_all(open(f"{tmp}/platform-{cid}.rendered.yaml")) if o]
+    roles = [o for o in objs if o["kind"] == "Role" and o["metadata"].get("namespace") == "models"
+             and o["metadata"]["name"] in ("serverless2-api-endpoints", "serverless2-api-agent-models")]
+    for role in roles:
+        rules = [r for r in role["rules"] if "serving.knative.dev" in r.get("apiGroups", [])]
+        assert rules, f"{cid}: Role {role['metadata']['name']} grants no serving.knative.dev read (kube._rollout needs revisions get/list)"
+        for r in rules:
+            assert set(r.get("resources", [])) <= {"revisions"}, f"{cid}: Role {role['metadata']['name']} reaches {r['resources']} on serving.knative.dev; revisions only"
+            assert set(r["verbs"]) <= {"get", "list"}, f"{cid}: Role {role['metadata']['name']} grants {r['verbs']} on revisions: read-only"
+        assert any("revisions" in r.get("resources", []) and {"get", "list"} <= set(r["verbs"]) for r in rules), f"{cid}: Role {role['metadata']['name']}: revisions get+list missing"
+        # the opt-in ingress policy (services/api/render_endpoint.py _ingress_policy) is applied and deleted by the same Roles:
+        # ciliumnetworkpolicies only on cilium.io, nothing wider (no clusterwide policies, no other Cilium objects)
+        cil = [r for r in role["rules"] if "cilium.io" in r.get("apiGroups", [])]
+        assert cil, f"{cid}: Role {role['metadata']['name']} grants nothing on cilium.io (the ingress policy needs ciliumnetworkpolicies)"
+        for r in cil:
+            assert set(r.get("resources", [])) <= {"ciliumnetworkpolicies"}, f"{cid}: Role {role['metadata']['name']} reaches {r['resources']} on cilium.io"
+            assert set(r["verbs"]) <= {"get", "list", "create", "patch", "delete"}, f"{cid}: Role {role['metadata']['name']} grants {r['verbs']} on ciliumnetworkpolicies"
+        seen += 1
+        print(f"   ok revision read {cid}: Role {role['metadata']['name']} reads serving.knative.dev revisions, read-only; ciliumnetworkpolicies scoped")
+assert seen, "no cluster rendered an API Role in the models namespace"
+EOF5
 }
 
 check_tests() {

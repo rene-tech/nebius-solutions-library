@@ -4,6 +4,119 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.64, platform chart 0.1.7
+
+- Ingress isolation (docs/API.md "Ingress isolation"): `ingress_isolation: declared-ports` on an endpoint model renders a
+  namespaced `CiliumNetworkPolicy <id>-ingress` on that endpoint's pods admitting only the platform's data path (the
+  gateway and the Knative activator to the queue-proxy, or to the declared port of a multi-node leader), the node,
+  Prometheus and the replica group's own pods; a second port an engine binds on 0.0.0.0, and the container port itself,
+  are reachable from no other model, tenant or namespace. Opt-in: nothing changes for a model that does not name it;
+  egress is not touched. The platform chart gives both API Roles `ciliumnetworkpolicies` in `models` (check.sh invariant).
+- Native execution leases: a worker container that restarted inside the same pod (same UID) is a confirmed loss: the
+  restart count of the non-queue-proxy containers is recorded at attach (migration 18) and compared by the sweep;
+  `lost_reason` on the handle says why an execution was lost (pod gone | pod replaced | pod finished | worker container
+  restarted). A queue-proxy restart, readiness, a timeout or an unreadable API still never count.
+
+## jobs 0.1.22
+
+- Caller readiness (services/jobs/bin/call.sh): the gateway holds a readiness GET while a cold replica starts, so a probe
+  that ends without an answer only means "not yet"; the probes are now short (`READY_TIMEOUT` 30 s, was 120 s) with
+  pauses of 2 s doubling to `READY_BACKOFF_MAX` 10 s (was 5 s doubling to 320 s), so a ready replica is seen within about
+  40 s instead of minutes; bounded by `READY_MAX_WAIT` (default the call's timeout) of wall-clock time, past which the
+  call fails explicitly (exit 5) instead of running into the Job's deadline. The inference POST keeps its own backoff and
+  retry budget and is still made exactly once.
+
+## api 0.11.63, jobs 0.1.21
+
+- Work mount aliases (docs/JOBS.md "Work mount aliases"): `job.workMountAliases` / spec `work_mount_aliases`
+  `[{path, scope: attempt | run}]` mounts the run's own work volume at a canonical absolute path on `main` (and so on the
+  CPU finalizer, which sees the finalized attempt's directory); `scope: attempt` is a per-attempt subdirectory from the
+  pod's own name (`$(S2_POD_NAME)`, platform-owned, no caller interpolation), so retries and resumes never share a
+  canonical writable output. Reserved and overlapping paths refused, single-node runs only, no new storage, no host path,
+  no symlink. The fetch init container (jobs 0.1.21) creates the directories `2770` for the pod's fsGroup (tenant-private).
+- Attempt image digest, observed and convergent (docs/JOBS.md "Attempts and finalization"): the uploader (jobs 0.1.21)
+  waits, bounded, for the kubelet's `imageID` of main before its start record and republishes the start record once when
+  the digest appears later; the API fills a start record from the pod it reads and, at GET time, from the newest
+  attempt's live pod. `image_digest_state: observed | pending | unknown` on the operation says what a null means
+  (`pending` is transient). Never the expected image.
+- Native execution leases: a row an earlier caller only prepared (never attached) whose pod is gone or finished (exact
+  read) is closed as `caller replaced` when the replacement pod posts, so a preempted async caller's replacement is not
+  refused for the rest of the call; an attached row is never freed this way.
+
+## api 0.11.62
+
+- Durable terminal fence for native executions (docs/API.md "Native execution leases"): the join writes
+  `native_fences` in the transaction that decides the settlement, and the fence outlives the ledger release; prepare and
+  attach for any attempt of a fenced operation (seen before or never) are 409. Closes the gap in which a prepare of an
+  absent or new attempt could slip in between the join closing the prepared rows and the reservation release. Ledger
+  migration 17.
+- Lease clients (docs/API.md "Lease clients"): a model with `native_lease` gets a projected pod-bound ServiceAccount
+  token (audience `serverless2`, 1 h, kubelet-renewed) at `/var/run/secrets/serverless2/token` and the environment
+  `S2_API_URL`, `S2_LEASE_TOKEN_FILE`, `S2_LEASE_MODE`, `S2_LEASE_AUDIENCE` (and `S2_CA_PEM` on a fleet whose control
+  hostnames are not publicly signed), on both the Knative and the multi-node shapes; the apply shape is unchanged.
+  `sessions.token_audience` defaults to `serverless2` (the audience the projection uses).
+  `services/lease-client/s2lease.py`: the shared standard-library worker client (attach before GPU enqueue, fail
+  closed, same-tuple retries on transport errors only, cancel poll, release after settlement, owner context).
+
+## api 0.11.61, platform chart 0.1.6
+
+- Native execution leases (docs/API.md "Native execution leases"): an endpoint call's reservation outlives its CPU
+  caller and a cancel until the worker settled or its loss is confirmed. The hook prepares one native execution per
+  operation on the verified inference POST (a retry attempt's POST is refused while another attempt's execution is
+  prepared or attached); the worker attaches atomically before GPU enqueue (`POST /internal/executions/<op>:attach`,
+  pod-authenticated; stale attempt, other pod or no prepared execution: 409, fail closed), reads
+  `cancel_requested`, and releases after its own settlement with the wall-clock lane occupancy and the GPU seconds it
+  measured (null = unknown, never zero). The member settles at the JOIN of the caller's end and the execution's end
+  (billing), never first-one-wins; a lost worker (exact pod UID gone or terminated, nothing else) settles unknown.
+  `native_lease: optional | required` per endpoint model (`required`: a caller that ended unattached settles unknown).
+  Every attempt keeps its own row (evidence summed at the join, unknown stays unknown); attach is fenced atomically
+  against a closed row (the join closes a never-attached execution when the caller is over), a cancel before attach, a
+  released reservation, a stale attempt or another pod; release is exact to (attempt, pod, request id). The lease
+  routes answer with the operation's durable owner context (`owner: {tenant, owner, model}`): the trusted owner group
+  for a worker, never a client header.
+  The policy forwards the verified `x-serverless2-operation` / `x-serverless2-attempt` to the backend (empty on a
+  direct call; a client's values are overridden). Ledger migration 16 (`native_executions`). Handle `native`.
+- Rollout state: all three revision names must be present and equal for `converged` (an absent
+  `latestRolledoutRevision` is "not converged"), as the next revision after the frozen 0.11.60.
+
+## fleet chart 0.1.8
+
+- Every ClusterQueue covers `ephemeral-storage` (the kubelet's node-local scratch a run class may request since api
+  0.11.52, `ephemeral_storage`) with a budget per flavor from the pool's boot disk: per node `boot_disk_gib x
+  node_reserve.ephemeral_fraction (0.85) - node_reserve.ephemeral_gib (4)`, times the pool's nodes, lent and borrowed
+  like CPU and memory (the system flavor from the system nodes' fixed 128 GiB disk). Under what the kubelet reports
+  allocatable (a 128 GiB disk reports ~109.6 Gi, a 512 GiB one ~444.4 Gi; the budget is 104 / 431 Gi per node): a run
+  requesting scratch was `NoMatchingFlavor: resource ephemeral-storage unavailable in ClusterQueue`. Nothing is
+  provisioned or changed in the cloud; `tools/check.sh` asserts the coverage and a budget on every flavor.
+  A literal `ephemeral_gib = 0` or `ephemeral_fraction` is honoured as given (not treated as unset).
+
+## platform chart 0.1.5
+
+- The API reads Knative Revisions in the models namespace (`serving.knative.dev` revisions get/list) on every cluster:
+  the control API's own Role (`serverless2-api-endpoints`) and the regional agent's Role (`serverless2-api-agent-models`,
+  what the control API reaches a GPU region with). The latest ready Revision's stored image is the convergence proof of
+  an endpoint (api 0.11.60); without the rule the rollout state reports "not converged" with the Revision unknown.
+  `tools/check.sh` asserts both rendered Roles carry the read-only rule.
+
+## api 0.11.60
+
+- Rollout convergence is observed, never inferred from revision names (0.11.59 was never deployed): the
+  InferenceService's spec generation must be reconciled (`observed_generation`), the created, ready and rolled-out
+  revisions one, the latest ready Revision object's stored image equal to the spec's desired image (valid for a
+  scaled-to-zero immutable revision, no pod needed), and every ready pod on that image (by digest or reference);
+  `regions[].rollout` carries the evidence and a `reason` when not converged, which the convergence fence (409) names.
+
+## api 0.11.59
+
+- Run classes carry a sanitized `execution` identity on the public model (`image`, `immutable`, `images`,
+  `gpu_classes`, `nodes`, `delegates`, `retry`, `finalize`; never the container configuration) and a non-null
+  top-level `image` (docs/API.md "Execution identity and rollout state"): a key granted a class discovers it
+  without `spec` (restricted keys saw `image: null`, `spec: null`).
+- Endpoints report their rollout state (`regions[].rollout`: created, ready and rolled-out revisions, serving images,
+  `converged`); an endpoint call may require convergence (`execution.require_converged`: 409 while diverged, admitted
+  at zero when converged) and records the ready revision and image at admission (`endpoint_revision`,
+  `endpoint_image`), labelled as admission-time evidence.
+
 ## api 0.11.58
 
 - Billing prices a run pinned to its admitting cluster (a resume on the kept volume: region label `north`, a cluster

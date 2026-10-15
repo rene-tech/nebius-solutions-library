@@ -415,6 +415,12 @@ def _validate_variants(s: dict, kind: str) -> None:
         routing.setdefault("default", "priority")
 
 
+def _work_aliases(raw) -> list[dict]:
+    import jobs  # the render's own validation (jobs.work_aliases), at registration already
+
+    return [{"path": a["path"], "scope": a["scope"]} for a in jobs.work_aliases({"workMountAliases": raw})]
+
+
 def _retry_policy(r) -> dict:
     """`retry: {max_attempts 1..10, on_exit_codes [1..255] (default [137, 143])}` of a run class spec."""
     from schemas import RETRY_MAX_ATTEMPTS
@@ -519,6 +525,15 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
             runtime["envFrom"] = [{"secretRef": {"name": name}} for name in s["env_secrets"]]
         if s.get("health_path"):
             runtime["readinessProbe"] = {"path": s["health_path"], "port": port}
+        if s.get("native_lease"):
+            if s["native_lease"] not in ("optional", "required"):
+                raise HTTPException(400, "native_lease: optional | required")
+            runtime["nativeLease"] = s["native_lease"]
+        if s.get("ingress_isolation"):
+            # opt-in (docs/API.md "Ingress isolation"): nothing changes for an endpoint that does not name it
+            if s["ingress_isolation"] != "declared-ports":
+                raise HTTPException(400, "ingress_isolation: declared-ports")
+            runtime["ingressIsolation"] = s["ingress_isolation"]
         if s.get("pull_secret"):
             runtime["imagePullSecrets"] = [s["pull_secret"]]
         w = s.get("weights") or {}
@@ -636,6 +651,8 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
             "pvcSizeGi": int(s.get("disk_gi", 50)),
             "graceSeconds": int(s.get("grace_seconds", 300)),
             "scratch": s.get("scratch", "network"),
+            # canonical aliases of the work volume (docs/JOBS.md "Work mount aliases"): operator-owned, validated here
+            **({"workMountAliases": _work_aliases(s["work_mount_aliases"])} if s.get("work_mount_aliases") else {}),
             "env": dict(s.get("env") or {}),
             "envFrom": [{"secretRef": {"name": name}} for name in s.get("env_secrets", [])],
             # per-GPU-class images (docs/SCHEDULING.md "Per-GPU images for runs"): the class chosen at submission picks one
@@ -718,6 +735,8 @@ PLURALS = {
     # multi-node endpoints (runtime.nodes > 1): the replica group, its leader Service's route to the gateway
     "LeaderWorkerSet": kube.LWS,
     "HTTPRoute": ("gateway.networking.k8s.io", "v1", "httproutes"),
+    # opt-in declared-port ingress isolation of an endpoint's pods (docs/API.md "Ingress isolation")
+    "CiliumNetworkPolicy": ("cilium.io", "v2", "ciliumnetworkpolicies"),
 }
 
 

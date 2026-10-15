@@ -21,7 +21,13 @@ import copy
 
 from fastapi import HTTPException
 
-from config import IMAGES_HOST, LABEL
+from config import IMAGES_HOST, LABEL, PUBLIC_API_URL, SESSION_TOKEN_AUDIENCE
+
+# Lease clients (docs/API.md "Native execution leases", "Lease clients"): what an endpoint pod that attaches to its
+# calls' native executions gets from the platform: a projected ServiceAccount token bound to the pod (audience
+# LEASE_AUDIENCE, the one the API's TokenReview expects), the control API's URL, and the files' paths as env.
+LEASE_DIR = "/var/run/secrets/serverless2"
+LEASE_AUDIENCE = SESSION_TOKEN_AUDIENCE or "serverless2"
 
 POOL_LABEL = f"{LABEL}/pool"
 MODELS_NAMESPACE_DEFAULT = "models"
@@ -70,6 +76,8 @@ DEFAULTS: dict = {
     "shm": {"enabled": True, "size": "1Gi"},
     "volumes": [],
     "persistentVolumes": [],
+    "nativeLease": "",  # optional | required: the pod gets the lease client's token and env (docs/API.md)
+    "ingressIsolation": "",  # declared-ports: a CiliumNetworkPolicy admits only the data path into the pod (docs/API.md)
     "readinessProbe": {},
     "livenessProbe": {},
     "securityContext": {},
@@ -297,6 +305,8 @@ def _volume_mounts(v: dict) -> list[dict]:
         )
     for x in (v.get("volumes") or []) + (v.get("persistentVolumes") or []):
         out.append({"name": x.get("name"), "mountPath": x.get("mountPath")})
+    if v.get("nativeLease"):
+        out.append({"name": "s2-lease", "mountPath": LEASE_DIR, "readOnly": True})
     return out
 
 
@@ -317,7 +327,49 @@ def _volumes(v: dict) -> list[dict]:
         out.append({"name": x.get("name"), "emptyDir": empty})
     for x in v.get("persistentVolumes") or []:
         out.append({"name": x.get("name"), "persistentVolumeClaim": {"claimName": f"{v['name']}-{x.get('name')}"}})
+    if v.get("nativeLease"):
+        # the lease client's identity: a token bound to this pod (TokenReview reports the pod's name and UID), audience
+        # LEASE_AUDIENCE, renewed by the kubelet; readable by the container as a file, never in the environment
+        out.append(
+            {
+                "name": "s2-lease",
+                "projected": {
+                    "sources": [
+                        {
+                            "serviceAccountToken": {
+                                "path": "token",
+                                "audience": LEASE_AUDIENCE,
+                                "expirationSeconds": 3600,
+                            }
+                        }
+                    ]
+                },
+            }
+        )
     return out
+
+
+def _lease_env(v: dict) -> list[dict]:
+    """The lease client's environment (docs/API.md "Lease clients"): the control API, the token file, the mode."""
+    if not v.get("nativeLease"):
+        return []
+    out = [
+        {"name": "S2_API_URL", "value": PUBLIC_API_URL},
+        {"name": "S2_LEASE_TOKEN_FILE", "value": f"{LEASE_DIR}/token"},
+        {"name": "S2_LEASE_MODE", "value": str(v["nativeLease"])},
+        {"name": "S2_LEASE_AUDIENCE", "value": LEASE_AUDIENCE},
+    ]
+    if pem := trust_bundle():
+        # the fleet's CA bundle (public material only) when the control hostnames are not publicly signed: the same
+        # bundle the async caller gets (jobs.trust_bundle), as a value, no extra object in the apply shape
+        out.append({"name": "S2_CA_PEM", "value": pem})
+    return out
+
+
+def trust_bundle() -> str | None:
+    from jobs import trust_bundle as _bundle  # the async caller's projection (import here: jobs imports this module)
+
+    return _bundle()
 
 
 def _weights_prepare(v: dict) -> list[dict]:
@@ -413,9 +465,9 @@ def _inferenceservice(v: dict) -> dict:
         c["args"] = list(v["args"])
     if v.get("workingDir"):
         c["workingDir"] = v["workingDir"]
-    wenv = _weights_env(v)
-    if v.get("env") or wenv:
-        c["env"] = list(v.get("env") or []) + wenv
+    wenv, lenv = _weights_env(v), _lease_env(v)
+    if v.get("env") or wenv or lenv:
+        c["env"] = list(v.get("env") or []) + wenv + lenv
     if v.get("envFrom"):
         c["envFrom"] = list(v["envFrom"])
     c["ports"] = [{"containerPort": v.get("port"), "protocol": "TCP"}]
@@ -479,7 +531,7 @@ def _lws_container(v: dict, nodes: int, ib: int, leader: bool, command) -> dict:
     # the model's own entries win over the platform defaults (one entry per name: server-side apply refuses duplicates)
     own = list(v.get("env") or []) + _weights_env(v)
     taken = {e.get("name") for e in own}
-    c["env"] = [e for e in env if e.get("name") not in taken] + own
+    c["env"] = [e for e in env if e.get("name") not in taken] + own + _lease_env(v)
     if v.get("envFrom"):
         c["envFrom"] = list(v["envFrom"])
     c["ports"] = [{"containerPort": v.get("port"), "protocol": "TCP"}]
@@ -613,6 +665,79 @@ def _leaderworkerset(v: dict, nodes: int) -> list[dict]:
     return [lws, service, route]
 
 
+# Knative's data path into an endpoint pod is the queue-proxy: 8012 (http1) and 8112 (h2c) carry every request the
+# gateway or the activator sends (the user container is reached over localhost only); 9090 is the queue-proxy's
+# autoscaler metrics, 9091 the user metrics it proxies (PodMonitor `knative-queue-proxy`); 8022 (drain) is called by the
+# kubelet (host entity). A multi-node endpoint has no queue-proxy: its leader Service targets the declared port.
+QUEUE_PROXY_DATA = ("8012", "8112")
+QUEUE_PROXY_METRICS = ("9090", "9091")
+
+
+def _tcp(ports) -> list[dict]:
+    return [{"ports": [{"port": str(p), "protocol": "TCP"} for p in ports]}]
+
+
+def _ingress_policy(v: dict, nodes: int) -> dict:
+    """`ingress_isolation: declared-ports` (docs/API.md "Ingress isolation"): a namespaced CiliumNetworkPolicy on this
+    endpoint's pods that admits only the platform's own data path on the declared ports (the gateway and the Knative
+    activator to the queue-proxy, or to the container port of a multi-node leader), the node (kubelet probes, drain),
+    Prometheus to the metrics ports, and the replica group's own pods (multi-node). Every other ingress is dropped: a
+    second port an engine binds on 0.0.0.0 (a NIM on 9000 behind a wrapper on 8080), the container port itself, from
+    any other model, tenant or namespace. Egress is not touched (the lease client's path stays). Cilium policies are
+    allow-lists that add up: this one widens nothing anywhere else."""
+    name, ns = v["name"], v["namespace"]
+    multi = nodes > 1
+    data = [str(v.get("port"))] if multi else list(QUEUE_PROXY_DATA)
+    metrics = [str(v.get("port"))] if multi else list(QUEUE_PROXY_METRICS)
+    selector = (
+        {"matchLabels": {f"{LABEL}/model": name}}
+        if multi
+        else {"matchLabels": {"serving.kserve.io/inferenceservice": name}}
+    )
+    ingress = [
+        {
+            "fromEntities": ["host", "remote-node"]
+        },  # kubelet probes and the queue-proxy drain (:8022), node-local traffic
+        {
+            "fromEndpoints": [{"matchLabels": {"io.kubernetes.pod.namespace": "envoy-gateway-system"}}],
+            "toPorts": _tcp(data),
+        },
+    ]
+    if not multi:
+        ingress.append(  # the activator (scale from zero, burst) and the autoscaler's queue-proxy scrape
+            {
+                "fromEndpoints": [{"matchLabels": {"io.kubernetes.pod.namespace": "knative-serving"}}],
+                "toPorts": _tcp(data + ["9090"]),
+            }
+        )
+    ingress.append(
+        {
+            "fromEndpoints": [
+                {"matchLabels": {"io.kubernetes.pod.namespace": "monitoring", "app.kubernetes.io/name": "prometheus"}}
+            ],
+            "toPorts": _tcp(metrics),
+        }
+    )
+    if multi:
+        ingress.append(  # the group's own pods (NCCL, the engine's own ports): every port, nothing else selects them
+            {
+                "fromEndpoints": [
+                    {"matchLabels": {"io.kubernetes.pod.namespace": ns, "leaderworkerset.sigs.k8s.io/name": name}}
+                ]
+            }
+        )
+    return {
+        "apiVersion": "cilium.io/v2",
+        "kind": "CiliumNetworkPolicy",
+        "metadata": {"name": f"{name}-ingress", "namespace": ns, "labels": _labels(v)},
+        "spec": {
+            "description": f"{name}: only the platform's data path on the declared ports reaches the endpoint's pods",
+            "endpointSelector": selector,
+            "ingress": ingress,
+        },
+    }
+
+
 def _securitypolicy(v: dict, api_backend: bool = False) -> dict:
     """The gateway's authorization of the endpoint's external routes through the API's authorizer."""
     name = v["name"]
@@ -657,6 +782,8 @@ def _securitypolicy(v: dict, api_backend: bool = False) -> dict:
                         "x-serverless2-key-alias",
                         "x-serverless2-session",  # set by the hook on a bound session (overrides anything a client sent)
                         "x-serverless2-connection",
+                        "x-serverless2-operation",  # the verified admitted operation and attempt (empty on a direct call):
+                        "x-serverless2-attempt",  # the worker attaches its native execution to them (docs/API.md)
                     ],
                 },
             },
@@ -715,6 +842,10 @@ def render(
     docs = [_securitypolicy(v, api_backend)]
     docs += [_inferenceservice(v)] if nodes <= 1 else _leaderworkerset(v, nodes)
     docs += _localmodelcache(v) + _pvcs(v)
+    if v.get("ingressIsolation"):
+        if str(v["ingressIsolation"]) != "declared-ports":
+            raise _fail("ingress_isolation: declared-ports is the only mode", v["name"])
+        docs.append(_ingress_policy(v, nodes))
     return sorted(
         docs,
         key=lambda d: (KIND_ORDER.get(d["kind"], len(KIND_ORDER)), d["kind"] if d["kind"] not in KIND_ORDER else ""),

@@ -254,6 +254,47 @@ create table if not exists operation_marks (
     """
     alter table run_graphs add column if not exists models jsonb not null default '{}'::jsonb;
     """,
+    # 16: native execution leases (docs/API.md "Native execution leases"): the worker side of one admitted endpoint
+    # call, so the operation's reservation outlives the CPU caller until the worker settled or its loss is confirmed
+    """
+    create table if not exists native_executions (
+        operation           text not null,
+        attempt             text not null,
+        state               text not null default 'prepared',
+        pod                 text,
+        pod_namespace       text,
+        pod_uid             text,
+        worker_request_id   text,
+        region              text not null,
+        model               text not null,
+        prepared_at         timestamptz not null default now(),
+        attached_at         timestamptz,
+        released_at         timestamptz,
+        outcome             text,
+        gpu_seconds         numeric,
+        lane_seconds        numeric,
+        cancel_requested_at timestamptz,
+        cancel_reason       text,
+        settled_at          timestamptz,
+        primary key (operation, attempt)
+    );
+    create index if not exists native_executions_attached on native_executions (state) where state = 'attached';
+    """,
+    # 17: the durable terminal fence of an operation's native executions: written by the join in the transaction that
+    # decides the settlement, before the ledger releases; prepare and attach refuse everything after it
+    """
+    create table if not exists native_fences (
+        operation text primary key,
+        closed_at timestamptz not null default now(),
+        reason    text
+    );
+    """,
+    # 18: the worker container's restart count at attach (a restart within the same pod loses the worker's state: a
+    # confirmed loss, like a gone pod) and why an execution was lost
+    """
+    alter table native_executions add column if not exists restart_count integer;
+    alter table native_executions add column if not exists lost_reason text;
+    """,
 ]
 
 _pool = None

@@ -118,6 +118,7 @@ class ExecutionSpec(BaseModel):
     graph: GraphSpec | None = None
     stage: StageSpec | None = None
     retry: RetrySpec | None = None  # docs/JOBS.md "Retries": overrides the run class's own policy
+    require_converged: bool | None = None  # endpoint calls: refused while the endpoint's rollout is not converged
 
 
 class BindingRequest(BaseModel):
@@ -386,12 +387,21 @@ class ModelSpec(BaseModel):
     delegates: SkipValidation[list[str] | None] = (
         None  # run classes a graph of this root may bind stages to (operator-owned)
     )
+    native_lease: SkipValidation[Literal["optional", "required"] | None] = (
+        None  # endpoints: whether the worker must attach to each call's native execution (docs/API.md)
+    )
+    ingress_isolation: SkipValidation[Literal["declared-ports"] | None] = (
+        None  # endpoints: a CiliumNetworkPolicy admits only the platform's data path into the pods (docs/API.md)
+    )
     retry: SkipValidation[dict[str, Any] | None] = (
         None  # {max_attempts, on_exit_codes}: the class's policy (docs/JOBS.md "Retries")
     )
     disk_gi: SkipValidation[int | None] = None
     grace_seconds: SkipValidation[int | None] = None
     scratch: SkipValidation[Literal["network", "local-nvme"] | None] = None
+    work_mount_aliases: SkipValidation[list[dict[str, str]] | None] = (
+        None  # [{path: /abs/canonical, scope: attempt | run}]: the work volume at a canonical path (docs/JOBS.md "Work mount aliases")
+    )
     parameters: SkipValidation[list[dict[str, Any]] | None] = None
     finalize: SkipValidation[FinalizeSpec | None] = None
 
@@ -417,6 +427,7 @@ class ModelRegion(BaseModel):
     started_at: str | None = None
     ready_at: str | None = None
     last_request_at: str | None = None
+    rollout: ModelRollout | None = None
 
 
 class ModelParameter(BaseModel):
@@ -427,6 +438,43 @@ class ModelParameter(BaseModel):
     options: list[str] | None = None
     required: bool | None = None
     help: str | None = None
+
+
+class ModelExecution(BaseModel):
+    """The public execution identity of a run class (docs/API.md "Models"): what a caller may know without the
+    container configuration (`spec` stays fleet administrators'): the image reference as registered, whether it is
+    digest-pinned, per-GPU-class images, the classes, the node count, the operator-approved delegate class ids
+    (no grant implied), the bounded retry policy, whether a finalizer exists."""
+
+    image: str | None = None
+    immutable: bool = False
+    images: dict[str, str] | None = None
+    gpu_classes: list[str] | None = None
+    nodes: int | None = None
+    delegates: list[str] | None = None
+    retry: dict[str, Any] | None = None
+    finalize: bool = False
+
+
+class ModelRollout(BaseModel):
+    """An endpoint's revision state (docs/API.md "Models"): Knative routes to the latest *ready* revision, so a spec
+    change serves the previous revision until the new one is ready; `converged` = the created, ready and rolled-out
+    revisions are one (a property of the revisions, true for a converged endpoint at zero), `serving_images` what the
+    ready pods run."""
+
+    latest_created: str | None = None
+    latest_ready: str | None = None
+    latest_rolled_out: str | None = None
+    generation: int | None = None  # the InferenceService's spec generation and what the controller reconciled
+    observed_generation: int | None = None
+    desired_image: str | None = (
+        None  # the spec's image; `revision_image` the ready Revision's (stored template evidence)
+    )
+    revision_image: str | None = None
+    revision_image_digest: str | None = None
+    serving_images: list[str] | None = None
+    converged: bool | None = None  # reconciled + one revision + revision image == desired + ready pods on it
+    reason: str | None = None  # why not converged
 
 
 class Model(BaseModel):
@@ -449,6 +497,9 @@ class Model(BaseModel):
     spec: ModelSpec | None = None
     example: dict[str, Any] | None = None
     parameters: list[ModelParameter] | None = None
+    execution: ModelExecution | None = None  # run classes: the sanitized execution identity
+    native_lease: Literal["optional", "required"] | None = None  # endpoints: docs/API.md "Native execution leases"
+    ingress_isolation: Literal["declared-ports"] | None = None  # endpoints: docs/API.md "Ingress isolation"
 
 
 class SyncResponse(BaseModel):
@@ -471,7 +522,7 @@ class Attempt(BaseModel):
     export_state: ExportState | None = None
     result_ref: str | None = None
     checkpoint_ref: str | None = None
-    image_digest: str | None = None
+    image_digest: str | None = None  # the runtime digest observed on the pod, or the record's
     operation: str | None = None
     image: str | None = None
     gpu_seconds: float | None = None
@@ -487,6 +538,38 @@ class ChainMember(BaseModel):
     gpu_seconds: float | None = None
     gpu_seconds_complete: bool | None = None
     cost: float | None = None
+
+
+class NativeExecution(BaseModel):
+    state: Literal["prepared", "attached", "released", "lost", "closed"] | None = None
+    attempt: str | None = None
+    worker_request_id: str | None = None
+    prepared_at: str | None = None
+    attached_at: str | None = None
+    released_at: str | None = None
+    outcome: str | None = None
+    lane_seconds: float | None = None  # wall-clock occupancy of the worker's lane (attached -> released/lost)
+    gpu_seconds: float | None = None  # only what the worker measured; null = unknown, never zero
+    cancel_requested: bool | None = None
+    settled: bool | None = None
+    attempts: list[dict[str, Any]] | None = None  # every attempt's evidence, oldest first
+    lost_reason: str | None = (
+        None  # why the reconciler marked it lost: pod gone | pod replaced | pod finished | worker container restarted (...)
+    )
+
+
+class NativeAttach(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attempt: str
+    worker_request_id: str | None = Field(default=None, max_length=200)
+
+
+class NativeRelease(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attempt: str
+    worker_request_id: str | None = Field(default=None, max_length=200)  # the same tuple the worker attached with
+    outcome: Literal["done", "cancelled", "error", "disconnected"]
+    gpu_seconds: float | None = Field(default=None, ge=0)
 
 
 class GraphStage(BaseModel):
@@ -558,11 +641,17 @@ class Operation(BaseModel):
     export_state: ExportState | None = None
     exported_by: str | None = None
     exported_by_attempt_id: str | None = None  # the delivering attempt (an export retry or finalizer that delivered)
+    endpoint_revision: str | None = None  # an endpoint call: the ready revision at admission (not per-request proof)
+    endpoint_image: str | None = None
+    native: NativeExecution | None = None  # an endpoint call's native execution lease (docs/API.md)
     exported_by_epoch: int | None = None
     result_ref: str | None = None
     checkpoint_ref: str | None = None
     checkpoint_generation: int | None = None
     image_digest: str | None = None
+    image_digest_state: Literal["observed", "pending", "unknown"] | None = (
+        None  # observed = exact runtime digest; pending = the attempt runs, the kubelet has not reported it yet (transient); unknown = ended without one
+    )
     finalize_attempts: int | None = None
     finalizing_by: str | None = None
 
