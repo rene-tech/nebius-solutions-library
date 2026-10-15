@@ -1351,3 +1351,248 @@ def test_a_control_api_binds_the_child_where_it_delivers_and_the_copy_lands_in_t
     assert len([k for k in north.jobs if k[1].startswith(f"{op}-c-")]) == 1
     assert len([k for k in control.secrets if k[1].startswith("binding-")]) == 1
     assert c.get(f"/v1/operations/{op}/children/u1", headers=H).status_code == 200
+
+
+def test_a_parent_only_grant_reaches_exactly_its_live_child_and_nothing_else(rig, monkeypatch):
+    """The LeRobot shape (2026-10-14): the key is granted the parent run class only (`models: [lerobot-worker]`,
+    scopes `run:submit` + `invoke:async`, never the child endpoint). The child's caller, with the operation-scoped
+    credential, probes readiness and posts its one inference on exactly its child, model and live attempt (the
+    delegation is the run class's frozen `child_endpoints`, proven at admission); the key itself still cannot call
+    the child endpoint directly, and the credential is refused for another model, another unit, another attempt, a
+    cancelled child and a settled one. No owner grant is widened."""
+    c, fake, op, identity = rig
+    with db.pool().connection() as conn, conn.transaction():
+        conn.execute(
+            "update keys set models = %s::jsonb, scopes = %s::jsonb where hash = %s",
+            (json.dumps(["lerobot-worker"]), json.dumps(["run:submit", "invoke:async"]), keys.key_hash("sk-good")),
+        )
+    import auth
+    import leases
+
+    monkeypatch.setattr(auth, "key_info", lambda key: _parent_only_info(key))
+    r = _post(c, op, "u1")
+    assert r.status_code == 201, r.text
+    child = r.json()["child"]
+    other = children.child_id(op, "u2")  # one child at a time: another unit's id never holds a reservation
+    secret = fake.secrets[(NS, f"{child}-auth")]["stringData"]
+    caller = pod(child, "Running")
+    caller["metadata"]["labels"][f"{LABEL}/mode"] = "async"
+    fake.pods.append(caller)
+    api._admission_cache.clear()
+    hdr = {
+        "Authorization": secret["authorization"],
+        "x-serverless2-admitted": secret["admitted"],
+        "x-serverless2-operation": child,
+        "x-serverless2-attempt": caller["metadata"]["name"],
+    }
+    monkeypatch.setattr(api, "_endpoint_model", lambda eid: catalog.get("cosmos-nano"))
+    monkeypatch.setattr(leases, "prepare", lambda operation, attempt, region, model, caller_gone=None: None)
+    # the key itself: the parent class only; a direct call to the child endpoint is refused
+    r = c.get("/internal/authorize/cosmos-nano/v1/health/ready", headers=H)
+    assert r.status_code == 403 and "not allowed to use model" in r.text, r.text
+    # the delegated caller: readiness and the inference POST on exactly its child/model/attempt
+    r = c.get("/internal/authorize/cosmos-nano/v1/health/ready", headers=hdr)
+    assert r.status_code == 200 and r.headers["x-serverless2-operation"] == child, r.text
+    r = c.post("/internal/authorize/cosmos-nano/generate", headers=hdr)
+    assert r.status_code == 200 and r.headers["x-serverless2-attempt"] == caller["metadata"]["name"], r.text
+    # another model with the same credential (the parent class is a run, cosmos-big another endpoint): refused
+    monkeypatch.setattr(api, "_endpoint_model", lambda eid: catalog.get(eid))
+    assert c.post("/internal/authorize/lerobot-worker/generate", headers=hdr).status_code in (401, 403, 404)
+    assert c.post("/internal/authorize/cosmos-big/generate", headers=hdr).status_code in (401, 403)
+    monkeypatch.setattr(api, "_endpoint_model", lambda eid: catalog.get("cosmos-nano"))
+    # another unit's child, another attempt: refused (the proof is per child and live pod)
+    api._admission_cache.clear()
+    assert (
+        c.get(
+            "/internal/authorize/cosmos-nano/v1/health/ready", headers={**hdr, "x-serverless2-operation": other}
+        ).status_code
+        == 401
+    )
+    # a stale/unknown attempt is not a proof: the call falls back to the key's own grant, which has no cosmos-nano (403)
+    assert c.get(
+        "/internal/authorize/cosmos-nano/v1/health/ready", headers={**hdr, "x-serverless2-attempt": f"{child}-zzzzz"}
+    ).status_code in (401, 403)
+    # cancelled (the owner's cancel needs run:control; the model grant stays the parent class): the credential dies
+    # with the cascade; settled: nothing left
+    monkeypatch.setattr(auth, "key_info", lambda key: _parent_only_info(key, control=True))
+    assert c.post(f"/v1/operations/{op}:cancel", headers=H).status_code == 200
+    api._admission_cache.clear()
+    assert c.get("/internal/authorize/cosmos-nano/v1/health/ready", headers=hdr).status_code != 200
+    keys.release(child, 0.0)
+    keys.release(op, 0.0)
+    api._admission_cache.clear()
+    assert c.get("/internal/authorize/cosmos-nano/v1/health/ready", headers=hdr).status_code == 401
+
+
+async def _parent_only_info(key, control=False):
+    """The auth layer's view of the parent-only customer key (the rig's `sk-good` with the narrowed grant)."""
+    from fastapi import HTTPException
+
+    from test_api import KEY_INFO
+
+    if key != "sk-good":
+        raise HTTPException(401, "invalid API key")
+    return {
+        **KEY_INFO,
+        "models": ["lerobot-worker"],
+        "scopes": ["run:submit", "invoke:async"] + (["run:control"] if control else []),
+        "max_budget": None,
+    }  # the rig's principal otherwise (the parent run is its own)
+
+
+def test_a_unit_whose_child_ended_undelivered_is_retried_by_the_next_continuation(rig, monkeypatch):
+    """Unit retry (api 0.11.107, migration 28; the first live LeRobot chain, 2026-10-14): the parent fails, the cascade
+    cancels its child before any inference (readiness refused), the row ends `cancelled: parent ... finished without a
+    successor`; an hour later the owner resumes the root. The resumed parent's live attempt asks for the SAME unit and
+    bound request: before, the API replayed the ended row (200, no capture, no way to run the unit again under that
+    root); now the unit reopens as incarnation 2 (`<child>-r2`: a new Job, binding and ledger member), the earlier
+    child's Job stays as history, the readback names the lineage. An ended unit WITH a capture stays final (replay,
+    never a second inference); a different request is 409; one open child per root as before."""
+    c, fake, op, identity = rig
+    child = _post(c, op, "u1").json()["child"]
+    # the parent finishes without a successor: the cascade cancels the child, its member settles, the row ends
+    fake.jobs[(NS, op)]["status"] = {"conditions": [{"type": "Complete", "status": "True"}]}
+    assert children.sweep() == [f"{child}:cancelled"]
+    keys.release(child, None)
+    children.sweep()
+    rb = children.readback(NS, op, "u1")
+    assert rb["state"] == "ended" and "finished without a successor" in rb["reason"] and rb["capture"] is None
+    assert rb["incarnation"] == 1 and rb["previous_child"] is None and rb["can_retry"] is True
+    # a continuation of the same root with a live attempt asks for the same unit: the unit reopens as incarnation 2
+    succ = json.loads(json.dumps(fake.jobs[(NS, op)]))
+    succ["status"] = {"startTime": "2026-10-14T18:37:13Z"}
+    succ["metadata"]["name"] = f"{op}-r1"
+    succ["metadata"]["annotations"][f"{LABEL}/resumed-from"] = op
+    fake.jobs[(NS, f"{op}-r1")] = succ
+    fake.jobs[(NS, op)]["metadata"]["annotations"][f"{LABEL}/successor"] = f"{op}-r1"
+    sp = pod(f"{op}-r1", "Running")
+    sp["metadata"]["uid"] = "uid-parent-r1"
+    fake.pods.append(sp)
+    monkeypatch.setattr(
+        children,
+        "verify_parent_token",
+        lambda token: {**identity, "pod": sp["metadata"]["name"], "uid": "uid-parent-r1"},
+    )
+    # without the explicit retry: the ended unit replays as before (the truth, no reopen); the retry is opt-in
+    r0 = _post(c, f"{op}-r1", "u1")
+    assert r0.status_code == 200 and r0.json()["child"] == child and r0.json()["state"] == "ended"
+    r = _post(c, f"{op}-r1", "u1", retry=True)
+    assert r.status_code == 201, r.text
+    new = r.json()
+    assert new["child"] == f"{child}-r2" and new["incarnation"] == 2 and new["previous_child"] == child
+    assert new["parent"] == f"{op}-r1" and new["state"] == "active" and new["reason"] is None
+    # the earlier child never started here, so its cancel deleted its Job (a started one stays as history, as live)
+    assert (NS, child) not in fake.jobs and (NS, f"{child}-r2") in fake.jobs
+    m = keys.member_of(f"{child}-r2")
+    assert m["kind"] == "child" and m["state"] == "active" and m["stage"] == "u1"
+    assert (NS, f"binding-{child}-r2") in fake.secrets and (NS, f"{child}-r2-auth") in fake.secrets
+    # replay by the same live parent: the same child, never a third; a different request: 409; another unit: 409
+    r2 = _post(c, f"{op}-r1", "u1")
+    assert r2.status_code == 200 and r2.json()["child"] == f"{child}-r2"
+    assert _post(c, f"{op}-r1", "u1", {"prompt": "other"}).status_code == 409
+    assert _post(c, f"{op}-r1", "u2").status_code == 409
+    assert [k[1] for k in fake.jobs if k[1].startswith(f"{child}")] == [f"{child}-r2"]
+    # the owner reads the unit's current child and its lineage through either handle
+    o = c.get(f"/v1/operations/{op}/children/u1", headers=H).json()
+    assert o["child"] == f"{child}-r2" and o["previous_child"] == child and o["incarnation"] == 2
+    assert c.get(f"/v1/operations/{op}-r1/children/u1", headers=H).json()["child"] == f"{child}-r2"
+    # a delivered unit is final: the retry delivers its capture and ends; the same request replays, no -r3
+    fake.bucket[f"operations/{child}-r2/call.json"] = {
+        "capture_complete": True,
+        "sha256": "ab" * 32,
+        "content_type": "video/mp4",
+        "size_bytes": 3,
+        "http_status": 200,
+    }
+    _finish(fake, f"{child}-r2")
+    keys.release(f"{child}-r2", 0.0)
+    children.sweep()
+    rb = children.readback(NS, op, "u1")
+    assert rb["state"] == "ended" and rb["capture"] is not None and rb["can_retry"] is False
+    r3 = _post(c, f"{op}-r1", "u1")
+    assert r3.status_code == 200 and r3.json()["child"] == f"{child}-r2" and r3.json()["incarnation"] == 2
+    r4 = _post(c, f"{op}-r1", "u1", retry=True)
+    assert r4.status_code == 409 and "infers once" in r4.text
+    assert (NS, f"{child}-r3") not in fake.jobs
+
+
+def test_a_unit_retry_is_refused_for_the_same_parent_and_for_an_outcome_unknown_child(rig, monkeypatch):
+    """The retry is for a LATER parent of the root only (the parent that owned the ended child cannot retry its own
+    unit), and never for a child whose inference was posted with an unknown outcome (call.sh exit 4): that unit stays
+    `undelivered` for the application's own recovery, never a second inference."""
+    import attempts
+
+    c, fake, op, identity = rig
+    child = _post(c, op, "u1").json()["child"]
+    children._end(op, "u1", "test: ended without a capture")
+    keys.release(child, None)
+    # the same parent (still live) asking with retry: refused; without retry: the ended row replays
+    r = _post(c, op, "u1", retry=True)
+    assert r.status_code == 409 and "later continuation" in r.text
+    assert _post(c, op, "u1").status_code == 200
+    # a later continuation, but the child's last attempt posted its inference and lost the answer (exit 4): refused
+    succ = json.loads(json.dumps(fake.jobs[(NS, op)]))
+    succ["status"] = {"startTime": "2026-10-14T18:37:13Z"}
+    succ["metadata"]["name"] = f"{op}-r1"
+    succ["metadata"]["annotations"][f"{LABEL}/resumed-from"] = op
+    fake.jobs[(NS, f"{op}-r1")] = succ
+    sp = pod(f"{op}-r1", "Running")
+    sp["metadata"]["uid"] = "uid-parent-r1"
+    fake.pods.append(sp)
+    monkeypatch.setattr(
+        children,
+        "verify_parent_token",
+        lambda token: {**identity, "pod": sp["metadata"]["name"], "uid": "uid-parent-r1"},
+    )
+    monkeypatch.setattr(attempts, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "_marks", lambda operation: None)
+    monkeypatch.setattr(
+        attempts,
+        "for_operation",
+        lambda root: [{"operation": child, "root": child, "status": "failed", "exit_code": 4, "capture": None}]
+        if root == child
+        else [],
+    )
+    assert children.readback(NS, op, "u1")["can_retry"] is False  # exit 4: the readback says so first
+    r = _post(c, f"{op}-r1", "u1", retry=True)
+    assert r.status_code == 409 and "outcome" in r.text and "unknown" in r.text
+    assert (NS, f"{child}-r2") not in fake.jobs
+    # exit 3 (transfer-only, nothing captured) and a 4xx answer with its manifest (exit 2 + capture): not retried
+    for rec in (
+        {"operation": child, "root": child, "status": "failed", "exit_code": 3, "capture": None},
+        {"operation": child, "root": child, "status": "failed", "exit_code": 2, "capture": {"http_status": 422}},
+    ):
+        monkeypatch.setattr(attempts, "for_operation", lambda root, _r=rec: [_r] if root == child else [])
+        assert children.readback(NS, op, "u1")["can_retry"] is False
+        assert _post(c, f"{op}-r1", "u1", retry=True).status_code == 409
+    # an earlier unknown outcome is never erased by a later pre-inference exit (an export retry refused at its input
+    # refresh ends 2 after the first attempt posted and lost the answer): the whole history decides
+    for history in (
+        [{"exit_code": 4, "capture": None}, {"exit_code": 2, "capture": None}],
+        [{"exit_code": 2, "capture": {"http_status": 422}}, {"exit_code": 2, "capture": None}],
+        [{"exit_code": 2, "capture": None}, {"exit_code": None, "capture": None, "status": "started"}],
+    ):
+        recs = [{"operation": child, "root": child, "status": "failed", **h} for h in history]
+        monkeypatch.setattr(attempts, "for_operation", lambda root, _r=recs: _r if root == child else [])
+        assert children.readback(NS, op, "u1")["can_retry"] is False, history
+        assert _post(c, f"{op}-r1", "u1", retry=True).status_code == 409
+    assert children._never_inferred([]) is True
+    assert children._never_inferred([{"exit_code": 2, "capture": None}, {"exit_code": 2, "capture": None}]) is True
+    # exit 2 (refused before its inference) with no capture: can_retry, retried
+    monkeypatch.setattr(
+        attempts,
+        "for_operation",
+        lambda root: [{"operation": child, "root": child, "status": "failed", "exit_code": 2, "capture": None}]
+        if root == child
+        else [],
+    )
+    assert children.readback(NS, op, "u1")["can_retry"] is True
+    monkeypatch.setattr(
+        attempts,
+        "for_operation",
+        lambda root: [{"operation": child, "root": child, "status": "failed", "exit_code": 2, "capture": None}]
+        if root == child
+        else [],
+    )
+    r = _post(c, f"{op}-r1", "u1", retry=True)
+    assert r.status_code == 201 and r.json()["child"] == f"{child}-r2", r.text

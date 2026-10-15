@@ -578,7 +578,9 @@ render of the class: no `nodes`, no GPU, no fabric, a small `/work` claim of its
 subPath mounted where every rank had it (`/work/checkpoint`, `CHECKPOINT_DIR`), the coordinator's record as the finalized
 attempt (`FINALIZE_OF` = the rank-0 pod of the newest incarnation, `FINALIZE_EPOCH`, `FINALIZE_RANK=0`,
 `FINALIZE_GANG_RESTART`, `FINALIZE_NODES`); the delivery verdict is the coordinator's exit code, never a peer's teardown
-exit. The GPU gang is never rendered again for a delivery.
+exit. The GPU gang is never rendered again for a delivery. The finalizer's image is the finalized attempt's recorded
+digest when on record, else the image of the class the gang was admitted on (a class with per-class `job.images` keeps
+that image; the per-class map itself is dropped with the other compute-only keys).
 
 `POST /v1/operations/<id>:export` (the existing verb) is then accepted for a FAILED application run whose newest
 attempt ended with one of those exit codes and whose volume is kept: `<root>-x<n>` is rendered on the same
@@ -658,7 +660,10 @@ copy on the worker carries the pods. What differs from the regional path:
   the region its Workload was admitted in (`cost` and `gpu_seconds` on the operation; `usage` says what they
   mean: `measured`, `unknown` (settled without a trustworthy measurement, e.g. a native call whose worker released
   with no metering: `gpu_seconds` and `cost` are `null`, the key's reservation is kept as unknown GPU time, never
-  zero), `pending` (not settled yet)).
+  zero), `pending` (not settled yet)). The owner's read of a finished operation settles it at once (the pass's body
+  for that operation, under a per-operation lock; the same answer carries the result), so `pending` is seen only by
+  a reader that arrives while another settler holds the operation; the CronJob (every 2 minutes) remains the settler
+  of record for operations nobody reads.
 
 The control cluster's tenant namespaces are rendered by the same chart (`clusters.control`,
 `manager: true`): namespace, the profile LocalQueues pointing at the manager ClusterQueues and the
@@ -763,6 +768,23 @@ request** is `{model, input | input_ref.sha256, timeout_s, region}` and is immut
 transfer URLs are renewable and never part of it: a replay of the same bound request with a new `transport.input_url`
 renews what the broker serves, nothing else. The child model's image is recorded at admission (`model_image`); an
 intent is never completed against another image.
+
+**The grant.** The caller's credential is the admission token of the root's key for exactly this child and model; at
+the gateway hook it is accepted while the child holds a live reservation and names a live attempt, under the key's
+scope and budget but **not** the key's model allow-list: the child model was allowed by the run class's frozen
+`child_endpoints`, so a key granted the parent class alone drives its children without being granted the child
+endpoints (a direct call of the key to the child endpoint stays refused).
+
+**Unit retry (explicit).** A unit whose child ended without delivering its capture is not necessarily final: a live
+attempt of a **later** parent of the same root (the owner's resume, never the parent that owned the ended child)
+may POST the same bound request with `retry: true`; the unit then reopens as the next incarnation
+(`<root>-c-<sha>-r<n>`: a new Job, binding and ledger member for the same unit; the earlier child's Job and records
+stay as history) and the readback and the owner route carry `incarnation` and `previous_child`. The retry is refused
+(409, naming why) for the same parent, for a unit that delivered its capture (a unit infers once), and for a child
+whose inference was posted with an unknown outcome (call.sh exit 4: the application's own recovery, never a second
+inference); only a child that definitely never inferred (no attempt, or exit 2/3 with no capture) is retried.
+Without `retry` the ended row replays as before. The readback carries `can_retry` (the same verdict a
+retry would get, before the later-parent rule): a caller decides from it, never from a status guess.
 
 **The capture (the native one-POST protocol, docs/API.md "Endpoint calls").** The child is rendered as an
 application-I/O endpoint call: its request in the private binding (`binding-<child>`, platform-written on the API's own

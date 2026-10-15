@@ -168,7 +168,10 @@ gateway's authorize hook of every endpoint hostname. The first keys of a fleet a
 control -json tenant_keys` prints them); an admin key then mints user keys of its tenant through
 `POST /v1/keys` (budget, models, `expires_days`), edits them (`PATCH`) and revokes them (`DELETE`), on the
 fleet API. Every tenant key is mirrored into LiteLLM with the same value (best effort; the fleet database is
-the source of truth) so it also works on LiteLLM's OpenAI route. `GET /v1/keys/me` shows the calling key.
+the source of truth) so it also works on LiteLLM's OpenAI route. `GET /v1/keys/me` shows the calling key. The admin
+listing `GET /v1/keys` carries the same safe limit and usage fields per key (`scopes`, `max_concurrent`, the request and
+GPU-second budgets with their spend, `rate_limit`, `principal_id`, `usage`) plus `blocked`; a retained blocked key says
+`status: blocked`; never the hash, the raw metadata or a secret (`id` is the alias).
 
 **Scopes and limits beyond the USD budget.** A key may carry `scopes` (what it may do; empty = everything of its
 role): `invoke:sync`, `invoke:async`, `run:submit`, `run:control` (cancel, resume, export), `read:catalog`,
@@ -298,14 +301,29 @@ worker pod, released once; `services/api/sessions.py`.
 
 | Step | Who | What |
 |---|---|---|
-| `POST /v1/models/<id>:session` `{timeout_s, region}` | the caller (`invoke:sync`) | admission on the key as a run's root: one concurrency slot, one request, and for a key with a GPU-second budget the endpoint's GPUs x `timeout_s` as the bound. `timeout_s` defaults to the endpoint's transport deadline (a single-node endpoint's `timeout_s`; 3600 for a multi-node endpoint) and may not exceed it (400 naming the bound). Answers 202 with a one-time `claim_token`, `expires_at` (the claim must be presented within `sessions.claim_ttl_s`, 120 s by default) and `deadline_at` (`timeout_s` after creation) |
+| `POST /v1/models/<id>:session` `{timeout_s, region}` | the caller (`invoke:sync`) | admission on the key as a run's root: one concurrency slot, one request, and for a key with a GPU-second budget the endpoint's GPUs x `timeout_s` as the bound. `timeout_s` defaults to the endpoint's transport deadline (a single-node endpoint's `timeout_s`; 3600 for a multi-node endpoint) and may not exceed it (400 naming the bound). Answers 202 with a one-time `claim_token`, `expires_at` (the claim must be presented within `sessions.claim_ttl_s`, 120 s by default), `deadline_at` (`timeout_s` after creation) and `replay: false`. With an `Idempotency-Key` header (owner-scoped, 1..200 chars) the same request again answers the same session, see "Idempotent creation" below |
 | the connection | the caller | presents the claim once: `Sec-WebSocket-Protocol: s2-session.<token>` on an upgrade, or the header `x-serverless2-session-claim: <token>` on a plain HTTP request (NDJSON streaming). The gateway's authorization hook binds it with a compare-and-swap (`claimed -> bound`, a server-generated connection id): exactly one connection ever binds a session, across API replicas; a second presentation, an expired, cancelled or foreign claim is 401. The hook injects `x-serverless2-session` and `x-serverless2-connection` towards the worker and refuses (403) any client that supplies those headers itself; the claim token is never logged |
-| `POST /internal/sessions/<id>:attach` `{connection, worker_session_id}` | the worker pod, with its own ServiceAccount token | before any decoder, reset, feed or GPU work: `bound -> attached` for the injected connection id only. The pod is verified server-side (TokenReview on the session's cluster with `sessions.token_audience` or the cluster's, the pod's namespace/name/UID from the token's claims, the pod object with the same UID, the endpoint it belongs to = the session's model); nothing is taken from headers. Idempotent for the same connection and pod UID; 409 for another connection, a second worker, or after the attach wait, a cancel or the deadline (fenced for good) |
-| `GET /internal/sessions/<id>` | the attached worker only | `status`, `cancel_requested`, `cancel_reason`, `deadline_at`: the worker polls it (or reads its own socket) to learn of a cancellation |
+| `POST /internal/sessions/<id>:attach` `{connection, worker_session_id}` | the worker pod, with its own ServiceAccount token | before any decoder, reset, feed or GPU work: `bound -> attached` for the injected connection id only. The pod is verified server-side (TokenReview on the session's cluster with `sessions.token_audience` or the cluster's, the pod's namespace/name/UID from the token's claims, the pod object with the same UID, the endpoint it belongs to = the session's model); nothing is taken from headers. Idempotent for the same connection and pod UID; 409 for another connection, a second worker, or after the attach wait, a cancel or the deadline (fenced for good). Answers `owner: {tenant, owner, model}` from the session's durable row (the admitting principal, resolved at creation; never a header, never the key): the trusted owner group a worker keys its own state on; stable across a duplicate attach |
+| `GET /internal/sessions/<id>` | the attached worker only | `status`, `cancel_requested`, `cancel_reason`, `deadline_at`, `owner`: the worker polls it (or reads its own socket) to learn of a cancellation |
 | `POST /internal/sessions/<id>:release` `{connection, outcome, gpu_seconds}` | the attached worker, after its own post-done cleanup | `attached -> ended`; the key's slot goes; `gpu_seconds` measured becomes spend, `null` (no metering) leaves the session `unknown` and its bound against the budget, never a measured zero. Idempotent for the same pod. Outcomes: `done`, `cancelled`, `disconnected`, `busy`, `error` |
 | `POST /v1/sessions/<id>:cancel`, the deadline, a client disconnect | the owner, the reconciler, the transport | cancellation *requests*: nothing is released by them. A session nobody bound ends at once (zero: no worker was reached). A bound or attached one keeps its slot until its worker releases it or its pod (exact UID) is gone or finished, which the reconciler confirms every 15 s (`worker_lost`, usage unknown). Never a replica-wide drain |
 | `GET /v1/sessions`, `GET /v1/sessions/<id>` | the owner (`read:operations`) | `status` (`claimed`, `bound`, `attached`, `ended`), `outcome`, `cancel_requested`, `attached`, `worker_session_id`, the timestamps, `gpu_seconds`, `usage` (`measured`, `unknown`, `none`) |
 
+**Idempotent creation (`Idempotency-Key`):** a create whose answer was lost is recovered by the same request under
+the same key: the same session (`replay: true`), one row, one admission on the key (a concurrent duplicate loses the
+unique index, releases its own admission and answers the winner's session). The key is owner-scoped (a peer's same
+key is its own session; the owner's session stays 404 to the peer) and names the *semantic* request: the effective
+`model`, deployment (`cluster`, `region`) and `timeout_s` after defaults, not the bytes sent (`{}` and
+`{"timeout_s": <the default>}` are one request); the same key with another request is 409. While the session is
+still `claimed` (unexpired, before the deadline, not cancelled) the replay answers a usable `claim_token` that
+**replaces** the earlier one (the earlier token no longer binds: still exactly one connection ever binds, by the same
+compare-and-swap; a bind racing with the replay either wins first, then the replay carries no claim, or finds the old
+token gone, 401). Once bound, attached or ended the replay is the same id without a claim: no second connection, no
+re-issued stream, no audio replayed. Nothing is extended: `expires_at` and `deadline_at` stay as admitted, an expired
+or cancelled claim replays without a claim. Without the header every create is a new session.
+A replay keeps the key's model grant, scope and validity checks but takes no new request from the budget: the
+admission counted once at the first create, so a key whose last request the session was recovers its lost answer
+(never 402); a new session is a new request and is refused as before.
 **No reconnect, by design and kept so:** a dropped connection ends at the worker (`disconnected`), the token binds once,
 a new session is a new admission; a client that needs continuity re-creates a session (the App's adapter owns that).
 **Cold attachment:** the hook binds the claim before the endpoint has a pod, so a bound session is `starting`

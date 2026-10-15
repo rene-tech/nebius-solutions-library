@@ -4,6 +4,121 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.108
+
+(0.11.108 = 0.11.107 plus the whole-history rule of the unit retry; 0.11.107 was built but never applied. jobs 0.1.27 and
+platform chart 0.1.12 unchanged; no new migration.)
+
+- Endpoint children (unit retry, `can_retry`): the "never inferred" verdict reads EVERY attempt record of the child's
+  lineage (its transfer-only `-x<n>` retries included), not the last one: one exit 3, exit 4, an attempt without an
+  exit on record, or any capture anywhere in the history makes the unit "maybe inferred" (no retry), so a later exit 2
+  (an export retry refused at its input refresh) never erases an earlier unknown outcome. Regressions for the mixed
+  histories.
+
+## api 0.11.107
+
+(0.11.107 = 0.11.106 plus the unit retry of endpoint children and the settlement lock's database import; jobs 0.1.27 and
+platform chart 0.1.12 unchanged; migration 28.)
+
+- Endpoint children (docs/JOBS.md "Endpoint children", unit retry): a unit whose child ended WITHOUT a delivered
+  capture (the cascade of a parent that finished without a successor, a failed or refused caller) is reopened by a
+  live attempt of a LATER parent of the same root (the owner's resume) asking for the same bound request with the
+  explicit `retry: true`, and only when the child definitely never inferred (no attempt, or exit 2/3 with no capture;
+  an outcome-unknown exit 4 is refused): the next incarnation
+  `<root>-c-<sha>-r<n>` (a new Job, binding and ledger member of kind `child` for the same unit; the earlier child's
+  Job and records stay as history), the row back to `pending`/`active` with the new parent, `incarnation` and
+  `previous_child` in the readback and the owner route. Before, the same request replayed the ended row (200, no
+  capture) and the unit could never run again under that root: the first LeRobot resume chain (2026-10-14) failed
+  its stage for exactly that. Unchanged: an ended unit WITH a capture is final (replay, never a second inference), a
+  different request is 409, one open child per root, `child_max_units` counts units. Migration 28:
+  `endpoint_children.incarnation`, `previous_child`.
+- Endpoint children: the readback (owner route and the parent's internal read) carries `can_retry`: true only for an
+  ended unit with no capture whose child definitely never inferred (no attempt, or exit 2 with no capture manifest);
+  exit 3/4 and every attempt with a capture say false. The explicit POST `retry: true` applies the same predicate
+  server-side (409 otherwise).
+- Billing: a cancelled JobSet (suspended, pods deleted, a manager's worker copy removed by MultiKueue) never reaches
+  Complete/Failed, so neither the pass nor the owner's read settled it and its key stayed reserved (the first MPI
+  cancel, 2026-10-14: `active_operations 1`, `usage pending`). It now settles once its cancel is on record, it is
+  suspended, no pod of it is left and Kueue holds nothing of it (`kube.workload_inactive`: Workload gone, deactivated
+  or finished), measured from the rank records like a finished run (unknown when a rank has no end); never before.
+- Billing: the settlement lock (0.11.106) reads the database URL from `db`, not `config` (the import failed live and
+  every settlement ran on the idempotent unlocked path, correctly but without the duplicate-work guard).
+
+## api 0.11.106
+
+(0.11.106 = 0.11.105 plus the session attach's owner context and the settlement lock on its own connection; jobs 0.1.27
+and platform chart 0.1.12 unchanged; no migration.)
+
+- Sessions (docs/API.md "Sessions"): `POST /internal/sessions/{id}:attach` and `GET /internal/sessions/{id}` answer the
+  attached worker with `owner: {tenant, owner, model}` from the session's durable row (the admitting key's principal
+  resolved at creation; never a request header, never a group derived from the session id, never the key), as the
+  native execution attach does: a worker keys its own owner-fair state on it. Stable on a duplicate attach; the
+  exact-model and pod checks of the worker's identity are unchanged; nothing new in the owner-facing session reads.
+- Billing: the per-operation settlement lock (0.11.105, `billing._SettlementLock`) holds a dedicated short-lived
+  connection, never a pool slot: the settlement behind it takes pool connections of its own (ledger, attempt records,
+  charge), so with four concurrent settlements on 0.11.105 the pool (max 4) could starve and the readers stall 30 s
+  until the pool timeout (settled by the CronJob later; no wrong charge). Found through the test suite, where a fake
+  rig with no database behind the pool made the same wait visible as a stall.
+
+## api 0.11.105
+
+(0.11.105 = 0.11.104 plus settlement on the owner's read, delegated child readiness and the JobSet rule name; jobs 0.1.27
+and platform chart 0.1.12 unchanged; no migration.)
+
+- Billing (docs/JOBS.md "Billing"): a finished operation its owner reads (`GET /v1/operations/{id}`) before the billing
+  CronJob reached it is settled by that read: the pass's own body for one operation (`billing.settle_job`, lifted out
+  of `bill_once`, which keeps calling it) under a per-operation Postgres advisory lock, so the same answer already
+  carries `usage: measured`, `gpu_seconds`, `cost`, and the key's slot is free, instead of `pending` and a held slot
+  until the next pass (every 2 minutes: the first real MPI run was qualified against `pending` 74 s before its pass).
+  Same ledger, same semantics, once: the `charges` receipt is unique per operation, the release conditional, the
+  annotation re-read under the lock; concurrent readers and the CronJob settle exactly once; a reader meeting the lock
+  held by another settler answers the view before the settlement once. Unchanged: an unfinished operation, a foreign
+  reader (404), an unmeasured attempt (`unknown`, the reservation kept, never zero), a native call whose worker is
+  still attached (deferred), and the CronJob as the settler of record for operations nobody reads.
+- Endpoint children (docs/JOBS.md "Endpoint children"): the child's caller, with its operation-scoped credential,
+  passes the gateway hook on a parent-only grant (a key allowed the run class but not the child endpoint): the hook's
+  proof already binds the credential to exactly that child, its model and a live attempt, and the child model was
+  allowed by the run class's frozen `child_endpoints` at admission, so the key's own model allow-list is not applied
+  to a live child (`keys.member_of` kind `child`, active); scope (`invoke:sync` or `invoke:async`) and budget checks
+  stay, the key itself still cannot call the child endpoint directly, and the credential is still refused for another
+  model, unit or attempt, a cancelled child and a settled one. Before, readiness answered 403 "key is not allowed to
+  use model <child>" and the parent failed ChildUnresolved (the first LeRobot child on a QA grant, 2026-10-14).
+- Multi-node runs (docs/JOBS.md "Delivery pending never restarts the gang"): the JobSet failure-policy rule is named
+  `delivery_pending`; the JobSet validating webhook accepts rule names of `[A-Za-z0-9_:]+` only, so 0.11.104's
+  `delivery-pending` had every gang with a finalizer refused 422 at creation (ADMISSION_PENDING, no JobSet: the first
+  MPI 2x1 run, 2026-10-14). The protection itself (FailJob on the delivery exit, FailJobSet on that reason) is
+  unchanged; the regression checks every emitted rule name against the webhook's rule.
+
+## api 0.11.104
+
+(0.11.104 = 0.11.103 plus idempotent session creation and the gang finalizer's image with per-class images; jobs 0.1.27
+and platform chart 0.1.12 unchanged; migration 27.)
+
+- Sessions (docs/API.md "Sessions", "Idempotent creation"): `POST /v1/models/{model}:session` takes an owner-scoped
+  `Idempotency-Key` (1..200 chars) over the semantic request (effective model, deployment, timeout_s): the same request
+  again answers the same session (`replay: true`), one row, one admission; a concurrent duplicate loses the unique
+  index, releases its own admission and answers the winner's. While the session is still `claimed` (unexpired, not
+  cancelled) the replay carries a usable claim that replaces the earlier token (still exactly one connection ever
+  binds); once bound, attached or ended the replay is the same id without a claim; nothing is extended; the key with
+  another request is 409. A replay keeps the key's model grant, scope and validity checks but takes no new request
+  from the budget (the admission counted once: a key whose last request the session was recovers its lost answer,
+  never 402). Every create answers `replay`. Migration 27: `sessions.idempotency_key`, `request_hash`,
+  the unique index `(tenant, owner, idempotency_key)`. Tests: lost answer / repeat, bind once / replay denied,
+  conflict, peer 404, concurrent duplicates, expired and cancelled claims.
+- Keys (docs/API.md "Keys"): the admin listing `GET /v1/keys` (and the create/update answers) carries the same safe
+  limit and usage fields as the caller's own `GET /v1/keys/me` (`scopes`, `max_concurrent`, `budget_requests` /
+  `spent_requests`, `budget_gpu_seconds` / `spent_gpu_seconds`, `rate_limit`, `principal_id`, `usage`), plus
+  `blocked`; a retained blocked key (imported with unknown scopes, or blocked) now says `status: blocked` instead of
+  `active`; `exhausted` covers the request and GPU-second budgets as `/me` does. Never the hash, the raw metadata, the
+  legacy blob or a secret (`id` stays the alias). Migration admin parity for the console, no new feature.
+- Gang finalization (docs/JOBS.md "Restoring a gang"): the one-CPU finalizer of a gang whose class carries per-class
+  images (`job.images {default, <class>}`, the shape that fixes a run's image identity) renders with the image of the
+  class the gang was admitted on (the `gpu-class` label), `job.images` dropped with the other compute-only keys; the
+  finalized attempt's recorded digest still wins. Before, the CPU render cleared `gpu_classes` but kept `job.images`
+  and the finalizer was refused (500 "job.images names classes ... not in gpu.classes []"): no delivery of the gang's
+  publication at all (the first real MPI run, 2026-10-14). Proposed and tested by the MPI agent
+  (S2-CPU-FINALIZER-CLASS-MAP); regression on the gang finalizer with and without a recorded digest.
+
 ## api 0.11.103
 
 (0.11.103 = 0.11.102 plus the child binding's cluster and the log shipper on CPU pools; jobs 0.1.27 and platform chart

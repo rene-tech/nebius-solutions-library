@@ -389,6 +389,23 @@ create table if not exists operation_marks (
     alter table attempts add column if not exists resume_source_epoch int;
     alter table attempts add column if not exists resume_source text;
     """,
+    # 27: idempotent session creation (docs/API.md "Sessions"): an owner-scoped Idempotency-Key names at most one session
+    # (the unique index is the race arbiter across replicas); the semantic hash of the effective request (model,
+    # deployment, timeout_s, GPUs) tells a replay from a reuse of the key with another request (409)
+    """
+    alter table sessions add column if not exists idempotency_key text;
+    alter table sessions add column if not exists request_hash text;
+    create unique index if not exists sessions_idempotency on sessions (tenant, owner, idempotency_key)
+        where idempotency_key is not null;
+    """,
+    # 28: unit retry of endpoint children (docs/JOBS.md "Endpoint children"): a unit whose child ended WITHOUT a delivered
+    # capture (the cascade of a parent that finished without a successor, a failed caller) is reopened by a live attempt
+    # of a later parent of the same root as a new incarnation (`<root>-c-<sha>-r<n>`: a new Job, binding and ledger
+    # member); the row keeps the unit's identity and names its previous child
+    """
+    alter table endpoint_children add column if not exists incarnation int not null default 1;
+    alter table endpoint_children add column if not exists previous_child text;
+    """,
 ]
 
 _pool = None
