@@ -175,13 +175,22 @@ class FakeCluster:
             raise ApiException(status=404, reason="NotFound")
         del self.pvcs[(ns, name)]
 
+    _rv = 0
+
+    def _stamp(self, body, uid=None):
+        FakeCluster._rv += 1
+        body["metadata"]["uid"] = uid or f"uid-{FakeCluster._rv}"
+        body["metadata"]["resourceVersion"] = str(FakeCluster._rv)
+
     def create_namespaced_secret(self, ns, body):
         if (ns, body["metadata"]["name"]) in self.secrets:
             raise ApiException(status=409, reason="AlreadyExists")
         body = copy.deepcopy(body)
         if "stringData" in body:
             body["data"] = dict(body["stringData"])  # the API server would base64-encode; tests read either
+        self._stamp(body)
         self.secrets[(ns, body["metadata"]["name"])] = body
+        return body
 
     def read_namespaced_secret(self, name, ns):
         if (ns, name) not in self.secrets:
@@ -191,15 +200,22 @@ class FakeCluster:
     def replace_namespaced_secret(self, name, ns, body):
         if (ns, name) not in self.secrets:
             raise ApiException(status=404, reason="NotFound")
+        current = self.secrets[(ns, name)]
+        rv = (body.get("metadata") or {}).get("resourceVersion")
+        if rv is not None and str(rv) != str(current["metadata"].get("resourceVersion")):
+            raise ApiException(status=409, reason="Conflict")  # the API server's optimistic concurrency
         body = copy.deepcopy(body)
         if "stringData" in body:
             body["data"] = dict(body["stringData"])
+        self._stamp(body, uid=current["metadata"].get("uid"))
         self.secrets[(ns, name)] = body
         return body
 
     def patch_namespaced_secret(self, name, ns, body):
         s = self.secrets[(ns, name)]
         s["metadata"].setdefault("annotations", {}).update((body.get("metadata") or {}).get("annotations") or {})
+        FakeCluster._rv += 1
+        s["metadata"]["resourceVersion"] = str(FakeCluster._rv)
         return s
 
     def list_namespaced_secret(self, ns, label_selector=""):
@@ -217,9 +233,16 @@ class FakeCluster:
 
         return Items([s for (n, _), s in self.secrets.items() if n == ns and ok(s)])
 
-    def delete_namespaced_secret(self, name, ns):
+    def delete_namespaced_secret(self, name, ns, body=None):
         if (ns, name) not in self.secrets:
             raise ApiException(status=404, reason="NotFound")
+        pre = getattr(body, "preconditions", None)
+        if pre is not None:  # V1Preconditions: the deletion is conditional on uid and resourceVersion
+            md = self.secrets[(ns, name)]["metadata"]
+            if (pre.uid and pre.uid != md.get("uid")) or (
+                pre.resource_version and str(pre.resource_version) != str(md.get("resourceVersion"))
+            ):
+                raise ApiException(status=409, reason="Conflict")
         del self.secrets[(ns, name)]
 
     def delete_collection_namespaced_secret(self, ns, label_selector=""):
@@ -1139,8 +1162,12 @@ class FakeKeys:
         return [self._info(h) for h, r in sorted(self.rows.items()) if r["tenant"] == tenant]
 
     # admission and import (keys.py migration 8): recorded, never refused here; the database tests hold the real rules
-    def admit(self, h, operation, tenant, gpu_seconds=0.0, counts_request=True):
+    def admit(self, h, operation, tenant, gpu_seconds=0.0, counts_request=True, run_member=False):
         self.calls.append(("admit", operation, gpu_seconds, counts_request))
+        if run_member:
+            self.members = getattr(self, "members", [])
+            if not any(m["operation"] == operation for m in self.members):
+                self.members.append({"operation": operation, "root": operation, "predecessor": None, "state": "active"})
         return {"operation": operation, "replay": False}
 
     def release(self, operation, gpu_seconds=None):
@@ -1150,6 +1177,34 @@ class FakeKeys:
     def abandon(self, operation, h):
         self.calls.append(("abandon", operation))
         return True
+
+    # the run ledger (keys.py migration 11): members recorded in order, the head rule and budgets live in the database tests
+    def run_head(self, root):
+        chain = [m for m in getattr(self, "members", []) if m["root"] == root]
+        return chain[-1]["operation"] if chain else None
+
+    def prepare_run_member(self, root, operation, predecessor, gpus, timeout_s, transfer_only=False):
+        self.calls.append(("prepare", root, operation, predecessor, gpus, timeout_s, transfer_only))
+        self.members = getattr(self, "members", [])
+        if any(m["operation"] == operation for m in self.members):
+            return {"operation": operation, "replay": True}
+        self.members.append({"operation": operation, "root": root, "predecessor": predecessor, "state": "active"})
+        return {"operation": operation, "replay": False}
+
+    def settle_run_member(self, operation, gpu_seconds):
+        self.calls.append(("settle", operation, gpu_seconds))
+        return {"settled": True}
+
+    def rollback_run_member(self, operation):
+        self.calls.append(("rollback", operation))
+        self.members = [m for m in getattr(self, "members", []) if m["operation"] != operation]
+        return True
+
+    def run_usage(self, h):
+        return {"active_operations": 0, "reserved_gpu_seconds": 0.0, "unknown_gpu_seconds": 0.0}
+
+    def run_members(self, root):
+        return [dict(m, gpu_bound=0.0, gpu_seconds=None) for m in getattr(self, "members", []) if m["root"] == root]
 
     def own_operation(self, operation, tenant, owner, model):
         self.owners[operation] = (tenant, owner, model)
@@ -1241,6 +1296,12 @@ def fake_keys(monkeypatch):
         "operation_lock",
         "stale_reservations",
         "import_records",
+        "run_head",
+        "prepare_run_member",
+        "settle_run_member",
+        "rollback_run_member",
+        "run_usage",
+        "run_members",
     ):
         monkeypatch.setattr(keys, name, getattr(fk, name))
     monkeypatch.setattr(db, "enabled", lambda: True)  # the fleet API: it has the database
@@ -2139,10 +2200,14 @@ def admin_keys(monkeypatch):
         monkeypatch.setattr(db, name, getattr(fdb, name))
     import keys as keys_mod  # admission reservations live in the database too: recorded, never refused here
 
+    ledger: list = []  # the run ledger (migration 11): recorded in memory, never refused here
     monkeypatch.setattr(
         keys_mod,
         "admit",
-        lambda h, op, tenant, gpu_seconds=0.0, counts_request=True: {"operation": op, "replay": False},
+        lambda h, op, tenant, gpu_seconds=0.0, counts_request=True, run_member=False: (
+            (ledger.append({"operation": op, "root": op, "predecessor": None}) if run_member else None)
+            or {"operation": op, "replay": False}
+        ),
     )
     monkeypatch.setattr(keys_mod, "release", lambda op, gpu_seconds=None: True)
     operation_owners = {}
@@ -2157,6 +2222,24 @@ def admin_keys(monkeypatch):
 
     monkeypatch.setattr(keys_mod, "operation_lock", lambda op: nullcontext())
     monkeypatch.setattr(keys_mod, "stale_reservations", lambda older_than_s: [])
+    monkeypatch.setattr(
+        keys_mod, "run_head", lambda root: next((m["operation"] for m in reversed(ledger) if m["root"] == root), None)
+    )
+    monkeypatch.setattr(
+        keys_mod,
+        "prepare_run_member",
+        lambda root, op, pred, gpus, timeout_s, transfer_only=False: (
+            ledger.append({"operation": op, "root": root, "predecessor": pred}) or {"operation": op, "replay": False}
+        ),
+    )
+    monkeypatch.setattr(keys_mod, "settle_run_member", lambda op, gpu_seconds: {"settled": True})
+    monkeypatch.setattr(keys_mod, "rollback_run_member", lambda op: True)
+    monkeypatch.setattr(keys_mod, "run_members", lambda root: [])
+    monkeypatch.setattr(
+        keys_mod,
+        "run_usage",
+        lambda h: {"active_operations": 0, "reserved_gpu_seconds": 0.0, "unknown_gpu_seconds": 0.0},
+    )
     monkeypatch.setattr(
         m, "ENDPOINT_DOMAINS", {"eu-north1": "203.0.113.10.sslip.io", "eu-south1": "203.0.113.20.sslip.io"}
     )

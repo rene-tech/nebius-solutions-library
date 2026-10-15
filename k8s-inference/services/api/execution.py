@@ -92,6 +92,22 @@ def capabilities(ns: str, region: str = REGION) -> dict:
         "oidc_issuers": dict(REGION_OIDC_ISSUERS),
         "private_input_dir": PRIVATE_DIR,
         "identity_token_file": f"{IDENTITY_DIR}/token",
+        # durable endpoint calls with private input and application-owned output (docs/API.md "Endpoint calls"): the
+        # binding's file contract, per-attempt URL refresh, retained capture for transfer-only export retries
+        "async_private_io": {
+            "version": 1,
+            "refresh": True,
+            "retained_export": True,
+            "binding_keys": [
+                "request.json",
+                "input_url",
+                "response_url",
+                "call_url",
+                "result_ref",
+                "refresh_url",
+                "refresh_token",
+            ],
+        },
         # automatic continuation after a confirmed infrastructure loss (docs/SCHEDULING.md): what a caller may ask for
         # application finalizer (docs/JOBS.md "Finalization by the application"): the model-owned command that re-delivers
         "finalize": {
@@ -288,6 +304,43 @@ def apply_run(pod: dict, r: dict, ex: dict, name: str, s3_secret: str) -> None:
         main.setdefault("env", []).append({"name": "CHECKPOINT_REF", "value": ckpt})
 
 
+def apply_async(pod: dict, ex: dict, name: str) -> None:
+    """Shape an endpoint-call pod (mode async) after its execution block (docs/API.md "Endpoint calls"): the private
+    binding mounted for the caller, the workload identity projected, the uploader in record mode (the caller delivers
+    to the application's own destination; the platform bucket is not used)."""
+    main = next(c for c in pod["containers"] if c["name"] == "main")
+    uploader = next((c for c in pod["containers"] if c["name"] == "uploader"), None)
+    if ex.get("io_mode") == "application" and uploader:
+        uploader.pop("envFrom", None)
+        uploader["env"] = [e for e in uploader["env"] if e["name"] != "OUTPUT_PREFIX"] + [
+            {"name": "UPLOAD_MODE", "value": "record"}
+        ]
+        main.setdefault("env", []).append({"name": "IO_MODE", "value": "application"})
+    identity = ex.get("identity")
+    if identity:
+        pod["serviceAccountName"] = identity["service_account"]
+        token = {"path": "token", "expirationSeconds": 3600}
+        if identity.get("audience"):
+            token["audience"] = identity["audience"]
+        pod.setdefault("volumes", []).append(
+            {"name": "workload-identity", "projected": {"sources": [{"serviceAccountToken": token}]}}
+        )
+        main.setdefault("volumeMounts", []).append(
+            {"name": "workload-identity", "mountPath": IDENTITY_DIR, "readOnly": True}
+        )
+        main.setdefault("env", []).append({"name": "IDENTITY_TOKEN_FILE", "value": f"{IDENTITY_DIR}/token"})
+        for k, v in identity.get("env", {}).items():
+            main["env"].append({"name": k, "value": v})
+    if ex.get("private_input_ref"):
+        pod.setdefault("volumes", []).append(
+            {"name": "private-input", "secret": {"secretName": f"{name}-private", "defaultMode": 0o440}}
+        )
+        main.setdefault("volumeMounts", []).append(
+            {"name": "private-input", "mountPath": PRIVATE_DIR, "readOnly": True}
+        )
+        main.setdefault("env", []).append({"name": "PRIVATE_INPUT_DIR", "value": PRIVATE_DIR})
+
+
 def apply_job(job: dict, ex: dict) -> None:
     """Recovery policy on the Job: `fail` turns an infrastructure loss into a FAILED operation (resumable with a
     checkpoint reference) instead of a replacement attempt."""
@@ -311,9 +364,56 @@ def _secret(region: str, ns: str, name: str) -> dict | None:
         raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
 
 
-def put_binding(ns: str, tenant: str, ref: str, data: dict[str, str], region: str = REGION) -> dict:
-    """Create or replace the tenant's binding `ref`; a replacement also refreshes the copies of the operation it is
-    bound to (the files in a running attempt change within the kubelet's sync period, no restart)."""
+OWNER_ANNOTATION = f"{LABEL}/owner"
+BINDING_UID_ANNOTATION = f"{LABEL}/binding-uid"
+
+
+def _owned_by(secret: dict, owner: str | None, admin: bool) -> bool:
+    """The binding is the caller's: its owner annotation (the stable principal the API records on every operation,
+    auth.Principal.owner) equals the caller's. An admin may act on any binding of the tenant. A binding without an
+    owner (written before owners existed) belongs to the principal of the operation it is bound to, when the fleet
+    database knows that owner (the in-flight runs of the day owners arrived); unbound, it is nobody's to an ordinary
+    caller: its owner re-creates it."""
+    if admin:
+        return True
+    if not owner:
+        return False
+    ann = secret["metadata"].get("annotations") or {}
+    current = ann.get(OWNER_ANNOTATION)
+    if current:
+        return current == owner
+    bound = ann.get(f"{LABEL}/operation")
+    tenant = (secret["metadata"].get("labels") or {}).get(f"{LABEL}/tenant")
+    return bool(bound) and bool(tenant) and _operation_owner(bound, tenant) == owner
+
+
+def _operation_owner(operation: str, tenant: str) -> str | None:
+    """The durable owner of an operation of `tenant` (keys.operation_owner): the binding's own tenant label and the
+    record's tenant must agree, so a record of another tenant never vouches for a binding."""
+    import db
+    import keys
+
+    if not db.enabled():
+        return None
+    rec = keys.operation_owner(operation)
+    return rec[1] if rec and rec[0] == tenant else None
+
+
+def put_binding(
+    ns: str,
+    tenant: str,
+    ref: str,
+    data: dict[str, str],
+    owner: str | None = None,
+    admin: bool = False,
+    if_match: str | None = None,
+    region: str = REGION,
+) -> dict:
+    """Create or replace the caller's binding `ref`; a replacement also refreshes the copies of the operation it is
+    bound to (the files in a running attempt change within the kubelet's sync period, no restart). A binding has an
+    owner (the caller's stable principal, set at creation and never changed); another principal of the tenant sees
+    404. `if_match` (the `revision` a read returned) and the Secret's resourceVersion make the replacement a
+    compare-and-swap: a concurrent write answers 409."""
     _ref(ref, "binding")
     if (
         not data
@@ -332,27 +432,51 @@ def put_binding(ns: str, tenant: str, ref: str, data: dict[str, str], region: st
     }
     core = kube.core(region)
     existing = _secret(region, ns, name)
+    if existing and not _owned_by(existing, owner, admin):
+        raise HTTPException(404, f"binding {ref}: not found")
+    revision = (existing or {}).get("metadata", {}).get("resourceVersion")
+    if existing and if_match is not None and if_match != str(revision):
+        raise HTTPException(409, f"binding {ref} changed (revision {revision}); re-read it before replacing it")
+    written = None
     try:
         if existing:
-            body["metadata"]["annotations"] = existing["metadata"].get("annotations") or {}
+            ann = dict(existing["metadata"].get("annotations") or {})
+            ann.setdefault(OWNER_ANNOTATION, owner or "")
+            body["metadata"]["annotations"] = {k: v for k, v in ann.items() if v}
+            if revision:
+                body["metadata"]["resourceVersion"] = str(revision)  # the API server refuses a stale replacement
             body["data"] = None
-            retry(core.replace_namespaced_secret, name, ns, body)
+            written = retry(core.replace_namespaced_secret, name, ns, body)
         else:
-            retry(core.create_namespaced_secret, ns, body)
+            body["metadata"]["annotations"] = {OWNER_ANNOTATION: owner} if owner else {}
+            written = retry(core.create_namespaced_secret, ns, body)
     except ApiException as e:
+        if e.status == 409:
+            raise HTTPException(409, f"binding {ref} was written concurrently; re-read it and replace it again")
         raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
     bound = ((existing or {}).get("metadata", {}).get("annotations") or {}).get(f"{LABEL}/operation")
     if bound:
-        _refresh_copies(ns, ref, data)
+        _refresh_copies(ns, ref, data, existing)
     return {
         "ref": ref,
         "operation": bound,
         "keys": sorted(data),
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "owner": (body["metadata"].get("annotations") or {}).get(OWNER_ANNOTATION),
+        "revision": _revision(written),
     }
 
 
-def list_bindings(ns: str, region: str = REGION) -> list[dict]:
+def _revision(obj) -> str | None:
+    if obj is None:
+        return None
+    md = obj.get("metadata") if isinstance(obj, dict) else getattr(obj, "metadata", None)
+    rv = md.get("resourceVersion") if isinstance(md, dict) else getattr(md, "resource_version", None)
+    return str(rv) if rv else None
+
+
+def list_bindings(ns: str, owner: str | None = None, admin: bool = False, region: str = REGION) -> list[dict]:
+    """The caller's bindings (an admin: every binding of the tenant, with its owner)."""
     try:
         items = _list(region, ns, f"{LABEL}/binding")
     except ApiException as e:
@@ -362,12 +486,16 @@ def list_bindings(ns: str, region: str = REGION) -> list[dict]:
         md = s["metadata"]
         if not md["name"].startswith(BINDING_PREFIX):
             continue  # a per-operation copy
+        if not _owned_by(s, owner, admin):
+            continue
         out.append(
             {
                 "ref": (md.get("labels") or {}).get(f"{LABEL}/binding"),
                 "operation": (md.get("annotations") or {}).get(f"{LABEL}/operation"),
                 "keys": sorted((s.get("data") or {}).keys()),
                 "updated_at": md.get("creationTimestamp"),
+                "owner": (md.get("annotations") or {}).get(OWNER_ANNOTATION),
+                "revision": _revision(s),
             }
         )
     return out
@@ -381,22 +509,40 @@ def _list(region: str, ns: str, selector: str) -> list[dict]:
     ]
 
 
-def delete_binding(ns: str, ref: str, region: str = REGION) -> bool:
-    """Revocation: the copies of a bound operation are emptied first (the files of a running attempt become empty),
-    then removed with the binding."""
+def delete_binding(ns: str, ref: str, owner: str | None = None, admin: bool = False, region: str = REGION) -> bool:
+    """Revocation by the binding's owner (or an admin): the copies of a bound operation are emptied first (the files
+    of a running attempt become empty), then removed with the binding. Another principal's binding: not found."""
     _ref(ref, "binding")
-    if _secret(region, ns, BINDING_PREFIX + ref) is None:
+    existing = _secret(region, ns, BINDING_PREFIX + ref)
+    if existing is None or not _owned_by(existing, owner, admin):
         return False
-    _refresh_copies(ns, ref, {"revoked": ""}, delete=True)
+    # the original goes first, conditionally on being the object that was read (uid and resourceVersion): a binding
+    # re-created under the same ref meanwhile is never deleted by a late revoker; then its copies, by its identity
+    md = existing["metadata"]
     try:
-        retry(kube.core(region).delete_namespaced_secret, BINDING_PREFIX + ref, ns)
+        retry(
+            kube.core(region).delete_namespaced_secret,
+            BINDING_PREFIX + ref,
+            ns,
+            body=_preconditions(md.get("uid"), md.get("resourceVersion")),
+        )
     except ApiException as e:
+        if e.status == 409:
+            raise HTTPException(409, f"binding {ref} changed meanwhile; re-read it before revoking it")
         if e.status != 404:
             raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
+    _refresh_copies(ns, ref, {"revoked": ""}, existing, delete=True)
     return True
 
 
-def _refresh_copies(ns: str, ref: str, data: dict[str, str], delete: bool = False) -> None:
+def _refresh_copies(ns: str, ref: str, data: dict[str, str], binding: dict, delete: bool = False) -> None:
+    """Replace (or empty and delete) the per-operation copies of `binding`: those under its ref that carry its uid, or
+    (copies from before the uid existed) those of the operation it is bound to. Each replacement keeps the copy's
+    labels, annotations and owner references and is a compare-and-swap on the copy's resourceVersion; a deletion
+    requires the copy's uid and resourceVersion. A copy that changed meanwhile is left alone (the next write sees it)."""
+    md = binding.get("metadata") or {}
+    uid = md.get("uid")
+    bound = (md.get("annotations") or {}).get(f"{LABEL}/operation")
     for r in kube.regions():
         try:
             items = _list(r, ns, f"{LABEL}/binding={ref}")
@@ -406,39 +552,75 @@ def _refresh_copies(ns: str, ref: str, data: dict[str, str], delete: bool = Fals
             name = s["metadata"]["name"]
             if name.startswith(BINDING_PREFIX):
                 continue
+            ann = dict(s["metadata"].get("annotations") or {})
+            copy_uid = ann.get(BINDING_UID_ANNOTATION)
+            if copy_uid:
+                if not uid or copy_uid != uid:
+                    continue  # a copy of another binding that had this ref
+            elif not bound or (s["metadata"].get("labels") or {}).get(f"{LABEL}/operation") != bound:
+                continue  # an old copy without identity: only the bound operation's own
+            if uid:
+                ann[BINDING_UID_ANNOTATION] = uid
+            rv = s["metadata"].get("resourceVersion")
+            body = {
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {
+                    "name": name,
+                    "labels": s["metadata"].get("labels"),
+                    "annotations": ann,
+                    "ownerReferences": s["metadata"].get("ownerReferences"),
+                    **({"resourceVersion": str(rv)} if rv else {}),
+                },
+                "stringData": data,
+            }
             try:
-                retry(
-                    kube.core(r).replace_namespaced_secret,
-                    name,
-                    ns,
-                    {
-                        "apiVersion": "v1",
-                        "kind": "Secret",
-                        "metadata": {
-                            "name": name,
-                            "labels": s["metadata"].get("labels"),
-                            "ownerReferences": s["metadata"].get("ownerReferences"),
-                        },
-                        "stringData": data,
-                    },
-                )
+                written = retry(kube.core(r).replace_namespaced_secret, name, ns, body)
                 if delete:
-                    retry(kube.core(r).delete_namespaced_secret, name, ns)
-            except ApiException:
-                continue
+                    new_rv = _revision(written) or rv
+                    retry(
+                        kube.core(r).delete_namespaced_secret,
+                        name,
+                        ns,
+                        body=_preconditions(s["metadata"].get("uid"), new_rv),
+                    )
+            except ApiException as e:
+                if e.status in (404, 409):
+                    continue  # gone, or changed by a later writer: not ours to touch now
+                raise HTTPException(502, f"kubernetes ({r}): {e.reason}")
+
+
+def _preconditions(uid: str | None, resource_version: str | None):
+    """Delete options that make a deletion conditional on the object being the one that was read."""
+    from kubernetes import client as k8s
+
+    if not uid and not resource_version:
+        return None
+    return k8s.V1DeleteOptions(
+        preconditions=k8s.V1Preconditions(uid=uid, resource_version=str(resource_version) if resource_version else None)
+    )
 
 
 def deliver(
-    ex: dict | None, name: str, root: str, ns: str, tenant: str, regions: list[str], region: str = REGION
+    ex: dict | None,
+    name: str,
+    root: str,
+    ns: str,
+    tenant: str,
+    regions: list[str],
+    region: str = REGION,
+    owner: str | None = None,
 ) -> None:
     """Before an operation is created: claim its binding (one binding serves one operation and that operation's
     resumes; another operation gets 409) and copy the data into the per-operation Secret `<name>-private` in every
-    region the run may land in. Copies carry the operation label; the billing pass removes them when it ends."""
+    region the run may land in. Copies carry the operation label; the billing pass removes them when it ends.
+    `owner` is the operation's (the root's, for a continuation): only the binding's owner consumes it; another
+    principal's binding, or one without an owner, is "no such binding"."""
     ref = (ex or {}).get("private_input_ref")
     if not ref:
         return
     binding = _secret(region, ns, BINDING_PREFIX + ref)
-    if binding is None:
+    if binding is None or not _owned_by(binding, owner, False):
         raise HTTPException(404, f"private_input_ref {ref!r}: no such binding (PUT /v1/bindings/{ref} first)")
     ann = binding["metadata"].get("annotations") or {}
     bound = ann.get(f"{LABEL}/operation")
@@ -446,22 +628,61 @@ def deliver(
         raise HTTPException(
             409, f"binding {ref!r} is bound to operation {bound}; a new operation needs its own binding"
         )
-    if not bound:
+    if not bound or (owner and not ann.get(OWNER_ANNOTATION)):
+        # the claim (and, for a binding from before owners existed, the owner it continues under) is written with the
+        # Secret's resourceVersion: two operations claiming one binding at once cannot both win (the loser re-reads
+        # and finds it bound to the other: 409)
+        claim = dict(ann)
+        claim[f"{LABEL}/operation"] = root
+        if owner:
+            claim.setdefault(OWNER_ANNOTATION, owner)
+        body = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {
+                "name": BINDING_PREFIX + ref,
+                "labels": binding["metadata"].get("labels"),
+                "annotations": claim,
+                **(
+                    {"resourceVersion": str(binding["metadata"]["resourceVersion"])}
+                    if binding["metadata"].get("resourceVersion")
+                    else {}
+                ),
+            },
+            "data": binding.get("data") or {},
+        }
         try:
-            retry(
-                kube.core(region).patch_namespaced_secret,
-                BINDING_PREFIX + ref,
-                ns,
-                {"metadata": {"annotations": {f"{LABEL}/operation": root}}},
-            )
+            retry(kube.core(region).replace_namespaced_secret, BINDING_PREFIX + ref, ns, body)
         except ApiException as e:
-            raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
+            if e.status == 409:
+                again = _secret(region, ns, BINDING_PREFIX + ref) or {}
+                now_bound = (again.get("metadata", {}).get("annotations") or {}).get(f"{LABEL}/operation")
+                if now_bound == root:
+                    binding = again
+                else:
+                    raise HTTPException(
+                        409,
+                        f"binding {ref!r} was claimed concurrently (by {now_bound}); a new operation needs its own binding",
+                    )
+            else:
+                raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
     copy = {
         "apiVersion": "v1",
         "kind": "Secret",
         "metadata": {
             "name": f"{name}-private",
             "labels": {f"{LABEL}/tenant": tenant, f"{LABEL}/binding": ref, f"{LABEL}/operation": root},
+            # the identity of the binding this copy came from: a refresh or revocation of a later binding under the
+            # same ref (deleted and re-created, possibly by another principal) never reaches this copy
+            "annotations": {
+                k: v
+                for k, v in {
+                    BINDING_UID_ANNOTATION: binding["metadata"].get("uid"),
+                    OWNER_ANNOTATION: (binding["metadata"].get("annotations") or {}).get(OWNER_ANNOTATION) or owner,
+                    f"{LABEL}/operation": root,
+                }.items()
+                if v
+            },
         },
         "data": binding.get("data") or {},
     }

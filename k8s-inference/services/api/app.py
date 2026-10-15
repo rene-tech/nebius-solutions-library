@@ -110,7 +110,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.39", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.45", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -119,15 +119,87 @@ INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annot
 ADMITTED_HEADER = "x-serverless2-admitted"  # the API's own proxied call to a gateway: the hook must not count it again
 
 
-def _admit(p: Principal, operation: str, gpu_seconds: float = 0.0, counts_request: bool = True) -> dict:
+def _admit(
+    p: Principal, operation: str, gpu_seconds: float = 0.0, counts_request: bool = True, run_member: bool = False
+) -> dict:
     """Reserve the slot, the request and the GPU seconds of `operation` on the caller's key (keys.admit); nothing
-    without the database, nothing for the router key (it carries no budget)."""
+    without the database, nothing for the router key (it carries no budget). `run_member`: the operation is the root
+    of a logical run whose continuations join its reservation (keys.prepare_run_member)."""
     if not db.enabled() or p.role == keys.ROUTER["role"]:
         return {"replay": False}
     try:
-        return keys.admit(keys.key_hash(p.key), operation, p.tenant, gpu_seconds, counts_request)
+        return keys.admit(keys.key_hash(p.key), operation, p.tenant, gpu_seconds, counts_request, run_member)
     except keys.KeyLimit as e:
         raise HTTPException(e.status, e.detail)
+
+
+def _job_deadline(job: dict) -> int | None:
+    """The enforced wall-clock bound of a rendered Job or JobSet (its activeDeadlineSeconds; a JobSet's is on its
+    replicated Jobs)."""
+    spec = job.get("spec") or {}
+    if job.get("kind") == "JobSet":
+        ds = [
+            int(((rj.get("template") or {}).get("spec") or {}).get("activeDeadlineSeconds") or 0)
+            for rj in spec.get("replicatedJobs") or []
+        ]
+        return max(ds) if ds and max(ds) else None
+    d = spec.get("activeDeadlineSeconds")
+    return int(d) if d else None
+
+
+def continuation_admission(root: str, predecessor: str | None, transfer_only: bool = False):
+    """The admission a continuation builder calls with its rendered Job, right before creating it: the member joins
+    the run's reservation on the root's original key (keys.prepare_run_member: key still valid, current head, budget
+    for its GPU bound, the slot reused or re-acquired). The returned callable raises HTTPException with the ledger's
+    status."""
+
+    def admit(job: dict) -> None:
+        try:
+            keys.prepare_run_member(
+                root, job["metadata"]["name"], predecessor, _job_gpus(job), _job_deadline(job), transfer_only
+            )
+        except keys.KeyLimit as e:
+            raise HTTPException(e.status, e.detail)
+
+    return admit
+
+
+def continue_run(root: str, build, transfer_only: bool = False):
+    """Run a continuation builder (jobs.resume/export_again/switch_class/recover, given as a callable taking the
+    admission callback) under the run's ledger: the new member follows the current head; a builder that fails after
+    admission with no Job created rolls the member back. Without a ledger for the root (no database, a run admitted
+    before the ledger existed) the builder runs unadmitted, as for an unbounded key."""
+    if not db.enabled():
+        return build(None)
+    head = keys.run_head(root)
+    if head is None:
+        return build(None)
+    pending: dict = {}
+
+    def admit(job: dict) -> None:
+        continuation_admission(root, head, transfer_only)(job)
+        pending["name"] = job["metadata"]["name"]
+
+    try:
+        return build(admit)
+    except Exception:
+        if pending.get("name"):
+            try:
+                keys.rollback_run_member(pending["name"])  # the builder raised at create: no Job exists
+            except Exception as e:  # noqa: BLE001
+                log.warning("rollback of continuation %s: %s", pending["name"], e)
+        raise
+
+
+def settle_deleted(job: dict) -> None:
+    """A run cancelled before it ever started (jobs.cancel deleted it): its member measured nothing and held no GPU
+    (never-started is the evidence, not an absent pod): settled at zero, the run closes when nothing else is active."""
+    if not db.enabled() or (job["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/cancelled") != "deleted":
+        return
+    try:
+        keys.settle_run_member(job["metadata"]["name"], 0.0)
+    except Exception as e:  # noqa: BLE001 - the reconciler's sweep settles what this missed
+        log.warning("settlement of cancelled %s: %s", job["metadata"]["name"], e)
 
 
 def _release(operation: str, gpu_seconds: float | None = None) -> None:
@@ -200,23 +272,6 @@ def _endpoint_limits(p: Principal, mode: str, admitted: bool = False) -> None:
         raise HTTPException(
             501, "direct endpoints cannot hold per-key concurrency reservations; use the synchronous API invoke path"
         )
-    if mode == "async" and any(p.info.get(k) is not None for k in ("max_concurrent", "budget_requests", "rate_limit")):
-        raise HTTPException(
-            501,
-            "bounded asynchronous endpoint admission awaits the authenticated caller integration; use synchronous API invoke",
-        )
-
-
-def _continuation_limits(p: Principal) -> None:
-    # Resume/export/recovery currently create a new Job outside _create_admitted.
-    # Do not let that re-entry path bypass a migrated key's reserved units.
-    if any(
-        p.info.get(k) is not None for k in ("max_concurrent", "budget_requests", "budget_gpu_seconds", "rate_limit")
-    ):
-        raise HTTPException(
-            501,
-            "bounded key continuations require reservation transfer; resume/export/fallback/recovery are not yet supported",
-        )
 
 
 def with_served_model(m: dict, inp):
@@ -248,18 +303,67 @@ def _variant_for(m: dict, inp, cluster: str) -> dict:
     return vs[0]
 
 
+def _deployment_of(m: dict, requested: str | None) -> tuple[str, str]:
+    """Where a request for model `m` goes: (the deployment's cluster id as the catalog keys it, the Nebius region this
+    API reaches it in). `requested` (a request's `region`) may name the cluster id (`north`) or the region
+    (`eu-north1`); nothing = this API's own cluster when the model is deployed there, else the model's only
+    deployment. Two deployments in one region are never guessed between (400: name the cluster); a cluster this API
+    cannot reach is 400 (one kubeconfig per region, docs/API.md)."""
+    deps = list(m.get("regions") or [])
+    if not deps:
+        raise HTTPException(400, f"model {m.get('name')} is not deployed anywhere")
+    by_region: dict[str, list[str]] = {}
+    for cid in deps:
+        by_region.setdefault(kube.cluster_region(cid), []).append(cid)
+    if requested is None:
+        own = by_region.get(REGION) or []
+        if len(own) > 1:
+            raise HTTPException(400, f"model {m['name']} has several deployments in {REGION} ({own}); give region")
+        cid = own[0] if own else (deps[0] if len(deps) == 1 or len(by_region) == 1 and len(deps) == 1 else None)
+        if cid is None:
+            if len(deps) == 1:
+                cid = deps[0]
+            else:
+                raise HTTPException(
+                    400, f"model {m['name']} is deployed in {deps}; give region (a cluster id or a region)"
+                )
+    elif requested in deps:
+        cid = requested
+    else:
+        same = by_region.get(requested) or []
+        if not same:
+            raise HTTPException(400, f"model {m['name']} is deployed in {deps}, not {requested}")
+        if len(same) > 1:
+            raise HTTPException(
+                400, f"region {requested} has several deployments of {m['name']} ({same}); give the cluster id"
+            )
+        cid = same[0]
+    region = kube.cluster_region(cid)
+    if region not in kube.regions():
+        raise HTTPException(400, f"cluster {cid} ({region}) is not served by this API (available: {kube.regions()})")
+    if len(by_region.get(region) or []) > 1 and kube.cluster_id_or_none(region) != cid:
+        raise HTTPException(
+            400,
+            f"cluster {cid} shares region {region} with {by_region[region]}; this API reaches one cluster per region",
+        )
+    return cid, region
+
+
 def _public(m: dict, p: Principal | None = None) -> dict:
     if p is not None and (p.info.get("metadata") or {}).get("role") != "admin":
         m = {**m, "spec": None}  # container configuration belongs to fleet administrators
     if m["mode"] == "run":
         return catalog.to_public(m)
     statuses = []
-    for region in m["regions"]:  # the endpoints' live state, read in their clusters (REGION_KUBECONFIGS)
+    for cid in m[
+        "regions"
+    ]:  # deployments by cluster id; the live state is read in the cluster's region (REGION_KUBECONFIGS)
+        region = kube.cluster_region(cid)
         try:
             st = kube.endpoint_status(m["k8s_name"], m["namespace"], region)
         except (HTTPException, ApiException):
             st = {"status": "unavailable", "replicas_ready": None}
-        statuses.append({"region": region, **st})
+        statuses.append({"region": region, "cluster": cid, **st})
     return catalog.to_public(m, statuses)
 
 
@@ -498,7 +602,10 @@ def _authorize_model(p: Principal, model: str, admitted: bool = False) -> None:
 @app.get("/v1/keys/me", responses={200: {"model": schemas.ApiKey}})
 def key_me(p: Principal = Depends(principal)):
     forget(p.key)
-    return p.public()
+    out = p.public()
+    if db.enabled() and p.role != keys.ROUTER["role"]:
+        out["usage"] = keys.run_usage(keys.key_hash(p.key))
+    return out
 
 
 @app.post(
@@ -516,11 +623,21 @@ async def invoke(
     authorize(p, model, {"sync": "invoke:sync", "async": "invoke:async"}.get(mode, "run:submit"), budget=True)
     if mode not in m["modes"]:
         raise HTTPException(400, f"model {model} supports modes {m['modes']}, not {mode}")
-    region = req.region or (REGION if REGION in m["regions"] else m["regions"][0])
-    if region not in m["regions"]:
-        raise HTTPException(400, f"model {model} is deployed in {m['regions']}, not {region}")
-    if req.execution and mode != "run":
-        raise HTTPException(400, "execution options apply to runs only")
+    if mode == "run":
+        # a run's region is where its Job is created (the manager on the fleet path, where the dispatcher places it):
+        # the class's first region by default; a cluster id or a region name of the class is accepted
+        region = req.region or (REGION if REGION in m["regions"] else m["regions"][0])
+        if region not in m["regions"] and kube.cluster_region(region) not in m["regions"]:
+            raise HTTPException(400, f"model {model} is deployed in {m['regions']}, not {region}")
+        region = region if region in m["regions"] else kube.cluster_region(region)
+    else:
+        _cluster, region = _deployment_of(
+            m, req.region
+        )  # the endpoint's cluster id, and the region the API reaches it in
+    if req.execution and mode == "sync":
+        raise HTTPException(
+            400, "execution options apply to runs and asynchronous endpoint calls, not to synchronous calls"
+        )
     if mode != "run":
         _endpoint_limits(p, mode)
     if mode == "sync":
@@ -547,23 +664,46 @@ def _invoke_job(
     name = render.op_name(p.owner, model, idempotency_key)
     timeout = req.timeout_s  # no deadline unless asked for: queued work waits for as long as it takes (days)
     secret = None
-    ex = execution.resolve(req.execution, p.namespace, m) if mode == "run" else None
-    if ex and (
-        (ex.get("placement") or {}).get("fallback_wait_s") is not None
-        or (ex.get("recovery") or {}).get("on_infrastructure_loss") == "recover"
-    ):
-        _continuation_limits(p)
+    ex = execution.resolve(req.execution, p.namespace, m) if mode in ("run", "async") else None
+    if mode == "async" and ex:
+        # an endpoint call with private input and application-owned output (docs/API.md "Endpoint calls")
+        if ex.get("placement") or ex.get("recovery"):
+            raise HTTPException(400, "execution.placement and execution.recovery apply to runs, not to endpoint calls")
+        if ex.get("io_mode") == "application" and not ex.get("private_input_ref"):
+            raise HTTPException(
+                400,
+                "an application-I/O endpoint call takes its request and its destination from a binding: give private_input_ref",
+            )
+        if ex.get("private_input_ref") and req.input:
+            raise HTTPException(
+                400, "the request of an endpoint call with private_input_ref lives in the binding: input must be empty"
+            )
     allowed = (ex.get("placement") or {}).get("allowed_clusters") if ex else None
-    if allowed and req.region and req.region not in allowed:
+    if allowed and req.region and req.region not in allowed and kube.cluster_region(req.region) not in allowed:
         # an explicit region that contradicts the caller's own cluster list; an implicit one (the default above) is no
         # request: a fleet run is placed within allowed_clusters, a single-cluster run must be allowed here
         raise HTTPException(400, f"region {req.region} is not in allowed_clusters {allowed}")
     if allowed and not FLEET_MANAGER and mode == "run" and region not in allowed:
         raise HTTPException(400, f"this API runs jobs in {region} only, which allowed_clusters {allowed} excludes")
     if mode == "async":  # the caller Job runs in the endpoint's region, through that region's gateway
-        output_prefix = f"s3://{artifacts.storage(p.namespace, region)['bucket']}/operations/{name}"
+        application = bool(ex and ex.get("io_mode") == "application")
+        output_prefix = (
+            "" if application else f"s3://{artifacts.storage(p.namespace, region)['bucket']}/operations/{name}"
+        )
         job, secret = jobs.build_async(
-            name, m, req.input, p.tenant, p.key, req.name, idempotency_key, timeout, output_prefix, region
+            name,
+            m,
+            req.input,
+            p.tenant,
+            p.key,
+            req.name,
+            idempotency_key,
+            timeout,
+            output_prefix,
+            region,
+            ex=ex,
+            key_hash=billing.key_hash(p.key),
+            admitted=_admitted_token(keys.key_hash(p.key)) if cfg.ROUTER_KEY else None,
         )
     elif FLEET_MANAGER:
         _guard_run_input(m, req, p, REGION, ex)
@@ -624,7 +764,12 @@ def _create_admitted(p, name, job, region, secret, req, mode):
         _check_operation_owner(p, existing)
         reservation = {"replay": True}
     else:
-        reservation = _admit(p, name, _gpu_reservation(_job_gpus(job), req, p) if mode == "run" else 0.0)
+        reservation = _admit(
+            p,
+            name,
+            _gpu_reservation(_job_gpus(job), req, p) if mode == "run" else 0.0,
+            run_member=mode in ("run", "async"),  # a run or an endpoint call: its continuations join this reservation
+        )
     try:
         created_job, created = jobs.create(p.namespace, job, region, secret)
     except Exception:
@@ -871,11 +1016,18 @@ def _owned(p: Principal, id: str, follow: bool = True) -> tuple[dict, str]:
             rows = [r for r in attempts.for_operation(current) if r["operation"] == current and r["tenant"] == p.tenant]
             if not rows and previous is not None:
                 return previous  # a verified owner's successor is not created yet
+            last = rows[-1] if rows else {}
             synthetic_job = {
                 "metadata": {
                     "name": current,
-                    "labels": {f"{cfg.LABEL}/tenant": p.tenant, f"{cfg.LABEL}/mode": "run"},
-                    "annotations": {f"{cfg.LABEL}/resumed-from": rows[-1]["root"] if rows else current},
+                    "labels": {
+                        f"{cfg.LABEL}/tenant": p.tenant,
+                        f"{cfg.LABEL}/mode": last.get("mode") or "run",
+                        **(
+                            {f"{cfg.LABEL}/model": last["model"]} if last.get("model") else {}
+                        ),  # the allow-list applies
+                    },
+                    "annotations": {f"{cfg.LABEL}/resumed-from": last.get("root") or current},
                 }
             }
             _check_operation_owner(p, synthetic_job)
@@ -1001,8 +1153,14 @@ def _finalizers(p: Principal, name: str, root: str) -> dict:
         for j in jobs.list_ops(p.namespace, p.tenant, None, 500)
         if _may_read_operation(p, j)
         and (j["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/export-of") == name
-        and (j["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/attempt-role") == "finalize"
+        and (
+            (j["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/attempt-role") == "finalize"
+            or (j["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/mode") == "async"
+        )
     ]
+    role = (
+        "export" if xs and (xs[0]["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/mode") == "async" else "finalize"
+    )
     out: dict = {"finalize_attempts": len(xs)}
     active = [
         j
@@ -1022,7 +1180,7 @@ def _finalizers(p: Principal, name: str, root: str) -> dict:
                 "error": None,
                 "attempt_id": latest.get("pod") if latest else None,
                 "epoch": latest.get("epoch") if latest else None,
-                "attempt_role": "finalize",
+                "attempt_role": role,
                 "cluster": (latest.get("cluster") or kube.cluster_id_or_none(latest.get("region")))
                 if latest
                 else out.get("cluster"),
@@ -1031,9 +1189,48 @@ def _finalizers(p: Principal, name: str, root: str) -> dict:
     return out
 
 
+def _delivered(op: dict, name: str, root: str) -> dict:
+    """What a transfer-only retry or an application finalizer (`<name>-x<n>`) that delivered means for `name`
+    (docs/JOBS.md "Attempts and finalization", "Finalization by the application"): a run or an endpoint call whose
+    inference succeeded is SUCCEEDED with the delivering attempt's result; a delivered capture of an endpoint error
+    (the retry's exit code 2 or 5, the captured status class) stays FAILED and reports the delivery next to it, so
+    delivery never turns a failed inference into a success."""
+    done = [
+        r
+        for r in attempts.for_operation(root)
+        if r["operation"].startswith(f"{name}-x")
+        and (
+            (r.get("export_state") or r.get("export")) == "succeeded"
+            or (r.get("result_ref") and r["status"] == "succeeded")
+        )
+    ]
+    if not done:
+        return {}
+    last = done[-1]
+    out = {
+        "export_state": last.get("export_state") or "succeeded",
+        "exported_by": last["operation"],
+        "result_ref": last.get("result_ref") or op.get("result_ref"),
+    }
+    if last.get("exit_code") in (2, 5) or (last["status"] != "succeeded" and last.get("exit_code")):
+        out.update(
+            {
+                "status": "FAILED",
+                "error": "the endpoint answered an error; its response was delivered (see result_ref), inference did not succeed",
+            }
+        )
+    else:
+        out.update({"status": "SUCCEEDED", "error": None})
+    return out
+
+
 def _operation(p: Principal, job: dict, id: str, region: str | None) -> dict:
     if job.get("_synthetic"):
-        return job["_synthetic"]
+        op = dict(job["_synthetic"])
+        if op["status"] in ("EXPORT_FAILED", "FINALIZING", "FAILED") and attempts.enabled():
+            root = (job["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/resumed-from") or op["id"]
+            op.update(_delivered(op, op["id"], root))  # a retry that delivered after the Job was gone
+        return op
     name = job["metadata"]["name"]
     records, root = _records(p, job, name, region)
     op = jobs.normalise(job, _price(job), records)
@@ -1052,34 +1249,12 @@ def _operation(p: Principal, job: dict, id: str, region: str | None) -> dict:
         op.update(
             _chain(p, op, job, root)
         )  # a chain member, a followed handle, or a root with retries/successors on record
-    if (
-        op["status"] in ("FAILED", "EXPORT_FAILED")
-        and attempts.enabled()
-        and (job["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/mode") == "run"
-    ):
+    if op["status"] in ("FAILED", "EXPORT_FAILED") and attempts.enabled():
+        # a run's application finalizer, or an endpoint call's transfer-only retry: while one runs, the root's handle
+        # shows FINALIZING and the active attempt (the identity a refresh broker verifies against the pod's token)
         op.update(_finalizers(p, name, root))
     if op["status"] in ("EXPORT_FAILED", "FINALIZING", "FAILED") and attempts.enabled():
-        # a transfer-only retry or an application finalizer (`<id>-x<n>`) that delivered closes the original (docs/JOBS.md
-        # "Attempts and finalization", "Finalization by the application"); a FAILED run only ever has finalizers
-        done = [
-            r
-            for r in attempts.for_operation(root)
-            if r["operation"].startswith(f"{name}-x")
-            and (
-                (r.get("export_state") or r.get("export")) == "succeeded"
-                or (r.get("result_ref") and r["status"] == "succeeded")
-            )
-        ]
-        if done:
-            op.update(
-                {
-                    "status": "SUCCEEDED",
-                    "export_state": done[-1].get("export_state") or "succeeded",
-                    "exported_by": done[-1]["operation"],
-                    "result_ref": done[-1].get("result_ref") or op.get("result_ref"),
-                    "error": None,
-                }
-            )  # the delivering attempt's result
+        op.update(_delivered(op, name, root))  # a retry or finalizer that delivered closes the original
     return op
 
 
@@ -1119,10 +1294,17 @@ def get_result(id: str, p: Principal = Depends(scoped("read:results"))):
         return JSONResponse(res, status_code=409)
     prefix = jobs.output_prefix(job)
     application = (op.get("execution") or {}).get("io_mode") == "application"
-    if op["mode"] == "async":
+    if op["mode"] == "async" and not application:
         res["result"] = artifacts.read_json(
             p.namespace, f"operations/{id}/out/response.json", region or REGION, prefix=prefix
         )
+    elif op["mode"] == "async":
+        # application-owned output (docs/JOBS.md "Endpoint calls with private input and application-owned output"): the
+        # capture is in the application's storage; `result_ref` names it, `export_state` says it arrived; a FAILED
+        # call (the endpoint answered 4xx) is delivered the same way and reports both
+        res["result"] = None
+        res["exported_by"] = op.get("exported_by")
+        res["capture_attempt_id"] = op.get("attempt_id")
     res["artifacts"] = (
         artifacts.list_outputs(p.namespace, id, region or REGION, prefix)
         if op["mode"] == "run" and not application
@@ -1138,7 +1320,6 @@ def export_again(id: str, p: Principal = Depends(scoped("read:results", "run:con
     """Transfer-only retry of an EXPORT_FAILED run (managed I/O): a new operation `<id>-x<n>` with the uploader on the
     kept work volume and a main container that does nothing; the simulation is not rerun (docs/JOBS.md)."""
     orig, region = _owned(p, id)
-    _continuation_limits(p)
     exported = (orig["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/export-of")
     if exported:  # a previous retry's handle: the retry is of the compute attempt, never of a retry
         orig, region = _owned(p, exported, follow=False)
@@ -1148,6 +1329,28 @@ def export_again(id: str, p: Principal = Depends(scoped("read:results", "run:con
         active, _ = _owned(p, op["finalizing_by"], follow=False)
         return JSONResponse(jobs.normalise(active, _price(active)), status_code=200)
     m = _model(orig["metadata"]["labels"].get("serverless2.nebius/model", ""))
+    if op["mode"] == "async":
+        # an endpoint call is delivered again when its capture is complete and its delivery failed: EXPORT_FAILED (a 2xx
+        # capture), or FAILED with export_state failed when the capture is an endpoint error (exit 2 or 5); an unknown
+        # outcome (exit 4) or a retry that found nothing (exit 3) has no capture to deliver
+        last_exit = next(
+            (r.get("exit_code") for r in reversed(op.get("attempts") or []) if r.get("exit_code") is not None), None
+        )
+        failed_capture = op["status"] == "FAILED" and op.get("export_state") == "failed" and last_exit in (0, 2, 5)
+        if op["status"] not in ("EXPORT_FAILED", "FINALIZING") and not failed_capture:
+            raise HTTPException(
+                409,
+                f"operation {id} is {op['status']}"
+                + (" with no complete capture (inference outcome unknown)" if last_exit == 4 else "")
+                + "; only an endpoint call whose capture is complete and undelivered is delivered again",
+            )
+        root = (orig["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/resumed-from") or orig["metadata"]["name"]
+        job, created = continue_run(
+            root,
+            lambda admit: jobs.export_async(p.namespace, orig["metadata"]["name"], _home(orig), m, admit=admit),
+            transfer_only=True,
+        )
+        return _continued(p, job, created, region)
     finalize = None
     fz = (m.get("job") or {}).get("finalize")
     if op["status"] == "FAILED" and fz and (op.get("execution") or {}).get("io_mode") == "application":
@@ -1177,13 +1380,19 @@ def export_again(id: str, p: Principal = Depends(scoped("read:results", "run:con
                 else ""
             ),
         )
-    job, created = jobs.export_again(
-        p.namespace,
-        orig["metadata"]["name"],
-        _home(orig),
-        m,
-        catalog.region_params(m, region) if region else {},
-        finalize=finalize,
+    root = (orig["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/resumed-from") or orig["metadata"]["name"]
+    job, created = continue_run(
+        root,
+        lambda admit: jobs.export_again(
+            p.namespace,
+            orig["metadata"]["name"],
+            _home(orig),
+            m,
+            catalog.region_params(m, region) if region else {},
+            finalize=finalize,
+            admit=admit,
+        ),
+        transfer_only=True,
     )
     return _continued(p, job, created, region)
 
@@ -1244,7 +1453,9 @@ def cancel(id: str, p: Principal = Depends(scoped("run:control"))):
         job, _ = _owned(p, op["finalizing_by"], follow=False)
         current = job["metadata"]["name"]
     attempts.mark_cancelled(current)  # a late "succeeded" from the cancelled attempt is refused from now on
-    op = jobs.normalise(jobs.cancel(p.namespace, current, _home(job)))
+    cancelled = jobs.cancel(p.namespace, current, _home(job))
+    settle_deleted(cancelled)
+    op = jobs.normalise(cancelled)
     if op["status"] in ("QUEUED", "RUNNING"):
         op["status"] = "CANCELLED"  # the Job controller converges within seconds (pods get SIGTERM)
     return op
@@ -1265,7 +1476,6 @@ def resume(
     `checkpoint_ref` (a portable checkpoint the application restores itself) the volume and the region are not
     needed: the run is placed again, optionally on another `gpu_class` (its image), docs/JOBS.md "Execution options"."""
     orig, region = _owned(p, id)
-    _continuation_limits(p)
     m = _model(orig["metadata"]["labels"].get("serverless2.nebius/model", ""))
     req = req or ResumeRequest()
     if req.gpu_class and req.gpu_class not in jobs.gpu_classes(m):
@@ -1288,17 +1498,21 @@ def resume(
     )
     if req.gpu_class and placement:
         placement["classes"] = [req.gpu_class]
-    job, created = jobs.resume(
-        p.namespace,
-        orig["metadata"]["name"],
-        _home(orig),
-        m,
-        catalog.region_params(m, region) if region and not req.checkpoint_ref and not req.gpu_class else {},
-        placement,
-        checkpoint_ref=req.checkpoint_ref,
-        gpu_class=req.gpu_class,
-        idem=idempotency_key,
-        pointer=pointer,
+    job, created = continue_run(
+        root,
+        lambda admit: jobs.resume(
+            p.namespace,
+            orig["metadata"]["name"],
+            _home(orig),
+            m,
+            catalog.region_params(m, region) if region and not req.checkpoint_ref and not req.gpu_class else {},
+            placement,
+            checkpoint_ref=req.checkpoint_ref,
+            gpu_class=req.gpu_class,
+            idem=idempotency_key,
+            pointer=pointer,
+            admit=admit,
+        ),
     )
     return _continued(p, job, created, region)
 
@@ -1313,18 +1527,26 @@ def _continued(p: Principal, job: dict, created: bool, region: str | None) -> JS
 
 # ---- bindings: confidential inputs for runs (docs/JOBS.md "Execution options") ----
 @app.put("/v1/bindings/{ref}", responses={200: {"model": schemas.Binding}})
-def put_binding(ref: str, req: BindingRequest, p: Principal = Depends(scoped("artifacts:write"))):
-    return execution.put_binding(p.namespace, p.tenant, ref, req.data)
+def put_binding(
+    ref: str,
+    req: BindingRequest,
+    p: Principal = Depends(scoped("artifacts:write")),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    """Create or replace the caller's binding. A binding belongs to the principal that created it: another principal
+    of the tenant cannot read, replace, revoke or consume it (404); an admin may. `If-Match: <revision>` makes the
+    replacement a compare-and-swap (409 when the binding changed meanwhile)."""
+    return execution.put_binding(p.namespace, p.tenant, ref, req.data, p.owner, p.role == "admin", if_match)
 
 
 @app.get("/v1/bindings", responses={200: {"model": list[schemas.Binding]}})
 def list_bindings(p: Principal = Depends(principal)):
-    return execution.list_bindings(p.namespace)
+    return execution.list_bindings(p.namespace, p.owner, p.role == "admin")
 
 
 @app.delete("/v1/bindings/{ref}", status_code=204)
 def delete_binding(ref: str, p: Principal = Depends(scoped("artifacts:write"))):
-    if not execution.delete_binding(p.namespace, ref):
+    if not execution.delete_binding(p.namespace, ref, p.owner, p.role == "admin"):
         raise HTTPException(404, f"binding {ref}: not found")
     return None
 
@@ -1408,28 +1630,34 @@ def _variants_public(m: dict, region: str) -> list[dict]:
 
 @app.get("/v1/endpoints", responses={200: {"model": list[schemas.Endpoint]}})
 def list_endpoints(region: str | None = None, p: Principal = Depends(scoped("read:catalog"))):
+    """Every deployment of every endpoint the key may see: one entry per deployment cluster (`cluster` is the id the
+    catalog keys it by, `region` the Nebius region the API reaches it in). `region` selects a cluster id or a region."""
     served_regions = kube.regions()
-    if region and region not in served_regions:
-        raise HTTPException(400, f"region {region} is not served by this API")
-    selected_region = region
+    if region and region not in served_regions and kube.cluster_region(region) not in served_regions:
+        raise HTTPException(400, f"region {region} is not served by this API (available: {served_regions})")
     out = []
     for m in catalog.all_models().values():
         if not allows_model(p, m["name"]):
             continue
         if m["mode"] == "run":
             continue
-        for region in [selected_region] if selected_region else served_regions:
-            if region not in m["regions"]:
+        for cid in m["regions"]:
+            cluster_region = kube.cluster_region(cid)
+            if region and region not in (cid, cluster_region):
+                continue
+            if cluster_region not in served_regions:
                 continue
             try:
-                i = _deployed(m, region)
+                _deployment_of(m, cid)  # 400 for a cluster this API cannot tell apart from another in its region
+                i = _deployed(m, cluster_region)
                 if i:
                     out.append(
                         {
-                            **ep.to_public(m, i, region),
+                            **ep.to_public(m, i, cluster_region),
+                            "cluster": cid,
                             **(
                                 {"variants": vs, "routing": m.get("routing")}
-                                if (vs := _variants_public(m, region))
+                                if (vs := _variants_public(m, cluster_region))
                                 else {}
                             ),
                         }
@@ -1440,7 +1668,8 @@ def list_endpoints(region: str | None = None, p: Principal = Depends(scoped("rea
                         "id": m["k8s_name"],
                         "name": m["display_name"],
                         "model": m["name"],
-                        "region": region,
+                        "region": cluster_region,
+                        "cluster": cid,
                         "status": "unavailable",
                         "replicas_ready": None,
                         "gpu": m.get("gpu"),
@@ -1495,12 +1724,8 @@ def update_endpoint(id: str, req: ScalingRequest, region: str | None = None, p: 
 
 
 def _endpoint_region(m: dict, region: str | None) -> str:
-    selected = region or (REGION if REGION in m["regions"] else m["regions"][0])
-    if selected not in kube.regions():
-        raise HTTPException(400, f"region {selected} is not served by this API")
-    if selected not in m["regions"]:
-        raise HTTPException(404, "Endpoint not deployed in this region")
-    return selected
+    """The Nebius region an endpoint request is served in, from a cluster id or a region (`_deployment_of`)."""
+    return _deployment_of(m, region)[1]
 
 
 @app.get("/v1/endpoints/{id}/metrics", responses={200: {"model": schemas.Metrics}})

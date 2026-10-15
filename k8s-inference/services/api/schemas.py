@@ -85,7 +85,7 @@ class InvokeRequest(BaseModel):
     region: str | None = None
     priority: str | None = None
     timeout_s: int | None = Field(default=None, ge=1, le=INVOKE_TIMEOUT_MAX_S)
-    execution: ExecutionSpec | None = None  # docs/JOBS.md "Execution options" (runs only)
+    execution: ExecutionSpec | None = None  # docs/JOBS.md "Execution options" (runs; endpoint calls: docs/API.md)
 
 
 class ResumeRequest(BaseModel):
@@ -305,6 +305,7 @@ class ModelGpu(BaseModel):
 
 class ModelRegion(BaseModel):
     region: str | None = None
+    cluster: str | None = None
     status: Literal["ready", "scaled-to-zero", "deploying", "error", "unavailable"] | None = None
     replicas_ready: int | None = None
     reason: str | None = None
@@ -492,6 +493,9 @@ class Endpoint(BaseModel):
     name: str
     model: str
     region: str
+    cluster: str | None = (
+        None  # the deployment's cluster id as the catalog keys it (`north`); `region` is where the API reaches it
+    )
     url: str
     status: Literal["ready", "scaled-to-zero", "deploying", "error", "unavailable"]
     replicas_ready: int | None
@@ -584,8 +588,18 @@ class ExecutionCapabilitiesRecovery(BaseModel):
     requires: str | None = None
 
 
+class ExecutionCapabilitiesAsyncPrivateIO(BaseModel):
+    """Endpoint calls with private input and application-owned output (docs/JOBS.md): present when the API has them."""
+
+    version: int | None = None
+    refresh: bool | None = None
+    retained_export: bool | None = None
+    binding_keys: list[str] | None = None
+
+
 class ExecutionCapabilities(BaseModel):
     io_modes: list[Literal["managed", "application"]] | None = None
+    async_private_io: ExecutionCapabilitiesAsyncPrivateIO | None = None
     identities: list[str] | None = None
     execution_profiles: list[str] | None = None
     oidc_issuers: dict[str, str] | None = None
@@ -611,6 +625,8 @@ class Binding(BaseModel):
     operation: str | None = None
     keys: list[str] | None = None
     updated_at: str | None = None
+    owner: str | None = None
+    revision: str | None = None
 
 
 class MetricSeries(BaseModel):
@@ -654,6 +670,15 @@ class RateLimit(BaseModel):
     window_s: int | None = None
 
 
+class KeyUsage(BaseModel):
+    """What the key holds beyond its spend (docs/API.md "Keys"): operations in flight, GPU seconds reserved by active
+    work, GPU seconds of attempts that ended without a trustworthy measurement (kept against the budget)."""
+
+    active_operations: int | None = None
+    reserved_gpu_seconds: float | None = None
+    unknown_gpu_seconds: float | None = None
+
+
 class ApiKey(BaseModel):
     id: str | None = None
     key: str | None = None
@@ -676,6 +701,7 @@ class ApiKey(BaseModel):
     rate_limit: RateLimit | None = None
     principal_id: str | None = None
     legacy: dict[str, Any] | None = None
+    usage: KeyUsage | None = None
 
 
 class ModelWrite(BaseModel):

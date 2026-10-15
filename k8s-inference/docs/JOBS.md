@@ -462,6 +462,45 @@ operation without pod retries). The uploader puts `out/response.json` and `out/c
 bucket; `GET /v1/operations/{id}/result` returns the response inline from there. The request body
 names the served model as the endpoint expects it (`served_model`, injected when the caller omits `model`).
 
+### Endpoint calls with private input and application-owned output
+
+An endpoint call may carry the `execution` block of a run (`io_mode: application`, `private_input_ref`,
+`workload_identity_ref`, `profile_ref`; no placement or recovery): the request and the destination then come from
+the binding, never from the Job, and the capture goes to the application's own storage, never to the platform bucket.
+`GET /v1/fleet` → `execution.async_private_io` says an API supports it. The binding's files:
+
+| key | meaning |
+|---|---|
+| `request.json` or `input_url` | the body to POST (inline, 64 KiB bound), or a URL to fetch it from at transfer time |
+| `response_url`, `call_url` | presigned PUT URLs for the capture (`response.bin`, `call.json`) |
+| `result_ref` | the application's stable reference to the delivered result (opaque; returned as `result_ref`) |
+| `refresh_url`, `refresh_token` (optional) | the caller POSTs `{"operation_id", "attempt_id", "phase": "input"\|"output"}` with `Authorization: Bearer <refresh_token>` and, with an identity, `X-Workload-Identity: <projected token>`; the answer carries fresh `input_url` / `response_url` / `call_url` |
+
+With `refresh_url` every transfer asks the application for URLs at that moment (a queued call outlives a URL minted
+at submission); static URLs work too. The caller (`call.sh`) fetches the input, probes the endpoint's readiness through
+the gateway with an idempotent GET (`health_path`, else `/v1/models` on an OpenAI endpoint, else `/`; a cold or
+scaled-to-zero endpoint is woken by it and the probe repeats until it answers), then POSTs the request **exactly once**
+with the key and the API's admission token (`x-serverless2-admitted`: the hook counts the call once). `posted.json` is
+written before the POST: a pod retried after it finds the marker without a capture and never posts again. No response
+(the connection broke, or the edge gave up before the first byte) is an **unknown** outcome: the operation is `FAILED`
+("inference outcome unknown"), there is nothing to export, and the application decides whether to submit again; only a
+429 from the edge (rejected before the model) is asked again. Any response is captured as `response.bin` plus
+`call.json` (`operation_id`, `attempt_id`, `http_status`, `content_type`, `size_bytes`, `sha256`, `timings` with
+`posted_at`, `first_byte_at`, `completed_at` as RFC 3339 UTC and `duration_s`, `capture_complete: true`), written to the
+call's retained work volume first, `call.json` last. Then it uploads both and writes `RESULT.json` with the `result_ref`
+for the uploader's attempt record: the operation is `SUCCEEDED` only with that record; a failed upload is
+`EXPORT_FAILED` with the capture kept, and `POST /v1/operations/{id}:export` renders the caller again on the same volume
+with `TRANSFER_ONLY=1`: it delivers the complete capture and never calls the endpoint again (no complete capture: the
+retry fails with "nothing to export"); while it runs the root reports `FINALIZING`, `finalizing_by` and the retry's
+`attempt_id` (`attempt_role: export`). Any other status from the endpoint is captured and delivered as well: the operation is
+`FAILED` (exit 2 for a 4xx, the caller's error; exit 5 for another status, the endpoint's error) and
+`GET /v1/operations/{id}/result` reports `export_state: succeeded` with the `result_ref` of that delivered error
+response; a re-delivery through `:export` ends with the same captured outcome, so a delivered error never becomes a
+success, live or after the Job is gone. A FAILED call whose delivery failed (`export_state: failed`, a complete capture)
+is delivered again by `:export` like an EXPORT_FAILED one; an unknown outcome has nothing to deliver. The endpoint's pods receive an HTTP request and nothing else: no URL,
+token or credential of the binding reaches them. The call's reservation on the key (slot and request, docs/API.md
+"Keys") is released by the billing pass when the Job ends; a continuation joins it as a member.
+
 ## Status mapping
 
 `EXPORT_FAILED`: the run itself succeeded, its delivery did not (see "Attempts and finalization"); resumable and
