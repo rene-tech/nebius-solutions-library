@@ -32,7 +32,7 @@ check_lint() {
   step "Python lint and format (Ruff)"
   (cd "$ROOT" && "$PYTHON" -m ruff check services stack && "$PYTHON" -m ruff format --check services stack)
   step "ShellCheck: fleet scripts and container entry points"
-  shellcheck "$ROOT"/stack.sh "$ROOT"/stack/{scripts,bootstrap}/*.sh "$ROOT"/tools/*.sh "$ROOT"/services/{jobs,ops}/bin/*.sh
+  shellcheck "$ROOT"/stack.sh "$ROOT"/stack/{scripts,bootstrap}/*.sh "$ROOT"/tools/*.sh "$ROOT"/services/{jobs,ops}/bin/*.sh "$ROOT"/charts/platform/files/*.sh
   step "terraform fmt"
   terraform fmt -check -recursive "$ROOT/stack"
 }
@@ -43,6 +43,20 @@ check_terraform() {
     tf "$d" init -backend=false -input=false > /dev/null
     tf "$d" validate -no-color > /dev/null; echo "   ok $d"
   done
+  step "iam_token is an ephemeral, sensitive input referenced by the platform providers only (a saved plan never freezes it)"
+  "$PYTHON" - "$ROOT" <<'PYEOF7'
+import re, sys, pathlib
+root = pathlib.Path(sys.argv[1])
+cfg = (root / "stack/platform/config.tf").read_text()
+m = re.search(r'variable "iam_token" \{(.*?)\n\}', cfg, re.S)
+assert m, "stack/platform/config.tf: no variable iam_token"
+body = m.group(1)
+assert re.search(r"\bephemeral\s*=\s*true", body), "iam_token must be ephemeral = true (a saved plan would freeze the token)"
+assert re.search(r"\bsensitive\s*=\s*true", body), "iam_token must be sensitive = true"
+users = sorted(str(p.relative_to(root)) for p in (root / "stack").rglob("*.tf") if ".terraform" not in p.parts and "var.iam_token" in p.read_text())
+assert users == ["stack/platform/providers.tf"], f"var.iam_token must be referenced by stack/platform/providers.tf only, found in {users}"
+print("   ok iam_token: ephemeral + sensitive, referenced by stack/platform/providers.tf only")
+PYEOF7
   step "terraform.tfvars.example passes the schema validations"
   tf stack/config plan -input=false -lock=false -var-file="$EXAMPLE" > /dev/null; echo "   ok $(basename "$EXAMPLE")"
   step "fleet operator configuration tests"
@@ -358,11 +372,12 @@ for cid in open(f"{tmp}/clusters.txt").read().split():
              and o["metadata"]["name"] in ("serverless2-api-endpoints", "serverless2-api-agent-models")]
     for role in roles:
         rules = [r for r in role["rules"] if "serving.knative.dev" in r.get("apiGroups", [])]
-        assert rules, f"{cid}: Role {role['metadata']['name']} grants no serving.knative.dev read (kube._rollout needs revisions get/list)"
+        assert rules, f"{cid}: Role {role['metadata']['name']} grants no serving.knative.dev read (kube._rollout needs revisions and services get/list)"
         for r in rules:
-            assert set(r.get("resources", [])) <= {"revisions"}, f"{cid}: Role {role['metadata']['name']} reaches {r['resources']} on serving.knative.dev; revisions only"
-            assert set(r["verbs"]) <= {"get", "list"}, f"{cid}: Role {role['metadata']['name']} grants {r['verbs']} on revisions: read-only"
-        assert any("revisions" in r.get("resources", []) and {"get", "list"} <= set(r["verbs"]) for r in rules), f"{cid}: Role {role['metadata']['name']}: revisions get+list missing"
+            assert set(r.get("resources", [])) <= {"revisions", "services"}, f"{cid}: Role {role['metadata']['name']} reaches {r['resources']} on serving.knative.dev; revisions and services only"
+            assert set(r["verbs"]) <= {"get", "list"}, f"{cid}: Role {role['metadata']['name']} grants {r['verbs']} on serving.knative.dev: read-only"
+        for resource in ("revisions", "services"):  # the ready Revision's image, and the predictor Service's generations (0.11.109 witness)
+            assert any(resource in r.get("resources", []) and {"get", "list"} <= set(r["verbs"]) for r in rules), f"{cid}: Role {role['metadata']['name']}: {resource} get+list missing (a require_converged call is refused 409 while the predictor Service is unreadable)"
         # the opt-in ingress policy (services/api/render_endpoint.py _ingress_policy) is applied and deleted by the same Roles:
         # ciliumnetworkpolicies only on cilium.io, nothing wider (no clusterwide policies, no other Cilium objects)
         cil = [r for r in role["rules"] if "cilium.io" in r.get("apiGroups", [])]
@@ -379,7 +394,7 @@ for cid in open(f"{tmp}/clusters.txt").read().split():
             if "configmaps" in r.get("resources", []):
                 assert set(r["verbs"]) <= {"get", "list", "create", "patch", "delete"}, f"{cid}: Role {role['metadata']['name']} grants {r['verbs']} on configmaps"
         seen += 1
-        print(f"   ok revision read {cid}: Role {role['metadata']['name']} reads serving.knative.dev revisions, read-only; ciliumnetworkpolicies and configmaps scoped")
+        print(f"   ok revision read {cid}: Role {role['metadata']['name']} reads serving.knative.dev revisions and services, read-only; ciliumnetworkpolicies and configmaps scoped")
 assert seen, "no cluster rendered an API Role in the models namespace"
 EOF5
 }
@@ -391,6 +406,7 @@ check_tests() {
   bash "$ROOT/tools/registry-key-test.sh"
   step "tests: shared-scratch leaf proof/cleanup/provision (services/jobs/bin/scratch.sh)"
   bash "$ROOT/tools/scratch-test.sh"
+  bash "$ROOT/tools/node-config-test.sh"
   step "tests: filesystem attachment and GPU scale-to-zero storage"
   tf stack/modules/cluster init -backend=false -input=false > /dev/null
   tf stack/modules/cluster test -no-color
