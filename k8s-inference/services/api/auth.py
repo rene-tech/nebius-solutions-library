@@ -39,13 +39,7 @@ class Principal:
     @property
     def owner(self) -> str:
         """Opaque stable operation owner; multiple imported keys of one principal agree."""
-        principal_id = ((self.info.get("metadata") or {}).get("legacy") or {}).get("principal_id")
-        identity = (
-            [self.tenant, "principal", principal_id] if principal_id else [self.tenant, "key", keys.key_hash(self.key)]
-        )
-        import json
-
-        return keys.key_hash(json.dumps(identity, separators=(",", ":")))
+        return keys.owner_identity(self.tenant, self.info, self.hash)
 
     def public(self) -> dict:
         i = self.info

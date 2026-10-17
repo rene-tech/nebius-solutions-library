@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.132
+
+(API image only.)
+
+- Keys (docs/API.md "Keys"): `POST /v1/fleet/tenants/{t}/keys` and `POST /v1/keys` take `owner_of` (an existing key of
+  the tenant whose operations the new key owns too: a rotation or a rename keeps every retained operation readable
+  by the successor and by the readers of that owner; the owner is stored on the key, never derived again) and
+  `scopes` (the import vocabulary; unknown scopes are refused). An alias that already carries the tenant prefix, or
+  equals the tenant name, is not prefixed again.
+
 ## api 0.11.131
 
 (API image only.)

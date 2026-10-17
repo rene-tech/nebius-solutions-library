@@ -251,12 +251,16 @@ class ScalingRequest(BaseModel):
 
 class KeyRequest(BaseModel):
     """A new key: `budget` in USD (default 10; an explicit `null` is unlimited), the model allow-list (empty = every
-    model), `expires_days` (null = never)."""
+    model), `expires_days` (null = never). `owner_of` names an existing key of the tenant whose operations the new key
+    owns too (a successor for a rotation or a rename: same history, same readers); `scopes` restricts the key (docs/API.md
+    "Scopes"). The alias is prefixed with the tenant unless it already is, or equals the tenant name."""
 
     alias: str
     budget: float | None = Field(default=10.0, ge=0)
     models: list[str] = Field(default_factory=list)
     expires_days: int | None = Field(default=None, ge=0)
+    owner_of: str | None = None
+    scopes: list[str] | None = None
 
 
 class KeyUpdate(BaseModel):

@@ -210,3 +210,37 @@ def test_the_fleet_surface_is_the_fleet_operators_only_and_the_fleet_operator_is
         [{**LEGACY, "hash": "e" * 64, "alias": "x", "principal_id": "p", "role": "fleet"}], "demo"
     )
     assert not rows and errors and "role must be user" in str(errors)
+
+
+def test_a_successor_key_owns_the_same_operations_and_keeps_a_plain_alias(database, client, monkeypatch):
+    """`owner_of` (docs/API.md "Keys", rotation): the new key is the same owner as the key it succeeds, so the retained
+    operations stay readable after the old key is revoked; `scopes` restrict it; an alias that already carries the
+    tenant, or is the tenant name, is not prefixed again."""
+    import keys
+
+    c, _ = _rig(database, client, monkeypatch)
+    old = keys.by_alias("demo", "demo-lab-1")
+    assert old and old["token"] == "a" * 64
+    made = c.post(
+        "/v1/fleet/tenants/demo/keys",
+        headers=FLEET_KEY,
+        json={"alias": "demo", "owner_of": "demo-lab-1", "scopes": ["read:operations"]},
+    )
+    assert made.status_code == 201, made.text
+    assert made.json()["alias"] == "demo" and made.json()["key"].startswith("sk-")
+    new = keys.by_alias("demo", "demo")
+    assert keys.owner_identity("demo", new, new["token"]) == keys.owner_identity("demo", old, old["token"])
+    assert new["scopes"] == ["read:operations"] and new["metadata"]["owner"] == keys.owner_identity(
+        "demo", old, old["token"]
+    )
+    # the same owner through the API: the successor reads the predecessor's operation, a plain new key does not
+    plain = c.post("/v1/fleet/tenants/demo/keys", headers=FLEET_KEY, json={"alias": "demo-other"})
+    assert plain.status_code == 201 and plain.json()["alias"] == "demo-other"
+    other = keys.by_alias("demo", "demo-other")
+    assert keys.owner_identity("demo", other, other["token"]) != keys.owner_identity("demo", old, old["token"])
+    assert (
+        c.post("/v1/fleet/tenants/demo/keys", headers=FLEET_KEY, json={"alias": "x", "owner_of": "nope"}).status_code
+        == 404
+    )
+    bad = c.post("/v1/fleet/tenants/demo/keys", headers=FLEET_KEY, json={"alias": "y", "scopes": ["read:everything"]})
+    assert bad.status_code == 400 and "read:everything" in bad.text

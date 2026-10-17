@@ -123,7 +123,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.131", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.132", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -3342,14 +3342,30 @@ def fleet_create_key(tenant: str, req: KeyRequest, p: Principal = Depends(fleet_
     none); the value is returned once."""
     _fleet_only()
     tenant = _fleet_tenant(tenant)
+    return _key_minted(tenant, req, {"allowed_passthrough_routes": []}, f"fleet:{p.info.get('key_alias')}")
+
+
+def _key_minted(tenant: str, req: KeyRequest, metadata: dict, by: str | None) -> dict:
+    """A user key of a tenant (keys.create): the value is returned once. The alias carries the tenant prefix (given
+    or added); `owner_of` makes the key a successor of an existing key of the tenant (same operation owner, so a
+    rotation or a rename keeps every retained operation readable); `scopes` are checked against the vocabulary."""
+    alias = req.alias if req.alias == tenant or req.alias.startswith(f"{tenant}-") else f"{tenant}-{req.alias}"
+    if req.owner_of is not None:
+        previous = keys.by_alias(tenant, req.owner_of)
+        if not previous:
+            raise HTTPException(404, f"no key {req.owner_of} in tenant {tenant}")
+        metadata = {**metadata, "owner": keys.owner_identity(tenant, previous, previous["token"])}
+    if req.scopes is not None and (unknown := sorted(set(req.scopes) - set(keys.SCOPES))):
+        raise HTTPException(400, f"unknown scopes {unknown}; known: {', '.join(keys.SCOPES)}")
     value, i = keys.create(
         tenant,
-        f"{tenant}-{req.alias}",
+        alias,
         req.budget,
         req.models,
         req.expires_days,
-        metadata={"allowed_passthrough_routes": []},
-        by=f"fleet:{p.info.get('key_alias')}",
+        metadata=metadata,
+        by=by,
+        **({"scopes": req.scopes} if req.scopes is not None else {}),
     )
     return {**_key_public(i, tenant), "key": value}
 
@@ -3418,16 +3434,7 @@ def create_key(req: KeyRequest, p: Principal = Depends(admin)):
     value is returned once and mirrored into LiteLLM (services/api/keys.py)."""
     _fleet_only()
     meta = {"allowed_passthrough_routes": (p.info.get("metadata") or {}).get("allowed_passthrough_routes", [])}
-    value, i = keys.create(
-        p.tenant,
-        f"{p.tenant}-{req.alias}",
-        req.budget,
-        req.models,
-        req.expires_days,
-        metadata=meta,
-        by=p.info.get("key_alias"),
-    )
-    return {**_key_public(i, p.tenant), "key": value}
+    return _key_minted(p.tenant, req, meta, p.info.get("key_alias"))
 
 
 @app.post("/v1/keys:import", responses={200: {"model": schemas.KeyImportReport}})

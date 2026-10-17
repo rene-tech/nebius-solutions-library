@@ -151,6 +151,25 @@ def _info(r) -> dict:
     }
 
 
+def owner_identity(tenant: str, info: dict, h: str) -> str:
+    """The opaque, stable owner of a key's operations (docs/API.md "Keys", "Owner"): `metadata.owner` when the key was
+    minted as another key's successor (`owner_of`), else the imported principal of the tenant, else the key itself.
+    Every key of one owner reads, continues and cancels the same operations."""
+    md = info.get("metadata") or {}
+    if md.get("owner"):
+        return md["owner"]
+    principal_id = (md.get("legacy") or {}).get("principal_id")
+    identity = [tenant, "principal", principal_id] if principal_id else [tenant, "key", h]
+    return key_hash(json.dumps(identity, separators=(",", ":")))
+
+
+def by_alias(tenant: str, alias: str) -> dict | None:
+    """A key of the tenant by alias, with its hash (callers never return the hash)."""
+    with db.pool().connection() as c:
+        r = c.execute(f"select {COLS} from keys where tenant = %s and alias = %s", (tenant, alias)).fetchone()
+    return _info(r) if r else None
+
+
 def info(h: str) -> dict | None:
     with db.pool().connection() as c:
         r = c.execute(f"select {COLS} from keys where hash = %s", (h,)).fetchone()
@@ -190,15 +209,18 @@ def create(
     metadata: dict | None = None,
     by: str | None = None,
     value: str | None = None,
+    scopes: list[str] | None = None,
 ) -> tuple[str, dict]:
-    """A new key of the tenant; returns (value, info). The value is random unless given (Terraform's bootstrap)."""
+    """A new key of the tenant; returns (value, info). The value is random unless given (Terraform's bootstrap);
+    `scopes` given restricts the key to them (docs/API.md "Scopes"), absent keeps the table's default."""
     value = value or new_value()
+    extra = ", scopes" if scopes is not None else ""
     with db.pool().connection() as c:
         try:
             with c.transaction():
                 r = c.execute(
-                    f"""insert into keys (hash, alias, tenant, role, models, budget, expires, preview, metadata, created_by)
-                                  values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning {COLS}""",
+                    f"""insert into keys (hash, alias, tenant, role, models, budget, expires, preview, metadata, created_by{extra})
+                                  values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s{", %s" if scopes is not None else ""}) returning {COLS}""",
                     (
                         key_hash(value),
                         alias,
@@ -210,6 +232,7 @@ def create(
                         preview(value),
                         json.dumps(metadata or {}),
                         by,
+                        *([json.dumps(sorted(scopes))] if scopes is not None else []),
                     ),
                 ).fetchone()
         except Exception as e:  # noqa: BLE001 - a duplicate alias is the caller's 409, anything else propagates
