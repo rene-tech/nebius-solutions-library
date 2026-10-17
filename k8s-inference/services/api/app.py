@@ -3354,7 +3354,16 @@ def _key_minted(tenant: str, req: KeyRequest, metadata: dict, by: str | None) ->
         previous = keys.by_alias(tenant, req.owner_of)
         if not previous:
             raise HTTPException(404, f"no key {req.owner_of} in tenant {tenant}")
-        metadata = {**metadata, "owner": keys.owner_identity(tenant, previous, previous["token"])}
+        legacy = (previous.get("metadata") or {}).get("legacy") or {}
+        if legacy.get(
+            "principal_id"
+        ):  # an explicit principal: the successor carries it, so `principal_id` stays public
+            metadata = {
+                **metadata,
+                "legacy": {k: legacy.get(k) for k in ("principal_id", "tenant_id") if legacy.get(k)},
+            }
+        else:  # an implicit (key-bound) owner: the successor stores that owner itself
+            metadata = {**metadata, "owner": keys.owner_identity(tenant, previous, previous["token"])}
     if req.scopes is not None and (unknown := sorted(set(req.scopes) - set(keys.SCOPES))):
         raise HTTPException(400, f"unknown scopes {unknown}; known: {', '.join(keys.SCOPES)}")
     value, i = keys.create(

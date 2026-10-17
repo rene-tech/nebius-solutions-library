@@ -216,6 +216,7 @@ def test_a_successor_key_owns_the_same_operations_and_keeps_a_plain_alias(databa
     """`owner_of` (docs/API.md "Keys", rotation): the new key is the same owner as the key it succeeds, so the retained
     operations stay readable after the old key is revoked; `scopes` restrict it; an alias that already carries the
     tenant, or is the tenant name, is not prefixed again."""
+    import auth
     import keys
 
     c, _ = _rig(database, client, monkeypatch)
@@ -230,9 +231,20 @@ def test_a_successor_key_owns_the_same_operations_and_keeps_a_plain_alias(databa
     assert made.json()["alias"] == "demo" and made.json()["key"].startswith("sk-")
     new = keys.by_alias("demo", "demo")
     assert keys.owner_identity("demo", new, new["token"]) == keys.owner_identity("demo", old, old["token"])
-    assert new["scopes"] == ["read:operations"] and new["metadata"]["owner"] == keys.owner_identity(
-        "demo", old, old["token"]
+    assert new["scopes"] == ["read:operations"]
+    # an explicit principal is carried, not an opaque owner: the successor's public view keeps `principal_id`
+    assert new["metadata"]["legacy"] == {"principal_id": "p-1"} and "owner" not in new["metadata"]
+    assert auth.limits_view(new)["principal_id"] == "p-1" == auth.limits_view(old)["principal_id"]
+    # an implicit (key-bound) owner is stored on the successor itself
+    _, plain_info = keys.create("demo", "demo-plain", 1.0, [], None)
+    succ = c.post(
+        "/v1/fleet/tenants/demo/keys", headers=FLEET_KEY, json={"alias": "demo-plain-2", "owner_of": "demo-plain"}
     )
+    assert succ.status_code == 201, succ.text
+    s2 = keys.by_alias("demo", "demo-plain-2")
+    assert s2["metadata"]["owner"] == keys.owner_identity("demo", plain_info, plain_info["token"])
+    assert not s2["metadata"].get("legacy")
+    assert keys.owner_identity("demo", s2, s2["token"]) == keys.owner_identity("demo", plain_info, plain_info["token"])
     # the same owner through the API: the successor reads the predecessor's operation, a plain new key does not
     plain = c.post("/v1/fleet/tenants/demo/keys", headers=FLEET_KEY, json={"alias": "demo-other"})
     assert plain.status_code == 201 and plain.json()["alias"] == "demo-other"
