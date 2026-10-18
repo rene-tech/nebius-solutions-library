@@ -41,6 +41,7 @@ import sessions
 import stages
 import status
 from auth import (
+    FLEET_ROLE,
     Principal,
     _principal,
     admin,
@@ -123,7 +124,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.132", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.133", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1788,6 +1789,18 @@ def _ledger_head(ns: str, operation: str) -> str | None:
     return stages.ledger_head(ns, operation)
 
 
+def _reader(p: Principal, id: str) -> Principal:
+    """Who acts on an operation: a fleet operator (`metadata.role=fleet`, docs/API.md "Fleet operators") sees and
+    manages any tenant's operation and acts in that tenant (the owner check does not apply to it; continuations it
+    starts are admitted on the run's own key); every other key acts in its own tenant as its owner."""
+    if p.role != FLEET_ROLE:
+        return p
+    tenant = jobs.tenant_of(id)
+    if tenant is None:
+        raise HTTPException(404, f"operation {id}: not found")
+    return Principal(key=p.key, tenant=tenant, info=p.info, key_hash=p.key_hash)
+
+
 def _owned(p: Principal, id: str, follow: bool = True) -> tuple[dict, str]:
     """The operation's Job. A handle that a continuation superseded (capacity fallback, recovery, a manual resume)
     resolves to its current successor: the successor annotation on the Job, the durable mark once the Job is gone,
@@ -2220,6 +2233,7 @@ def _settle_on_read(p: Principal, job: dict, region: str | None) -> bool:
 def get_operation(id: str, since: int | None = None, p: Principal = Depends(scoped("read:operations"))):
     """`since=<revision>`: 304 while nothing about the operation's attempts changed (polling cursor; the live
     pod state is still re-read on every 200)."""
+    p = _reader(p, id)
     job, region = _owned(p, id)
     if _settle_on_read(p, job, region):
         job, region = _owned(p, id)  # the same answer carries the settlement (usage, gpu_seconds, the slot free)
@@ -2279,6 +2293,7 @@ def get_result(id: str, p: Principal = Depends(scoped("read:results"))):
 def export_again(id: str, p: Principal = Depends(scoped("read:results", "run:control"))):
     """Transfer-only retry of an EXPORT_FAILED run (managed I/O): a new operation `<id>-x<n>` with the uploader on the
     kept work volume and a main container that does nothing; the simulation is not rerun (docs/JOBS.md)."""
+    p = _reader(p, id)
     pause.check(p.tenant, kind="export")  # exports keep working during a pause unless it says `exports: true`
     orig, region = _owned(p, id, follow=False)  # the named member itself: _require_current names the head
     exported = (orig["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/export-of")
@@ -2372,6 +2387,7 @@ def read_child_unit(id: str, unit_id: str, p: Principal = Depends(scoped("read:o
     live or terminal state), fenced to the operation's owner (`id`: the root or any member of the run), without the
     attempt-scoped download URL (an owner reads the capture through GET /v1/operations/<child>, its own operation).
     404 for an unknown unit or another owner's run; nothing is persisted and no id is guessed."""
+    p = _reader(p, id)
     import children
 
     if not children.enabled():
@@ -2697,6 +2713,7 @@ def _owner_context(operation: str) -> dict | None:
 
 @app.post("/v1/operations/{id}:cancel", responses={200: {"model": schemas.Operation}})
 def cancel(id: str, p: Principal = Depends(scoped("run:control"))):
+    p = _reader(p, id)
     job, region = _owned(p, id, follow=False)  # cancel the operation named, never its continuation
     if job.get("_synthetic"):
         # the Job is gone (TTL). A graph root is still the handle its owner cancels the graph by (docs/JOBS.md "Stage
@@ -2786,6 +2803,7 @@ def resume(
     A fleet-placed run is resumed through the manager, pinned to the worker that ran it. With a
     `checkpoint_ref` (a portable checkpoint the application restores itself) the volume and the region are not
     needed: the run is placed again, optionally on another `gpu_class` (its image), docs/JOBS.md "Execution options"."""
+    p = _reader(p, id)
     pause.check(p.tenant)  # a paused tenant resumes nothing (docs/API.md "Submission pause")
     orig, region = _owned(p, id, follow=False)  # the named member itself: _require_current names the head
     m = _model(orig["metadata"]["labels"].get("serverless2.nebius/model", ""))
@@ -3101,6 +3119,7 @@ def _monitored(p: Principal, id: str) -> tuple[str | None, str]:
 async def operation_metrics(
     id: str, range: str = "1h", end: float | None = None, p: Principal = Depends(scoped("read:metrics"))
 ):
+    p = _reader(p, id)
     region, _ = await asyncio.to_thread(_monitored, p, id)
     return await monitoring.metrics("job", p.namespace, id, region or REGION, range, end)
 
@@ -3114,6 +3133,7 @@ async def operation_logs(
     end: float | None = None,
     p: Principal = Depends(scoped("read:logs")),
 ):
+    p = _reader(p, id)
     region, kind = await asyncio.to_thread(_monitored, p, id)
     return await monitoring.logs(kind, p.namespace, id, region or REGION, range, search, limit, end)
 

@@ -1909,6 +1909,25 @@ def job_terminal(j: dict) -> bool:
     )
 
 
+def tenant_of(operation: str) -> str | None:
+    """The tenant an operation belongs to, fleet-wide (docs/API.md "Fleet operators"): its Job in any tenant namespace
+    of any region, else its durable attempt rows; None when nothing knows it."""
+    for ns in tenant_namespaces():
+        try:
+            find(ns, operation)
+            return ns.removeprefix(TENANT_NS_PREFIX)
+        except HTTPException as e:
+            if e.status_code != 404:
+                raise
+    import attempts
+
+    if attempts.enabled():
+        rows = [r for r in attempts.for_operation(operation) if r["operation"] == operation]
+        if rows:
+            return rows[-1]["tenant"]
+    return None
+
+
 def tenant_namespaces() -> list[str]:
     """The namespaces of every tenant the fleet knows: the fleet document's tenants (charts/fleet tenants.yaml) and
     the tenants with keys on record (the database), as `tenant-<name>`, sorted."""

@@ -199,10 +199,10 @@ def check_operation_owner(p: Principal, job: dict) -> None:
     record = keys.operation_owner(root) if db.enabled() else None
     if record:
         tenant, owner, model = record
-        if tenant != p.tenant or (p.role != "admin" and owner != p.owner):
+        if tenant != p.tenant or (p.role not in ("admin", FLEET_ROLE) and owner != p.owner):
             raise missing
     elif ann.get(f"{cfg.LABEL}/owner"):
-        if p.role != "admin" and ann[f"{cfg.LABEL}/owner"] != p.owner:
+        if p.role not in ("admin", FLEET_ROLE) and ann[f"{cfg.LABEL}/owner"] != p.owner:
             raise missing
     elif p.role != "admin":
         # Pre-migration rows have no durable provenance. A matching original

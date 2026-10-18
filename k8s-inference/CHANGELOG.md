@@ -4,6 +4,15 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.133
+
+(API image only.)
+
+- Fleet operators read every operation (docs/API.md "Fleet operators"): a `metadata.role=fleet` key reads any tenant's
+  operation, its attempts, logs and metrics, and manages it (cancel, resume, export), so the operator console is the
+  operator's view of everything on the fleet; the owner check does not apply to it and a continuation it starts is
+  admitted on the run's own key. Result downloads stay owner-only; tenant keys are unchanged.
+
 ## api 0.11.132
 
 (API image only.)

@@ -256,3 +256,34 @@ def test_a_successor_key_owns_the_same_operations_and_keeps_a_plain_alias(databa
     )
     bad = c.post("/v1/fleet/tenants/demo/keys", headers=FLEET_KEY, json={"alias": "y", "scopes": ["read:everything"]})
     assert bad.status_code == 400 and "read:everything" in bad.text
+
+
+def test_a_fleet_operator_reads_any_tenants_operation(database, client, monkeypatch):
+    """The operator console is the operator's view of everything on the fleet (docs/API.md "Fleet operators"): a
+    fleet key reads any tenant's operation (status, attempts, logs, metrics), while a tenant key still reads only
+    what it owns. Writes stay owner-only."""
+    c, fake = _rig(database, client, monkeypatch)
+    L = "serverless2.nebius"
+    fake.jobs[("tenant-demo", "op-seen")] = {
+        "metadata": {
+            "name": "op-seen",
+            "namespace": "tenant-demo",
+            "creationTimestamp": "2026-10-18T10:00:00Z",
+            "labels": {f"{L}/tenant": "demo", f"{L}/model": "llm-example", f"{L}/mode": "run"},
+            "annotations": {f"{L}/key": "z" * 64, f"{L}/owner": "someone-else"},
+        },
+        "status": {"active": 1, "startTime": "2026-10-18T10:00:05Z", "conditions": []},
+    }
+    # the fixture's fleet key is scoped to the catalog: scopes bind a fleet key like any other
+    assert c.get("/v1/operations/op-seen", headers=FLEET_KEY).status_code == 403
+    monkeypatch.setitem(FLEET_INFO, "scopes", ["read:catalog", "read:operations"])
+    seen = c.get("/v1/operations/op-seen", headers=FLEET_KEY)
+    assert seen.status_code == 200, seen.text
+    assert seen.json()["id"] == "op-seen"
+    assert c.get("/v1/operations/op-seen", headers={"Authorization": "Bearer sk-good"}).status_code == 404
+    assert c.get("/v1/operations/op-unknown", headers=FLEET_KEY).status_code == 404
+    # and manages it: the operator cancels any tenant's operation (continuations run on the run's own key)
+    monkeypatch.setitem(FLEET_INFO, "scopes", ["read:catalog", "read:operations", "run:control"])
+    cancelled = c.post("/v1/operations/op-seen:cancel", headers=FLEET_KEY)
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "CANCELLED"

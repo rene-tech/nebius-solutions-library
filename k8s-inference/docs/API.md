@@ -432,6 +432,11 @@ A fleet operator is a key with `metadata.role=fleet` in the platform's own tenan
 key), minted only by the fleet's bootstrap (`python -m keys bootstrap` with `KEY_SPEC` role `fleet`; a tenant admin
 cannot mint one and an import refuses the role). It has the explicit cross-tenant surface and nothing else:
 
+A fleet operator key also sees and manages every tenant's operations: `GET /v1/operations/{id}`, its attempts, logs
+and metrics, `:cancel`, `:resume` and `:export` answer for any operation of the fleet (the operator console's Jobs
+view; a continuation it starts is admitted on the run's own key). It cannot download results of an operation it does
+not own, and it is not a tenant admin.
+
 Set `fleet.fleet_operator_keys = ["rene"]` in `terraform.tfvars`, apply the control
 platform stage, then retrieve the sensitive login value with
 `./stack.sh output platform control -json fleet_operator_keys`. The default is an
