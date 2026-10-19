@@ -162,13 +162,20 @@ def startup_queries(namespace: str, name: str, span_s: int, kind: str = "endpoin
 
 
 def _startups(
-    results: dict[str, dict], start: float, submitted: float | None = None, admitted: float | None = None
+    results: dict[str, dict],
+    start: float,
+    submitted: float | None = None,
+    admitted: float | None = None,
+    attempts: dict[str, int] | None = None,
 ) -> list[dict]:
     """Per pod: the phase durations in seconds, pods that were created inside the window, newest first. For a run,
-    `submitted` (the Job the caller created: the manager copy of a fleet-placed run) and `admitted` (its Workload's
-    Admitted transition on the manager) give the queue wait (submitted → admitted) and the dispatch (admitted → the
-    FIRST pod: MultiKueue's worker Job and the worker's pod creation); a later pod of the same Job is a retry
-    (`attempt` > 1) and carries neither, so an earlier attempt's run time is never read as waiting."""
+    `attempts` ({pod: attempt} from the durable attempt records) is the only identity: a pod without a record has
+    `attempt` None; `submitted` (the Job the caller created: the manager copy of a fleet-placed run) and `admitted`
+    (its Workload's actual Admitted transition on the manager) give the queue wait (submitted → admitted) on the
+    pods of the FIRST attempt, and the dispatch (admitted → the earliest first-attempt pod visible in the window:
+    MultiKueue's worker Job and the worker's pod creation); a retry carries neither, so an earlier attempt's run
+    time is never read as waiting, and a window that hides the first attempt gives unknown, never a guess. An
+    endpoint's pods are replicas, not attempts: no attempt, queue or dispatch on them."""
     stamps: dict[str, dict] = {}
     for key, data in results.items():
         for item in data.get("result", []):
@@ -186,9 +193,12 @@ def _startups(
                 except (KeyError, ValueError, TypeError, IndexError):
                     pass
     rows = []
-    ordered = sorted((t["created"], pod) for pod, t in stamps.items() if "created" in t)
-    attempt_of = {pod: i + 1 for i, (_, pod) in enumerate(ordered)}
-    first = ordered[0][1] if ordered else None
+    attempts = attempts or {}
+    first_attempt = min(attempts.values()) if attempts else None
+    first_pods = [p for p, n in attempts.items() if n == first_attempt and "created" in stamps.get(p, {})]
+    earliest = min(stamps[p]["created"] for p in first_pods) if first_pods else None
+    queue = round(admitted - submitted, 1) if admitted is not None and submitted is not None else None
+    dispatch = round(earliest - admitted, 1) if earliest is not None and admitted is not None else None
     for pod, t in stamps.items():
         if "created" not in t or t["created"] < start:
             continue
@@ -197,16 +207,15 @@ def _startups(
             return round(t[b] - t[a], 1) if a in t and b in t else None
 
         node_age = t["scheduled"] - t["node_created"] if "scheduled" in t and "node_created" in t else None
-        is_first = pod == first
-        queue = round(admitted - submitted, 1) if is_first and admitted is not None and submitted is not None else None
-        dispatch = round(t["created"] - admitted, 1) if is_first and admitted is not None else None
+        attempt = attempts.get(pod)
+        is_first = attempt is not None and attempt == first_attempt
         rows.append(
             {
                 "pod": pod,
                 "node": t.get("node"),
-                "attempt": attempt_of.get(pod, 1),
-                "queue_wait_s": queue,
-                "dispatch_s": dispatch,
+                "attempt": attempt,
+                "queue_wait_s": queue if is_first else None,
+                "dispatch_s": dispatch if is_first else None,
                 "new_node": node_age is not None and node_age < NEW_NODE_S,
                 "gpu_snapshot": bool(t.get("gpu_snapshot")),
                 "created_at": datetime.fromtimestamp(t["created"], tz=timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -231,6 +240,7 @@ async def metrics(
     end: float | None = None,
     submitted: float | None = None,
     admitted: float | None = None,
+    attempts: dict[str, int] | None = None,
 ) -> dict:
     start, stop, step = window(period, end)
     definitions = queries(kind, namespace, name, step)
@@ -253,7 +263,7 @@ async def metrics(
     results, instant_results = results[: len(definitions)], results[len(definitions) :]
     startups = None
     if instants and not any(isinstance(r, BaseException) for r in instant_results):
-        startups = _startups(dict(zip(instants, instant_results)), start, submitted, admitted)
+        startups = _startups(dict(zip(instants, instant_results)), start, submitted, admitted, attempts)
     panels, unavailable = [], []
     for (mid, title, unit, _), result in zip(definitions, results):
         series = []

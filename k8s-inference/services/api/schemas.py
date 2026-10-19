@@ -1065,9 +1065,11 @@ class Startup(BaseModel):
     new_node: bool = False  # the node was younger than 900 s when the pod was scheduled (a heuristic)
     gpu_snapshot: bool = False  # restored from a GPU snapshot (pod label serverless2.nebius/gpu-snapshot=true)
     created_at: str
-    attempt: int = 1  # runs: the pod's place among the Job's pods by creation; > 1 is a retry
-    queue_wait_s: float | None = None  # runs, first pod only: submission to Kueue's Admitted transition (the manager)
-    dispatch_s: float | None = None  # runs, first pod only: admission to this pod's creation (MultiKueue dispatch)
+    attempt: int | None = None  # runs: the attempt this pod belongs to, from the attempt records; None = unknown
+    queue_wait_s: float | None = (
+        None  # runs, first-attempt pods: submission to the Workload's actual Admitted transition
+    )
+    dispatch_s: float | None = None  # runs, first-attempt pods: that admission to the earliest first-attempt pod seen
     node_wait_s: float | None = None
     init_s: float | None = None
     pull_start_s: float | None = None

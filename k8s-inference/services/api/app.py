@@ -3122,20 +3122,22 @@ async def operation_metrics(
 ):
     p = _reader(p, id)
     region, _ = await asyncio.to_thread(_monitored, p, id)
-    submitted, admitted = await asyncio.to_thread(_admission_times, p, id)
+    submitted, admitted, by_pod = await asyncio.to_thread(_run_timing, p, id)
     return await monitoring.metrics(
-        "job", p.namespace, id, region or REGION, range, end, submitted=submitted, admitted=admitted
+        "job", p.namespace, id, region or REGION, range, end, submitted=submitted, admitted=admitted, attempts=by_pod
     )
 
 
-def _admission_times(p: Principal, id: str) -> tuple[float | None, float | None]:
-    """(submitted, admitted) of a run as Unix seconds: the Job the caller submitted (the manager copy of a
-    fleet-placed run) and the Admitted transition of its own Workload on this cluster (docs/API.md "Metrics", the
-    queue wait); None when the Job is gone or the Workload is not readable."""
+def _run_timing(p: Principal, id: str) -> tuple[float | None, float | None, dict[str, int]]:
+    """(submitted, admitted, {pod: attempt}) of a run (docs/API.md "Metrics"): the Job the caller submitted (the
+    manager copy of a fleet-placed run), the actual Admitted transition of its own Workload on this cluster, and the
+    attempt each pod belongs to from the durable attempt records (the uploader's, services/api/attempts.py: the
+    only proof of which pod was which attempt; a pod without a record has no attempt). None/empty when the Job is
+    gone, the Workload is not readable or there are no records: unknown, never inferred."""
     try:
         job, _ = _owned(p, id, follow=False)
     except HTTPException:
-        return None, None
+        return None, None, {}
     md = job.get("metadata") or {}
     submitted = resilience.parse_ts(md.get("creationTimestamp"))
     admitted = None
@@ -3145,7 +3147,14 @@ def _admission_times(p: Principal, id: str) -> tuple[float | None, float | None]
             admitted = resilience.parse_ts((adm or {}).get("admitted_at"))
         except Exception:  # noqa: BLE001 - an unreadable Workload leaves the queue wait unknown, never wrong
             admitted = None
-    return (submitted.timestamp() if submitted else None, admitted.timestamp() if admitted else None)
+    by_pod: dict[str, int] = {}
+    try:
+        for r in attempts.for_operation(id):
+            if r.get("operation") == id and r.get("pod") and isinstance(r.get("epoch"), int):
+                by_pod[r["pod"]] = r["epoch"]
+    except Exception:  # noqa: BLE001 - no records readable: no attempt identity
+        by_pod = {}
+    return (submitted.timestamp() if submitted else None, admitted.timestamp() if admitted else None, by_pod)
 
 
 @app.get("/v1/operations/{id}/logs", responses={200: {"model": schemas.Logs}})

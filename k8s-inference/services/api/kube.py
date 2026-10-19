@@ -333,16 +333,14 @@ def workload_admission(ns: str, job_uid: str, region: str = REGION) -> dict | No
         f"{LABEL}/admitted-cluster"
     )
     not_admitted = conds.get("Admitted") or {}
-    granted = (
-        conds.get("Admitted") if (conds.get("Admitted") or {}).get("status") == "True" else conds.get("QuotaReserved")
-    )
     return {
         "admitted": admitted,
         "cluster": cluster,
         "active": (w.get("spec") or {}).get("active"),
         "not_admitted_since": not_admitted.get("lastTransitionTime") if not_admitted.get("status") == "False" else None,
-        # when Kueue admitted it (the Admitted, else QuotaReserved, transition): the end of the queue wait
-        "admitted_at": (granted or {}).get("lastTransitionTime") if (granted or {}).get("status") == "True" else None,
+        # the actual Admitted=True transition (the end of the queue wait); a quota reservation alone is not one, so
+        # the timing stays unknown then while the broad `admitted` above keeps its meaning for recovery and billing
+        "admitted_at": not_admitted.get("lastTransitionTime") if not_admitted.get("status") == "True" else None,
     }
 
 

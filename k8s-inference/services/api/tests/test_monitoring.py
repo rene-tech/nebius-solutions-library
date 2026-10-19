@@ -419,19 +419,14 @@ def test_endpoint_metrics_carry_the_startup_breakdown(client, monkeypatch):
     )
 
 
-def test_startup_rows_of_a_run_read_the_queue_wait_from_the_manager_admission():
-    """Root's reproduction (2026-10-19): manager Job at t=0, Workload Admitted at t=598, the worker's first pod at
-    t=605, a replacement pod at t=4200. The queue wait is submission → admission (598), the dispatch admission → the
-    first pod (7); the retry carries neither (an earlier attempt's run time is never read as waiting)."""
-    import monitoring
-
-    t0 = 1_000_000.0
+def _run_results(t0, pods):
+    """Synthetic kube-state-metrics answers for pods {name: created}: scheduled +5, initialized +50, started +200,
+    ready +201, one node a day old, no snapshot label."""
 
     def vec(values):
         return {"result": [{"metric": {"pod": pod, "node": "n1"}, "value": [t0, str(v)]} for pod, v in values.items()]}
 
-    pods = {"op-1-first": t0 + 605, "op-1-retry": t0 + 4200}
-    results = {
+    return {
         "created": vec(pods),
         "scheduled": vec({p: v + 5 for p, v in pods.items()}),
         "initialized": vec({p: v + 50 for p, v in pods.items()}),
@@ -441,21 +436,74 @@ def test_startup_rows_of_a_run_read_the_queue_wait_from_the_manager_admission():
         "node_created": vec({p: t0 - 86400 for p in pods}),
         "gpu_snapshot": {"result": []},
     }
-    rows = {r["pod"]: r for r in monitoring._startups(results, t0, submitted=t0, admitted=t0 + 598)}
-    first, retry = rows["op-1-first"], rows["op-1-retry"]
-    assert first["attempt"] == 1 and first["queue_wait_s"] == 598 and first["dispatch_s"] == 7
-    assert retry["attempt"] == 2 and retry["queue_wait_s"] is None and retry["dispatch_s"] is None
-    assert (first["node_wait_s"], first["init_s"], first["pull_start_s"], first["load_s"]) == (5, 45, 150, 1)
-    # an unreadable Workload leaves the queue wait unknown, never a guess from the worker Job
-    rows = {r["pod"]: r for r in monitoring._startups(results, t0, submitted=t0, admitted=None)}
-    assert rows["op-1-first"]["queue_wait_s"] is None and rows["op-1-first"]["dispatch_s"] is None
+
+
+def test_startup_rows_of_a_run_take_attempt_identity_from_the_records_only():
+    """Root's reproductions (2026-10-19): the attempt a pod belongs to comes from the durable attempt records, never
+    from the order of the pods a window happens to show. Manager Job at t=0, Admitted at t=598, first pod t=605,
+    replacement pod t=4200: queue 598 and dispatch 7 on the first attempt only, nothing on the retry."""
+    import monitoring
+
+    t0 = 1_000_000.0
+    results = _run_results(t0, {"op-1-first": t0 + 605, "op-1-retry": t0 + 4200})
+    records = {"op-1-first": 1, "op-1-retry": 2}
+    rows = {r["pod"]: r for r in monitoring._startups(results, t0, t0, t0 + 598, records)}
+    assert rows["op-1-first"]["attempt"] == 1 and rows["op-1-first"]["queue_wait_s"] == 598
+    assert rows["op-1-first"]["dispatch_s"] == 7
+    assert rows["op-1-retry"]["attempt"] == 2 and rows["op-1-retry"]["queue_wait_s"] is None
+    assert rows["op-1-retry"]["dispatch_s"] is None
+    # a window that only shows the replacement (lookback truncated at t=1200): the retry stays a retry, the first
+    # attempt's dispatch is unknown rather than read off the wrong pod
+    late = _run_results(t0, {"op-1-retry": t0 + 4200})
+    [row] = monitoring._startups(late, t0 + 1200, t0, t0 + 598, records)
+    assert row["attempt"] == 2 and row["queue_wait_s"] is None and row["dispatch_s"] is None
+    # a pod without a record has no attempt and therefore no queue or dispatch figure, whatever its position
+    [row] = monitoring._startups(_run_results(t0, {"op-1-unknown": t0 + 605}), t0, t0, t0 + 598, {})
+    assert row["attempt"] is None and row["queue_wait_s"] is None and row["dispatch_s"] is None
+    # concurrent MPI ranks are one attempt, not retries: both carry the queue wait, the dispatch is the earliest
+    ranks = _run_results(t0, {"op-1-rank0": t0 + 605, "op-1-rank1": t0 + 605})
+    rows = {r["pod"]: r for r in monitoring._startups(ranks, t0, t0, t0 + 598, {"op-1-rank0": 1, "op-1-rank1": 1})}
+    assert {r["attempt"] for r in rows.values()} == {1} and {r["queue_wait_s"] for r in rows.values()} == {598}
+    assert {r["dispatch_s"] for r in rows.values()} == {7}
+    # no actual admission known: queue and dispatch unknown, the attempt still known
+    rows = {r["pod"]: r for r in monitoring._startups(results, t0, t0, None, records)}
+    assert rows["op-1-first"]["attempt"] == 1 and rows["op-1-first"]["queue_wait_s"] is None
+    assert rows["op-1-first"]["dispatch_s"] is None
+    # an endpoint's replicas are not attempts: nothing of the three on them
+    [row] = monitoring._startups(_run_results(t0, {"llm-predictor-00001-x": t0 + 605}), t0)
+    assert row["attempt"] is None and row["queue_wait_s"] is None and row["dispatch_s"] is None
     q = monitoring.startup_queries("tenant-demo", "op-1", 3600, "job")
     assert 'container="main"' in q["started"] and "kube_job_created" not in str(q)
 
 
+def test_a_quota_reservation_is_not_an_admission_for_the_timing(monkeypatch):
+    """`admitted_at` only from an actual Admitted=True transition; the broad `admitted` boolean (recovery, billing)
+    keeps counting a reservation."""
+    uid = "uid-1"
+    conds = [
+        {"type": "QuotaReserved", "status": "True", "lastTransitionTime": "2026-10-19T10:00:00Z"},
+        {"type": "Admitted", "status": "False", "lastTransitionTime": "2026-10-19T10:00:01Z"},
+    ]
+    w = {"metadata": {"ownerReferences": [{"uid": uid}]}, "status": {"conditions": conds}}
+
+    class Api:
+        def list_namespaced_custom_object(self, *a, **k):
+            return {"items": [w]}
+
+    monkeypatch.setattr(kube, "retry", lambda fn, *a, **k: fn(*a, **k))
+    monkeypatch.setattr(kube, "api", lambda region: Api())
+    adm = kube.workload_admission("tenant-demo", uid)
+    assert adm["admitted"] is True and adm["admitted_at"] is None
+    conds[1] = {"type": "Admitted", "status": "True", "lastTransitionTime": "2026-10-19T10:09:58Z"}
+    adm = kube.workload_admission("tenant-demo", uid)
+    assert adm["admitted"] is True and adm["admitted_at"] == "2026-10-19T10:09:58Z"
+
+
 def test_a_fleet_placed_runs_startups_combine_the_managers_admission_with_the_workers_pods(client, monkeypatch):
-    """The admission is read on the manager cluster (this API's), the pod timestamps in the worker's region."""
+    """The admission is read on the manager cluster (this API's), the pod timestamps in the worker's region, the
+    attempt identity from the records."""
     c, _ = client
+    import attempts
     import keys
 
     now = time.time()
@@ -472,6 +520,7 @@ def test_a_fleet_placed_runs_startups_combine_the_managers_admission_with_the_wo
     monkeypatch.setattr(jobs, "find", lambda ns, id: (manager, "eu-south1"))
     monkeypatch.setattr(kube, "regions", lambda: ["eu-north1", "eu-south1"])
     monkeypatch.setattr(kube, "_client", lambda region: FakeAgentClient())
+    monkeypatch.setattr(attempts, "for_operation", lambda op: [{"operation": op, "pod": "op-owned-abcde", "epoch": 1}])
     seen = {}
 
     def admission(ns, uid, region):

@@ -9,10 +9,12 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 (API image only.)
 
 - Start-up rows for runs too: `GET /v1/operations/{id}/metrics` answers `startups` for the run's pods (`main`
-  container) with `attempt` and, on the first pod only, `queue_wait_s` (the submitted Job's creation to its
-  Workload's `Admitted` transition on the manager cluster: what Kueue held it for) and `dispatch_s` (that admission to
-  the pod's creation: MultiKueue's worker Job and the worker's pod); a retry carries neither. The operator reads
-  where a run's start spends its time next to an endpoint's.
+  container) with `attempt` (from the durable attempt records; unknown, never inferred, without one) and, on the
+  first attempt's pods only, `queue_wait_s` (the submitted Job's creation to its Workload's actual `Admitted`
+  transition on the manager cluster: what Kueue held it for; a quota reservation is not an admission) and
+  `dispatch_s` (that admission to the earliest first-attempt pod in the range: MultiKueue's worker Job and the
+  worker's pod); a retry carries neither, a range that hides the first attempt gives null, endpoint replicas carry
+  none. The operator reads where a run's start spends its time next to an endpoint's.
 
 ## api 0.11.135
 
