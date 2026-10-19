@@ -1062,7 +1062,8 @@ class Startup(BaseModel):
 
     pod: str
     node: str | None = None
-    new_node: bool = False
+    new_node: bool = False  # the node was younger than 900 s when the pod was scheduled (a heuristic)
+    gpu_snapshot: bool = False  # restored from a GPU snapshot (pod label serverless2.nebius/gpu-snapshot=true)
     created_at: str
     node_wait_s: float | None = None
     init_s: float | None = None

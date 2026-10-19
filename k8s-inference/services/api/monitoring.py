@@ -136,7 +136,10 @@ STARTUP_PHASES = (
     ("initialized", "kube_pod_status_initialized_time"),
     ("ready", "kube_pod_status_ready_time"),
 )
-NEW_NODE_S = 900  # a node younger than this when the pod was scheduled was provisioned for it
+NEW_NODE_S = 900  # a node younger than this when the pod was scheduled was provisioned for it (a heuristic)
+# A pod restored from a GPU snapshot carries this label (kube-state-metrics exports it through the fleet's label
+# allowlist); no cluster of this fleet snapshots yet, so every row reads false until that lands.
+GPU_SNAPSHOT_LABEL = "label_serverless2_nebius_gpu_snapshot"
 
 
 def startup_queries(namespace: str, name: str, span_s: int) -> dict[str, str]:
@@ -148,6 +151,8 @@ def startup_queries(namespace: str, name: str, span_s: int) -> dict[str, str]:
     q["started"] = f"max by(pod)(last_over_time(kube_pod_container_state_started{main}{rng}))"
     q["node"] = f"last_over_time(kube_pod_info{pods}{rng})"
     q["node_created"] = f"last_over_time(kube_pod_info{pods}{rng}) * 0 + on(node) group_left kube_node_created"
+    snap = selectors({"namespace": namespace, "pod": f"{name}-predictor-.*", GPU_SNAPSHOT_LABEL: "true"}, {"pod"})
+    q["gpu_snapshot"] = f"last_over_time(kube_pod_labels{snap}{rng})"
     return q
 
 
@@ -162,6 +167,8 @@ def _startups(results: dict[str, dict], start: float) -> list[dict]:
             row = stamps.setdefault(pod, {})
             if key == "node":
                 row["node"] = item["metric"].get("node")
+            elif key == "gpu_snapshot":
+                row["gpu_snapshot"] = True
             else:
                 try:
                     row[key] = float(item["value"][1])
@@ -181,6 +188,7 @@ def _startups(results: dict[str, dict], start: float) -> list[dict]:
                 "pod": pod,
                 "node": t.get("node"),
                 "new_node": node_age is not None and node_age < NEW_NODE_S,
+                "gpu_snapshot": bool(t.get("gpu_snapshot")),
                 "created_at": datetime.fromtimestamp(t["created"], tz=timezone.utc).isoformat().replace("+00:00", "Z"),
                 "node_wait_s": span("created", "scheduled"),
                 "init_s": span("scheduled", "initialized"),

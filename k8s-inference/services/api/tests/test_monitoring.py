@@ -391,6 +391,9 @@ def test_endpoint_metrics_carry_the_startup_breakdown(client, monkeypatch):
             body = one(t0 + 520)
         elif "kube_node_created" in q:
             body = one(t0 - 30)
+        elif "kube_pod_labels" in q:
+            assert 'label_serverless2_nebius_gpu_snapshot="true"' in q
+            body = {"status": "success", "data": {"result": []}}  # no snapshotting on this fleet yet
         elif "kube_pod_info" in q:
             body = one(1, node="computeinstance-new")
         else:
@@ -405,6 +408,7 @@ def test_endpoint_metrics_carry_the_startup_breakdown(client, monkeypatch):
     assert len(rows) == 1
     row = rows[0]
     assert row["node"] == "computeinstance-new" and row["new_node"] is True and row["ready"] is True
+    assert row["gpu_snapshot"] is False
     assert (row["node_wait_s"], row["init_s"], row["pull_start_s"], row["load_s"], row["total_s"]) == (
         90,
         10,

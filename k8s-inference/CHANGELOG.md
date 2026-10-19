@@ -4,6 +4,15 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.135
+
+(API image only.)
+
+- Start-up rows say whether the pod was restored from a GPU snapshot (`gpu_snapshot`, pod label
+  `serverless2.nebius/gpu-snapshot=true` exported by kube-state-metrics); no cluster of this fleet snapshots yet, so
+  every row reads false until that lands; kube-state-metrics' pod label allowlist (clusters/common/values) now carries
+  that label so the data path exists on every cluster. `new_node` is documented as the 900 s node-age heuristic it is.
+
 ## api 0.11.134
 
 (API image only.)
