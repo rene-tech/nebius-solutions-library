@@ -679,3 +679,9 @@ serves the same vLLM recipes with one object and no further controllers; the LLM
 Start-up time: every endpoint (both kinds) reports `startup_s`, `started_at` and `ready_at` of its newest pod
 (`GET /v1/endpoints`): pod created to Ready, which includes a cold node's boot and driver install, the image pull
 and the model load; the Grafana dashboard "Endpoints" shows it as a table by model.
+
+An endpoint's metrics also carry `startups`: one row per pod created inside the range (newest first, at most 50) with
+the seconds it spent waiting for a node (`node_wait_s`, `new_node` when the node was provisioned for it), in init
+containers (`init_s`), pulling the image and starting the container (`pull_start_s`) and loading the model until ready
+(`load_s`), plus `total_s`; `null` when the region's Prometheus has no kube-state-metrics timestamps for it. The
+operator reads where a cold start spends its time before deciding on warm pins, image caching or GPU snapshots.

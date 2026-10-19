@@ -1055,12 +1055,30 @@ class MetricPanel(BaseModel):
     series: list[MetricSeries] | None = None
 
 
+class Startup(BaseModel):
+    """One endpoint pod's start-up (docs/API.md "Metrics"): seconds spent waiting for a node (`node_wait_s`, includes
+    provisioning when `new_node`), in init containers (`init_s`), pulling the image and starting the container
+    (`pull_start_s`) and loading the model until ready (`load_s`); `total_s` from creation to ready."""
+
+    pod: str
+    node: str | None = None
+    new_node: bool = False
+    created_at: str
+    node_wait_s: float | None = None
+    init_s: float | None = None
+    pull_start_s: float | None = None
+    load_s: float | None = None
+    total_s: float | None = None
+    ready: bool = False
+
+
 class Metrics(BaseModel):
     region: str | None = None
     start: float | None = None
     end: float | None = None
     step: int | None = None
     panels: list[MetricPanel] | None = None
+    startups: list[Startup] | None = None  # endpoints only: the pods created inside the range, newest first
 
 
 class LogLine(BaseModel):

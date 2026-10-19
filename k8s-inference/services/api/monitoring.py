@@ -12,6 +12,7 @@ import math
 import re
 import time
 import urllib.parse
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import HTTPException
@@ -126,10 +127,78 @@ async def _query(client: httpx.AsyncClient, url: str, params: dict, headers: dic
         raise HTTPException(503, "Monitoring is temporarily unavailable. Try again shortly.")
 
 
+# An endpoint pod's start-up, phase by phase, from kube-state-metrics' timestamps (docs/API.md "Metrics"): the
+# operator reads where a cold start spends its time (a node to provision, init containers, the image pull, the
+# model load until the readiness probe passes) before deciding on warm pins, image caches or GPU snapshots.
+STARTUP_PHASES = (
+    ("created", "kube_pod_created"),
+    ("scheduled", "kube_pod_status_scheduled_time"),
+    ("initialized", "kube_pod_status_initialized_time"),
+    ("ready", "kube_pod_status_ready_time"),
+)
+NEW_NODE_S = 900  # a node younger than this when the pod was scheduled was provisioned for it
+
+
+def startup_queries(namespace: str, name: str, span_s: int) -> dict[str, str]:
+    pods = selectors({"namespace": namespace, "pod": f"{name}-predictor-.*"}, {"pod"})
+    main = selectors({"namespace": namespace, "pod": f"{name}-predictor-.*", "container": "queue-proxy"}, {"pod"})
+    main = main.replace('container="queue-proxy"', 'container!="queue-proxy"')
+    rng = f"[{span_s}s]"
+    q = {phase: f"last_over_time({metric}{pods}{rng})" for phase, metric in STARTUP_PHASES}
+    q["started"] = f"max by(pod)(last_over_time(kube_pod_container_state_started{main}{rng}))"
+    q["node"] = f"last_over_time(kube_pod_info{pods}{rng})"
+    q["node_created"] = f"last_over_time(kube_pod_info{pods}{rng}) * 0 + on(node) group_left kube_node_created"
+    return q
+
+
+def _startups(results: dict[str, dict], start: float) -> list[dict]:
+    """Per pod: the phase durations in seconds, pods that were created inside the window, newest first."""
+    stamps: dict[str, dict] = {}
+    for key, data in results.items():
+        for item in data.get("result", []):
+            pod = item.get("metric", {}).get("pod")
+            if not pod:
+                continue
+            row = stamps.setdefault(pod, {})
+            if key == "node":
+                row["node"] = item["metric"].get("node")
+            else:
+                try:
+                    row[key] = float(item["value"][1])
+                except (KeyError, ValueError, TypeError, IndexError):
+                    pass
+    rows = []
+    for pod, t in stamps.items():
+        if "created" not in t or t["created"] < start:
+            continue
+
+        def span(a, b):
+            return round(t[b] - t[a], 1) if a in t and b in t else None
+
+        node_age = t["scheduled"] - t["node_created"] if "scheduled" in t and "node_created" in t else None
+        rows.append(
+            {
+                "pod": pod,
+                "node": t.get("node"),
+                "new_node": node_age is not None and node_age < NEW_NODE_S,
+                "created_at": datetime.fromtimestamp(t["created"], tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+                "node_wait_s": span("created", "scheduled"),
+                "init_s": span("scheduled", "initialized"),
+                "pull_start_s": span("initialized", "started"),
+                "load_s": span("started", "ready"),
+                "total_s": span("created", "ready"),
+                "ready": "ready" in t,
+            }
+        )
+    rows.sort(key=lambda r: r["created_at"], reverse=True)
+    return rows[:50]
+
+
 async def metrics(kind: str, namespace: str, name: str, region: str, period: str, end: float | None = None) -> dict:
     start, stop, step = window(period, end)
     definitions = queries(kind, namespace, name, step)
     base, headers, verify = target(PROMETHEUS_URL, region)
+    instants = startup_queries(namespace, name, int(stop - start)) if kind == "endpoint" else {}
     async with httpx.AsyncClient(timeout=8, verify=verify) as client:
         results = await asyncio.gather(
             *[
@@ -141,8 +210,13 @@ async def metrics(kind: str, namespace: str, name: str, region: str, period: str
                 )
                 for _, _, _, q in definitions
             ],
+            *[_query(client, base + "/api/v1/query", {"query": q, "time": stop}, headers) for q in instants.values()],
             return_exceptions=True,
         )
+    results, instant_results = results[: len(definitions)], results[len(definitions) :]
+    startups = None
+    if instants and not any(isinstance(r, BaseException) for r in instant_results):
+        startups = _startups(dict(zip(instants, instant_results)), start)
     panels, unavailable = [], []
     for (mid, title, unit, _), result in zip(definitions, results):
         series = []
@@ -161,7 +235,7 @@ async def metrics(kind: str, namespace: str, name: str, region: str, period: str
         panels.append({"id": mid, "title": title, "unit": unit, "series": series, "unavailable": mid in unavailable})
     if len(unavailable) == len(definitions):
         raise HTTPException(503, "Monitoring is temporarily unavailable. Try again shortly.")
-    return {"region": region, "start": start, "end": stop, "step": step, "panels": panels}
+    return {"region": region, "start": start, "end": stop, "step": step, "panels": panels, "startups": startups}
 
 
 async def logs(

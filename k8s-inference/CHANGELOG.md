@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.134
+
+(API image only.)
+
+- Endpoint start-up breakdown (docs/API.md "Metrics"): `GET /v1/endpoints/{id}/metrics` answers `startups`, one row per
+  pod created inside the range: seconds waiting for a node (and whether the node was provisioned for it), in init
+  containers, pulling the image and starting the container, and loading the model until the readiness probe passed;
+  from kube-state-metrics' pod timestamps in the region's Prometheus. The operator decides warm pins, image caching
+  and GPU snapshots on these numbers.
+
 ## api 0.11.133
 
 (API image only.)

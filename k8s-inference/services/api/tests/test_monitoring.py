@@ -362,3 +362,53 @@ def test_monitoring_of_a_retired_region_says_so(monkeypatch):
         == "https://10.0.0.1:6443/api/v1/namespaces/monitoring/services/kube-prometheus-stack-prometheus:9090/proxy"
     )
     assert headers == {"Authorization": "Bearer agent-token"} and verify is True
+
+
+def test_endpoint_metrics_carry_the_startup_breakdown(client, monkeypatch):
+    """Per pod created inside the range: node wait, init, pull+start, load -> ready, from kube-state-metrics."""
+    c, _ = client
+    now = time.time()
+    t0 = now - 600
+
+    def respond(req):
+        q = req.url.params["query"]
+        if "query_range" in str(req.url):
+            return httpx.Response(200, json={"status": "success", "data": {"result": []}})
+        metric = {"pod": "llm-example-predictor-00001-deployment-abc-xyz"}
+
+        def one(v, **labels):
+            return {"status": "success", "data": {"result": [{"metric": {**metric, **labels}, "value": [now, str(v)]}]}}
+
+        if q.startswith("last_over_time(kube_pod_created"):
+            body = one(t0)
+        elif "kube_pod_status_scheduled_time" in q:
+            body = one(t0 + 90)
+        elif "kube_pod_status_initialized_time" in q:
+            body = one(t0 + 100)
+        elif "kube_pod_container_state_started" in q:
+            body = one(t0 + 400)
+        elif "kube_pod_status_ready_time" in q:
+            body = one(t0 + 520)
+        elif "kube_node_created" in q:
+            body = one(t0 - 30)
+        elif "kube_pod_info" in q:
+            body = one(1, node="computeinstance-new")
+        else:
+            body = {"status": "success", "data": {"result": []}}
+        assert 'namespace="models"' in q
+        return httpx.Response(200, json=body)
+
+    transport(monkeypatch, respond)
+    r = c.get("/v1/endpoints/llm-example/metrics?range=1h", headers=H)
+    assert r.status_code == 200, r.text
+    rows = r.json()["startups"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["node"] == "computeinstance-new" and row["new_node"] is True and row["ready"] is True
+    assert (row["node_wait_s"], row["init_s"], row["pull_start_s"], row["load_s"], row["total_s"]) == (
+        90,
+        10,
+        300,
+        120,
+        520,
+    )
