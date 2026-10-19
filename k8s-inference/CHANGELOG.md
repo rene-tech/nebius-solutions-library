@@ -4,6 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.136
+
+(API image only.)
+
+- Start-up rows for runs too: `GET /v1/operations/{id}/metrics` answers `startups` for the run's pods (`main`
+  container) with one more phase, `queue_wait_s`, the Job's creation to its first pod (the time Kueue held it for
+  capacity); the operator reads where a run's start spends its time next to an endpoint's.
+
 ## api 0.11.135
 
 (API image only.)

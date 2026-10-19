@@ -142,24 +142,41 @@ NEW_NODE_S = 900  # a node younger than this when the pod was scheduled was prov
 GPU_SNAPSHOT_LABEL = "label_serverless2_nebius_gpu_snapshot"
 
 
-def startup_queries(namespace: str, name: str, span_s: int) -> dict[str, str]:
-    pods = selectors({"namespace": namespace, "pod": f"{name}-predictor-.*"}, {"pod"})
-    main = selectors({"namespace": namespace, "pod": f"{name}-predictor-.*", "container": "queue-proxy"}, {"pod"})
-    main = main.replace('container="queue-proxy"', 'container!="queue-proxy"')
+def startup_queries(namespace: str, name: str, span_s: int, kind: str = "endpoint") -> dict[str, str]:
+    """Instant queries over the window: an endpoint's predictor pods or a run's Job pods (`main` container; for a
+    run also the Job's creation, so the queue wait before Kueue admitted it is a phase)."""
+    pattern = f"{re.escape(name)}-predictor-.*" if kind == "endpoint" else f"{re.escape(name)}-.*"
+    pods = selectors({"namespace": namespace, "pod": pattern}, {"pod"})
+    if kind == "endpoint":
+        main = selectors({"namespace": namespace, "pod": pattern, "container": "queue-proxy"}, {"pod"})
+        main = main.replace('container="queue-proxy"', 'container!="queue-proxy"')
+    else:
+        main = selectors({"namespace": namespace, "pod": pattern, "container": "main"}, {"pod"})
     rng = f"[{span_s}s]"
     q = {phase: f"last_over_time({metric}{pods}{rng})" for phase, metric in STARTUP_PHASES}
     q["started"] = f"max by(pod)(last_over_time(kube_pod_container_state_started{main}{rng}))"
     q["node"] = f"last_over_time(kube_pod_info{pods}{rng})"
     q["node_created"] = f"last_over_time(kube_pod_info{pods}{rng}) * 0 + on(node) group_left kube_node_created"
-    snap = selectors({"namespace": namespace, "pod": f"{name}-predictor-.*", GPU_SNAPSHOT_LABEL: "true"}, {"pod"})
+    snap = selectors({"namespace": namespace, "pod": pattern, GPU_SNAPSHOT_LABEL: "true"}, {"pod"})
     q["gpu_snapshot"] = f"last_over_time(kube_pod_labels{snap}{rng})"
+    if kind != "endpoint":
+        jobs_ = selectors({"namespace": namespace, "job_name": f"{re.escape(name)}.*"}, {"job_name"})
+        q["job_created"] = f"last_over_time(kube_job_created{jobs_}{rng})"
     return q
 
 
 def _startups(results: dict[str, dict], start: float) -> list[dict]:
     """Per pod: the phase durations in seconds, pods that were created inside the window, newest first."""
     stamps: dict[str, dict] = {}
+    job_created: dict[str, float] = {}
+    for item in (results.get("job_created") or {}).get("result", []):
+        try:
+            job_created[item["metric"].get("job_name", "")] = float(item["value"][1])
+        except (KeyError, ValueError, TypeError, IndexError):
+            pass
     for key, data in results.items():
+        if key == "job_created":
+            continue
         for item in data.get("result", []):
             pod = item.get("metric", {}).get("pod")
             if not pod:
@@ -167,6 +184,7 @@ def _startups(results: dict[str, dict], start: float) -> list[dict]:
             row = stamps.setdefault(pod, {})
             if key == "node":
                 row["node"] = item["metric"].get("node")
+                row["job"] = item["metric"].get("created_by_name")
             elif key == "gpu_snapshot":
                 row["gpu_snapshot"] = True
             else:
@@ -183,10 +201,12 @@ def _startups(results: dict[str, dict], start: float) -> list[dict]:
             return round(t[b] - t[a], 1) if a in t and b in t else None
 
         node_age = t["scheduled"] - t["node_created"] if "scheduled" in t and "node_created" in t else None
+        jc = job_created.get(t.get("job") or "")
         rows.append(
             {
                 "pod": pod,
                 "node": t.get("node"),
+                "queue_wait_s": round(t["created"] - jc, 1) if jc is not None else None,
                 "new_node": node_age is not None and node_age < NEW_NODE_S,
                 "gpu_snapshot": bool(t.get("gpu_snapshot")),
                 "created_at": datetime.fromtimestamp(t["created"], tz=timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -206,7 +226,7 @@ async def metrics(kind: str, namespace: str, name: str, region: str, period: str
     start, stop, step = window(period, end)
     definitions = queries(kind, namespace, name, step)
     base, headers, verify = target(PROMETHEUS_URL, region)
-    instants = startup_queries(namespace, name, int(stop - start)) if kind == "endpoint" else {}
+    instants = startup_queries(namespace, name, int(stop - start), kind) if kind in ("endpoint", "job") else {}
     async with httpx.AsyncClient(timeout=8, verify=verify) as client:
         results = await asyncio.gather(
             *[

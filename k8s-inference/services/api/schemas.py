@@ -1065,6 +1065,7 @@ class Startup(BaseModel):
     new_node: bool = False  # the node was younger than 900 s when the pod was scheduled (a heuristic)
     gpu_snapshot: bool = False  # restored from a GPU snapshot (pod label serverless2.nebius/gpu-snapshot=true)
     created_at: str
+    queue_wait_s: float | None = None  # runs: the Job's creation to this pod (held by Kueue for capacity)
     node_wait_s: float | None = None
     init_s: float | None = None
     pull_start_s: float | None = None
@@ -1079,7 +1080,7 @@ class Metrics(BaseModel):
     end: float | None = None
     step: int | None = None
     panels: list[MetricPanel] | None = None
-    startups: list[Startup] | None = None  # endpoints only: the pods created inside the range, newest first
+    startups: list[Startup] | None = None  # endpoints and runs: the pods created inside the range, newest first
 
 
 class LogLine(BaseModel):

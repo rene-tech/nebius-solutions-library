@@ -416,3 +416,30 @@ def test_endpoint_metrics_carry_the_startup_breakdown(client, monkeypatch):
         120,
         520,
     )
+
+
+def test_startup_rows_of_a_run_carry_the_queue_wait():
+    """`_startups` for a run: the Job's creation (kube_job_created) to its pod is the Kueue admission wait."""
+    import monitoring
+
+    t0 = 1_000_000.0
+
+    def vec(value, **labels):
+        return {"result": [{"metric": {"pod": "op-1-abcde", **labels}, "value": [t0, str(value)]}]}
+
+    results = {
+        "created": vec(t0 + 300),
+        "scheduled": vec(t0 + 305),
+        "initialized": vec(t0 + 350),
+        "started": vec(t0 + 500),
+        "ready": vec(t0 + 501),
+        "node": vec(1, node="n1", created_by_name="op-1"),
+        "node_created": vec(t0 - 86400),
+        "gpu_snapshot": {"result": []},
+        "job_created": {"result": [{"metric": {"job_name": "op-1"}, "value": [t0, str(t0)]}]},
+    }
+    [row] = monitoring._startups(results, t0)
+    assert row["queue_wait_s"] == 300 and row["node_wait_s"] == 5 and row["init_s"] == 45 and row["pull_start_s"] == 150
+    assert row["load_s"] == 1 and row["total_s"] == 201 and row["new_node"] is False and row["gpu_snapshot"] is False
+    q = monitoring.startup_queries("tenant-demo", "op-1", 3600, "job")
+    assert 'container="main"' in q["started"] and "kube_job_created" in q["job_created"]

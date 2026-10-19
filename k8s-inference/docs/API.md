@@ -680,11 +680,12 @@ Start-up time: every endpoint (both kinds) reports `startup_s`, `started_at` and
 (`GET /v1/endpoints`): pod created to Ready, which includes a cold node's boot and driver install, the image pull
 and the model load; the Grafana dashboard "Endpoints" shows it as a table by model.
 
-An endpoint's metrics also carry `startups`: one row per pod created inside the range (newest first, at most 50) with
+An endpoint's and a run's metrics also carry `startups`: one row per pod created inside the range (newest first, at most 50) with
 the seconds it spent waiting for a node (`node_wait_s`, `new_node` when the node was provisioned for it), in init
 containers (`init_s`), pulling the image and starting the container (`pull_start_s`) and loading the model until ready
 (`load_s`), plus `total_s`; `null` when the region's Prometheus has no kube-state-metrics timestamps for it. `new_node`
 flags a node younger than 900 s at scheduling (a heuristic, not proof it was provisioned for the pod); `gpu_snapshot`
 is true for a pod restored from a GPU snapshot (pod label `serverless2.nebius/gpu-snapshot=true`): no cluster of this
-fleet snapshots yet, so every row reads false until that lands, and the column then shows the effect directly. The
+fleet snapshots yet, so every row reads false until that lands, and the column then shows the effect directly. A run's
+rows add `queue_wait_s`, the Job's creation to the pod (the time Kueue held it for capacity). The
 operator reads where a cold start spends its time before deciding on warm pins, image caching or GPU snapshots.
