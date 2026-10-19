@@ -143,8 +143,7 @@ GPU_SNAPSHOT_LABEL = "label_serverless2_nebius_gpu_snapshot"
 
 
 def startup_queries(namespace: str, name: str, span_s: int, kind: str = "endpoint") -> dict[str, str]:
-    """Instant queries over the window: an endpoint's predictor pods or a run's Job pods (`main` container; for a
-    run also the Job's creation, so the queue wait before Kueue admitted it is a phase)."""
+    """Instant queries over the window: an endpoint's predictor pods or a run's Job pods (`main` container)."""
     pattern = f"{re.escape(name)}-predictor-.*" if kind == "endpoint" else f"{re.escape(name)}-.*"
     pods = selectors({"namespace": namespace, "pod": pattern}, {"pod"})
     if kind == "endpoint":
@@ -159,24 +158,19 @@ def startup_queries(namespace: str, name: str, span_s: int, kind: str = "endpoin
     q["node_created"] = f"last_over_time(kube_pod_info{pods}{rng}) * 0 + on(node) group_left kube_node_created"
     snap = selectors({"namespace": namespace, "pod": pattern, GPU_SNAPSHOT_LABEL: "true"}, {"pod"})
     q["gpu_snapshot"] = f"last_over_time(kube_pod_labels{snap}{rng})"
-    if kind != "endpoint":
-        jobs_ = selectors({"namespace": namespace, "job_name": f"{re.escape(name)}.*"}, {"job_name"})
-        q["job_created"] = f"last_over_time(kube_job_created{jobs_}{rng})"
     return q
 
 
-def _startups(results: dict[str, dict], start: float) -> list[dict]:
-    """Per pod: the phase durations in seconds, pods that were created inside the window, newest first."""
+def _startups(
+    results: dict[str, dict], start: float, submitted: float | None = None, admitted: float | None = None
+) -> list[dict]:
+    """Per pod: the phase durations in seconds, pods that were created inside the window, newest first. For a run,
+    `submitted` (the Job the caller created: the manager copy of a fleet-placed run) and `admitted` (its Workload's
+    Admitted transition on the manager) give the queue wait (submitted → admitted) and the dispatch (admitted → the
+    FIRST pod: MultiKueue's worker Job and the worker's pod creation); a later pod of the same Job is a retry
+    (`attempt` > 1) and carries neither, so an earlier attempt's run time is never read as waiting."""
     stamps: dict[str, dict] = {}
-    job_created: dict[str, float] = {}
-    for item in (results.get("job_created") or {}).get("result", []):
-        try:
-            job_created[item["metric"].get("job_name", "")] = float(item["value"][1])
-        except (KeyError, ValueError, TypeError, IndexError):
-            pass
     for key, data in results.items():
-        if key == "job_created":
-            continue
         for item in data.get("result", []):
             pod = item.get("metric", {}).get("pod")
             if not pod:
@@ -184,7 +178,6 @@ def _startups(results: dict[str, dict], start: float) -> list[dict]:
             row = stamps.setdefault(pod, {})
             if key == "node":
                 row["node"] = item["metric"].get("node")
-                row["job"] = item["metric"].get("created_by_name")
             elif key == "gpu_snapshot":
                 row["gpu_snapshot"] = True
             else:
@@ -193,6 +186,9 @@ def _startups(results: dict[str, dict], start: float) -> list[dict]:
                 except (KeyError, ValueError, TypeError, IndexError):
                     pass
     rows = []
+    ordered = sorted((t["created"], pod) for pod, t in stamps.items() if "created" in t)
+    attempt_of = {pod: i + 1 for i, (_, pod) in enumerate(ordered)}
+    first = ordered[0][1] if ordered else None
     for pod, t in stamps.items():
         if "created" not in t or t["created"] < start:
             continue
@@ -201,12 +197,16 @@ def _startups(results: dict[str, dict], start: float) -> list[dict]:
             return round(t[b] - t[a], 1) if a in t and b in t else None
 
         node_age = t["scheduled"] - t["node_created"] if "scheduled" in t and "node_created" in t else None
-        jc = job_created.get(t.get("job") or "")
+        is_first = pod == first
+        queue = round(admitted - submitted, 1) if is_first and admitted is not None and submitted is not None else None
+        dispatch = round(t["created"] - admitted, 1) if is_first and admitted is not None else None
         rows.append(
             {
                 "pod": pod,
                 "node": t.get("node"),
-                "queue_wait_s": round(t["created"] - jc, 1) if jc is not None else None,
+                "attempt": attempt_of.get(pod, 1),
+                "queue_wait_s": queue,
+                "dispatch_s": dispatch,
                 "new_node": node_age is not None and node_age < NEW_NODE_S,
                 "gpu_snapshot": bool(t.get("gpu_snapshot")),
                 "created_at": datetime.fromtimestamp(t["created"], tz=timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -222,7 +222,16 @@ def _startups(results: dict[str, dict], start: float) -> list[dict]:
     return rows[:50]
 
 
-async def metrics(kind: str, namespace: str, name: str, region: str, period: str, end: float | None = None) -> dict:
+async def metrics(
+    kind: str,
+    namespace: str,
+    name: str,
+    region: str,
+    period: str,
+    end: float | None = None,
+    submitted: float | None = None,
+    admitted: float | None = None,
+) -> dict:
     start, stop, step = window(period, end)
     definitions = queries(kind, namespace, name, step)
     base, headers, verify = target(PROMETHEUS_URL, region)
@@ -244,7 +253,7 @@ async def metrics(kind: str, namespace: str, name: str, region: str, period: str
     results, instant_results = results[: len(definitions)], results[len(definitions) :]
     startups = None
     if instants and not any(isinstance(r, BaseException) for r in instant_results):
-        startups = _startups(dict(zip(instants, instant_results)), start)
+        startups = _startups(dict(zip(instants, instant_results)), start, submitted, admitted)
     panels, unavailable = [], []
     for (mid, title, unit, _), result in zip(definitions, results):
         series = []

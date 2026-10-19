@@ -36,6 +36,7 @@ import monitoring
 import pause
 import placement as placing
 import render
+import resilience
 import schemas
 import sessions
 import stages
@@ -3121,7 +3122,30 @@ async def operation_metrics(
 ):
     p = _reader(p, id)
     region, _ = await asyncio.to_thread(_monitored, p, id)
-    return await monitoring.metrics("job", p.namespace, id, region or REGION, range, end)
+    submitted, admitted = await asyncio.to_thread(_admission_times, p, id)
+    return await monitoring.metrics(
+        "job", p.namespace, id, region or REGION, range, end, submitted=submitted, admitted=admitted
+    )
+
+
+def _admission_times(p: Principal, id: str) -> tuple[float | None, float | None]:
+    """(submitted, admitted) of a run as Unix seconds: the Job the caller submitted (the manager copy of a
+    fleet-placed run) and the Admitted transition of its own Workload on this cluster (docs/API.md "Metrics", the
+    queue wait); None when the Job is gone or the Workload is not readable."""
+    try:
+        job, _ = _owned(p, id, follow=False)
+    except HTTPException:
+        return None, None
+    md = job.get("metadata") or {}
+    submitted = resilience.parse_ts(md.get("creationTimestamp"))
+    admitted = None
+    if md.get("uid"):
+        try:
+            adm = kube.workload_admission(p.namespace, md["uid"], REGION)
+            admitted = resilience.parse_ts((adm or {}).get("admitted_at"))
+        except Exception:  # noqa: BLE001 - an unreadable Workload leaves the queue wait unknown, never wrong
+            admitted = None
+    return (submitted.timestamp() if submitted else None, admitted.timestamp() if admitted else None)
 
 
 @app.get("/v1/operations/{id}/logs", responses={200: {"model": schemas.Logs}})

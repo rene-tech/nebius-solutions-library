@@ -41,3 +41,18 @@ async def retry_http(send, attempts: int = 3, base: float = 0.2):
             if i == attempts - 1:
                 raise
         await asyncio.sleep(base * 3**i + random.random() * 0.1)
+
+
+def parse_ts(s):
+    """An RFC 3339 timestamp (`...Z` from raw API objects, `...+00:00` from the client, or a datetime) as an
+    aware datetime; None or an unparseable value gives None."""
+    from datetime import datetime, timezone
+
+    if not s:
+        return None
+    if isinstance(s, datetime):
+        return s if s.tzinfo else s.replace(tzinfo=timezone.utc)
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except ValueError:
+        return None

@@ -687,5 +687,9 @@ containers (`init_s`), pulling the image and starting the container (`pull_start
 flags a node younger than 900 s at scheduling (a heuristic, not proof it was provisioned for the pod); `gpu_snapshot`
 is true for a pod restored from a GPU snapshot (pod label `serverless2.nebius/gpu-snapshot=true`): no cluster of this
 fleet snapshots yet, so every row reads false until that lands, and the column then shows the effect directly. A run's
-rows add `queue_wait_s`, the Job's creation to the pod (the time Kueue held it for capacity). The
+rows add `attempt` (the pod's place among the Job's pods; > 1 is a retry), and on the first pod only `queue_wait_s`,
+the submitted Job's creation to its Workload's `Admitted` transition on the manager cluster (what Kueue held it for),
+and `dispatch_s`, that admission to the pod's creation (MultiKueue's worker Job and the worker's pod); a retry
+carries neither, so an earlier attempt's run time is never read as waiting; both are `null` when the Workload is
+not readable. The
 operator reads where a cold start spends its time before deciding on warm pins, image caching or GPU snapshots.

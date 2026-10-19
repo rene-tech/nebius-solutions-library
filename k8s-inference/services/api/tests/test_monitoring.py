@@ -1,6 +1,7 @@
 """Monitoring authorization, bounded queries, the other regions' API server proxy, and real response normalization."""
 
 import time
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -418,28 +419,102 @@ def test_endpoint_metrics_carry_the_startup_breakdown(client, monkeypatch):
     )
 
 
-def test_startup_rows_of_a_run_carry_the_queue_wait():
-    """`_startups` for a run: the Job's creation (kube_job_created) to its pod is the Kueue admission wait."""
+def test_startup_rows_of_a_run_read_the_queue_wait_from_the_manager_admission():
+    """Root's reproduction (2026-10-19): manager Job at t=0, Workload Admitted at t=598, the worker's first pod at
+    t=605, a replacement pod at t=4200. The queue wait is submission → admission (598), the dispatch admission → the
+    first pod (7); the retry carries neither (an earlier attempt's run time is never read as waiting)."""
     import monitoring
 
     t0 = 1_000_000.0
 
-    def vec(value, **labels):
-        return {"result": [{"metric": {"pod": "op-1-abcde", **labels}, "value": [t0, str(value)]}]}
+    def vec(values):
+        return {"result": [{"metric": {"pod": pod, "node": "n1"}, "value": [t0, str(v)]} for pod, v in values.items()]}
 
+    pods = {"op-1-first": t0 + 605, "op-1-retry": t0 + 4200}
     results = {
-        "created": vec(t0 + 300),
-        "scheduled": vec(t0 + 305),
-        "initialized": vec(t0 + 350),
-        "started": vec(t0 + 500),
-        "ready": vec(t0 + 501),
-        "node": vec(1, node="n1", created_by_name="op-1"),
-        "node_created": vec(t0 - 86400),
+        "created": vec(pods),
+        "scheduled": vec({p: v + 5 for p, v in pods.items()}),
+        "initialized": vec({p: v + 50 for p, v in pods.items()}),
+        "started": vec({p: v + 200 for p, v in pods.items()}),
+        "ready": vec({p: v + 201 for p, v in pods.items()}),
+        "node": vec({p: 1 for p in pods}),
+        "node_created": vec({p: t0 - 86400 for p in pods}),
         "gpu_snapshot": {"result": []},
-        "job_created": {"result": [{"metric": {"job_name": "op-1"}, "value": [t0, str(t0)]}]},
     }
-    [row] = monitoring._startups(results, t0)
-    assert row["queue_wait_s"] == 300 and row["node_wait_s"] == 5 and row["init_s"] == 45 and row["pull_start_s"] == 150
-    assert row["load_s"] == 1 and row["total_s"] == 201 and row["new_node"] is False and row["gpu_snapshot"] is False
+    rows = {r["pod"]: r for r in monitoring._startups(results, t0, submitted=t0, admitted=t0 + 598)}
+    first, retry = rows["op-1-first"], rows["op-1-retry"]
+    assert first["attempt"] == 1 and first["queue_wait_s"] == 598 and first["dispatch_s"] == 7
+    assert retry["attempt"] == 2 and retry["queue_wait_s"] is None and retry["dispatch_s"] is None
+    assert (first["node_wait_s"], first["init_s"], first["pull_start_s"], first["load_s"]) == (5, 45, 150, 1)
+    # an unreadable Workload leaves the queue wait unknown, never a guess from the worker Job
+    rows = {r["pod"]: r for r in monitoring._startups(results, t0, submitted=t0, admitted=None)}
+    assert rows["op-1-first"]["queue_wait_s"] is None and rows["op-1-first"]["dispatch_s"] is None
     q = monitoring.startup_queries("tenant-demo", "op-1", 3600, "job")
-    assert 'container="main"' in q["started"] and "kube_job_created" in q["job_created"]
+    assert 'container="main"' in q["started"] and "kube_job_created" not in str(q)
+
+
+def test_a_fleet_placed_runs_startups_combine_the_managers_admission_with_the_workers_pods(client, monkeypatch):
+    """The admission is read on the manager cluster (this API's), the pod timestamps in the worker's region."""
+    c, _ = client
+    import keys
+
+    now = time.time()
+    t0 = now - 3000
+    manager = {
+        "metadata": {
+            "name": "op-owned",
+            "uid": "uid-1",
+            "creationTimestamp": datetime.fromtimestamp(t0, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+            "labels": {"serverless2.nebius/tenant": "demo"},
+            "annotations": {"serverless2.nebius/key": keys.key_hash("sk-good")},
+        }
+    }
+    monkeypatch.setattr(jobs, "find", lambda ns, id: (manager, "eu-south1"))
+    monkeypatch.setattr(kube, "regions", lambda: ["eu-north1", "eu-south1"])
+    monkeypatch.setattr(kube, "_client", lambda region: FakeAgentClient())
+    seen = {}
+
+    def admission(ns, uid, region):
+        seen["admission"] = (ns, uid, region)
+        return {"admitted": True, "admitted_at": datetime.fromtimestamp(t0 + 598, tz=timezone.utc).isoformat()}
+
+    monkeypatch.setattr(kube, "workload_admission", admission)
+    hosts = []
+
+    def respond(req):
+        hosts.append(req.url.host)
+        q = req.url.params["query"]
+        if "query_range" in str(req.url):
+            return httpx.Response(200, json={"status": "success", "data": {"result": []}})
+
+        def one(v, **labels):
+            return {
+                "status": "success",
+                "data": {"result": [{"metric": {"pod": "op-owned-abcde", **labels}, "value": [now, str(v)]}]},
+            }
+
+        if q.startswith("last_over_time(kube_pod_created"):
+            body = one(t0 + 605)
+        elif "kube_pod_status_scheduled_time" in q:
+            body = one(t0 + 610)
+        elif "kube_pod_status_initialized_time" in q:
+            body = one(t0 + 655)
+        elif "kube_pod_container_state_started" in q:
+            assert 'container="main"' in q
+            body = one(t0 + 805)
+        elif "kube_pod_status_ready_time" in q:
+            body = one(t0 + 806)
+        elif "kube_pod_info" in q:
+            body = one(1, node="south-node")
+        else:
+            body = {"status": "success", "data": {"result": []}}
+        return httpx.Response(200, json=body)
+
+    transport(monkeypatch, respond)
+    r = c.get("/v1/operations/op-owned/metrics?range=1h", headers=H)
+    assert r.status_code == 200, r.text
+    assert r.json()["region"] == "eu-south1" and set(hosts) == {"10.0.0.1"}  # the worker's Prometheus, by proxy
+    assert seen["admission"] == ("tenant-demo", "uid-1", kube.REGION)  # the manager's Workload, here
+    [row] = r.json()["startups"]
+    assert row["attempt"] == 1 and row["queue_wait_s"] == 598 and row["dispatch_s"] == 7
+    assert (row["node_wait_s"], row["init_s"], row["pull_start_s"], row["load_s"]) == (5, 45, 150, 1)
