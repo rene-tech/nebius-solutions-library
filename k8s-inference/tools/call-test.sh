@@ -35,30 +35,37 @@ exit 0
 STUB
 chmod +x "$T/bin/curl" "$T/bin/sleep"
 run() { # <GETS> <POSTS> [READY_URL|-]: run the managed caller; prints "exit gets posts outcome http"
+  # READY_MAX_WAIT is wall-clock in call.sh while sleep is a no-op here: the normal cases get a generous bound (the
+  # scripted probes decide the outcome, never the clock); only the not-ready case sets a short one explicitly (WAIT)
   rm -rf "$T/work"; mkdir -p "$T/work"; rm -f "$T/GET.count" "$T/POST.count"
   local ready=${3:-https://ep.example/healthz}; [ "$ready" = - ] && ready=""
   (cd "$T" && WORK="$T/work" LOG_DIR="$T" GETS="$1" POSTS="$2" READY_URL="$ready" URL=https://ep.example/infer REQUEST_BODY='{"x":1}' \
-     OPERATION=op-1 POD_NAME=pod-1 CALL_TIMEOUT=60 READY_MAX_WAIT=1 PATH="$T/bin:$PATH" bash "$T/call.sh" > "$T/log" 2>&1); local rc=$?
+     OPERATION=op-1 POD_NAME=pod-1 CALL_TIMEOUT=60 READY_MAX_WAIT="${WAIT:-600}" PATH="$T/bin:$PATH" bash "$T/call.sh" > "$T/log" 2>&1); local rc=$?
   echo "$rc $(cat "$T/GET.count" 2>/dev/null || echo 0) $(cat "$T/POST.count" 2>/dev/null || echo 0) $(jq -r '"\(.outcome) \(.http_status)"' "$T/work/out/call.json" 2>/dev/null || echo none)"
 }
+check() { # <name> <expected> <GETS> <POSTS> [READY_URL|-]: one run, its first result judged and reported as is
+  local out; out=$(run "$3" "$4" "${5-https://ep.example/healthz}")
+  [ "$out" = "$2" ] || fail "$1: got '$out', expected '$2'; $(tail -3 "$T/log" | tr '\n' '|')"
+}
 # 1. cold endpoint: two probes without an answer, then ready; the one POST succeeds
-[ "$(run "000 000 200" "200:{\"ok\":1}")" = "0 3 1 ok 200" ] || fail "cold start then success: $(run "000 000 200" "200:{\"ok\":1}") $(tail -3 "$T/log")"
+check "cold start then success" "0 3 1 ok 200" "000 000 200" "200:{\"ok\":1}"
 [ "$(jq -c . "$T/work/out/response.json")" = '{"ok":1}' ] || fail "the response was not captured"
 # 2. no response to the POST: unknown outcome, exit 4, never a second POST
-[ "$(run "200" "000")" = "4 1 1 unknown 0" ] || fail "no response: $(run "200" "000")"
+check "no response" "4 1 1 unknown 0" "200" "000"
 # 3. a 5xx without a body is unknown too; a 5xx with a body is the endpoint's error (exit 5), one POST either way
-[ "$(run "200" "503")" = "4 1 1 unknown 503" ] || fail "empty 503: $(run "200" "503")"
-[ "$(run "200" "500:{\"error\":\"oom\"}")" = "5 1 1 endpoint_error 500" ] || fail "500 with body: $(run "200" "500:{\"error\":\"oom\"}")"
+check "empty 503" "4 1 1 unknown 503" "200" "503"
+check "500 with body" "5 1 1 endpoint_error 500" "200" "500:{\"error\":\"oom\"}"
 # 4. a 429 PROVEN to come from the edge (x-envoy-ratelimited) is asked again; a model's own 408/429 is its answer,
 #    taken once like any 4xx (exit 2, never a second POST)
-[ "$(run "200" "429@edge 429@edge 200:{}")" = "0 1 3 ok 200" ] || fail "edge 429 then 200: $(run "200" "429@edge 429@edge 200:{}")"
-[ "$(run "200" "429:{\"detail\":\"busy\"} 200:{}")" = "2 1 1 client_error 429" ] || fail "model 429: $(run "200" "429:{\"detail\":\"busy\"} 200:{}")"
-[ "$(run "200" "408:{\"detail\":\"partial\"} 200:{}")" = "2 1 1 client_error 408" ] || fail "model 408: $(run "200" "408:{\"detail\":\"partial\"} 200:{}")"
-[ "$(run "200" "400:{\"detail\":\"bad\"}")" = "2 1 1 client_error 400" ] || fail "400: $(run "200" "400:{\"detail\":\"bad\"}")"
-# 5. a refused probe posts nothing (the key's error); not ready within the bound posts nothing (exit 5)
-[ "$(run "403:{\"detail\":\"no\"}" "200:{}")" = "2 1 0 refused 403" ] || fail "refused probe: $(run "403:{\"detail\":\"no\"}" "200:{}")"
-out=$(run "000" "200:{}"); read -r rc _ posts _ http <<< "$out"
+check "edge 429 then 200" "0 1 3 ok 200" "200" "429@edge 429@edge 200:{}"
+check "model 429" "2 1 1 client_error 429" "200" "429:{\"detail\":\"busy\"} 200:{}"
+check "model 408" "2 1 1 client_error 408" "200" "408:{\"detail\":\"partial\"} 200:{}"
+check "400" "2 1 1 client_error 400" "200" "400:{\"detail\":\"bad\"}"
+# 5. a refused probe posts nothing (the key's error); not ready within the bound posts nothing (exit 5): the only
+#    case the clock decides, so its bound is short and explicit
+check "refused probe" "2 1 0 refused 403" "403:{\"detail\":\"no\"}" "200:{}"
+out=$(WAIT=1 run "000" "200:{}"); read -r rc _ posts _ http <<< "$out"
 if [ "$rc" != 5 ] || [ "$posts" != 0 ] || [ "$http" != 0 ]; then fail "not ready within the bound: $out"; fi
 # 6. without READY_URL the POST is made directly, once
-[ "$(run "" "200:{}" -)" = "0 0 1 ok 200" ] || fail "no readiness URL: $(run "" "200:{}" -)"
+check "no readiness URL" "0 0 1 ok 200" "" "200:{}" -
 echo "   ok call.sh managed: cold start waited then one POST; no response = unknown (exit 4, no re-POST); 5xx body = exit 5; edge 429 retried, model 408/429 taken once as a 4xx; refused/not-ready probes post nothing"
