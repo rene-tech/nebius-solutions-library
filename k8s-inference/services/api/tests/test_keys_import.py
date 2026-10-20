@@ -7,6 +7,7 @@ import hmac
 
 import app as appmod
 import auth
+import catalog
 import keys
 from test_api import (  # noqa: F401 - fixtures and constants
     ADMIN,
@@ -83,6 +84,7 @@ def test_scopes_bound_every_direct_path(client, fake_keys, monkeypatch):
     monkeypatch.setattr(auth, "key_info", fake_info)
     assert c.get("/v1/models", headers=H).status_code == 200  # in scope
     assert c.post("/v1/models/hello-run:invoke", headers=H, json={"mode": "run", "input": {}}).status_code == 403
+    catalog.invalidate()  # the runtime-catalog cache expiring between two calls changes nothing here
     assert (
         "run:submit"
         in c.post("/v1/models/hello-run:invoke", headers=H, json={"mode": "run", "input": {}}).json()["detail"]

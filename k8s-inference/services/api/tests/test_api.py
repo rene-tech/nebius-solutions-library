@@ -1477,10 +1477,14 @@ def fake_keys(monkeypatch):
     import children
     import db
     import keys
+    import models
 
     # every fake-key world runs with db.enabled() but no pool: the endpoint-children boundary a cancel reaches is a
-    # no-op here (test_children.py exercises the real one on the real database)
+    # no-op here (test_children.py exercises the real one on the real database), and so is the runtime model store
+    # (the catalog's 5 s cache expiring mid-test must not reach the pool: 2026-10-20 gate flake)
     monkeypatch.setattr(children, "cancel_for_root", lambda *a, **k: [])
+    monkeypatch.setattr(models, "list_runtime", lambda: {})
+    catalog.invalidate()
     fk = FakeKeys()
     for name in (
         "info",
