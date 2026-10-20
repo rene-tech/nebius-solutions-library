@@ -85,12 +85,14 @@ record() {   # $1 = status; the attempt as the uploader sees it now (main may st
   # record is retried; ACK holds the last HTTP status (200 = acknowledged; the work volume is released only then)
   ACK=""
   if [ -n "${API_URL:-}" ]; then
-    local tries=1; [ "$1" = started ] || tries=4
+    # a start record is retried like a terminal one (jobs 0.1.29: one try stranded a healthy attempt behind a
+    # transient 503, the App waits for that acknowledgement); 409 (fenced) and a definite auth rejection end it
+    local tries=4
     for i in $(seq 1 $tries); do
       ACK=$(curl -sS -m 20 -o "$REC/.ack.json" -w "%{http_code}" -X POST "$API_URL/internal/attempts" \
         -H "Authorization: Bearer $(cat "$TOKEN_FILE")" -H "Content-Type: application/json" --data-binary "@$REC/$POD_NAME.json" 2>/dev/null || echo 000)
       echo "attempt record $1 -> API $ACK"
-      case "$ACK" in 200|409) break ;; esac
+      case "$ACK" in 200|409|401|403) break ;; esac
       [ "$i" -lt "$tries" ] && { sleep 20 & wait $!; }
     done
     if [ "$ACK" = 200 ] && [ -n "$gen" ]; then
@@ -166,9 +168,13 @@ while true; do
         sleep 2 & wait $!; pod
       done
       record started
+      case "$ACK" in 200|409|401|403|"") START_ACK=1 ;; *) START_ACK=0 ;; esac   # "" = no API: nothing to acknowledge
       [ "$MODE" = record ] || aws s3 cp "${REC:-/work/attempts}/$POD_NAME.json" "${OUTPUT_PREFIX%/}/attempts/$POD_NAME.json" --no-progress > /dev/null 2>&1 || true
     fi
     SEEN=1; gone=0
+    if [ "${START_ACK:-1}" = 0 ]; then       # the start is still unacknowledged (transient failures): once more per poll
+      record started; case "$ACK" in 200|409|401|403) START_ACK=1 ;; esac
+    fi
     checkpoint_changed && record started     # the live pointer, fenced and acknowledged through the API
     if [ "$DIGEST_SEEN" = 0 ] && [ -n "$(field '.status.containerStatuses[]? | select(.name==$m) | .imageID // empty')" ]; then
       record started                         # the digest arrived after the start record: published once, same attempt

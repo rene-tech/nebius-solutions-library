@@ -80,7 +80,7 @@ from schemas import (
 
 log = logging.getLogger("api")
 PAGE_DEFAULT, PAGE_MAX = 50, 500  # every list route: `limit` default and ceiling (docs/API.md "Pagination")
-_ops_auth_cache: dict = {}  # (listing id, key hash, role, models) -> (listing, until, names, entries): list_operations
+_ops_auth_cache: dict = {}  # (key hash, role, models) -> (listing, until, names, entries): list_operations
 
 
 def check_placeholders() -> None:
@@ -125,7 +125,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.141", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.142", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1644,7 +1644,7 @@ def list_operations(
     live_names = set()
     # the owner check reads the run ledger per Job (0.4 s over 600 Jobs): remembered per listing instance and key,
     # as long as the listing itself is reused (api 0.11.129)
-    auth_key = (id(live), p.hash, p.role, tuple(p.info.get("models") or []))
+    auth_key = (p.hash, p.role, tuple(p.info.get("models") or []))  # one entry per principal, never per generation
     hit = _ops_auth_cache.get(auth_key)
     if hit and hit[0] is live and hit[1] > time.time():
         live_names, entries = set(hit[2]), list(hit[3])
@@ -1653,9 +1653,15 @@ def list_operations(
             if _may_read_operation(p, j):
                 live_names.add(j["metadata"]["name"])
                 entries.append((j["metadata"].get("creationTimestamp") or "", j["metadata"]["name"], j, None))
+        now = time.time()
+        # an entry holds its listing (~100 MB of Jobs for a tenant of 800, api 0.11.142): expired entries go now,
+        # so no generation outlives OPS_LIST_CACHE_S here. Keyed by id(live) before, every warmer refresh (4 s) left
+        # a whole generation behind until 256 had piled up: 2 GiB in minutes under a dozen pollers.
+        for k in [k for k, v in _ops_auth_cache.items() if v[1] <= now]:
+            del _ops_auth_cache[k]
         if len(_ops_auth_cache) > 256:
             _ops_auth_cache.clear()
-        _ops_auth_cache[auth_key] = (live, time.time() + cfg.OPS_LIST_CACHE_S, set(live_names), list(entries))
+        _ops_auth_cache[auth_key] = (live, now + cfg.OPS_LIST_CACHE_S, set(live_names), list(entries))
     durable: list[dict] = []
     if attempts.enabled():
         try:

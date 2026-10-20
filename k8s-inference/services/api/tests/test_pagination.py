@@ -410,3 +410,27 @@ def test_the_listing_warmer_keeps_wanted_listings_fresh_and_forgets_the_rest(cli
     assert jobs.warm_ops_listings() == []  # logged, not raised
     jobs._ops_list_cache.clear()
     jobs._ops_list_wanted.clear()
+
+
+def test_the_listing_auth_cache_keeps_no_expired_generation(client, monkeypatch):
+    """api 0.11.142: the authorization cache of GET /v1/operations holds one entry per principal and drops expired
+    entries on every write, so a listing generation never outlives OPS_LIST_CACHE_S there. Keyed by the listing's
+    id before, every warmer refresh left a whole generation (~100 MB of Jobs) behind until 256 had piled up."""
+    import jobs
+
+    c, _ = client
+    generations = []
+
+    def fresh(ns, tenant, model):
+        generations.append([])  # a new listing object per refresh, as the warmer produces
+        return generations[-1], []
+
+    monkeypatch.setattr(jobs, "list_ops_all", fresh)
+    monkeypatch.setattr(appmod.cfg, "OPS_LIST_CACHE_S", 0.0)  # every entry is expired by the next write
+    appmod._ops_auth_cache.clear()
+    for _ in range(12):
+        assert c.get("/v1/operations", headers=H).status_code == 200
+    assert len(generations) == 12
+    assert len(appmod._ops_auth_cache) == 1  # the newest entry only; eleven expired generations are gone
+    (entry,) = appmod._ops_auth_cache.values()
+    assert entry[0] is generations[-1]

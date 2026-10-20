@@ -4,6 +4,19 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.142, jobs 0.1.29
+
+(API image, jobs image.)
+
+- The listing's authorization cache (`GET /v1/operations`, api 0.11.129) was keyed by the listing object's id: every
+  warmer refresh (4 s) left a whole listing generation (about 100 MB of Jobs for a tenant of 800) behind until 256
+  had piled up, so a dozen pollers took both replicas to the 2 GiB limit in minutes (OOMKilled twice, 2026-10-20).
+  The cache is keyed by principal and drops expired entries on every write: no generation outlives
+  `OPS_LIST_CACHE_S` there.
+- The uploader retries a start record like a terminal one (four tries, 20 s apart) and again once per poll while
+  it stays unacknowledged; 409 (fenced) and a definite 401/403 end the retries. One try stranded a healthy attempt
+  behind a transient 503 (the application waits for the start acknowledgement before touching request-owned data).
+
 ## api 0.11.141
 
 (API image and charts/platform scheduling: every cluster.)
