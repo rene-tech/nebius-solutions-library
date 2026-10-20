@@ -4,6 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.137
+
+(API image only.)
+
+- `GET /v1/fleet` answers a fleet operator key: it has no tenant of its own, so the response carries no `tenant`
+  block and no `execution` capabilities instead of failing on the missing `tenant-platform` namespace (the console's
+  Fleet page under the operator key).
+
 ## api 0.11.136
 
 (API image only.)

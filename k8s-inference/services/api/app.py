@@ -125,7 +125,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.136", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.137", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -641,7 +641,8 @@ def fleet_info(live: bool = False, p: Principal = Depends(principal)):
         "gpu_classes": sorted({pool["gpu_class"] for pool in pools if pool.get("gpu_class")}),
         "fleet_manager": FLEET_MANAGER,
         "region": REGION,
-        "execution": execution.capabilities(p.namespace),  # what this tenant may ask for (services/api/execution.py)
+        # what this tenant may ask for (services/api/execution.py); a fleet operator has no tenant namespace
+        "execution": execution.capabilities(p.namespace) if p.role != FLEET_ROLE else None,
         "pools": [
             {
                 "region": kube.cluster_region(pool.get("region") or REGION),
@@ -684,19 +685,21 @@ def fleet_info(live: bool = False, p: Principal = Depends(principal)):
     }
     # the caller's tenant: its quotas as terraform.tfvars shaped them (charts/fleet tenants.yaml) and, live, what its
     # queues hold per region (docs/FLEET.md "Tenants")
-    t = (kube.fleet().get("tenants") or {}).get(p.tenant) or {}
-    out["tenant"] = {
-        "name": p.tenant,
-        "gpu_quota": t.get("gpu_quota"),
-        "fair_share_weight": t.get("fair_share_weight", 1),
-        "dedicated_pools": list(t.get("dedicated_pools") or []),
-    }
-    if live:
-        out["tenant"]["usage"] = {
-            region: kube.tenant_usage(p.tenant, region)
-            for region in kube.regions()
-            if not (FLEET_MANAGER and region == REGION)
+    if p.role != FLEET_ROLE:  # a fleet operator is not a tenant: the per-tenant view lives under /v1/fleet/tenants
+        t = (kube.fleet().get("tenants") or {}).get(p.tenant) or {}
+        out["tenant"] = {
+            "name": p.tenant,
+            "gpu_quota": t.get("gpu_quota"),
+            "fair_share_weight": t.get("fair_share_weight", 1),
+            "dedicated_pools": list(t.get("dedicated_pools") or []),
         }
+        if live:
+            out["tenant"]["usage"] = {
+                region: kube.tenant_usage(p.tenant, region)
+                for region in kube.regions()
+                if not (FLEET_MANAGER and region == REGION)
+            }
+    if live:
         for entry in out["pools"]:
             entry.update(kube.pool_usage(entry["cluster"], entry["pool"]))
         # the clusters: this one (the control plane when it is the fleet manager) and every region it reaches

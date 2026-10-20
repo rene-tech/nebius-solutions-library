@@ -287,3 +287,14 @@ def test_a_fleet_operator_reads_any_tenants_operation(database, client, monkeypa
     cancelled = c.post("/v1/operations/op-seen:cancel", headers=FLEET_KEY)
     assert cancelled.status_code == 200, cancelled.text
     assert cancelled.json()["status"] == "CANCELLED"
+
+
+def test_a_fleet_operator_reads_the_fleet_overview_without_a_tenant_of_its_own(database, client, monkeypatch):
+    """GET /v1/fleet (the console's Fleet page) answers the operator: no tenant block, no execution capabilities
+    (there is no tenant-platform namespace to read them from), the pools and clusters as for everyone."""
+    c, _ = _rig(database, client, monkeypatch)
+    for query in ("", "?live=true"):
+        r = c.get(f"/v1/fleet{query}", headers=FLEET_KEY)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("tenant") is None and body.get("execution") is None and "pools" in body
