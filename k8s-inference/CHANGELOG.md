@@ -4,6 +4,13 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## gateway: the refusal-marker patch targets the https listener only
+
+- The EnvoyPatchPolicy no longer patches the :80 listener: that listener is the HTTPS redirect and carries a
+  ratelimit filter only where a limited route happens to attach (south had none), and Envoy Gateway rejects the
+  whole policy when one op selects nothing (south: Accepted, not Programmed, 2026-10-20 22:23Z). Refusals that
+  matter happen on https. Render test: the patch targets exactly the https listener.
+
 ## gateway: the limiter's refusals carry x-envoy-ratelimited again
 
 - charts/platform gateway/ratelimit.yaml: EnvoyPatchPolicy `ratelimit-refusal-header` on the external Gateway replaces

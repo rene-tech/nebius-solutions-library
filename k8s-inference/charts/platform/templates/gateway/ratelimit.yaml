@@ -27,8 +27,10 @@ spec:
 # Gateway's listeners: Envoy then adds `x-envoy-ratelimited: true` to its OWN rate-limit local replies and to nothing
 # else, which is what callers key on (services/jobs/bin/call.sh edge_refusal, docs/API.md). Limits, descriptors,
 # routes and the x-ratelimit-* headers are unchanged. The jsonPath selects the ratelimit filter by name (never a
-# positional index); the property exists in every translated listener, so `replace` applies. Needs
-# extensionApis.enableEnvoyPatchPolicy on the controller (clusters/common/values/envoy-gateway.yaml).
+# positional index); the property exists in every translated https listener, so `replace` applies. Only the https
+# listener is patched: port 80 is the HTTPS redirect on every cluster and carries a ratelimit filter only where a
+# limited route happens to attach (not on every cluster; Envoy Gateway rejects the whole policy when one op selects
+# nothing: south, 2026-10-20). Needs extensionApis.enableEnvoyPatchPolicy on the controller.
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: EnvoyPatchPolicy
 metadata: { name: ratelimit-refusal-header, namespace: envoy-gateway-system }
@@ -44,13 +46,6 @@ spec:
       operation:
         op: replace
         jsonPath: "$.filter_chains[*].filters[*].typed_config.http_filters[?(@.name=='envoy.filters.http.ratelimit')].typed_config"
-        path: "disable_x_envoy_ratelimited_header"
-        value: false
-    - type: type.googleapis.com/envoy.config.listener.v3.Listener
-      name: envoy-gateway-system/serverless2-external/http
-      operation:
-        op: replace
-        jsonPath: "$.default_filter_chain.filters[*].typed_config.http_filters[?(@.name=='envoy.filters.http.ratelimit')].typed_config"
         path: "disable_x_envoy_ratelimited_header"
         value: false
 {{- end }}

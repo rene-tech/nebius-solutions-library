@@ -129,7 +129,7 @@
  },
  "gateway.envoyproxy.io/EnvoyPatchPolicy/envoy-gateway-system/ratelimit-refusal-header": {
   "component": "gateway",
-  "sha256": "e0297e59227315c4fb712bada1392b8d21660913bf726320f14a600fbc4179d5"
+  "sha256": "3d288a133302f310845eba097fd009ef61b6ff95e5e5907e793fe24441314064"
  },
  "gateway.envoyproxy.io/EnvoyProxy/envoy-gateway-system/external": {
   "component": "gateway",
