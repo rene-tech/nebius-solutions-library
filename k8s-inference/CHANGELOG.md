@@ -4,6 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## charts/platform 0.1.16
+
+(Chart only; the control cluster's API route.)
+
+- The gateway's upstream connection pool to the API closes an idle connection after 4 s (BackendTrafficPolicy
+  `timeout.http.connectionIdleTimeout`), below uvicorn's 5 s keep-alive: before, the gateway now and then reused
+  a connection the API pod had just closed and answered `503 UC` (upstream connection termination, 0 bytes) to a
+  request that never reached the API, about one or two a minute at low per-connection rates (2026-10-20). A
+  connection-pool setting only: request and stream timeouts (the HTTPRoute's `api.syncRequestTimeoutSeconds`,
+  the API's own budgets) are unchanged, and nothing is retried by the gateway.
+
 ## api 0.11.144
 
 (API image only.)

@@ -425,6 +425,12 @@ BaseHTTPMiddleware; a polled `is_disconnected()` does not): a caller that discon
 at once (499, nobody reads it) and the admission
 (slot, request count) is released immediately; a timeout answers 504; both release the admission.
 
+A `503` with Envoy's `UC` flag at the gateway (upstream connection termination, 0 bytes) means the connection to
+the API pod ended before a completed response: for a GET it is safe to repeat because GET is idempotent; for a POST
+it is an UNKNOWN outcome like any other answer without `x-serverless2-inference: not-sent` or
+`X-Serverless2-Admission: refused`, and nothing retries it automatically. The gateway closes idle upstream
+connections after 4 s (charts/platform 0.1.16) so that this race with uvicorn's 5 s keep-alive no longer occurs.
+
 ## Weights of an endpoint
 
 `weights: {path, mount_path, env, read_only, prepare}` on an API-managed model (`POST /v1/models`): the region's

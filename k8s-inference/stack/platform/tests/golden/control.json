@@ -121,7 +121,7 @@
  },
  "gateway.envoyproxy.io/BackendTrafficPolicy/api/api-rate-limit": {
   "component": "api",
-  "sha256": "6f09fd3e17544bf0c7cd162ee07087430f3f2ea7fa526d0c7d4406b536ceaccc"
+  "sha256": "522987aea57009ae6be6e0ef1d5281c871f0a5e79b68be599428a8ef8edccaa0"
  },
  "gateway.envoyproxy.io/BackendTrafficPolicy/envoy-gateway-system/per-key-rate-limit": {
   "component": "gateway",

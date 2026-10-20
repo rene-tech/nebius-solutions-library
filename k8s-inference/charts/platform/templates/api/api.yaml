@@ -250,4 +250,12 @@ spec:
             - headers:
                 - { name: Authorization, type: Distinct, invert: false }   # invert is a server default; explicit avoids render/default differences
           limit: { requests: {{ .Values.api.rateLimitPerMinute }}, unit: Minute }
+  # Upstream CONNECTION POOL only (Envoy cluster common_http_protocol_options.idle_timeout: a connection with no
+  # active request on it is closed after this), kept below uvicorn's 5 s keep-alive so the gateway closes an idle
+  # connection before the API pod does; before, the gateway now and then reused a connection the pod had just
+  # closed and answered 503 UC without the request reaching the API (2026-10-20, charts/platform 0.1.16). Not a
+  # request or stream timeout: those stay on the HTTPRoute (api.syncRequestTimeoutSeconds) and in the API.
+  timeout:
+    http:
+      connectionIdleTimeout: 4s
 {{- end }}
