@@ -661,3 +661,65 @@ def test_a_record_keeps_its_bounded_reason(database):
         {"operation": "op-r", "root": "op-r", "status": "failed", "exit_code": 143},
     )
     assert attempts.for_operation("op-r")[-1]["reason"] == "x" * 300  # a later record without one keeps the first
+
+
+def test_an_operation_cancelled_before_any_attempt_keeps_a_durable_cancelled_projection(database):
+    """api 0.11.151: the cancel of a queued run deletes its Job before any attempt row exists; the admission row and
+    the cancel mark project it as CANCELLED (no attempts, no GPU facts) for its tenant only; without the mark, or
+    for another tenant, nothing is projected (None, as before)."""
+    import admissions
+    import db
+
+    db.migrate()
+    job = {
+        "metadata": {
+            "name": "op-queued-cancel",
+            "namespace": "tenant-demo",
+            "labels": {
+                f"{attempts.LABEL}/tenant": "demo",
+                f"{attempts.LABEL}/model": "alphafold3",
+                f"{attempts.LABEL}/mode": "run",
+            },
+            "annotations": {},
+        },
+        "spec": {"activeDeadlineSeconds": 600},
+    }
+    admissions.record(job, "control", None)
+    assert attempts.synthesize("op-queued-cancel", "demo") is None  # admitted, never started, not cancelled: unknown
+    attempts.mark_cancelled("op-queued-cancel")
+    v = attempts.synthesize("op-queued-cancel", "demo")
+    assert (
+        v["status"] == "CANCELLED" and v["attempts"] == [] and v["model"] == "alphafold3" and v["region"] == "control"
+    )
+    assert v["started_at"] is None and v["ended_at"] is not None and v["created_at"] is not None
+    assert v["gpu_seconds"] is None and v["attempt_id"] is None and v["root_operation_id"] == "op-queued-cancel"
+    assert attempts.synthesize("op-queued-cancel", "other") is None  # another tenant: not found
+    assert attempts.synthesize("op-never-admitted", "demo") is None
+
+
+def test_a_resumed_run_cancelled_before_any_attempt_keeps_its_root(database):
+    """api 0.11.151: the projection of a queued-cancelled continuation keeps the lineage root from the retained
+    admission annotation (resumed_from, root_operation_id); nodes stays null (no execution observed)."""
+    import admissions
+    import db
+
+    db.migrate()
+    job = {
+        "metadata": {
+            "name": "op-lineage-r2",
+            "namespace": "tenant-demo",
+            "labels": {
+                f"{attempts.LABEL}/tenant": "demo",
+                f"{attempts.LABEL}/model": "alphafold3",
+                f"{attempts.LABEL}/mode": "run",
+            },
+            "annotations": {f"{attempts.LABEL}/resumed-from": "op-lineage"},
+        },
+        "spec": {"activeDeadlineSeconds": 600},
+    }
+    admissions.record(job, "control", None)
+    attempts.mark_cancelled("op-lineage-r2")
+    v = attempts.synthesize("op-lineage-r2", "demo")
+    assert v["status"] == "CANCELLED" and v["resumed_from"] == "op-lineage" and v["root_operation_id"] == "op-lineage"
+    assert v["nodes"] is None and v["attempts"] == [] and v["gpu_seconds"] is None
+    assert attempts.synthesize("op-lineage-r2", "demo") == v  # idempotent read

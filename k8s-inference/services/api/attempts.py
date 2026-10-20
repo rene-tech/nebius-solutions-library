@@ -21,7 +21,7 @@ from psycopg.types.json import Json
 
 import db
 import kube
-from config import REGION, TENANT_NS_PREFIX
+from config import LABEL, REGION, TENANT_NS_PREFIX
 from resilience import retry
 
 log = logging.getLogger("api.attempts")
@@ -507,7 +507,7 @@ def synthesize(operation: str, tenant: str) -> dict | None:
     the Kubernetes objects (docs/JOBS.md "Attempts and finalization")."""
     rows = [r for r in for_operation(operation) if r["operation"] == operation and r["tenant"] == tenant]
     if not rows:
-        return None
+        return _never_started(operation, tenant)
     last = authority(rows)  # a gang: the coordinator of the newest incarnation; its outcome counts every rank
     status = {"succeeded": "SUCCEEDED", "failed": "FAILED", "interrupted": "PREEMPTED", "started": "PREEMPTED"}.get(
         gang_status(rows) or last["status"], "FAILED"
@@ -589,6 +589,47 @@ def synthesize(operation: str, tenant: str) -> dict | None:
 
 
 OBSERVED_COMPLETION = "exit code not observed by the uploader; the Job is Complete and RESULT.json is committed"
+
+
+def _never_started(operation: str, tenant: str) -> dict | None:
+    """An operation cancelled before any attempt existed (api 0.11.151): the cancel deleted its Job, no attempt row was
+    ever written, yet its admission row, cancel mark and graph are durable. That is its projection: CANCELLED, no
+    attempts, the admission's model/region/creation, the mark's time as the end. Nothing else is invented (no attempt,
+    no GPU time); any other operation without rows stays unknown (None). Same tenant only: the owner check applies."""
+    import admissions
+
+    a = admissions.get(operation)
+    m = _marks(operation)
+    if not a or a["tenant"] != tenant or not (m and m[1]):
+        return None
+    labels, ann = a.get("labels") or {}, a.get("annotations") or {}
+    root = ann.get(f"{LABEL}/resumed-from") or operation  # a resumed lineage keeps its root (retained annotation)
+    return {
+        "id": operation,
+        "name": None,
+        "model": labels.get(f"{LABEL}/model"),
+        "mode": labels.get(f"{LABEL}/mode") or "run",
+        "status": "CANCELLED",
+        "region": a.get("region"),
+        "tenant": tenant,
+        "phase": None,
+        "created_at": a.get("created_at"),
+        "started_at": None,
+        "ended_at": m[1],
+        "attempts": [],
+        "error": None,
+        "input": {},
+        "resumed_from": root if root != operation else None,
+        "gpu_class": labels.get(f"{LABEL}/gpu-class"),
+        "image": None,
+        "resumable": False,
+        "nodes": None,  # no execution was observed: nothing to claim
+        "execution": None,
+        "reason": "cancelled before any attempt started; this is the durable record",
+        "cost": None,
+        "gpu_seconds": None,
+        **lifecycle(operation, root, [], marks=m),
+    }
 
 
 def mark_completed(

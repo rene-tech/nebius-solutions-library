@@ -4,6 +4,15 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.151
+
+- A run cancelled while queued (its Job deleted by the cancel before any attempt existed) keeps a durable
+  projection: `GET` answers CANCELLED from its admission row and cancel mark (no attempts, no GPU facts invented),
+  a repeated `:cancel` is idempotent (200), the owner check is unchanged (another owner: 404). `nodes` is null (no
+  execution was observed) and a resumed continuation keeps its lineage root from the retained admission annotation
+  (`resumed_from`, `root_operation_id`). Before: the status GET right after such a cancel answered 404 (wave 5
+  AlphaFold3 roots, 2026-10-20 19:14Z).
+
 ## api 0.11.150
 
 - The `attempt-start` init step (0.11.149) was rendered without the runner-token mount the uploader has, so every

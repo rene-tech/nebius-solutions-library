@@ -3376,3 +3376,61 @@ def test_a_pod_that_failed_in_its_start_step_reports_the_steps_cause():
     a = status._attempts([pod])[0]
     assert a["status"] == "FAILED" and a["reason"] == "start record refused (401): main does not start"
     assert a["ended_at"] == "2026-10-20T18:59:29Z" and a["exit_code"] is None
+
+
+def test_a_cancelled_queued_run_whose_job_is_gone_reads_and_cancels_again_for_its_owner_only(monkeypatch):
+    """api 0.11.151: GET answers the durable CANCELLED projection (was 404 after the cancel deleted the Job of a run
+    that never started); a repeated :cancel is idempotent (200); a foreign owner of the same tenant still gets 404."""
+    from fastapi import HTTPException
+
+    import admissions
+    import attempts
+    import db
+    import keys
+    from auth import Principal
+
+    def gone(ns, op):
+        raise HTTPException(404, f"operation {op}: not found")
+
+    monkeypatch.setattr(jobs, "find", gone)
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "for_operation", lambda op: [])
+    monkeypatch.setattr(attempts, "successor_of", lambda op: None)
+    monkeypatch.setattr(attempts, "_marks", lambda op: (3, "2026-10-20T19:14:28+00:00", None))
+    monkeypatch.setattr(
+        admissions,
+        "get",
+        lambda op: {
+            "operation": op,
+            "tenant": "demo",
+            "region": "control",
+            "labels": {f"{cfg.LABEL}/model": "alphafold3"},
+            "annotations": {},
+            "created_at": "2026-10-20T18:58:17+00:00",
+        },
+    )
+    monkeypatch.setattr(keys, "operation_owner", lambda root: ("demo", "alice", "alphafold3"))
+    monkeypatch.setattr(keys, "graph_of", lambda root: None)
+    monkeypatch.setattr(appmod, "_ledger_head", lambda ns, op: None)
+    monkeypatch.setattr(
+        keys, "owner_identity", lambda tenant, info, h: (info.get("metadata") or {}).get("who", "alice")
+    )
+    alice = Principal(key="k", tenant="demo", info={})
+    job, region = appmod._owned(alice, "op-queued")
+    op = appmod._operation(alice, job, "op-queued", region)
+    assert (
+        op["status"] == "CANCELLED"
+        and op["attempts"] == []
+        and op["model"] == "alphafold3"
+        and op["region"] == "control"
+    )
+    again = appmod.cancel("op-queued", alice)
+    assert again["status"] == "CANCELLED" and again["attempts"] == []
+    bob = Principal(key="k2", tenant="demo", info={"metadata": {"who": "bob"}})
+    with pytest.raises(HTTPException) as e:
+        appmod._owned(bob, "op-queued")
+    assert e.value.status_code == 404
+    with pytest.raises(HTTPException) as e:
+        appmod.cancel("op-queued", bob)
+    assert e.value.status_code == 404

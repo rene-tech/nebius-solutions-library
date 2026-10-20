@@ -132,7 +132,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.150", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.151", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -2881,9 +2881,11 @@ def _cancel_graph_of(p: Principal, id: str, synthetic: dict) -> dict:
     """`:cancel` on an operation whose Job expired: a graph root still cancels its graph (the stages and the root
     lineage's head); anything else is over."""
     root = (synthetic["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/resumed-from") or id
-    if not (db.enabled() and (g := keys.graph_of(root))):
-        raise HTTPException(409, f"operation {id} is over; nothing to cancel")
     op = dict(synthetic["_synthetic"])
+    if not (db.enabled() and (g := keys.graph_of(root))):
+        if op.get("status") == "CANCELLED":
+            return op  # cancelled already (before any attempt, api 0.11.151): the repeat is idempotent
+        raise HTTPException(409, f"operation {id} is over; nothing to cancel")
     if not g.get("cancelled_at"):
         attempts.mark_cancelled(id)
         names = _cancel_graph_members(p, root, id)

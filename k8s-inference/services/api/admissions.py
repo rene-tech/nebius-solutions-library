@@ -55,7 +55,7 @@ def get(operation: str) -> dict | None:
         return None
     with db.connection() as c:
         r = c.execute(
-            "select operation, tenant, region, labels, annotations, timeout_s, output_prefix, managed_by "
+            "select operation, tenant, region, labels, annotations, timeout_s, output_prefix, managed_by, created_at "
             "from run_admissions where operation = %s",
             (operation,),
         ).fetchone()
@@ -70,6 +70,7 @@ def get(operation: str) -> dict | None:
         "timeout_s": r[5],
         "output_prefix": r[6],
         "managed_by": r[7],
+        "created_at": r[8],
     }
 
 
