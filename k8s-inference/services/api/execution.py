@@ -316,7 +316,9 @@ def narrow_placement(placement: dict | None, ex: dict | None) -> dict | None:
 
 def scope_runner_token(pod: dict) -> None:
     """No run pod mounts the ServiceAccount token into the model's container: the token (pods get, the work volume) is
-    projected into the uploader only (docs/JOBS.md "Execution options"); PSA baseline allows projected volumes."""
+    projected into the uploader and its start step (the `attempt-start` init container, jobs 0.1.31) only (docs/JOBS.md
+    "Execution options"); PSA baseline allows projected volumes. 0.11.149 left the start step without it: every start
+    record was 401, the step failed by design and every new Job ended BackoffLimitExceeded (wave 5, 2026-10-20)."""
     pod["automountServiceAccountToken"] = False
     if not any(c.get("name") == "uploader" for c in pod.get("containers", [])):
         return
@@ -336,8 +338,8 @@ def scope_runner_token(pod: dict) -> None:
             },
         }
     )
-    for c in pod["containers"]:
-        if c.get("name") == "uploader":
+    for c in pod["containers"] + list(pod.get("initContainers") or []):
+        if c.get("name") in ("uploader", "attempt-start"):
             c.setdefault("volumeMounts", []).append(
                 {"name": "runner-token", "mountPath": RUNNER_TOKEN_DIR, "readOnly": True}
             )

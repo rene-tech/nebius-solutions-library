@@ -3325,3 +3325,54 @@ def test_an_attempt_reports_its_containers_termination_message_as_the_cause(clie
     }
     b = [x for x in status._attempts([], [rec]) if x["attempt_id"] == "op-x-gone"][0]
     assert b["reason"] == "refresh refused (403): attempt not on record"
+
+
+def test_the_start_step_carries_the_runner_token_like_the_uploader(client):
+    """0.11.150: the attempt-start init step posts the start record with the pod's projected token, so it needs the
+    runner-token mount the uploader has (0.11.149 rendered it without one: 401 on every start record, every new Job
+    BackoffLimitExceeded)."""
+    c, cl = client
+    r = c.post("/v1/models/hello-run:invoke", headers=H, json={"input": {}, "timeout_s": 600})
+    assert r.status_code == 202, r.text
+    spec = cl.jobs[("tenant-demo", r.json()["id"])]["spec"]["template"]["spec"]
+    assert spec["automountServiceAccountToken"] is False
+    mounts = {
+        c["name"]: sorted(m["name"] for m in c.get("volumeMounts", []))
+        for c in spec["containers"] + spec.get("initContainers", [])
+    }
+    assert "runner-token" in mounts["uploader"] and "runner-token" in mounts["attempt-start"]
+    assert "runner-token" not in mounts["main"]
+    assert any(v["name"] == "runner-token" and "projected" in v for v in spec["volumes"])
+
+
+def test_a_pod_that_failed_in_its_start_step_reports_the_steps_cause():
+    """api 0.11.150: main never ran; the attempt is FAILED with the init step's termination message and its end
+    time, not the Job's generic BackoffLimitExceeded."""
+    import status
+
+    pod = {
+        "metadata": {"name": "op-x-abc", "labels": {}},
+        "spec": {"nodeName": "n1", "nodeSelector": {}},
+        "status": {
+            "phase": "Failed",
+            "startTime": "2026-10-20T18:59:27Z",
+            "initContainerStatuses": [
+                {
+                    "name": "attempt-start",
+                    "state": {
+                        "terminated": {
+                            "exitCode": 1,
+                            "reason": "Error",
+                            "message": "start record refused (401): main does not start",
+                            "startedAt": "2026-10-20T18:59:27Z",
+                            "finishedAt": "2026-10-20T18:59:29Z",
+                        }
+                    },
+                }
+            ],
+            "containerStatuses": [{"name": "main", "state": {"waiting": {"reason": "PodInitializing"}}}],
+        },
+    }
+    a = status._attempts([pod])[0]
+    assert a["status"] == "FAILED" and a["reason"] == "start record refused (401): main does not start"
+    assert a["ended_at"] == "2026-10-20T18:59:29Z" and a["exit_code"] is None

@@ -4,6 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.150
+
+- The `attempt-start` init step (0.11.149) was rendered without the runner-token mount the uploader has, so every
+  start record was answered 401, the step failed as designed and every new run/async Job ended
+  BackoffLimitExceeded within a minute (wave 5, 2026-10-20 18:58-19:00Z, 23 operations across tenants). The token
+  is now projected into the uploader and the start step alike; a render test checks both mounts (and that main
+  has none). No other change; jobs stays 0.1.31.
+
 ## api 0.11.149, jobs 0.1.31
 
 (API image, jobs image; migration 31 adds `attempts.reason`.)

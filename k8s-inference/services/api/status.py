@@ -159,13 +159,26 @@ def _attempts(pods: list, records: list | None = None, name: str | None = None) 
         )
         if disrupted:
             reason = next((c.get("message") for c in st["conditions"] if c.get("type") == "DisruptionTarget"), reason)
+        # a pod that ended in a failed init step (the start record, jobs 0.1.31): main never ran, the step's own
+        # termination message is the cause (api 0.11.150; before: the Job's generic BackoffLimitExceeded)
+        iterm = next(
+            (
+                (c.get("state") or {}).get("terminated") or {}
+                for c in (st.get("initContainerStatuses") or [])
+                if ((c.get("state") or {}).get("terminated") or {}).get("exitCode") not in (None, 0)
+            ),
+            {},
+        )
+        if iterm and not term and not run and not disrupted:
+            s = "FAILED"
+            reason = str(iterm.get("message") or "").strip()[:300] or iterm.get("reason")
         seen.add(p["metadata"]["name"])
         out.append(
             {
                 "attempt_id": p["metadata"]["name"],
                 "attempt_role": (p["metadata"].get("labels") or {}).get(f"{LABEL}/attempt-role") or "run",
                 "started_at": term.get("startedAt") or run.get("startedAt") or st.get("startTime"),
-                "ended_at": term.get("finishedAt"),
+                "ended_at": term.get("finishedAt") or (iterm.get("finishedAt") if not run else None),
                 "status": s,
                 "node": p["spec"].get("nodeName"),
                 "gpu_class": (p["metadata"].get("labels") or {}).get(f"{LABEL}/gpu-class") or None,
