@@ -1512,6 +1512,7 @@ def export_async(ns: str, name: str, region: str, model: dict, admit=None) -> tu
         pvc=pvc,
         transfer_only=True,
         scratch_leaf_of=leaf,
+        priority=labels.get(f"{LABEL}/priority"),  # the original's: an export retry keeps its call's priority
     )
     secret["stringData"] = auth_secret  # the original's key and admission token, never a new one
     job["metadata"]["annotations"][f"{LABEL}/resumed-from"] = root

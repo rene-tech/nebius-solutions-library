@@ -98,8 +98,8 @@ SIGTERM really terminates `sh -c ...` commands (PID 1 ignores it, and the pod wo
 until the grace period's SIGKILL). The runner image (`services/jobs`, the jobs image of
 `images.versions`, through the logical registry host; `RUNNER_IMAGE` on the API names it) is alpine +
 aws-cli + curl + jq + three scripts. The pod
-carries the Kueue labels (`kueue.x-k8s.io/queue-name: <profile>`, priority class `customer-batch` or
-`bulk-backfill` for `priority: low`), so the Job is gated until the profile's ClusterQueue admits it:
+carries the Kueue labels (`kueue.x-k8s.io/queue-name: <profile>`, priority class `customer-batch`,
+`customer-priority` for `priority: high`, `bulk-backfill` for `priority: low`), so the Job is gated until the profile's ClusterQueue admits it:
 QUEUED for as long as it takes, hours or days, nothing times out while waiting.
 
 Job spec: `parallelism: 1, completions: 1, backoffLimit: 3` (application failures),

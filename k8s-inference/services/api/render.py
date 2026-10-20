@@ -31,6 +31,10 @@ from config import (
 from pod_metadata import normalise as normalise_pod_metadata
 
 TOKEN = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+KUEUE_PRIORITY_CLASS = {  # Kueue WorkloadPriorityClass per key priority (charts/platform scheduling/kueue.yaml)
+    "high": "customer-priority",
+    "low": "bulk-backfill",
+}
 PRIORITY_CLASS = {
     "high": "serverless2-batch-priority",
     "low": "serverless2-batch",
@@ -129,7 +133,7 @@ def _meta(
         f"{LABEL}/mode": mode,
         f"{LABEL}/profile": profile,
         "kueue.x-k8s.io/queue-name": profile,
-        "kueue.x-k8s.io/priority-class": "bulk-backfill" if priority == "low" else KUEUE_PRIORITY,
+        "kueue.x-k8s.io/priority-class": KUEUE_PRIORITY_CLASS.get(priority, KUEUE_PRIORITY),
     }
     if region:  # pinned: the regional path always, the fleet path for explicit regions and resumes
         labels[f"{LABEL}/region"] = region

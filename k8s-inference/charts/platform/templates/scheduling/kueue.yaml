@@ -5,9 +5,16 @@
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass
 metadata:
+  name: customer-priority
+value: 2000
+description: "Work of keys with priority high (docs/API.md Priority); ordered first, may evict the two classes below."
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
   name: customer-batch
 value: 1000
-description: "Customer-facing run-class work; ordered first and may evict bulk-backfill within the queue."
+description: "Customer-facing run-class work (priority normal); ordered before and may evict bulk-backfill within the queue."
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass

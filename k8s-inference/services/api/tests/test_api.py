@@ -3144,7 +3144,7 @@ def test_an_async_endpoint_caller_carries_the_keys_kueue_priority(client, monkey
     plain = jobs.build_async("op-c", m, {"x": 1}, "demo", "sk-good", None, "k3", 600, "", "eu-north1")[0]
     assert low["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "bulk-backfill"
     assert low["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch"
-    assert high["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "customer-batch"
+    assert high["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "customer-priority"
     assert high["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch-priority"
     assert plain["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "customer-batch"
     assert plain["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch"

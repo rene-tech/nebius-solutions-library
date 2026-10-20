@@ -69,7 +69,7 @@
  },
  "apps/Deployment/api/api": {
   "component": "api",
-  "sha256": "b449f065ac06d7c2345bb71a71a0fb82ee4644671aca65951b87dcceee4409f3"
+  "sha256": "b537cf6740c09a89715edb143068436f5d5bfaa4930c8f7e85ce763b2148d580"
  },
  "apps/Deployment/envoy-gateway-system/ratelimit-redis": {
   "component": "gateway",
@@ -177,7 +177,11 @@
  },
  "kueue.x-k8s.io/WorkloadPriorityClass/_/customer-batch": {
   "component": "scheduling",
-  "sha256": "205dfca77458e05dfd24eb008a74f08a4a5f1fdc85f19cea98b2e9d99396cc4f"
+  "sha256": "dc44574e1c4cbc3e5d1d1d455f674257f5a8ce8e1fbb5865dc91a00ccef3edfe"
+ },
+ "kueue.x-k8s.io/WorkloadPriorityClass/_/customer-priority": {
+  "component": "scheduling",
+  "sha256": "df7103118a2e8e1cc5ff17d9ca0c9381a62f38f5ba6d10aeb45956dbdb6d48bd"
  },
  "monitoring.coreos.com/PodMonitor/monitoring/cert-manager": {
   "component": "observability",

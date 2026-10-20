@@ -1631,3 +1631,28 @@ def test_a_unit_retry_is_refused_for_the_same_parent_and_for_an_outcome_unknown_
     )
     r = _post(c, f"{op}-r1", "u1", retry=True)
     assert r.status_code == 201 and r.json()["child"] == f"{child}-r2", r.text
+
+
+def test_a_child_and_its_export_retry_carry_the_parents_priority(rig, monkeypatch):
+    """api 0.11.141: the caller Job of an endpoint child and the transfer-only export retry are Kueue workloads of
+    the run they belong to: both carry the parent's priority label and classes (docs/API.md "Priority"), never a
+    default of their own (before, both queued as customer-batch whatever the key's priority)."""
+    c, fake, op, identity = rig
+    fake.jobs[(NS, op)]["metadata"]["labels"][f"{LABEL}/priority"] = "low"
+    child = _post(c, op, "u1").json()["child"]
+    cjob = fake.jobs[(NS, child)]
+    assert cjob["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "bulk-backfill"
+    assert cjob["metadata"]["labels"][f"{LABEL}/priority"] == "low"
+    assert cjob["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch"
+    monkeypatch.setattr(attempts, "enabled", lambda: True)
+    rec = {"operation": child, "root": child, "role": "run", "cluster": "hub"}
+    attempts.record("eu-north1", NS, f"{child}-abc", {**rec, "status": "started"})
+    attempts.record("eu-north1", NS, f"{child}-abc", {**rec, "status": "failed", "export": "failed", "exit_code": 0})
+    cjob["status"] = {"startTime": "2026-10-14T10:00:00Z", "conditions": [{"type": "Failed", "status": "True"}]}
+    keys.release(child, 0.0)
+    assert children.sweep() == [f"{child}:ended"]
+    r = c.post(f"/v1/operations/{child}:export", headers=H)
+    assert r.status_code == 202, r.text
+    retry = fake.jobs[(NS, r.json()["id"])]
+    assert retry["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "bulk-backfill"
+    assert retry["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch"

@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.141
+
+(API image and charts/platform scheduling: every cluster.)
+
+- Priority is inherited: the caller Job of an endpoint child and the transfer-only export retry of a call carry
+  the priority of the run or call they belong to (both queued as `customer-batch` before, whatever the key's
+  priority). A third Kueue WorkloadPriorityClass `customer-priority` (2000) carries `high`; `customer-batch` is
+  `normal`, `bulk-backfill` is `low`. The class must exist on every cluster before a `high` workload is placed
+  there: apply the workers first, then the control cluster.
+
 ## api 0.11.140
 
 (API image and charts/platform `api` Deployment.)

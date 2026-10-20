@@ -646,7 +646,14 @@ def create(identity: dict, parent: str, body: dict) -> tuple[dict, bool]:
     if not pending:
         return readback(ns, root, unit_id), False  # replay / readback after a lost response
     row = _get(root, unit_id)
-    complete(row, parent_ann=ann, tenant=tenant, key_hash=key_hash, synchronous=True)
+    complete(
+        row,
+        parent_ann=ann,
+        tenant=tenant,
+        key_hash=key_hash,
+        synchronous=True,
+        priority=(job["metadata"].get("labels") or {}).get(f"{LABEL}/priority"),
+    )
     return readback(ns, root, unit_id), retry or not bool(existing)
 
 
@@ -685,6 +692,7 @@ def complete(
     tenant: str | None = None,
     key_hash: str | None = None,
     synchronous: bool = False,
+    priority: str | None = None,
 ) -> str:
     """Finish a pending intent deterministically, from the row alone: the ledger member (idempotent), the binding,
     then the caller Job (found, or created; AlreadyExists is the same Job), then the row `active`. Returns the row's
@@ -719,6 +727,7 @@ def complete(
             return _refuse(row, f"parent {row['parent']} is gone before the child was created", 409, synchronous)
         parent_ann = pjob["metadata"].get("annotations") or {}
         tenant = (pjob["metadata"].get("labels") or {}).get(f"{LABEL}/tenant")
+        priority = (pjob["metadata"].get("labels") or {}).get(f"{LABEL}/priority")
         key_hash = parent_ann.get(f"{LABEL}/key")
         if not tenant or not key_hash:
             return _refuse(row, f"parent {row['parent']} carries no key on record", 409, synchronous)
@@ -802,6 +811,7 @@ def complete(
                 ex=ex,
                 key_hash=key_hash,
                 admitted=admitted,
+                priority=priority,  # the parent's (its key's at submission): a child never outranks its run
             )
             a = cjob["metadata"]["annotations"]
             a[f"{LABEL}/child-of"] = row["parent"]
