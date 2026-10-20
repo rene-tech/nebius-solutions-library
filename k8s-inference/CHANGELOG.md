@@ -4,7 +4,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.153, jobs 0.1.32
+## api 0.11.153, jobs 0.1.32, dispatcher 0.2.14
 
 - Delivery before the terminal record (jobs 0.1.32): under application-managed I/O the uploader reads RESULT.json
   before its one terminal record, so no preliminary "failed, export n/a" row exists for a reader to take as the
