@@ -1924,8 +1924,12 @@ def _owned(p: Principal, id: str, follow: bool = True) -> tuple[dict, str]:
             if not rows and previous is not None:
                 return previous  # a verified owner's successor is not created yet
             last = rows[-1] if rows else {}
-            synthetic = attempts.synthesize(current, p.tenant)  # tenant-bound; reads the admission only when cancelled
-            admitted = (synthetic or {}).pop("_admission", None)
+            synthetic = admitted = None
+            if not rows:  # no attempt row: only a run cancelled before any attempt has a durable view (its admission)
+                synthetic = attempts.synthesize(
+                    current, p.tenant
+                )  # tenant-bound; reads the admission only when cancelled
+                admitted = (synthetic or {}).pop("_admission", None)
             if admitted:
                 # a run cancelled before any attempt: the verified metadata it was admitted with (model, owner, key,
                 # lineage, execution); the owner and allow-list checks apply to it exactly as to the live Job (0.11.152)
@@ -1945,7 +1949,9 @@ def _owned(p: Principal, id: str, follow: bool = True) -> tuple[dict, str]:
                         "annotations": {f"{cfg.LABEL}/resumed-from": last.get("root") or current},
                     }
                 }
-            _check_operation_owner(p, synthetic_job)
+            _check_operation_owner(p, synthetic_job)  # before any projection of the rows, as before 0.11.152
+            if rows:
+                synthetic = attempts.synthesize(current, p.tenant)
             nxt = attempts.successor_of(current) or (_ledger_head(p.namespace, current) if follow else None)
             if follow and nxt and nxt != current:
                 if synthetic is not None:  # the named operation's durable view stands in when its head is gone too

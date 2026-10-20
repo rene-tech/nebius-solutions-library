@@ -263,6 +263,12 @@ def test_the_owner_sees_the_observed_gang_fields_on_the_current_attempt_and_ever
     """The owner-scoped operation carries `pod_uid`, `gang_rank`, `gang_restart` on its current attempt (the
     coordinator's record) and on every attempts[] entry: from the record, and from the live pod's own UID and
     JobSet labels while it exists; the durable view after the Job is gone too. Another owner: 404, as before."""
+    import keys
+
+    monkeypatch.setattr(
+        keys, "graph_of", lambda root: None
+    )  # no graph ledger here: the durable view reads it (0.11.152)
+    monkeypatch.setattr(keys, "member_of", lambda op: None)
     import copy
 
     import auth
