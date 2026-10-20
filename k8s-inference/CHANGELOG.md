@@ -4,6 +4,18 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.154, jobs 0.1.33, dispatcher 0.2.15
+
+- Released terminal pods are deleted (dispatcher 0.2.15, jobs 0.1.33): the uploader writes `released work=<claim>`
+  to its termination message only after the claim's DELETE was accepted (or `released leaf=` after a cleaned shared
+  leaf); the dispatcher's reconcile deletes a terminal run pod only when that message names the pod's own work
+  claim, the uploader exited 0, the owner Job (exact uid, native) is terminal, the claim is gone or deleting (a Bound
+  claim keeps the pod), and the pod ended ORPHAN_AFTER_S ago; the delete carries the pod's uid and resourceVersion.
+  Jobs, claims and records are untouched. The worker role multikueue-manager gains pods get/list/delete (the only
+  RBAC delta). Pods of older runners carry no message and are never swept. 18 such pods filled a 1-node CPU pool
+  (2026-10-20).
+- The API's OpenAPI version string reads 0.11.154 (it had stayed at 0.11.152 through the 153 image).
+
 ## api 0.11.153, jobs 0.1.32
 
 - Delivery before the terminal record (jobs 0.1.32): under application-managed I/O the uploader reads RESULT.json

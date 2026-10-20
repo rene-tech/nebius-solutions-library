@@ -199,4 +199,27 @@ R='{"export":"succeeded","capture":{"sha256":"abc","http_status":422}}'
 [ "$(ced record async 2 "$R" 503 0)" = 1 ] || fail "an unacknowledged record must keep"
 [ "$(ced record async 2 "$R" 200 1)" = 1 ] || fail "a failed integrity proof must keep"
 [ "$(ced record async 2 - 200 0)" = 1 ] || fail "no RESULT.json must keep"
+# case 11 (jobs 0.1.33): release_work() writes the uploader's release proof to the termination message only after a
+# PVC DELETE answered 200/202 or the shared leaf was cleaned; every kept path (not delivered, KEEP_*, DELETE refused,
+# cleanup refused) leaves no message
+# shellcheck disable=SC2016
+{ sed -n '/^released() {/,/^}/p' "$U"; sed -n '/^release_work() {/,/^}/p' "$U"; } | sed 's#/usr/local/bin/scratch.sh proof /work#proof_stub#; s#/usr/local/bin/scratch.sh cleanup /work 10001#cleanup_stub#' > "$T/rw.sh"
+grep -q 'cleanup_stub' "$T/rw.sh" || fail "release_work() not found in upload.sh"
+# shellcheck disable=SC2016
+rw() { # <delivered> <SCRATCH or -> <KEEP_PVC> <DELETE code> <cleanup rc>: prints the termination message or "none"
+  # shellcheck disable=SC2016
+  bash -c '
+    set -u; TL=$(mktemp); TERMINATION_LOG=$TL; PVC_NAME=op-1-work; CA=/dev/null; TOKEN=x; API=http://api.invalid; POD_NAMESPACE=t; OPERATION=op-1; EXPORT=succeeded; ACK=200
+    [ "$2" = - ] || SCRATCH=$2; KEEP_PVC=$3; SCRATCH_LEAF=l1
+    curl() { printf "%s" "'"$4"'"; }
+    proof_stub() { return 0; }; cleanup_stub() { return '"$5"'; }
+    . "$T/rw.sh"; release_work "$1" > /dev/null; if [ -s "$TL" ]; then cut -d" " -f1-2 "$TL"; else echo none; fi; rm -f "$TL"' _ "$1" "$2" "$3" "$4" "$5" 2>/dev/null
+}
+[ "$(rw true - false 200 0)" = "released work=op-1-work" ] || fail "an accepted PVC DELETE (200) must write the release proof"
+[ "$(rw true - false 202 0)" = "released work=op-1-work" ] || fail "an accepted PVC DELETE (202) must write the release proof"
+[ "$(rw true - false 403 0)" = none ] || fail "a refused DELETE must leave no message"
+[ "$(rw false - false 200 0)" = none ] || fail "a kept volume (not delivered) must leave no message"
+[ "$(rw true - true 200 0)" = none ] || fail "KEEP_PVC must leave no message"
+[ "$(rw true shared false 200 0)" = "released leaf=l1" ] || fail "a cleaned shared leaf must write the leaf proof"
+[ "$(rw true shared false 200 1)" = none ] || fail "a refused leaf cleanup must leave no message"
 echo "   ok upload.sh record(): timer from main start; start-record init step (200 releases main, 409/401/403 fail it, transients retried to the bound); the cause from main's termination message/reason; 503/000 then 200 acknowledged (prior ack kept, transient body apart), 4 x transient recovered at the next poll, 409/401/403 never retried"

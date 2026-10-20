@@ -205,7 +205,7 @@
  },
  "rbac.authorization.k8s.io/ClusterRole/_/multikueue-manager": {
   "component": "fleet-access",
-  "sha256": "7ae5a24d3374a94e5dbf8c8c29d0ec9ea704a258e7d1b1bb78aac608a002355a"
+  "sha256": "ffa0e49cac85d22967ce79d133c03b15fa08168f75d120781c7dd1c79fc70a00"
  },
  "rbac.authorization.k8s.io/ClusterRole/_/serverless2-api-agent-read": {
   "component": "api-agent",

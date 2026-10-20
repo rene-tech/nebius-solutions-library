@@ -37,6 +37,9 @@ rules:
   - apiGroups: [""]
     resources: [persistentvolumeclaims]
     verbs: [create, get, list, patch, delete]
+  - apiGroups: [""]                     # dispatcher 0.2.15: a terminal run pod whose uploader released its claim is deleted
+    resources: [pods]                   # (termination-message proof, uid + resourceVersion preconditions, docs/SCHEDULING.md)
+    verbs: [get, list, delete]
   # InfiniBand pool floors (services/dispatcher/infiniband.py): started multi-node endpoints hold whole nodes of an
   # InfiniBand pool too; the Workloads of multi-node runs are covered by the rule above
   - apiGroups: [leaderworkerset.x-k8s.io]

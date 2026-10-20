@@ -110,6 +110,8 @@ def nominate(custom, ns, name, want, status=None):
 
 PVC_JOBS_ANN = f"{LABEL}/jobs"  # on a worker PVC: Jobs that use it (owners once they exist)
 MANAGED_LABEL = f"{LABEL}/managed-by"
+TENANT_NS_PREFIX = os.environ.get("TENANT_NS_PREFIX", "tenant-")  # the tenant namespaces the released-pod sweep reads
+RELEASED_MSG = "released work="  # the uploader's termination message once it released the pod's own work claim
 SUCCESSOR_ANN = (
     f"{LABEL}/successor"  # on a manager Job the platform superseded (services/api/jobs.py switch_class, recover)
 )
@@ -589,6 +591,110 @@ def sweep_volumes(workers: dict, batch: client.BatchV1Api, admitted: dict, jobs_
                 )
 
 
+def released_claim(pod) -> str | None:
+    """The work claim the pod's own uploader reports released: its termination message `released work=<claim> ...`
+    (upload.sh writes it only after the claim's DELETE was accepted, jobs 0.1.33) with the uploader exited 0, and the
+    claim is the pod's own `work` volume. None for an older runner, a kept volume, a foreign pod or shared scratch
+    (`released leaf=`: the shared claim is never the dispatcher's)."""
+    for cs in getattr(pod.status, "container_statuses", None) or []:
+        term = getattr(getattr(cs, "state", None), "terminated", None)
+        if cs.name != "uploader" or term is None or term.exit_code != 0:
+            continue
+        msg = term.message or ""
+        if not msg.startswith(RELEASED_MSG):
+            return None
+        claim = msg[len(RELEASED_MSG) :].split()[0]
+        own = next(
+            (
+                v.persistent_volume_claim.claim_name
+                for v in getattr(pod.spec, "volumes", None) or []
+                if v.name == WORK_VOLUME and getattr(v, "persistent_volume_claim", None)
+            ),
+            None,
+        )
+        return claim if claim and claim == own else None
+    return None
+
+
+def terminal_job(job, owner_uid: str) -> bool:
+    """The owner Job read by name is the one the pod names (uid), native (the tenant label every run Job carries) and
+    terminal (Complete or Failed True, nothing active): a terminal Job never recreates a pod."""
+    if job is None or job.metadata.uid != owner_uid or not (job.metadata.labels or {}).get(f"{LABEL}/tenant"):
+        return False
+    conds = getattr(job.status, "conditions", None) or []
+    done = any(c.type in ("Complete", "Failed") and c.status == "True" for c in conds)
+    return done and not (getattr(job.status, "active", 0) or 0)
+
+
+def sweep_released_pods(workers: dict) -> None:
+    """Delete a terminal run pod whose own uploader released the pod's work claim (released_claim) once that claim is
+    gone or deleting: the pod only pinned the node's attachable-volume slots until the Job's TTL (18 pods filled a
+    1-node CPU pool, 2026-10-20). Every input is read directly in this pass: the owner Job (exact uid, terminal), the
+    claim (404 or deletionTimestamp; a Bound claim without one is kept, so is any pod an older runner left without the
+    message), and the delete carries the pod's uid and resourceVersion. Jobs (manager and worker), handle, records and
+    claims are untouched; a terminal Job never recreates a pod."""
+    now = datetime.now(timezone.utc)
+    for cname, w in workers.items():
+        try:
+            pods = [
+                p
+                for phase in ("Succeeded", "Failed")
+                for p in w["core"].list_pod_for_all_namespaces(field_selector=f"status.phase={phase}").items
+                if p.metadata.namespace.startswith(TENANT_NS_PREFIX)
+            ]
+        except Exception as e:  # noqa: BLE001 - unknown is a state of its own here
+            log.warning("worker %s: list terminal pods: %s", cname, e)
+            continue
+        for p in pods:
+            claim = released_claim(p)
+            owners = [o for o in (p.metadata.owner_references or []) if o.kind == "Job" and o.controller]
+            if not claim or len(owners) != 1:
+                continue
+            ns, name = p.metadata.namespace, p.metadata.name
+            ends = [
+                getattr(getattr(cs.state, "terminated", None), "finished_at", None)
+                for cs in p.status.container_statuses or []
+            ]
+            if not ends or any(e is None for e in ends) or (now - max(ends)).total_seconds() < ORPHAN_AFTER_S:
+                continue
+            try:
+                job = w["batch"].read_namespaced_job(owners[0].name, ns)
+                if not terminal_job(job, owners[0].uid):
+                    continue
+                try:
+                    pvc = w["core"].read_namespaced_persistent_volume_claim(claim, ns)
+                    if pvc.metadata.deletion_timestamp is None:
+                        continue  # present and not deleting: kept or restored, the pod stays with it
+                except client.exceptions.ApiException as e:
+                    if e.status != 404:
+                        raise
+                w["core"].delete_namespaced_pod(
+                    name,
+                    ns,
+                    body=client.V1DeleteOptions(
+                        preconditions=client.V1Preconditions(
+                            uid=p.metadata.uid, resource_version=p.metadata.resource_version
+                        )
+                    ),
+                )
+                log.info(
+                    "worker %s: deleted released pod %s/%s (uid %s, job %s, claim %s)",
+                    cname,
+                    ns,
+                    name,
+                    p.metadata.uid,
+                    owners[0].name,
+                    claim,
+                )
+            except client.exceptions.ApiException as e:
+                if e.status in (404, 409):
+                    log.info("worker %s: %s/%s moved (%s), skipped", cname, ns, name, e.status)
+                else:
+                    log.warning("worker %s: %s/%s: %s", cname, ns, name, e)
+            except Exception as e:  # noqa: BLE001
+                log.warning("worker %s: %s/%s: %s", cname, ns, name, e)
+
+
 def reconcile(core, custom, batch):
     clusters, spot = load_fleet(core)
     workers, aliases = worker_clients(core, custom)
@@ -680,6 +786,7 @@ def reconcile(core, custom, batch):
                 continue
             ensure_pvc(workers[cname], ns, claim, size, job_name, batch, wl)
     sweep_volumes(workers, batch, admitted, jobs_cache)
+    sweep_released_pods(workers)
 
 
 def main():

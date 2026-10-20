@@ -171,6 +171,13 @@ checkpoint_changed() {   # the application published a new checkpoint pointer (C
   CKPT_SEEN="$now"; return 0
 }
 
+released() {   # jobs 0.1.33: the uploader's own proof that it released the pod's work volume / scratch leaf, in this
+  # container's termination message (status.containerStatuses[uploader].state.terminated.message, kept with the
+  # terminal pod): the dispatcher deletes a released terminal pod by it (docs/JOBS.md). Written only here,
+  # only after the DELETE was accepted (200/202) or the leaf was cleaned; a kept volume leaves no message.
+  printf 'released %s at=%s\n' "$1" "$(date -u +%FT%TZ)" > "${TERMINATION_LOG:-/dev/termination-log}" 2>/dev/null || echo "termination message not written (${TERMINATION_LOG:-/dev/termination-log})"
+}
+
 release_work() {   # $1 = delivered (true|false): the work volume / scratch leaf goes only with a delivery that is durable
   local delivered="$1"
   if [ "${SCRATCH:-}" = shared ]; then
@@ -178,13 +185,16 @@ release_work() {   # $1 = delivered (true|false): the work volume / scratch leaf
     # acknowledged by the API and the capture proven intact (manifest, hash, RESULT.json); anything else keeps it
     # (export retry, recovery, retention), exactly as a kept volume; the shared claim is never deleted
     if [ "$delivered" = true ] && [ "${KEEP_SCRATCH:-false}" != "true" ] && /usr/local/bin/scratch.sh proof /work; then
-      /usr/local/bin/scratch.sh cleanup /work 10001 || echo "scratch leaf ${SCRATCH_LEAF:-?} kept: cleanup refused (see above)"
+      if /usr/local/bin/scratch.sh cleanup /work 10001; then released "leaf=${SCRATCH_LEAF:-?}"; else echo "scratch leaf ${SCRATCH_LEAF:-?} kept: cleanup refused (see above)"; fi
     else
       echo "scratch leaf ${SCRATCH_LEAF:-?} kept: delivery not proven/acknowledged (export=$EXPORT ack=$ACK result=$([ -f /work/RESULT.json ] && echo yes || echo no)); POST /v1/operations/$OPERATION:export retries the delivery"
     fi
   elif [ -n "${PVC_NAME:-}" ] && [ "${KEEP_PVC:-false}" != "true" ] && [ "$delivered" = true ]; then
-    curl -sS -o /dev/null -w "pvc delete %{http_code}\n" --cacert "$CA" -H "Authorization: Bearer $TOKEN" -X DELETE \
-      "$API/api/v1/namespaces/$POD_NAMESPACE/persistentvolumeclaims/$PVC_NAME"
+    local code
+    code=$(curl -sS -o /dev/null -w "%{http_code}" --cacert "$CA" -H "Authorization: Bearer $TOKEN" -X DELETE \
+      "$API/api/v1/namespaces/$POD_NAMESPACE/persistentvolumeclaims/$PVC_NAME")
+    echo "pvc delete $code"
+    case "$code" in 200|202) released "work=$PVC_NAME http=$code" ;; esac
   elif [ -n "${PVC_NAME:-}" ]; then
     echo "volume $PVC_NAME kept: delivery not acknowledged (export=$EXPORT ack=$ACK result=$([ -f /work/RESULT.json ] && echo yes || echo no)); POST /v1/operations/$OPERATION:export retries the delivery"
   fi

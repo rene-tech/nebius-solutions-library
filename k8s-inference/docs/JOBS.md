@@ -657,7 +657,7 @@ region pin and as the only candidate), so it reuses the kept volume there and ne
 another cluster of the same class.
 
 Exit semantics: `0` with `/work/RESULT.json` -> the finalizer's record carries `result_ref`, the root reports
-`SUCCEEDED` with `exported_by`, the volume is released after the acknowledged record; an exit code in
+`SUCCEEDED` with `exported_by`, the volume is released after the acknowledged record; an exit code in (the uploader then writes `released work=<claim>` to its termination message, the proof the dispatcher deletes the terminal pod by, jobs 0.1.33); an exit code in
 `on_exit_codes` or any other non-zero -> the finalizer is FAILED, the volume kept, another `:export` allowed; `0`
 without RESULT.json -> EXPORT_FAILED. At most three retries per root (`-x1..-x3`, 409 after); one active finalizer per
 root: `:export` while one is QUEUED/RUNNING returns it (200). Retries always name the compute attempt in

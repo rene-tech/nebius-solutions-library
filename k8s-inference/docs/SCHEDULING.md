@@ -379,7 +379,7 @@ onto its own volume; a superseded handle's `:resume` and `:export` follow to the
 (re)creates it and its sweeper deletes it once every manager Job that still references the claim was superseded,
 leaving the handles, their attempt records and the chain history in place (docs/JOBS.md "Work volume"). A FAILED
 link that still names the claim (a failed run whose same-volume resume was then recovered elsewhere) keeps it as
-before, until that handle goes.
+before, until that handle goes. A terminal run pod whose uploader proved the release of its own work claim (termination message `released work=<claim>`, uploader exited 0, owner Job of that exact uid terminal, claim gone or deleting, older than ORPHAN_AFTER_S) is deleted with uid and resourceVersion preconditions, since it only pinned the node's attachable-volume slots (dispatcher 0.2.15; Jobs, claims and records untouched; pods of older runners are never swept).
 
 Supported fault injection for a drill, touching only the run itself (no shared node): deactivate the run's Kueue
 Workload on the control cluster, `kubectl -n tenant-<t> patch workload $(kubectl -n tenant-<t> get workload -l
