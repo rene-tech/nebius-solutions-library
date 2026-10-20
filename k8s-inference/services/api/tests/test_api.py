@@ -3549,7 +3549,6 @@ def test_a_gone_graph_root_with_attempt_rows_keeps_its_graph_and_a_plain_gone_ru
     from auth import Principal
 
     alice = Principal(key="k", tenant="demo", info={})
-    synth = attempts.synthesize("op-root-x", "demo") if False else None  # built below from rows directly
     import copy
 
     def synthetic_for(name, rs):
