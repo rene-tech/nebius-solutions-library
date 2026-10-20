@@ -151,11 +151,15 @@ spec:
             - { name: catalog, mountPath: /etc/catalog, readOnly: true }        # the built-in classes (ConfigMap api/catalog)
             {{- toYaml .Values.trust.mounts | nindent 12 }}
           resources:
-            # Concurrent status/graph queries exceeded 512Mi on a populated fleet.
-            requests: { cpu: 100m, memory: 512Mi }
-            limits: { cpu: "1", memory: 2Gi }
-          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /livez, port: 8080 }, periodSeconds: 20 }     # process-only: a database outage never restarts the API
+            # Concurrent status/graph queries exceeded 512Mi on a populated fleet. An operation view costs ~0.25 CPU-s
+            # (api 0.11.140): a dozen pollers saturated the 1-CPU limit and the probes starved while requests still
+            # completed; one CPU reserved, two as the ceiling.
+            requests: { cpu: "1", memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          # both probes answer from the event loop (services/api/app.py livez/healthz); 3 s against GIL and cgroup
+          # scheduling delay under load, a blocked loop fails them at any timeout
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /livez, port: 8080 }, periodSeconds: 20, timeoutSeconds: 3 }   # process-only: a database outage never restarts the API
       volumes:
         - name: kubeconfigs          # one key per GPU region (stack/platform/secrets.tf)
           secret: { secretName: region-kubeconfigs, optional: true }

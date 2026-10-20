@@ -125,7 +125,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.139", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.140", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -609,14 +609,22 @@ def _public(m: dict, p: Principal | None = None) -> dict:
 
 
 @app.get("/livez", include_in_schema=False)
-def livez():
-    """Liveness: the process answers. Nothing here depends on the database or the clusters (the readiness probe
-    does, through /healthz): a database outage must not restart every API replica and take ext-auth with it."""
+async def livez():
+    """Liveness: the event loop answers. Nothing here depends on the database, the clusters or the thread pool
+    (the readiness probe does, through /healthz): a database outage must not restart every API replica and take
+    ext-auth with it, and a thread pool busy with slow reads is load, not death (api 0.11.140: as a sync handler
+    this queued behind that pool and the kubelet restarted replicas that were still answering)."""
     return {"ok": True}
 
 
 @app.get("/healthz")
-def healthz():
+async def healthz():
+    """Readiness: the replica can run work now. The body runs off the loop (its own worker, not the request
+    pool), so a hung cluster API or a starved process fails readiness, never liveness."""
+    return await asyncio.to_thread(_health_body)
+
+
+def _health_body() -> dict:
     return {
         "ok": True,
         "models": len(catalog.all_models()),

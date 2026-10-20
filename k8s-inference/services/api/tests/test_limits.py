@@ -60,3 +60,42 @@ def test_fourteen_day_runs_and_recovery_deadlines_are_accepted(client, monkeypat
     body["timeout_s"] = 3600
     body["execution"]["recovery"]["deadline_s"] = 14 * 86400 + 1
     assert c.post("/v1/models/hello-run:invoke", headers=H, json=body).status_code == 422
+
+
+def test_probes_answer_with_the_request_pool_saturated(client, monkeypatch):
+    """api 0.11.140: both probes answer from the event loop. With every thread of the request pool held by slow
+    sync handlers (the 2026-10-20 outage: status pollers against a 1-CPU limit), /livez and /healthz still answer
+    at once; before, they queued behind that pool and the kubelet restarted replicas that were still serving."""
+    import threading
+    import time
+
+    import anyio
+    from fastapi.testclient import TestClient
+
+    import jobs
+
+    gate = threading.Event()
+    monkeypatch.setattr(jobs, "list_ops_all", lambda ns, tenant, model: (gate.wait(10), ([], []))[1])
+
+    async def two_threads():
+        anyio.to_thread.current_default_thread_limiter().total_tokens = 2
+
+    with TestClient(appmod.app) as c:  # one loop for every request of this test (the pool is per loop)
+        c.portal.call(two_threads)
+        held = [threading.Thread(target=lambda: c.get("/v1/operations", headers=H)) for _ in range(2)]
+        for t in held:
+            t.start()
+        for _ in range(50):  # until both sync handlers hold the pool
+            if c.portal.call(lambda: anyio.to_thread.current_default_thread_limiter().borrowed_tokens) >= 2:
+                break
+            time.sleep(0.05)
+        try:
+            assert c.portal.call(lambda: anyio.to_thread.current_default_thread_limiter().borrowed_tokens) == 2
+            started = time.monotonic()
+            assert c.get("/livez").json() == {"ok": True}
+            assert c.get("/healthz").status_code == 200
+            assert time.monotonic() - started < 2.0
+        finally:
+            gate.set()
+            for t in held:
+                t.join(10)

@@ -1727,9 +1727,9 @@ def _with_worker(job: dict, ns: str, clusters: dict) -> dict:
 
 def _with_pods(job: dict, ns: str, region: str, pods: list | None = None) -> dict:
     if pods is None:
-        try:
-            raw = retry(kube.core(region).list_namespaced_pod, ns, label_selector=pods_selector(job)).items
-            pods = [kube.core(region).api_client.sanitize_for_serialization(p) for p in raw]
+        try:  # the API server's JSON straight to dicts, as the listing reads pods (_json_items): half the CPU of
+            # the typed objects and their sanitize pass (an operation view cost 0.25 CPU-s, api 0.11.140)
+            pods = _json_items(kube.core(region).list_namespaced_pod, ns, label_selector=pods_selector(job))
         except ApiException:
             pods = []
     job["_pods"] = sorted(pods, key=lambda p: p["metadata"].get("creationTimestamp", ""))

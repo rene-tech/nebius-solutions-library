@@ -4,6 +4,18 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.140
+
+(API image and charts/platform `api` Deployment.)
+
+- Probes answer from the event loop: `/livez` and `/healthz` were synchronous handlers sharing the request thread
+  pool, so under a dozen status pollers against a 1-CPU limit (an operation view costs ~0.25 CPU-s) the kubelet's
+  1 s probes queued behind the pool and restarted replicas that were still answering (2026-10-20, api 0.11.138).
+  Both now answer from the event loop (readiness runs its body on its own worker, off the request pool); the API
+  container requests one CPU and is capped at two; both probes allow 3 s.
+- An operation view reads the Job's pods as the API server's JSON (the path the listing already uses) instead of
+  the client's typed objects and their sanitize pass: the same dicts, about half the CPU per view.
+
 ## api 0.11.139
 
 (API image only.)
