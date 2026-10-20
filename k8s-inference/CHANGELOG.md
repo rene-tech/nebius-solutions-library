@@ -4,6 +4,12 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## fleet image cache: Zot write timeout 3600 s
+
+- charts/fleet image-cache: `http.writeTimeout` 3600s on the regional Zot caches. Unset, zot v2.1.22 applies its
+  60 s default, which bounds the whole blob response: every layer transfer longer than 60 s was cut and resumed by
+  containerd with Range requests (ACE 4.7 GB layer, 2026-10-20 21:11Z). Takes effect at the next zot-0 start.
+
 ## api 0.11.152
 
 - A graph root whose Job is gone (cancelled while queued, or expired with attempt rows) is served with its `graph`

@@ -28,7 +28,7 @@
     "storage" (dict "rootDirectory" "/var/lib/registry" "dedupe" true "gc" true "gcDelay" "1h" "gcInterval" "24h"
         "retention" (dict "dryRun" false "delay" "24h" "policies" (list (dict "repositories" (list "**") "deleteReferrers" true "deleteUntagged" true
             "keepTags" (list (dict "mostRecentlyPulledCount" 20 "pulledWithin" $keep "pushedWithin" $keep))))))
-    "http" (dict "address" "0.0.0.0" "port" "5000" "compat" (list "docker2s2")
+    "http" (dict "address" "0.0.0.0" "port" "5000" "compat" (list "docker2s2") "writeTimeout" "3600s"
         "accessControl" (dict "repositories" (dict "**" (dict "anonymousPolicy" (list "read")))))
     "log" (dict "level" "info")
     "extensions" (dict "metrics" (dict "enable" true "prometheus" (dict "path" "/metrics"))
