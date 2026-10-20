@@ -4,6 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## gateway: the limiter's refusals carry x-envoy-ratelimited again
+
+- charts/platform gateway/ratelimit.yaml: EnvoyPatchPolicy `ratelimit-refusal-header` on the external Gateway replaces
+  `disable_x_envoy_ratelimited_header` with false on the ratelimit filter of both listeners (selected by filter
+  name). Envoy Gateway v1.6 sets that flag in every translated rate limit, so an edge refusal carried only the
+  x-ratelimit-* headers and no caller could prove a refused write (wave 6, 2026-10-20 21:34Z). Envoy then adds
+  `x-envoy-ratelimited: true` to its own rate-limit local replies only; an upstream 429 (the API's admission
+  refusal with X-Serverless2-Admission: refused, a model's 429) never gets it. Limits, descriptors, routes and
+  the x-ratelimit-* headers are unchanged. clusters/common/values/envoy-gateway.yaml enables the EnvoyPatchPolicy
+  API (controller restart only). Render test: the patch's target, listeners, op, path and value.
+
 ## fleet image cache: Zot write timeout 3600 s
 
 - charts/fleet image-cache: `http.writeTimeout` 3600s on the regional Zot caches. Unset, zot v2.1.22 applies its

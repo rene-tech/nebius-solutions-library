@@ -323,6 +323,19 @@ for cid in open(f"{tmp}/clusters.txt").read().split():
         catch = [r for r in rules if prefix_of(r) == "/internal"]
         assert catch and not catch[0].get("backendRefs") and any(f.get("extensionRef", {}).get("name") == "api-not-found" for f in catch[0].get("filters", [])), f"{cid}: HTTPRoute api: /internal catch-all must be the api-not-found direct response"
         assert all(p is None or p.startswith("/internal/") or p == "/internal" for p in map(prefix_of, rules)), f"{cid}: HTTPRoute api routes an unexpected prefix"
+        # the limiter's refusal marker (charts/platform/templates/gateway/ratelimit.yaml): exactly one EnvoyPatchPolicy on
+        # the external Gateway that replaces disable_x_envoy_ratelimited_header with false on the ratelimit filter of both
+        # listeners, selected by filter NAME (a positional index would mis-patch when the filter order changes)
+        patches = [o for o in objs if o["kind"] == "EnvoyPatchPolicy"]
+        assert len(patches) == 1 and patches[0]["metadata"]["name"] == "ratelimit-refusal-header", f"{cid}: expected exactly the ratelimit-refusal-header EnvoyPatchPolicy"
+        pp = patches[0]["spec"]
+        assert pp["targetRef"]["kind"] == "Gateway" and pp["targetRef"]["name"] == "serverless2-external" and pp["type"] == "JSONPatch", f"{cid}: patch target"
+        names = {j["name"] for j in pp["jsonPatches"]}
+        assert names == {"envoy-gateway-system/serverless2-external/https", "envoy-gateway-system/serverless2-external/http"}, f"{cid}: patch listeners {names}"
+        for j in pp["jsonPatches"]:
+            op = j["operation"]
+            assert j["type"].endswith("envoy.config.listener.v3.Listener") and op["op"] == "replace" and op["value"] is False, f"{cid}: patch op {op}"
+            assert op["path"] == "disable_x_envoy_ratelimited_header" and "[?(@.name=='envoy.filters.http.ratelimit')].typed_config" in op["jsonPath"], f"{cid}: patch selects {op.get('jsonPath')}/{op.get('path')}"
         print(f"   ok security invariants {cid}: metadata service excluded, API HTTPS-only with redirect, worker routes /internal/{{attempts,authorize,executions,sessions,operations}} + /internal 404")
     # the gateways' access logs carry no query string (signed URLs, api_key parameters) and no credential header
     proxies = [o for o in objs if o["kind"] == "EnvoyProxy"]

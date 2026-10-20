@@ -19,3 +19,38 @@ spec:
                 - { name: Authorization, type: Distinct, invert: false }   # invert is a server default; explicit avoids render/default differences
           limit: { requests: 3000, unit: Minute }
 {{- end }}
+{{- if index .Values.components "gateway" }}
+---
+# Envoy Gateway translates every rate limit with disable_x_envoy_ratelimited_header: true, so a refusal by the limiter
+# is not distinguishable by header from an upstream 429 (the API's own admission refusal carries
+# X-Serverless2-Admission: refused; a model's 429 carries neither). This patch flips only that flag on the external
+# Gateway's listeners: Envoy then adds `x-envoy-ratelimited: true` to its OWN rate-limit local replies and to nothing
+# else, which is what callers key on (services/jobs/bin/call.sh edge_refusal, docs/API.md). Limits, descriptors,
+# routes and the x-ratelimit-* headers are unchanged. The jsonPath selects the ratelimit filter by name (never a
+# positional index); the property exists in every translated listener, so `replace` applies. Needs
+# extensionApis.enableEnvoyPatchPolicy on the controller (clusters/common/values/envoy-gateway.yaml).
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyPatchPolicy
+metadata: { name: ratelimit-refusal-header, namespace: envoy-gateway-system }
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: serverless2-external
+  type: JSONPatch
+  jsonPatches:
+    - type: type.googleapis.com/envoy.config.listener.v3.Listener
+      name: envoy-gateway-system/serverless2-external/https
+      operation:
+        op: replace
+        jsonPath: "$.filter_chains[*].filters[*].typed_config.http_filters[?(@.name=='envoy.filters.http.ratelimit')].typed_config"
+        path: "disable_x_envoy_ratelimited_header"
+        value: false
+    - type: type.googleapis.com/envoy.config.listener.v3.Listener
+      name: envoy-gateway-system/serverless2-external/http
+      operation:
+        op: replace
+        jsonPath: "$.default_filter_chain.filters[*].typed_config.http_filters[?(@.name=='envoy.filters.http.ratelimit')].typed_config"
+        path: "disable_x_envoy_ratelimited_header"
+        value: false
+{{- end }}

@@ -9,6 +9,9 @@ config:
     # hostname (charts/platform/templates/edge); off by default in v1.6 (a SecurityPolicy then reports "backend not found")
     extensionApis:
       enableBackend: true
+      # EnvoyPatchPolicy ratelimit-refusal-header (charts/platform/templates/gateway/ratelimit.yaml): the limiter's own
+      # refusals carry x-envoy-ratelimited: true again (Envoy Gateway disables that header in every translated limit)
+      enableEnvoyPatchPolicy: true
     gateway:
       controllerName: gateway.envoyproxy.io/gatewayclass-controller
     provider:
