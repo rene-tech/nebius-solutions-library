@@ -424,6 +424,8 @@ check_tests() {
   bash "$ROOT/tools/registry-key-test.sh"
   step "tests: shared-scratch leaf proof/cleanup/provision (services/jobs/bin/scratch.sh)"
   bash "$ROOT/tools/scratch-test.sh"
+  step "tests: attempt record acknowledgement retries (services/jobs/bin/upload.sh)"
+  bash "$ROOT/tools/upload-test.sh"
   bash "$ROOT/tools/node-config-test.sh"
   step "tests: filesystem attachment and GPU scale-to-zero storage"
   tf stack/modules/cluster init -backend=false -input=false > /dev/null

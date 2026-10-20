@@ -544,6 +544,12 @@ never the expected image: the uploader waits for it (bounded) before its start r
 once when it appears later; the API also fills a start record from the pod it reads and, at `GET` time, takes the
 newest attempt's live pod. `image_digest_state` says what a null means: `pending` (the attempt runs, the kubelet has not
 reported it yet: transient, a reader retries the `GET`), `unknown` (the attempt ended without one), `observed`.
+The start record is acknowledged like a terminal one (jobs 0.1.29): four tries 3 s apart (each a 10 s request: 49 s
+worst case, after the digest wait of up to 30 s), then once per poll interval (10 s) while main runs; a transient
+failure (5xx, no answer) never strands an attempt, and 409 (fenced) or a definite 401/403 ends the retries, nothing is
+retried forever. Only an accepted (200) or definite (409, 401, 403) answer is written to `attempts/.ack.json`,
+atomically; a transient answer's body goes to `attempts/.ack.transient.json` (diagnostics). An application that waits
+for the start acknowledgement before touching request-owned data should allow for the 79 s bound.
 
 Fencing: the first record of a pod opens an epoch; a terminal record from a pod whose epoch is no longer the chain's
 newest is refused (409), as is a success after `:cancel`. A worker that returns after a network partition therefore

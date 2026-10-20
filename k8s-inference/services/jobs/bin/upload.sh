@@ -86,14 +86,21 @@ record() {   # $1 = status; the attempt as the uploader sees it now (main may st
   ACK=""
   if [ -n "${API_URL:-}" ]; then
     # a start record is retried like a terminal one (jobs 0.1.29: one try stranded a healthy attempt behind a
-    # transient 503, the App waits for that acknowledgement); 409 (fenced) and a definite auth rejection end it
-    local tries=4
+    # transient 503, the App waits for that acknowledgement); 409 (fenced) and a definite auth rejection end it.
+    # Bound of a start: 4 tries x 10 s timeout + 3 x 3 s = 49 s worst case here (+ the digest wait above, 30 s), then
+    # once per poll (POLL_SECONDS) while main runs (docs/JOBS.md "Attempts and finalization"); a terminal record
+    # waits 20 s between tries. The accepted or fenced answer alone becomes .ack.json (atomically: the application
+    # reads it as the definite answer); a transient body is kept apart as .ack.transient.json, diagnostics only
+    local tries=4 wait=20 tmo=20; [ "$1" = started ] && { wait=3; tmo=10; }
     for i in $(seq 1 $tries); do
-      ACK=$(curl -sS -m 20 -o "$REC/.ack.json" -w "%{http_code}" -X POST "$API_URL/internal/attempts" \
+      ACK=$(curl -sS -m "$tmo" -o "$REC/.ack.tmp" -w "%{http_code}" -X POST "$API_URL/internal/attempts" \
         -H "Authorization: Bearer $(cat "$TOKEN_FILE")" -H "Content-Type: application/json" --data-binary "@$REC/$POD_NAME.json" 2>/dev/null || echo 000)
       echo "attempt record $1 -> API $ACK"
-      case "$ACK" in 200|409|401|403) break ;; esac
-      [ "$i" -lt "$tries" ] && { sleep 20 & wait $!; }
+      case "$ACK" in
+        200|409|401|403) mv -f "$REC/.ack.tmp" "$REC/.ack.json"; break ;;
+        *) [ -s "$REC/.ack.tmp" ] && mv -f "$REC/.ack.tmp" "$REC/.ack.transient.json" ;;
+      esac
+      [ "$i" -lt "$tries" ] && { sleep "$wait" & wait $!; }
     done
     if [ "$ACK" = 200 ] && [ -n "$gen" ]; then
       jq -c --arg g "$gen" '{generation:($g|tonumber), epoch:.epoch, checkpoint_ref:.checkpoint_ref, revision:.revision, acknowledged_at:(now|todate)}' \

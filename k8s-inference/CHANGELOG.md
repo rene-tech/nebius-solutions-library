@@ -13,9 +13,11 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
   had piled up, so a dozen pollers took both replicas to the 2 GiB limit in minutes (OOMKilled twice, 2026-10-20).
   The cache is keyed by principal and drops expired entries on every write: no generation outlives
   `OPS_LIST_CACHE_S` there.
-- The uploader retries a start record like a terminal one (four tries, 20 s apart) and again once per poll while
-  it stays unacknowledged; 409 (fenced) and a definite 401/403 end the retries. One try stranded a healthy attempt
-  behind a transient 503 (the application waits for the start acknowledgement before touching request-owned data).
+- The uploader retries a start record like a terminal one (four 10 s tries, 3 s apart: 49 s, after the digest wait
+  of up to 30 s) and again once per poll while it stays unacknowledged; 409 (fenced) and a definite 401/403 end the
+  retries. Only an accepted or definite answer becomes `attempts/.ack.json` (atomically); a transient body is kept
+  apart as `.ack.transient.json`. One try stranded a healthy attempt behind a transient 503, whose body in
+  `.ack.json` the application then read as a definite refusal.
 
 ## api 0.11.141
 
