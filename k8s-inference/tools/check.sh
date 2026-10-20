@@ -426,6 +426,8 @@ check_tests() {
   bash "$ROOT/tools/scratch-test.sh"
   step "tests: attempt record acknowledgement retries (services/jobs/bin/upload.sh)"
   bash "$ROOT/tools/upload-test.sh"
+  step "tests: endpoint caller readiness wait and the one inference POST (services/jobs/bin/call.sh)"
+  bash "$ROOT/tools/call-test.sh"
   bash "$ROOT/tools/node-config-test.sh"
   step "tests: filesystem attachment and GPU scale-to-zero storage"
   tf stack/modules/cluster init -backend=false -input=false > /dev/null

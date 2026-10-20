@@ -75,7 +75,7 @@ def test_pause_and_timeout_are_tunable_and_the_post_budget_is_untouched(tmp_path
         "GET https://ep.example/health 503",
         "GET https://ep.example/health 000",
         "GET https://ep.example/health 200 ok",
-        "POST https://ep.example/v1/chat 429",
+        "POST https://ep.example/v1/chat 429 edge",
         "POST https://ep.example/v1/chat 200 {}",
         "PUT https://objects.example/put/response 200",
         "PUT https://objects.example/put/call 200",

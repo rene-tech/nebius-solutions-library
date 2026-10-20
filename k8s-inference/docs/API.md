@@ -388,6 +388,31 @@ set in both modes: never an input, a result, a reference, a log or a key value; 
 listing per tenant namespace and cluster (the fleet document's tenants and the tenants on record), cached ten
 seconds; `X-Regions-Skipped` names clusters that could not be read.
 
+## Cold endpoints: an accepted call waits, it is never lost or repeated (api 0.11.143, jobs 0.1.30)
+
+An endpoint that is scaled to zero, or whose spot node is still starting, takes minutes to answer; the Knative
+revision timeout (the endpoint's `timeout_s`) would cut a request held by the activator meanwhile. So every endpoint
+call probes readiness first with an idempotent GET (the endpoint's `health_path`, else `/v1/models` for the OpenAI
+protocol, else `/`) through the endpoint's own gateway, 30 s per probe with pauses of 2 s doubling to 10 s, for up to
+a bound, and makes the one inference request only when the endpoint answers. Synchronous: the API does this inside
+the call, within the call's own `timeout_s` (default SYNC_TIMEOUT_S, 600 s), which stays the whole wall clock of the
+call as before: the wait spends it first, the inference gets what is left (the caller's connection stays open, its
+admission slot stays held, a disconnect ends the wait); not ready within it is a 503 "nothing was sent", bounded, so
+the caller always has an answer before its own deadline. A synchronous answer decided before the inference request
+(that 503, or 401/403 when the endpoint refuses the key) carries the header `x-serverless2-inference: not-sent`: the
+model never saw the request, the caller may submit it again; a 5xx without that header is an unknown outcome (the
+request may have run). Asynchronous: the caller Job does it (`READY_URL`, `READY_MAX_WAIT` = the fleet's
+`ENDPOINT_START_WAIT_S`, 3600 s), under the same operation id, and the Job's deadline is `timeout_s` plus that wait,
+so the wait never eats the inference budget; `:cancel` ends a waiting call like any other. After the one request: no
+response (the connection broke, or a 5xx without a body: the edge gave up) is an unknown outcome, the operation
+FAILS with that reason and the request is never repeated by the platform (the model may have run); a 5xx with a body
+is the endpoint's error (FAILED); a 408/429 is asked again with backoff only when it is PROVEN to come from the edge
+before the model (Envoy's `x-envoy-ratelimited` header, or the gateway hook's `X-Serverless2-Admission: refused`): a
+model can answer 408/429 itself after partial execution, so a bare one is its answer, delivered once like any other
+4xx (the caller's error). A multi-node endpoint is not waited for: it answers 503 until it is started
+explicitly (above). Before, the managed asynchronous caller posted into the cold endpoint and re-posted on every
+5xx or broken connection for as long as the Job lived, and a synchronous call was cut at the revision timeout.
+
 ## Synchronous calls: timeouts and the caller's disconnect (api 0.11.127)
 
 `:invoke` with `mode: sync` proxies the request and waits up to `timeout_s` (default SYNC_TIMEOUT_S, 600 s). Every

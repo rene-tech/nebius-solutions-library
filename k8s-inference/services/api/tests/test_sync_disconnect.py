@@ -29,6 +29,9 @@ def _client(monkeypatch, post, closed):
         def __init__(self, timeout=None):
             self.timeout = timeout
 
+        async def get(self, url, headers=None):  # the readiness probe before the call (api 0.11.143)
+            return _Ready()
+
         async def post(self, url, json=None, headers=None):
             return await post()
 
@@ -36,6 +39,13 @@ def _client(monkeypatch, post, closed):
             closed.append(True)
 
     monkeypatch.setattr(appmod.httpx, "AsyncClient", Client)
+
+
+class _Ready:  # a readiness probe answered: the endpoint serves (api 0.11.143)
+    status_code = 200
+
+    def json(self):
+        return {}
 
 
 def test_a_disconnected_caller_cancels_the_downstream_call(monkeypatch):
@@ -112,6 +122,9 @@ def test_a_disconnect_reaches_the_proxy_through_the_real_middleware(client, monk
     class Client:
         def __init__(self, timeout=None):
             pass
+
+        async def get(self, url, headers=None):  # the readiness probe before the call (api 0.11.143)
+            return _Ready()
 
         async def post(self, url, json=None, headers=None):
             try:

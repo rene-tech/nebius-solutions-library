@@ -24,6 +24,7 @@ for ((i=0; i<${#args[@]}; i++)); do
     -X) method=${args[$((i+1))]}; ((i++));;
     -o) out=${args[$((i+1))]}; ((i++));;
     -H) [ -n "${HEADERS:-}" ] && echo "${args[$((i+1))]}" >> "$HEADERS"; ((i++));;
+    -D) hdr=${args[$((i+1))]}; ((i++));;
     -D|--max-time|--connect-to|-w) ((i++));;
     --data-binary) data=${args[$((i+1))]}; ((i++));;
     -sS|-s) ;;
@@ -37,6 +38,8 @@ if [ -z "$line" ]; then line=$(grep -n -m1 "^$method \* " "$SCRIPT" | head -1); 
 n=${line%%:*}; spec=${line#*:}
 sed -i "${n}d" "$SCRIPT"
 code=$(echo "$spec" | awk '{print $3}'); body=$(echo "$spec" | cut -d' ' -f4-)
+edge=0; [ "$body" = edge ] && { edge=1; body=""; }   # "<code> edge": the edge's own refusal, marked in the response headers
+[ -n "${hdr:-}" ] && { printf 'HTTP/1.1 %s\r\n' "$code"; [ "$edge" = 1 ] && printf 'x-envoy-ratelimited: true\r\n'; printf '\r\n'; } > "$hdr"
 [ "$out" != /dev/null ] && printf '%s' "$body" > "$out"
 [ "$code" = 000 ] && exit 7
 printf '%s 0.5 1.5 %s' "$code" "${#body}"
@@ -174,15 +177,28 @@ def test_empty_gateway_timeout_is_unknown_and_a_429_is_asked_again(tmp_path):
     script = ["GET https://ep.example/health 200 ok", "POST https://ep.example/v1/chat 504"]
     r, work, calls = _run(tmp_path, BINDING, script)
     assert r.returncode == 4 and len([c for c in calls if c.startswith("POST")]) == 1
+    # a 429 PROVEN to come from the edge (x-envoy-ratelimited in the response headers) is asked again
     script = [
         "GET https://ep.example/health 200 ok",
-        "POST https://ep.example/v1/chat 429",
+        "POST https://ep.example/v1/chat 429 edge",
         'POST https://ep.example/v1/chat 200 {"ok":1}',
         "PUT https://objects.example/put/response 200",
         "PUT https://objects.example/put/call 200",
     ]
     r, work, calls = _run(tmp_path / "second", BINDING, script)
     assert r.returncode == 0 and len([c for c in calls if c.startswith("POST")]) == 2
+    # a bare 429 or 408 from the model itself (no edge marker) is its answer, captured and delivered once: never a
+    # second POST (jobs 0.1.30: a model can answer 408/429 after partial execution)
+    for code in (429, 408):
+        script = [
+            "GET https://ep.example/health 200 ok",
+            f'POST https://ep.example/v1/chat {code} {{"detail":"busy"}}',
+            "PUT https://objects.example/put/response 200",
+            "PUT https://objects.example/put/call 200",
+        ]
+        r, work, calls = _run(tmp_path / f"model{code}", BINDING, script)
+        assert r.returncode == 2 and len([c for c in calls if c.startswith("POST")]) == 1, (code, r.stdout)  # a 4xx
+        assert json.loads((work / "call.json").read_text())["http_status"] == code
 
 
 def test_delivered_4xx_fails_the_call_and_a_failed_upload_keeps_the_capture(tmp_path):

@@ -58,7 +58,14 @@ from auth import (
 from auth import check_operation_owner as _check_operation_owner
 from auth import may_read_operation as _may_read_operation
 from catalog import require as _model
-from config import FLEET_MANAGER, GRAFANA_URLS, LITELLM_URL, PUBLIC_API_URL, REGION, SYNC_TIMEOUT_S
+from config import (
+    FLEET_MANAGER,
+    GRAFANA_URLS,
+    LITELLM_URL,
+    PUBLIC_API_URL,
+    REGION,
+    SYNC_TIMEOUT_S,
+)
 from reconciliation import _reconcile_loop, reconcile_models
 from reconciliation import fallback_switch as fallback_switch
 from reconciliation import idle_shutdown as idle_shutdown
@@ -125,7 +132,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.142", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.143", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1515,9 +1522,20 @@ async def _sync(
         )
     t0 = time.time()
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    r = await _proxy_until_answer_or_disconnect(
-        url, with_served_model(m, req.input), headers, req.timeout_s or SYNC_TIMEOUT_S, request
-    )
+    budget = (
+        req.timeout_s or SYNC_TIMEOUT_S
+    )  # the call's whole wall clock: the wait for a cold endpoint, then the inference
+    if int(m.get("nodes") or 1) == 1:
+        # a cold endpoint (scaled to zero, a spot node starting) is waited for with idempotent GETs before the one
+        # inference request, so the request is never cut by the revision timeout while the endpoint starts and is
+        # never repeated (docs/API.md "Cold endpoints"); the wait spends the call's own budget
+        await _wait_until_ready(*_probe_target(m, region, p, admission), request, t0 + budget)
+    remaining = t0 + budget - time.time()
+    if remaining < 1:
+        raise HTTPException(
+            503, f"endpoint became ready with none of the call's {budget}s left; nothing was sent", headers=_NOT_SENT
+        )
+    r = await _proxy_until_answer_or_disconnect(url, with_served_model(m, req.input), headers, remaining, request)
     forget(p.key)
     ok = 200 <= r.status_code < 300
     try:
@@ -1564,8 +1582,68 @@ async def _sync(
     )
 
 
+# the answer of a synchronous call that was decided BEFORE the inference request (a refused or never-ready endpoint):
+# `not-sent` says the model never saw it, so the caller may submit again; a 5xx without this header is an unknown
+# outcome (docs/API.md "Cold endpoints")
+INFERENCE_HEADER = "x-serverless2-inference"
+_NOT_SENT = {INFERENCE_HEADER: "not-sent"}
+READY_PROBE_TIMEOUT_S = 30  # one readiness GET; the gateway holds it while the replica starts, so short and frequent
+READY_PROBE_PAUSE_S = 2  # between probes, doubling to 10 s
+
+
+def _probe_target(m: dict, region: str, p: Principal, admission: str) -> tuple[str, dict]:
+    """The idempotent readiness GET of an endpoint: its health path, else the OpenAI models listing or its root; on
+    the predictor Service when the endpoint runs here, through the region's gateway with the caller's key otherwise
+    (the same path as the asynchronous caller's READY_URL, services/api/jobs.py)."""
+    probe = m.get("health_path") or ("/v1/models" if m.get("protocol") == "openai" else "/")
+    v = _variant_for(m, {}, models.cluster_id() if region == REGION else region)
+    if region == REGION:
+        host = (
+            m["endpoint_host"]
+            if v["object"] == m["k8s_name"]
+            else f"http://{v['object']}-predictor.{m['namespace']}.svc.cluster.local"
+        )
+        return host + probe, {}
+    return f"https://{models.endpoint_host(m, region, v['object'])}{probe}", {
+        "Authorization": f"Bearer {p.key}",
+        ADMITTED_HEADER: _admitted_token(keys.key_hash(p.key), m["name"], admission),
+        OPERATION_HEADER: admission,
+    }
+
+
+async def _wait_until_ready(url: str, headers: dict, request, deadline: float) -> None:
+    """GET `url` until the endpoint answers (2xx, or 405 on a root that takes no GET), with READY_PROBE_TIMEOUT_S per
+    probe (never past `deadline`, the call's own budget) and pauses of 2 s doubling to 10 s: a probe that ends
+    without an answer (the gateway and the activator hold it while the replica starts) says only "not yet". 401/403
+    is the key's refusal (its status); at the deadline 503; both carry `not-sent`: nothing reached the model. The
+    caller's disconnect ends the wait."""
+    n = 0
+    while True:
+        left = deadline - time.time()
+        if left <= 0:  # checked before every probe: the promised total is true, no GET past the deadline
+            raise HTTPException(
+                503, "endpoint did not become ready within the call's timeout_s; nothing was sent", headers=_NOT_SENT
+            )
+        try:
+            r = await _proxy_until_answer_or_disconnect(
+                url, None, headers, min(READY_PROBE_TIMEOUT_S, left), request, "GET"
+            )
+            if 200 <= r.status_code < 300 or r.status_code == 405:
+                return
+            if r.status_code in (401, 403):
+                raise HTTPException(
+                    r.status_code, f"the endpoint refused the call's key ({r.status_code})", headers=_NOT_SENT
+                )
+        except HTTPException as e:
+            if e.status_code not in (502, 504):  # 499 (caller gone), 401/403: decided
+                raise
+        n += 1
+        pause = min(READY_PROBE_PAUSE_S * 2 ** min(n - 1, 4), 5 * READY_PROBE_PAUSE_S)
+        await asyncio.sleep(max(0.0, min(pause, deadline - time.time())))  # never sleeps past the deadline
+
+
 async def _proxy_until_answer_or_disconnect(
-    url: str, body: dict, headers: dict, timeout_s: float, request
+    url: str, body: dict | None, headers: dict, timeout_s: float, request, method: str = "POST"
 ) -> httpx.Response:
     """POST the request and wait for the answer, the timeout, or the caller's disconnect, whichever comes first.
     The caller is watched by AWAITING `request.receive()` once the body is consumed: the next message the server
@@ -1575,7 +1653,9 @@ async def _proxy_until_answer_or_disconnect(
     call race; whichever finishes first ends the other (cancelled and joined). A disconnect answers 499 (nobody
     reads it; the caller's `finally` releases the admission); the timeout answers 504 as before."""
     client = httpx.AsyncClient(timeout=timeout_s)
-    downstream = asyncio.ensure_future(client.post(url, json=body, headers=headers))
+    downstream = asyncio.ensure_future(
+        client.get(url, headers=headers) if method == "GET" else client.post(url, json=body, headers=headers)
+    )
     watcher = asyncio.ensure_future(_wait_for_disconnect(request)) if request is not None else None
     try:
         pending = {downstream} | ({watcher} if watcher else set())

@@ -397,6 +397,13 @@ def client(monkeypatch, cluster):
 H = {"Authorization": "Bearer sk-good"}
 
 
+class _Ready:  # a readiness probe answered: the endpoint serves (api 0.11.143)
+    status_code = 200
+
+    def json(self):
+        return {}
+
+
 def test_catalog_one_schema(monkeypatch):
     monkeypatch.setattr(kube, "fleet", lambda: FLEET)
     m = catalog.normalise({"id": "foo", "mode": "run"})  # a run class without deployments: every region of the fleet
@@ -627,8 +634,10 @@ def test_async_builds_endpoint_call_job(client, monkeypatch):
     )
     assert job["spec"]["podFailurePolicy"]["rules"][0] == {
         "action": "FailJob",
-        "onExitCodes": {"containerName": "main", "operator": "In", "values": [2]},
-    }
+        "onExitCodes": {"containerName": "main", "operator": "In", "values": [2, 4, 5]},
+    }  # 2 = the caller's error, 4 = unknown outcome, 5 = the endpoint's error: never a second POST (jobs 0.1.30)
+    assert env["READY_URL"]["value"] == "https://llm-example-predictor.models.203.0.113.10.sslip.io/health"
+    assert env["READY_MAX_WAIT"]["value"] == str(appmod.cfg.ENDPOINT_START_WAIT_S)  # also for a LiteLLM-routed call
     assert r.json()["resumable"] is False and not fake.pvcs
     # the result is the response the uploader put in the bucket
     job["status"]["conditions"] = [{"type": "Complete", "status": "True"}]
@@ -986,6 +995,9 @@ def test_sync_proxies_to_the_predictor(client, monkeypatch):
         async def aclose(self):  # api 0.11.127: the proxy closes its client explicitly
             return None
 
+        async def get(self, url, headers=None):  # the readiness probe before the call (api 0.11.143)
+            return _Ready()
+
         async def post(self, url, json=None, headers=None):
             calls.append((url, headers))
             return R()
@@ -1033,6 +1045,9 @@ def test_sync_for_another_region_goes_through_that_regions_gateway(client, monke
 
         async def aclose(self):  # api 0.11.127: the proxy closes its client explicitly
             return None
+
+        async def get(self, url, headers=None):  # the readiness probe before the call (api 0.11.143)
+            return _Ready()
 
         async def post(self, url, json=None, headers=None):
             calls.append((url, json, headers))
@@ -1088,6 +1103,9 @@ def test_sync_preserves_binary_results_and_client_errors(client, monkeypatch):
 
         async def aclose(self):  # api 0.11.127: the proxy closes its client explicitly
             return None
+
+        async def get(self, url, headers=None):  # the readiness probe before the call (api 0.11.143)
+            return _Ready()
 
         async def post(self, *a, **kw):
             return response
@@ -3149,3 +3167,73 @@ def test_an_async_endpoint_caller_carries_the_keys_kueue_priority(client, monkey
     assert plain["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "customer-batch"
     assert plain["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch"
     assert low["metadata"]["labels"]["kueue.x-k8s.io/queue-name"]
+
+
+def test_a_sync_call_waits_for_a_cold_endpoint_and_posts_once(client, monkeypatch):
+    """api 0.11.143 (docs/API.md "Cold endpoints"): the proxy probes readiness with idempotent GETs until the endpoint
+    answers, then makes the one inference POST; a refused probe (403) is the key's error and nothing is posted."""
+    calls, timeouts = [], []
+    monkeypatch.setattr(appmod, "READY_PROBE_PAUSE_S", 0)
+
+    class R:
+        def __init__(self, code, body):
+            self.status_code, self._body = code, body
+
+        def json(self):
+            return self._body
+
+    probes = [appmod.httpx.ReadTimeout("held"), appmod.httpx.ConnectError("not yet"), R(200, {})]
+
+    class FakeClient:
+        def __init__(self, **kw):
+            timeouts.append(kw.get("timeout"))
+
+        async def aclose(self):
+            return None
+
+        async def get(self, url, headers=None):
+            calls.append(("GET", url))
+            answer = probes.pop(0) if probes else appmod.httpx.ReadTimeout("held")  # no answer: still starting
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        async def post(self, url, json=None, headers=None):
+            calls.append(("POST", url))
+            return R(200, {"choices": [{"message": {"content": "hi"}}]})
+
+    c, _ = client
+    monkeypatch.setattr(appmod.httpx, "AsyncClient", FakeClient)
+    r = c.post("/v1/models/llm-example:invoke", json={"input": {"messages": []}}, headers=H)
+    assert r.status_code == 200 and r.json()["result"]["choices"]
+    assert [m for m, _ in calls] == ["GET", "GET", "GET", "POST"]  # three probes (two without an answer), one POST
+    assert 0 < timeouts[-1] <= appmod.SYNC_TIMEOUT_S  # the POST got the budget's remainder, not a fresh timeout
+    assert calls[0][1] == "http://llm-example-predictor.models.svc.cluster.local/health"  # the entry's health_path
+    # a refused probe: the key's error, no POST
+    calls.clear()
+    probes.append(R(403, {"detail": "key is not allowed to use model llm-example"}))
+    r = c.post("/v1/models/llm-example:invoke", json={"input": {"messages": []}}, headers=H)
+    assert r.status_code == 403 and "refused" in r.json()["detail"] and calls == [("GET", calls[0][1])]
+    assert r.headers[appmod.INFERENCE_HEADER] == "not-sent"  # definite, before any execution: safe to submit again
+    # the call's timeout_s is its whole budget: not ready within it = 503, nothing was sent (a bounded answer the
+    # caller gets before its own deadline); the inference, when it happens, gets what is left of the budget
+    calls.clear()
+    timeouts.clear()
+    probes.append(appmod.httpx.ReadTimeout("held"))
+    r = c.post("/v1/models/llm-example:invoke", json={"input": {"messages": []}, "timeout_s": 1}, headers=H)
+    assert r.status_code == 503 and "nothing was sent" in r.json()["detail"] and all(m == "GET" for m, _ in calls)
+    assert r.headers[appmod.INFERENCE_HEADER] == "not-sent"
+    assert 0 < max(timeouts) <= 1  # every probe was bounded by the budget, never by the fleet-wide probe timeout alone
+
+
+def test_an_async_call_deadline_covers_the_start_wait(client, monkeypatch):
+    """The caller Job's deadline is the call's timeout_s plus the fleet's start wait: a spot node that takes minutes
+    to start never eats the inference budget of an accepted call (api 0.11.143)."""
+    c, fake = client
+    r = c.post("/v1/models/llm-example:invoke", json={"mode": "async", "input": {}, "timeout_s": 120}, headers=H)
+    assert r.status_code == 202, r.text
+    job = fake.jobs[("tenant-demo", r.json()["id"])]
+    env = {e["name"]: e.get("value") for e in _main(job)["env"]}
+    assert (
+        job["spec"]["activeDeadlineSeconds"] == 120 + appmod.cfg.ENDPOINT_START_WAIT_S and env["CALL_TIMEOUT"] == "120"
+    )

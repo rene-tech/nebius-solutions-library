@@ -67,6 +67,13 @@ def _fleet(monkeypatch):
     monkeypatch.setattr(kube, "cluster_region", lambda c: "eu-north1" if c == "hub" else c)
 
 
+class _Ready:  # a readiness probe answered: the endpoint serves (api 0.11.143)
+    status_code = 200
+
+    def json(self):
+        return {}
+
+
 def test_entry_carries_variants_with_per_class_images():
     e = models.to_entry(SPEC)
     d = e["deployments"]["hub"]
@@ -236,6 +243,9 @@ def test_sync_requests_pick_a_variant_by_field_then_by_readiness(client, monkeyp
 
         async def aclose(self):  # api 0.11.127: the proxy closes its client explicitly
             return None
+
+        async def get(self, url, headers=None):  # the readiness probe before the call (api 0.11.143)
+            return _Ready()
 
         async def post(self, url, json=None, headers=None):
             hit["url"] = url

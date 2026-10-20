@@ -4,6 +4,24 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.143, jobs 0.1.30
+
+(API image, jobs image.)
+
+- Cold endpoints (docs/API.md "Cold endpoints"): every endpoint call waits for a scaled-to-zero or starting endpoint
+  with idempotent readiness GETs and makes its one inference request only when the endpoint answers. The
+  synchronous proxy does this inside the call within the call's own `timeout_s` (unchanged total budget: the wait
+  first, the inference gets the rest; the admission stays held, a disconnect ends the wait); an answer decided
+  before the request (503 not ready in time, 401/403 refused key) carries `x-serverless2-inference: not-sent`. The
+  managed asynchronous caller does it too (`READY_URL`, `READY_MAX_WAIT` = `ENDPOINT_START_WAIT_S`, 3600 s, on
+  every caller, also LiteLLM-routed ones), under the same operation id; its Job deadline is `timeout_s` plus the
+  wait. After the request, no response is an unknown outcome (FAILED, never re-posted), a 5xx with a body is the
+  endpoint's error, a 408/429 is retried only when proven to come from the edge (`x-envoy-ratelimited`,
+  `X-Serverless2-Admission: refused`), a model's own 408/429 is taken once like any 4xx; the Job's FailJob rule covers exits
+  2/4/5 on the managed path too. Before, the managed caller posted into the cold endpoint and re-posted on every
+  5xx/408/429 or broken connection (a possibly executed inference repeated), and a synchronous call was cut by the
+  revision timeout while the endpoint started.
+
 ## api 0.11.142, jobs 0.1.29
 
 (API image, jobs image.)

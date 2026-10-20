@@ -119,6 +119,10 @@ JOB_BACKOFF_LIMIT = int(
 )  # application failures before a Job is FAILED (disruptions do not count)
 JOB_PVC_SIZE_GI = int(os.environ.get("JOB_PVC_SIZE_GI", "50"))
 SYNC_TIMEOUT_S = int(os.environ.get("SYNC_TIMEOUT_S", "600"))
+# how long an accepted endpoint call waits for a cold endpoint (scale from zero, a spot node starting) before the one
+# inference request is made: the synchronous proxy and the asynchronous caller probe readiness with idempotent GETs
+# until then (docs/API.md "Cold endpoints"); timeout_s bounds the inference itself, after the endpoint answers
+ENDPOINT_START_WAIT_S = int(os.environ.get("ENDPOINT_START_WAIT_S", "3600"))
 # Knative Serving's max-revision-timeout-seconds of this fleet (charts/platform values.knative.maxRevisionTimeoutSeconds,
 # fleet.knative.max_revision_timeout_s): the ceiling of an endpoint's timeout_s; the chart sets both from one value
 KNATIVE_MAX_REVISION_TIMEOUT_S = int(os.environ.get("KNATIVE_MAX_REVISION_TIMEOUT_S", "3600"))

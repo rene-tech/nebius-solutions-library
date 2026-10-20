@@ -32,6 +32,7 @@ import execution
 import kube
 from config import (
     ENDPOINT_CONNECT_TO,
+    ENDPOINT_START_WAIT_S,
     EXECUTOR_SA,
     INFINIBAND_CLAIM_TEMPLATE,
     INFINIBAND_ENV,
@@ -1151,14 +1152,16 @@ def build_async(
         inp = {}
         if transfer_only:
             env.append({"name": "TRANSFER_ONLY", "value": "1"})
-        elif not model.get("litellm_route"):
-            # the readiness probe before the one inference POST: the endpoint's health path, else an idempotent GET
-            # on the OpenAI models listing or the endpoint's root, through the same gateway
-            base = url[: len(url) - len(model["endpoint_path"])] if url.endswith(model["endpoint_path"]) else url
-            probe = model.get("health_path") or ("/v1/models" if model.get("protocol") == "openai" else "/")
-            env.append({"name": "READY_URL", "value": base + probe})
     else:
         env.append({"name": "REQUEST_BODY", "value": json.dumps(inp)})
+    if not transfer_only and runtime_models.endpoint_domain(region):
+        # the readiness probe before the one inference POST (docs/API.md "Cold endpoints"): the endpoint's health
+        # path, else an idempotent GET on the OpenAI models listing or the endpoint's root, through the endpoint's own
+        # gateway (also for a LiteLLM-routed call: LiteLLM proxies the same endpoint), waited for up to
+        # ENDPOINT_START_WAIT_S; the Job's deadline covers that wait on top of the call's timeout_s
+        probe = model.get("health_path") or ("/v1/models" if model.get("protocol") == "openai" else "/")
+        env.append({"name": "READY_URL", "value": f"https://{runtime_models.endpoint_host(model, region)}{probe}"})
+        env.append({"name": "READY_MAX_WAIT", "value": str(ENDPOINT_START_WAIT_S)})
     if admitted:
         env.append(
             {
@@ -1253,16 +1256,18 @@ def build_async(
         if fallback:
             meta["annotations"][f"{LABEL}/scratch"] = "network"
             meta["annotations"][f"{LABEL}/scratch-fallback"] = fallback
-    job = _job_shell(name, meta, pod, timeout_s)
+    # the deadline covers the bounded wait for a cold endpoint on top of the call's own timeout_s: a spot node that
+    # takes 20 minutes to start must not eat the inference budget of an accepted call (docs/API.md "Cold endpoints")
+    job = _job_shell(name, meta, pod, timeout_s + ENDPOINT_START_WAIT_S if timeout_s else None)
     job["spec"]["backoffLimit"] = 6
-    # a 4xx from the endpoint is the caller's error (call.sh exit 2): fail the Job, no pod retries; with application
-    # I/O also the endpoint's own error (exit 5), an unknown inference outcome (exit 4) and nothing to export (exit 3):
-    # never a second inference POST
+    # a 4xx from the endpoint is the caller's error (call.sh exit 2): fail the Job, no pod retries; the endpoint's own
+    # error (exit 5) and an unknown inference outcome (exit 4) too, and with application I/O nothing to export
+    # (exit 3): never a second inference POST (jobs 0.1.30: the managed path as well)
     job["spec"]["podFailurePolicy"]["rules"].insert(
         0,
         {
             "action": "FailJob",
-            "onExitCodes": {"containerName": "main", "operator": "In", "values": [2, 3, 4, 5] if ex else [2]},
+            "onExitCodes": {"containerName": "main", "operator": "In", "values": [2, 3, 4, 5] if ex else [2, 4, 5]},
         },
     )
     secret = {

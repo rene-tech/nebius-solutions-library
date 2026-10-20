@@ -1,9 +1,13 @@
 #!/bin/bash
 # Main container of an endpoint-call job (API mode `async`, docs/API.md "Endpoint calls").
 #
-# Managed I/O (no execution block): POST REQUEST_BODY to URL until it is accepted, with exponential backoff capped
-# at 5 min; the uploader exports out/ to the platform bucket. 4xx other than 408/429 are the caller's error: exit 2,
-# which the Job's podFailurePolicy turns into an immediate FailJob (no pod retries).
+# Managed I/O (no execution block): readiness first (READY_URL, below), then POST REQUEST_BODY to URL exactly once;
+# the uploader exports out/ to the platform bucket. 408/429 PROVEN to come from the edge (edge_refusal: Envoy's
+# x-envoy-ratelimited or the hook's admission refusal) are asked again with backoff, a model's own 408/429 is its
+# answer like any other 4xx (exit 2, delivered once); no response (000, or a 5xx without a body: the connection
+# broke or the edge gave up) is an unknown outcome (exit 4), never a second POST; a 5xx with a body is the endpoint's
+# error (exit 5). The Job's podFailurePolicy turns 2/4/5 into an immediate FailJob (no pod retries). Before jobs
+# 0.1.30 the managed path posted into a cold endpoint and re-posted on every 5xx/000 for as long as the Job lived.
 #
 # Application I/O (IO_MODE=application, a private binding mounted at PRIVATE_INPUT_DIR): the request comes from the
 # binding (request.json, or input_url fetched at transfer time), the capture goes to the application's own
@@ -44,6 +48,12 @@ backoff() {   # exponential, BACKOFF_BASE (5 s) x 2^n, capped at BACKOFF_MAX (30
 }
 
 binding() { [ -n "$PRIV" ] && [ -f "$PRIV/$1" ] && cat "$PRIV/$1"; }
+
+edge_refusal() {   # $1 = the response headers of a 408/429: true only for a PROVEN pre-execution refusal, the edge's
+  # rate limit (Envoy sets x-envoy-ratelimited) or the gateway hook's admission refusal (X-Serverless2-Admission:
+  # refused); a model can answer 408/429 itself after partial execution, so a bare status is never asked again
+  [ -f "$1" ] && grep -qiE '^(x-envoy-ratelimited: *true|x-serverless2-admission: *refused)' "$1"
+}
 
 durable() {   # the named files (and the directory entries) reach stable storage before anything depends on them:
   # a node that dies right after a write must not leave a marker or capture that only the page cache had seen; on a
@@ -132,19 +142,66 @@ not_durable_exit() {   # $1 = what: a durability failure AFTER the POST: the cap
   exit 4
 }
 
-if [ "${IO_MODE:-managed}" != application ]; then
-  n=0
-  while true; do
-    code=$(curl -sS -o out/response.json -w '%{http_code}' -X POST "$URL" -H 'Content-Type: application/json' \
-           "${curl_auth[@]}" --data-binary "$REQUEST_BODY" --max-time "${CALL_TIMEOUT:-3600}" 2>out/last_error.txt) || code=000
-    n=$((n + 1))
-    echo "$(date -u +%FT%TZ) attempt $n -> HTTP $code"
+# readiness first, with an idempotent GET through the same gateway (a cold or scaled-to-zero endpoint is woken by it and
+# answers when it serves); the inference POST goes to an endpoint that answers, so the edge never cuts a cold start.
+# The gateway and the activator HOLD the GET while the replica starts, so a probe that ends without an answer (000 after
+# READY_TIMEOUT) says only "not yet": the probes are frequent and short (READY_TIMEOUT 30 s, pauses 2 s doubling to
+# READY_BACKOFF_MAX 10 s), so a replica that becomes ready is seen within about 40 s, never minutes later (the previous
+# exponential pause reached 320 s by the sixth probe). Bounded by READY_MAX_WAIT (default CALL_TIMEOUT) of wall-clock
+# time: past it the call fails explicitly instead of running into the Job's deadline. The probe counter is its own: the
+# inference POST's retry budget starts fresh and the POST is still made exactly once.
+# Returns 0 ready, 1 refused (401/403: READY_CODE), 2 not ready within the bound (READY_CODE = the last answer).
+wait_ready() {
+  READY_CODE=""; READY_PROBES=0; READY_WAITED=0
+  [ -n "${READY_URL:-}" ] || return 0
+  local n=0 code ready_start=$SECONDS ready_max=${READY_MAX_WAIT:-${CALL_TIMEOUT:-3600}}
+  while :; do
+    code=$(curl -sS -o out/ready.txt -w '%{http_code}' "$READY_URL" "${curl_auth[@]}" --max-time "${READY_TIMEOUT:-30}" 2>out/ready_error.txt) || code=000
+    n=$((n + 1)); echo "$(date -u +%FT%TZ) readiness probe $n -> HTTP $code"
+    READY_CODE=$code; READY_PROBES=$n; READY_WAITED=$(( SECONDS - ready_start ))
     case "$code" in
-      2*) printf '{"http_status":%s,"attempts":%s}\n' "$code" "$n" > out/call.json; exit 0;;
-      408|429|000|5*) ;;
-      4*) printf '{"http_status":%s,"attempts":%s}\n' "$code" "$n" > out/call.json; cat out/response.json; exit 2;;   # caller's error: FailJob
+      2*|405) return 0;;
+      401|403) echo "readiness probe refused ($code): $(head -c 200 out/ready.txt)"; return 1;;
     esac
-    backoff $n
+    if [ "$READY_WAITED" -ge "$ready_max" ]; then
+      echo "endpoint not ready after ${READY_WAITED}s ($n probes, last HTTP $code): giving up before the inference"
+      return 2
+    fi
+    ready_pause $n
+  done
+}
+
+if [ "${IO_MODE:-managed}" != application ]; then
+  managed_end() {   # $1 = exit code, $2 = HTTP status, $3 = attempts, $4 = outcome, $5 = message: the record for the uploader
+    jq -cn --argjson st "${2:-0}" --argjson n "${3:-0}" --arg o "$4" --arg e "$5" \
+      '{http_status:$st, attempts:$n, outcome:$o} + (if $e != "" then {error:$e} else {} end)' > out/call.json
+    [ -n "$5" ] && { echo "$5"; echo "$5" > /dev/termination-log 2>/dev/null; }
+    exit "$1"
+  }
+  wait_ready; rc=$?
+  [ "$rc" = 1 ] && managed_end 2 "$READY_CODE" 0 refused "the endpoint refused the call's key ($READY_CODE)"
+  [ "$rc" = 2 ] && managed_end 5 "$READY_CODE" 0 not_ready "the endpoint did not become ready within ${READY_WAITED}s ($READY_PROBES probes, last HTTP $READY_CODE); nothing was sent"
+  n=0
+  while :; do
+    code=$(curl -sS -o out/response.json -D out/headers.txt -w '%{http_code} %{size_download}' -X POST "$URL" -H 'Content-Type: application/json' \
+           "${curl_auth[@]}" --data-binary "$REQUEST_BODY" --max-time "${CALL_TIMEOUT:-3600}" 2>out/last_error.txt) || code="000 0"
+    read -r http size <<< "$code"
+    n=$((n + 1))
+    echo "$(date -u +%FT%TZ) inference POST $n -> HTTP $http (${size} bytes)"
+    case "$http" in
+      2*) managed_end 0 "$http" "$n" ok "";;
+      408|429) if edge_refusal out/headers.txt; then   # proven pre-execution refusal at the edge: safe to ask again
+                 [ "$n" -lt 30 ] && { backoff $n; continue; }
+                 managed_end 5 "$http" "$n" rejected "the edge rejected the call $n times (HTTP $http)"
+               fi
+               cat out/response.json; managed_end 2 "$http" "$n" client_error "the endpoint itself answered HTTP $http (not the edge): delivered as is, not asked again";;
+      4*) cat out/response.json; managed_end 2 "$http" "$n" client_error "the endpoint answered HTTP $http";;   # caller's error: FailJob
+    esac
+    if [ "$http" = 000 ] || [ "$size" = 0 ]; then
+      # no response: the connection broke or the edge gave up before the first byte; the model may have run: unknown
+      managed_end 4 "$http" "$n" unknown "inference outcome unknown: no response was captured (HTTP $http, $(head -c 200 out/last_error.txt | tr '\n' ' ')); not posting again"
+    fi
+    managed_end 5 "$http" "$n" endpoint_error "the endpoint answered HTTP $http"
   done
 fi
 
@@ -219,27 +276,10 @@ if [ -f posted.json ]; then
   exit 4
 fi
 
-# readiness first, with an idempotent GET through the same gateway (a cold or scaled-to-zero endpoint is woken by it and
-# answers when it serves); the inference POST goes to an endpoint that answers, so the edge never cuts a cold start.
-# The gateway and the activator HOLD the GET while the replica starts, so a probe that ends without an answer (000 after
-# READY_TIMEOUT) says only "not yet": the probes are frequent and short (READY_TIMEOUT 30 s, pauses 2 s doubling to
-# READY_BACKOFF_MAX 10 s), so a replica that becomes ready is seen within about 40 s, never minutes later (the previous
-# exponential pause reached 320 s by the sixth probe). Bounded by READY_MAX_WAIT (default CALL_TIMEOUT) of wall-clock
-# time: past it the call fails explicitly (exit 5, FAILED) instead of running into the Job's deadline. The probe counter
-# is its own: the inference POST's retry budget starts fresh below and the POST is still made exactly once.
-if [ -n "${READY_URL:-}" ]; then
-  n=0; ready_start=$SECONDS; ready_max=${READY_MAX_WAIT:-${CALL_TIMEOUT:-3600}}
-  while :; do
-    code=$(curl -sS -o out/ready.txt -w '%{http_code}' "$READY_URL" "${curl_auth[@]}" --max-time "${READY_TIMEOUT:-30}" 2>out/ready_error.txt) || code=000
-    n=$((n + 1)); echo "$(date -u +%FT%TZ) readiness probe $n -> HTTP $code"
-    case "$code" in 2*|405) break;; 401|403) echo "readiness probe refused ($code): $(head -c 200 out/ready.txt)"; finish failed "the endpoint refused the call's key ($code)"; exit 2;; esac
-    if [ $(( SECONDS - ready_start )) -ge "$ready_max" ]; then
-      echo "endpoint not ready after $(( SECONDS - ready_start ))s ($n probes, last HTTP $code): giving up before the inference"
-      finish failed "the endpoint did not become ready within ${ready_max}s ($n probes, last HTTP $code)"; exit 5
-    fi
-    ready_pause $n
-  done
-fi
+# readiness first (wait_ready above): refused = the key's error (exit 2), not ready within the bound = exit 5 (FAILED)
+wait_ready; rc=$?
+[ "$rc" = 1 ] && { finish failed "the endpoint refused the call's key ($READY_CODE)"; exit 2; }
+[ "$rc" = 2 ] && { finish failed "the endpoint did not become ready within ${READY_WAITED}s ($READY_PROBES probes, last HTTP $READY_CODE)"; exit 5; }
 
 n=0
 while :; do
@@ -259,8 +299,8 @@ while :; do
          -H 'Content-Type: application/json' "${curl_auth[@]}" --data-binary @request.bin --max-time "${CALL_TIMEOUT:-3600}" 2>out/last_error.txt) || code="000 0 0 0"
   read -r http t_first t_total size <<< "$code"
   n=$((n + 1)); echo "$(date -u +%FT%TZ) inference POST $n -> HTTP $http (${t_total}s, ${size} bytes)"
-  if [ "$http" = 429 ] && [ "$n" -lt 30 ]; then
-    rm -f posted.json; backoff $n; continue   # rejected at the edge before the model (per-key rate window): safe to ask again
+  if { [ "$http" = 429 ] || [ "$http" = 408 ]; } && edge_refusal headers.txt && [ "$n" -lt 30 ]; then
+    rm -f posted.json; backoff $n; continue   # PROVEN rejection at the edge before the model (edge_refusal): safe to ask again
   fi
   break
 done

@@ -736,10 +736,10 @@ predictor Service (the tenant policy does not reach `models`, so no call skips t
 accounting).
 `call.sh` reaches the gateway's in-cluster Service with curl `--connect-to` while keeping the
 public TLS name (`ENDPOINT_CONNECT_TO`; the public IP works from pods too, the Service avoids the
-NAT hop). It retries 408/429/5xx/connection
-errors with backoff for as long as the Job lives (a scaled-to-zero or saturated endpoint is simply
-waited for; any other 4xx is the caller's error: exit 2, which a `FailJob` rule turns into a FAILED
-operation without pod retries). The uploader puts `out/response.json` and `out/call.json` in the
+NAT hop). It waits for a cold endpoint with idempotent readiness GETs (docs/API.md "Cold endpoints"), then posts
+exactly once: a 408/429 proven to come from the edge is asked again with backoff, any other 4xx is the caller's error (exit 2), no
+response is an unknown outcome (exit 4, never re-posted), a 5xx with a body is the endpoint's error (exit 5); a
+`FailJob` rule turns 2/4/5 into a FAILED operation without pod retries. The uploader puts `out/response.json` and `out/call.json` in the
 bucket; `GET /v1/operations/{id}/result` returns the response inline from there. The request body
 names the served model as the endpoint expects it (`served_model`, injected when the caller omits `model`).
 
