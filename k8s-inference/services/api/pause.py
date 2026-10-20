@@ -28,13 +28,13 @@ def _now() -> str:
 
 
 def _read() -> dict | None:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         row = c.execute("select value from fleet_settings where key = %s", (KEY,)).fetchone()
     return row[0] if row else None
 
 
 def _write(value: dict | None) -> None:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         if value is None:
             c.execute("delete from fleet_settings where key = %s", (KEY,))
         else:

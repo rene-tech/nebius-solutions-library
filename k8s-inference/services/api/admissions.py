@@ -31,7 +31,7 @@ def record(job: dict, region: str | None, output_prefix: str | None) -> None:
     spec = job.get("spec") or {}
     timeout = spec.get("activeDeadlineSeconds")
     try:
-        with db.pool().connection() as c:
+        with db.connection() as c:
             c.execute(
                 """insert into run_admissions (operation, tenant, region, labels, annotations, timeout_s, output_prefix, managed_by)
                    values (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s) on conflict (operation) do nothing""",
@@ -53,7 +53,7 @@ def record(job: dict, region: str | None, output_prefix: str | None) -> None:
 def get(operation: str) -> dict | None:
     if not enabled():
         return None
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(
             "select operation, tenant, region, labels, annotations, timeout_s, output_prefix, managed_by "
             "from run_admissions where operation = %s",

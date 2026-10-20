@@ -145,7 +145,7 @@ def open_on(model: str) -> int:
     makes no stamped call of its own). 0 without the feature."""
     if not enabled():
         return 0
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(
             "select count(*) from sessions where model = %s and state in ('bound', 'attached')", (model,)
         ).fetchone()
@@ -163,7 +163,7 @@ def request_hash(model: str, cluster: str | None, region: str, timeout_s: int, g
 
 def find_replay(tenant: str, owner: str, idempotency_key: str) -> dict | None:
     """The session an owner's Idempotency-Key names (owner-scoped: another owner's same key is another namespace)."""
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(
             f"select {COLUMNS} from sessions where tenant = %s and owner = %s and idempotency_key = %s",
             (tenant, owner, idempotency_key),
@@ -185,7 +185,7 @@ def replay(s: dict, h: str) -> dict:
     out = {**public(s), "replay": True}
     if s["state"] == "claimed" and s["cancel_requested_at"] is None:
         token = secrets.token_urlsafe(32)
-        with db.pool().connection() as c, c.transaction():
+        with db.connection() as c, c.transaction():
             r = c.execute(
                 "update sessions set claim_hash = %s where id = %s and state = 'claimed' and expires_at > now() "
                 "and deadline_at > now() and cancel_requested_at is null returning id",
@@ -221,7 +221,7 @@ def create(
     keys.admit(key_hash, sid, tenant, gpu_seconds=bound, counts_request=True, run_member=True)
     now = datetime.now(timezone.utc)
     try:
-        with db.pool().connection() as c, c.transaction():
+        with db.connection() as c, c.transaction():
             c.execute(
                 "insert into sessions (id, tenant, owner, key_hash, model, cluster, region, claim_hash, gpu_bound, expires_at, deadline_at, idempotency_key, request_hash) "
                 "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
@@ -255,13 +255,13 @@ def create(
 
 
 def get(sid: str) -> dict | None:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(f"select {COLUMNS} from sessions where id = %s", (sid,)).fetchone()
     return _row(r) if r else None
 
 
 def list_owner(tenant: str, owner: str, limit: int = 100) -> list[dict]:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = c.execute(
             f"select {COLUMNS} from sessions where tenant = %s and owner = %s order by created_at desc limit %s",
             (tenant, owner, limit),
@@ -288,7 +288,7 @@ def bind(token: str, model: str) -> dict:
     unexpired, before the deadline, for this model). 401 for anything else: an unknown, used, expired or cancelled
     claim, or a claim for another model."""
     connection = uuid.uuid4().hex
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         r = c.execute(
             "update sessions set state = 'bound', connection = %s, bound_at = now() "
             "where claim_hash = %s and state = 'claimed' and expires_at > now() and deadline_at > now() "
@@ -304,7 +304,7 @@ def bind(token: str, model: str) -> dict:
 
 def attach(sid: str, connection: str, worker: dict, worker_session_id: str | None) -> dict:
     """The verified worker pod takes the bound session: `bound -> attached` for the hook's connection id only; once."""
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         r = c.execute(
             "update sessions set state = 'attached', attached_at = now(), pod = %s, pod_namespace = %s, pod_uid = %s, worker_session_id = %s "
             "where id = %s and state = 'bound' and connection = %s and deadline_at > now() returning id",
@@ -328,7 +328,7 @@ def release(sid: str, worker: dict, outcome: str, gpu_seconds: float | None) -> 
     Idempotent for the same pod."""
     if outcome not in OUTCOMES:
         raise HTTPException(400, f"outcome must be one of {OUTCOMES}")
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         r = c.execute(
             "update sessions set state = 'ended', ended_at = now(), outcome = %s, gpu_seconds = %s, usage = %s "
             "where id = %s and state = 'attached' and pod_uid = %s returning id",
@@ -347,7 +347,7 @@ def release(sid: str, worker: dict, outcome: str, gpu_seconds: float | None) -> 
 def cancel(sid: str, reason: str) -> dict:
     """A cancellation request: a claimed session (no connection ever) ends now at zero; a bound or attached one keeps
     its slot until the worker releases it or its pod is gone (the sweep)."""
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute(
             "update sessions set cancel_requested_at = coalesce(cancel_requested_at, now()), cancel_reason = coalesce(cancel_reason, %s) "
             "where id = %s and state <> 'ended'",
@@ -386,7 +386,7 @@ def settle(sid: str) -> dict:
     except Exception as e:  # noqa: BLE001 - the sweep settles it on the next pass
         log.warning("session %s: settlement deferred: %s", sid, e)
         return s
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute("update sessions set settled_at = now() where id = %s and settled_at is null", (sid,))
     return get(sid)
 
@@ -484,7 +484,7 @@ def sweep() -> list[str]:
     if not enabled():
         return []
     out = []
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = c.execute(f"select {COLUMNS} from sessions where state <> 'ended' or settled_at is null").fetchall()
     now = datetime.now(timezone.utc)
     ready_cache: dict = {}
@@ -492,7 +492,7 @@ def sweep() -> list[str]:
         s = _row(r)
         sid = s["id"]
         try:
-            with db.pool().connection() as c, c.transaction():
+            with db.connection() as c, c.transaction():
                 if s["state"] == "claimed" and s["expires_at"] <= now:
                     if _end(c, sid, "claimed", "expired", 0.0, "none"):
                         out.append(f"{sid}:expired")

@@ -10,6 +10,7 @@ import json
 import os
 import threading
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -436,6 +437,23 @@ _lock = threading.Lock()
 
 def enabled() -> bool:
     return bool(DATABASE_URL)
+
+
+# The connection a create lock holds (keys.operation_lock) for the duration of one submission: every helper that
+# runs inside it reuses that connection through `connection()` instead of borrowing a second one, so four
+# concurrent creates on a four-connection pool cannot each wait for a fifth (api 0.11.138).
+bound: ContextVar = ContextVar("db_bound_connection", default=None)
+
+
+@contextmanager
+def connection():
+    """A pooled connection, or the one bound by the create lock while inside it."""
+    current = bound.get()
+    if current is not None:
+        yield current
+        return
+    with pool().connection() as c:
+        yield c
 
 
 def pool():

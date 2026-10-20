@@ -264,7 +264,7 @@ def _row(r) -> dict:
 
 
 def _get(root: str, unit_id: str) -> dict | None:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(
             f"select {_ROW} from endpoint_children where root = %s and unit_id = %s", (root, unit_id)
         ).fetchone()
@@ -272,7 +272,7 @@ def _get(root: str, unit_id: str) -> dict | None:
 
 
 def by_child(child: str) -> dict | None:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(f"select {_ROW} from endpoint_children where child = %s", (child,)).fetchone()
     return _row(r) if r else None
 
@@ -528,7 +528,7 @@ def create(identity: dict, parent: str, body: dict) -> tuple[dict, bool]:
         result_ref(ns, child_region, child)  # the tenant's storage in that region exists (404/503 before any record)
     image = str((cm.get("runtime") or {}).get("image") or "")
     # the durable intent first, under the one-open-child and per-unit identities (compare-and-swap on the primary key)
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute("select pg_advisory_xact_lock(hashtextextended(%s, 3))", (root,))
         existing = c.execute(
             "select child, request_sha256, state, incarnation from endpoint_children where root = %s and unit_id = %s",
@@ -732,7 +732,7 @@ def complete(
         keys.own_operation(child, tenant, owner, cm["name"])
     except keys.KeyLimit as e:
         return _refuse(row, e.detail, e.status, synchronous)
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute("select pg_advisory_xact_lock(hashtextextended(%s, 3))", (root,))
         st = c.execute(
             "select state from endpoint_children where root = %s and unit_id = %s", (root, unit_id)
@@ -855,7 +855,7 @@ def _ambiguous(row: dict, why: str, synchronous: bool) -> str:
 
 
 def _drop(root: str, unit_id: str) -> None:
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute(
             "delete from endpoint_children where root = %s and unit_id = %s and state = 'pending'", (root, unit_id)
         )
@@ -966,7 +966,7 @@ def sweep() -> list[str]:
     if not enabled():
         return []
     out = []
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = [
             _row(r)
             for r in c.execute(
@@ -1037,7 +1037,7 @@ def _cancel(row: dict, cjob: dict, cregion: str, why: str) -> None:
         except Exception as e:  # noqa: BLE001
             log.warning("child %s: cancel request to the worker: %s", row["child"], e)
     api.settle_deleted(cancelled)
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute(
             "update endpoint_children set cancel_requested_at = now(), reason = coalesce(reason, %s) where root = %s and unit_id = %s and state in ('pending', 'active')",
             (f"cancelled: {why}", row["root"], row["unit_id"]),
@@ -1052,7 +1052,7 @@ def cancel_for_root(ns: str, root: str, why: str = "root cancelled by its owner"
     out = []
     if not enabled():
         return out
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = [
             _row(r)
             for r in c.execute(
@@ -1082,7 +1082,7 @@ def cancel_for_root(ns: str, root: str, why: str = "root cancelled by its owner"
 
 
 def _end(root: str, unit_id: str, reason: str | None = None) -> None:
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute(
             "update endpoint_children set state = 'ended', ended_at = now(), reason = coalesce(reason, %s) where root = %s and unit_id = %s and state in ('pending', 'active')",
             (reason, root, unit_id),

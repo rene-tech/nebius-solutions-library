@@ -95,7 +95,7 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
     # controller's restart-attempt, the indexed Job's completion index); nothing of it comes from the record
     facts = _pod_facts(region, ns, pod, operation)
     gang = facts["gang"]
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (root,))
         cur = c.execute(
             "select epoch, status from attempts where operation = %s and pod = %s", (operation, pod)
@@ -405,7 +405,7 @@ def for_operation(root: str) -> list[dict]:
     lifecycle fields), for status and billing."""
     if not enabled():
         return []
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = c.execute(
             f"select {COLS} from attempts where root = %s or operation = %s order by epoch, started_at", (root, root)
         ).fetchall()
@@ -416,7 +416,7 @@ def for_operations(roots: set[str]) -> dict[str, list[dict]]:
     """`for_operation` for many roots in one query: {root: its rows, oldest first}."""
     if not enabled() or not roots:
         return {}
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = c.execute(
             f"select {COLS} from attempts where root = any(%s) or operation = any(%s) order by epoch, started_at",
             (list(roots), list(roots)),
@@ -447,7 +447,7 @@ def mark_successor(operation: str, successor: str) -> None:
     """Capacity fallback: the original handle names its replacement (docs/SCHEDULING.md)."""
     if not enabled():
         return
-    with db.pool().connection() as c:
+    with db.connection() as c:
         c.execute(
             "insert into operation_marks (operation, successor) values (%s, %s) on conflict (operation) do update set successor = excluded.successor, revision = nextval('operation_marks_revision_seq')",
             (operation, successor),
@@ -475,7 +475,7 @@ def durable_index(tenant: str, owner: str | None, model: str | None) -> list[dic
             "or a.operation in (select operation from operation_owners where tenant = %s and owner = %s))"
         )
         params += [tenant, owner, tenant, owner]
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = c.execute(
             "select a.operation, a.root, max(a.model), max(a.mode), max(a.region), "
             "min(coalesce(a.started_at, a.updated_at)) from attempts a where "
@@ -595,7 +595,7 @@ def mark_completed(
     never overwritten, so a later interrupted attempt cannot inherit it. The uploader's raw row stays as written."""
     if not enabled():
         return
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute(
             """insert into operation_marks (operation, completed_at, completed_pod, completed_pod_uid, completed_epoch,
                                             completed_result_ref, completed_job_uid, completion_reason)
@@ -616,7 +616,7 @@ def completion_of(operation: str) -> dict | None:
     """The observed completion mark, or None."""
     if not enabled():
         return None
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(
             """select completed_at, completed_pod, completed_pod_uid, completed_epoch, completed_result_ref,
                       completed_job_uid, completion_reason
@@ -651,7 +651,7 @@ def observed_complete(rows: list[dict], marks, completion: dict | None) -> bool:
 def mark_cancelled(operation: str) -> None:
     if not enabled():
         return
-    with db.pool().connection() as c:
+    with db.connection() as c:
         c.execute(
             "insert into operation_marks (operation, cancelled_at) values (%s, now()) on conflict (operation) do update set cancelled_at = now(), revision = nextval('operation_marks_revision_seq')",
             (operation,),
@@ -661,7 +661,7 @@ def mark_cancelled(operation: str) -> None:
 def _marks(operation: str):
     if not enabled():
         return None
-    with db.pool().connection() as c:
+    with db.connection() as c:
         return c.execute(
             "select revision, cancelled_at, successor from operation_marks where operation = %s", (operation,)
         ).fetchone()
@@ -677,7 +677,7 @@ def marks_for(operations: set[str]) -> dict[str, tuple]:
     """`_marks` for many operations in one query (the operation list)."""
     if not enabled() or not operations:
         return {}
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = c.execute(
             "select operation, revision, cancelled_at, successor from operation_marks where operation = any(%s)",
             (list(operations),),

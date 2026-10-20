@@ -4,6 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.138
+
+(API image only.)
+
+- Four concurrent submissions no longer exhaust the four-connection database pool: the create lock binds its pooled
+  connection (`db.bound`) and every helper inside it reuses it through `db.connection()` (admission records,
+  ownership, the key ledger, attempts, stages, children, sessions, leases, billing) instead of borrowing a second
+  one; before, four simultaneous creates each waited for a fifth connection and every caller, including unrelated
+  status reads, failed with PoolTimeout after 30 s (2026-10-20). Pool size unchanged; regression test with four
+  lock holders on a four-connection pool against the real admission recorder.
+
 ## api 0.11.137
 
 (API image only.)

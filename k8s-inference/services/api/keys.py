@@ -33,7 +33,6 @@ import string
 import sys
 import time
 from contextlib import contextmanager
-from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 
 import db
@@ -62,19 +61,10 @@ HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 ALIAS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
 METADATA_MAX_BYTES = 8192
 _ALNUM = string.ascii_letters + string.digits
-_creation_connection = ContextVar("key_creation_connection", default=None)
+_creation_connection = db.bound  # the create lock binds its connection here; db.connection() reuses it everywhere
 
 
-@contextmanager
-def _connection():
-    # A create lock already holds a pool connection. Reuse it for its short key
-    # transactions instead of exhausting the pool with nested borrows.
-    current = _creation_connection.get()
-    if current is not None:
-        yield current
-    else:
-        with db.pool().connection() as connection:
-            yield connection
+_connection = db.connection  # reuse the create lock's connection inside it, borrow outside (db.connection)
 
 
 def key_hash(value: str) -> str:
@@ -165,19 +155,19 @@ def owner_identity(tenant: str, info: dict, h: str) -> str:
 
 def by_alias(tenant: str, alias: str) -> dict | None:
     """A key of the tenant by alias, with its hash (callers never return the hash)."""
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(f"select {COLS} from keys where tenant = %s and alias = %s", (tenant, alias)).fetchone()
     return _info(r) if r else None
 
 
 def info(h: str) -> dict | None:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(f"select {COLS} from keys where hash = %s", (h,)).fetchone()
         return _info(r) if r else None
 
 
 def list_tenant(tenant: str) -> list[dict]:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         return [
             _info(r)
             for r in c.execute(f"select {COLS} from keys where tenant = %s order by alias", (tenant,)).fetchall()
@@ -215,7 +205,7 @@ def create(
     `scopes` given restricts the key to them (docs/API.md "Scopes"), absent keeps the table's default."""
     value = value or new_value()
     extra = ", scopes" if scopes is not None else ""
-    with db.pool().connection() as c:
+    with db.connection() as c:
         try:
             with c.transaction():
                 r = c.execute(
@@ -264,7 +254,7 @@ def update(
     if expires_days is not None:
         sets.append("expires = %s")
         args.append(_expiry(expires_days))
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         r = c.execute(
             f"update keys set {', '.join(sets + ['updated_at = now()'])} where tenant = %s and alias = %s returning {COLS}",
             (*args, tenant, alias),
@@ -277,7 +267,7 @@ def update(
 
 
 def block(tenant: str, alias: str, blocked: bool = True) -> dict | None:
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         r = c.execute(
             f"update keys set blocked = %s, updated_at = now() where tenant = %s and alias = %s returning {COLS}",
             (blocked, tenant, alias),
@@ -290,7 +280,7 @@ def block(tenant: str, alias: str, blocked: bool = True) -> dict | None:
 
 
 def revoke(tenant: str, alias: str) -> bool:
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         r = c.execute("delete from keys where tenant = %s and alias = %s returning hash", (tenant, alias)).fetchone()
         if r is not None:
             _retire(c, r[0])
@@ -312,13 +302,13 @@ def retire_mirrors() -> list[str]:
     bootstrap). Returns the hashes whose mirrors are gone now."""
     if not db.enabled():
         return []
-    with db.pool().connection() as c:
+    with db.connection() as c:
         pending = [r[0] for r in c.execute("select hash from retired_mirrors order by retired_at").fetchall()]
     gone = []
     for h in pending:
         # Serialize deletion with a bootstrap that restores this value. A captured pending list may
         # already be stale; hold its row through the router call so restoration mirrors the value last.
-        with db.pool().connection() as c, c.transaction():
+        with db.connection() as c, c.transaction():
             retired = c.execute("select hash from retired_mirrors where hash = %s for update", (h,)).fetchone()
             if retired is None:
                 continue
@@ -336,7 +326,7 @@ def add_spend(h: str, usd: float, operation: str, gpu_s: float) -> float | None:
     together, so a retry after a failed Job annotation never charges twice and concurrent charges never lose an
     increment. A charge of a key that was revoked meanwhile stays in the ledger (its hash names the key) and the
     run counts as billed; returns the key's spend, None when the key is gone."""
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         inserted = c.execute(
             """insert into charges (operation, key_hash, gpu_seconds, usd) values (%s, %s, %s, %s)
                                 on conflict do nothing returning operation""",
@@ -361,7 +351,7 @@ def ensure_router(value: str) -> None:
     """The per-fleet router key (ROUTER_KEY): upserted at every API start, so a rotated Secret takes effect with
     a restart and the previous value stops working."""
     h = key_hash(value)
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute(
             "delete from keys where tenant = %s and alias = %s and hash <> %s", (ROUTER["tenant"], ROUTER["alias"], h)
         )
@@ -385,7 +375,7 @@ def bootstrap(
     time of an existing key stay; a key of the same alias with another value (a `-replace`d random_password)
     is replaced in place, its spend carried over. Idempotent; mirrored into LiteLLM."""
     h, meta = key_hash(value), json.dumps({"allowed_passthrough_routes": list(routes or [])})
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         old = c.execute("select hash from keys where tenant = %s and alias = %s for update", (tenant, alias)).fetchone()
         r = c.execute(
             f"""update keys set hash = %s, preview = %s, role = %s, budget = %s, models = %s, metadata = %s, blocked = false, updated_at = now()
@@ -600,7 +590,7 @@ def import_records(records: list, tenant: str, by: str | None, dry_run: bool = F
         "not_mirrored": [],
     }
     try:
-        with db.pool().connection() as c, c.transaction():
+        with db.connection() as c, c.transaction():
             for row in rows:
                 by_hash = c.execute(f"select {COLS} from keys where hash = %s for update", (row["hash"],)).fetchone()
                 by_alias = c.execute(
@@ -766,7 +756,7 @@ def operation_lock(operation: str):
 
 def own_operation(operation: str, tenant: str, owner: str, model: str) -> None:
     """Record immutable ownership before creating the Job; safe under concurrent replay."""
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute(
             "insert into operation_owners (operation, tenant, owner, model) values (%s, %s, %s, %s) on conflict do nothing",
             (operation, tenant, owner, model),
@@ -1314,7 +1304,7 @@ def run_usage(h: str) -> dict:
 
 def stale_reservations(older_than_s: int) -> list[tuple[str, str]]:
     """(operation, tenant) of reservations older than `older_than_s`: the reconciler releases those whose Job is gone."""
-    with db.pool().connection() as c:
+    with db.connection() as c:
         return [
             (r[0], r[1])
             for r in c.execute(

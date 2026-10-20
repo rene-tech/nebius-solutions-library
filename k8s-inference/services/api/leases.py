@@ -110,7 +110,7 @@ def public(e: dict | None, history: list[dict] | None = None) -> dict | None:
 
 def get(operation: str) -> dict | None:
     """The operation's current execution: the live row, else the newest terminal one."""
-    with db.pool().connection() as c:
+    with db.connection() as c:
         r = c.execute(
             f"select {COLUMNS} from native_executions where operation = %s "
             "order by (state in ('prepared', 'attached')) desc, prepared_at desc limit 1",
@@ -120,7 +120,7 @@ def get(operation: str) -> dict | None:
 
 
 def history(operation: str) -> list[dict]:
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = c.execute(
             f"select {COLUMNS} from native_executions where operation = %s order by prepared_at", (operation,)
         ).fetchall()
@@ -135,7 +135,7 @@ def prepare(operation: str, attempt: str, region: str, model: str, caller_gone=N
     exact read of an earlier caller pod (gone or finished, by name in the caller's namespace): a row that earlier
     caller only *prepared* (the worker never attached) is closed so its replacement pod (a preempted caller's) can
     post; an attached row is never freed this way (the worker settles it, or the reconciler confirms its loss)."""
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         _lock(c, operation)
         if _fenced(c, operation):
             raise HTTPException(
@@ -176,7 +176,7 @@ def attach(operation: str, attempt: str, worker: dict, worker_request_id: str | 
     """The verified worker pod, before any GPU enqueue: `prepared -> attached` for the prepared attempt, while the
     operation's reservation is live, no cancel was requested and the row is not closed. Anything else is 409 and the
     worker fails closed. Idempotent for the same (attempt, pod UID, request id)."""
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         _lock(c, operation)
         if _fenced(c, operation):
             raise HTTPException(409, f"operation {operation}: its native executions are over; attach refused (fenced)")
@@ -240,7 +240,7 @@ def release(
     for the same tuple. Frees nothing by itself: the member settles at the join (billing.bill_once)."""
     if outcome not in OUTCOMES:
         raise HTTPException(400, f"outcome must be one of {OUTCOMES}")
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         _lock(c, operation)
         r = c.execute(
             "update native_executions set state = 'released', released_at = now(), outcome = %s, gpu_seconds = %s, "
@@ -271,7 +271,7 @@ def release(
 
 def request_cancel(operation: str, reason: str) -> None:
     """A cancel is a request to the attached worker, and refuses a later attach; it releases nothing."""
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         _lock(c, operation)
         c.execute(
             "update native_executions set cancel_requested_at = coalesce(cancel_requested_at, now()), "
@@ -288,7 +288,7 @@ def settle_decision(operation: str, required: bool) -> tuple[bool, float | None,
     evidence is summed: unknown when any attached-then-ended row carries no measurement or the worker was lost;
     no attached measurement -> unknown, including optional workers: a CPU caller's zero GPU allocation is not a
     measurement of the endpoint it invoked. The caller closes normally, but no worker time is invented."""
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         _lock(c, operation)
         rows = [
             _row(r)
@@ -320,7 +320,7 @@ def settle_decision(operation: str, required: bool) -> tuple[bool, float | None,
 
 
 def mark_settled(operation: str) -> None:
-    with db.pool().connection() as c, c.transaction():
+    with db.connection() as c, c.transaction():
         c.execute(
             "update native_executions set settled_at = now() where operation = %s and settled_at is null", (operation,)
         )
@@ -342,7 +342,7 @@ def sweep() -> list[str]:
     if not enabled():
         return []
     out = []
-    with db.pool().connection() as c:
+    with db.connection() as c:
         rows = c.execute(f"select {COLUMNS} from native_executions where state = 'attached'").fetchall()
     for r in rows:
         e = _row(r)
@@ -354,7 +354,7 @@ def sweep() -> list[str]:
         if not gone:
             continue
         why = gone if isinstance(gone, str) else "pod gone"
-        with db.pool().connection() as c, c.transaction():
+        with db.connection() as c, c.transaction():
             _lock(c, e["operation"])
             r2 = c.execute(
                 "update native_executions set state = 'lost', released_at = now(), outcome = 'lost', lost_reason = %s, "
