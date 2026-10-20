@@ -63,7 +63,6 @@ REQUEST_TIMEOUT_S = int(
     os.environ.get("REQUEST_TIMEOUT_S", "30")
 )  # every Kubernetes API call (a hung worker API server never stalls the loop)   # grace before a volume whose manager Jobs are gone is deleted
 LABEL = "serverless2.nebius"
-TENANT_NS_PREFIX = os.environ.get("TENANT_NS_PREFIX", "tenant-")  # the tenant namespaces the pod sweep looks at
 REGION_LABEL = f"{LABEL}/region"
 CLASSES_ANN = f"{LABEL}/gpu-classes"
 REGIONS_ANN = f"{LABEL}/regions"
@@ -681,58 +680,6 @@ def reconcile(core, custom, batch):
                 continue
             ensure_pvc(workers[cname], ns, claim, size, job_name, batch, wl)
     sweep_volumes(workers, batch, admitted, jobs_cache)
-    sweep_released_pods(workers)
-
-
-def released_pod(pod: dict, claims_present: set) -> bool:
-    """A terminal run pod (Succeeded/Failed, owned by a Job) whose work claim no longer exists: the uploader released
-    the volume after the acknowledged delivery, the records hold the attempt, and the pod only pins the node's
-    attachable-volume slots until the Job's TTL (90 d): 18 such pods filled a 1-node CPU pool, 2026-10-20. A pod whose
-    claim still exists is kept (a kept volume means a resume/export retry or an unresolved delivery)."""
-    if (pod.get("status") or {}).get("phase") not in ("Succeeded", "Failed"):
-        return False
-    if not any(o.get("kind") == "Job" for o in (pod.get("metadata") or {}).get("ownerReferences") or []):
-        return False
-    claims = [
-        v["persistentVolumeClaim"]["claimName"]
-        for v in (pod.get("spec") or {}).get("volumes") or []
-        if v.get("persistentVolumeClaim")
-    ]
-    return bool(claims) and all(c not in claims_present for c in claims)
-
-
-def sweep_released_pods(workers: dict) -> None:
-    """Delete terminal run pods whose work claim is gone (released_pod) in the tenant namespaces of every worker: no
-    Job, claim or record is touched (the Job stays terminal; a terminal Job never recreates a pod)."""
-    for cname, w in workers.items():
-        try:
-            pods = [
-                p
-                for phase in ("Succeeded", "Failed")
-                for p in w["core"].list_pod_for_all_namespaces(field_selector=f"status.phase={phase}").items
-                if p.metadata.namespace.startswith(TENANT_NS_PREFIX)
-            ]
-        except Exception as e:  # noqa: BLE001 - unknown is a state of its own here
-            log.warning("worker %s: list terminal pods: %s", cname, e)
-            continue
-        claims: dict[str, set] = {}
-        for p in pods:
-            ns = p.metadata.namespace
-            if ns not in claims:
-                try:
-                    claims[ns] = {c.metadata.name for c in w["core"].list_namespaced_persistent_volume_claim(ns).items}
-                except Exception as e:  # noqa: BLE001
-                    log.warning("worker %s: list claims %s: %s", cname, ns, e)
-                    claims[ns] = None
-            if claims[ns] is None:
-                continue
-            d = w["core"].api_client.sanitize_for_serialization(p)
-            if released_pod(d, claims[ns]):
-                try:
-                    w["core"].delete_namespaced_pod(p.metadata.name, ns, propagation_policy="Background")
-                    log.info("worker %s: deleted terminal pod %s/%s (work claim released)", cname, ns, p.metadata.name)
-                except Exception as e:  # noqa: BLE001
-                    log.warning("worker %s: delete pod %s/%s: %s", cname, ns, p.metadata.name, e)
 
 
 def main():
