@@ -723,3 +723,20 @@ def test_a_resumed_run_cancelled_before_any_attempt_keeps_its_root(database):
     assert v["status"] == "CANCELLED" and v["resumed_from"] == "op-lineage" and v["root_operation_id"] == "op-lineage"
     assert v["nodes"] is None and v["attempts"] == [] and v["gpu_seconds"] is None
     assert attempts.synthesize("op-lineage-r2", "demo") == v  # idempotent read
+
+
+def test_a_gone_job_without_a_cancel_mark_reads_no_admission_row(monkeypatch):
+    """api 0.11.151: the never-started projection reads the cancel mark first; an uncancelled handle (a superseded
+    operation, a vanished Job) never queries the admission row, so the successor path and stubbed-helper callers
+    touch no database beyond the mark."""
+    import admissions
+
+    monkeypatch.setattr(attempts, "for_operation", lambda root: [])
+    monkeypatch.setattr(attempts, "_marks", lambda operation: (3, None, "op-gone") if operation == "op-old" else None)
+
+    def never(operation):
+        raise AssertionError(f"admission row of {operation} must not be read")
+
+    monkeypatch.setattr(admissions, "get", never)
+    assert attempts.synthesize("op-old", "demo") is None  # superseded, not cancelled: the successor path stands
+    assert attempts.synthesize("op-vanished", "demo") is None  # no mark at all
