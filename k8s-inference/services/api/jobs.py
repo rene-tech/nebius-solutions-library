@@ -1793,10 +1793,16 @@ def _json_items(fn, *args, **kw) -> list[dict]:
         resp = retry(fn, *args, **kw)
     data = getattr(resp, "data", None)
     if isinstance(data, (bytes, str)):
-        return _json.loads(data).get("items") or []
-    # a client that preloaded anyway (a fake in the tests, a wrapped client): the items as dicts
-    items = getattr(resp, "items", None) or []
-    return [i if isinstance(i, dict) else fn.__self__.api_client.sanitize_for_serialization(i) for i in items]
+        items = _json.loads(data).get("items") or []
+    else:
+        # a client that preloaded anyway (a fake in the tests, a wrapped client): the items as dicts
+        items = [
+            i if isinstance(i, dict) else fn.__self__.api_client.sanitize_for_serialization(i)
+            for i in (getattr(resp, "items", None) or [])
+        ]
+    for i in items:  # the API server's field-ownership ledger: 47% of a Job listing's bytes, half of its parsed
+        (i.get("metadata") or {}).pop("managedFields", None)  # memory, read by nothing here (api 0.11.148)
+    return items
 
 
 def list_ops_all(ns: str, tenant: str, model: str | None) -> tuple[list[dict], list[str]]:

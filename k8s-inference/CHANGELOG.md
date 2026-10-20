@@ -4,6 +4,18 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.148
+
+(API image only.)
+
+- Memory under polling by several keys (wave 3, 2026-10-20: 1.9 GiB on 0.11.147 against the 2 GiB limit): the
+  listing authorization cache kept one entry per principal and each entry pinned the listing generation current at
+  that principal's last listing, while the warmer makes a new ~100 MB generation every 4 s; six pollers kept up to
+  six generations alive. Entries of an older generation are now dropped whenever a newer one is written. And every
+  raw listing drops the API server's `metadata.managedFields` (47% of a Job listing's bytes, half of its parsed
+  memory, read by nothing). Reproduced in an isolated pod: the same six-principal mix with the warmer climbed 480
+  -> 792 MiB in 5 min on 0.11.147; the before/after of 148 is in the release packet.
+
 ## api 0.11.147
 
 (API image only.)

@@ -500,3 +500,38 @@ def test_counts_of_relatives_never_come_from_the_listing(client, monkeypatch):
     assert jobs.continuations("tenant-demo", "demo", op) == 0
     view = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"].startswith(op))
     assert [j["metadata"]["name"] for j in view] == [op]  # the view is the listing's copy (<= OPS_LIST_CACHE_S old)
+
+
+def test_listings_drop_managed_fields_and_auth_entries_pin_one_generation(client, monkeypatch):
+    """api 0.11.148: the raw listing path drops metadata.managedFields (47% of a Job listing, read by nothing), and
+    the listing authorization cache keeps entries of the current listing generation only, so a principal's entry
+    never pins an older 100 MB generation."""
+    import auth
+    from test_api import KEY_INFO
+
+    async def two_user_keys(key):  # two plain keys of the same tenant: two principals, two auth-cache entries
+        return dict(KEY_INFO)
+
+    monkeypatch.setattr(auth, "key_info", two_user_keys)
+    c, fake = client
+    r = c.post("/v1/models/hello-run:invoke", headers=H, json={"mode": "run", "input": {}})
+    assert r.status_code == 202, r.text
+    op = r.json()["id"]
+    fake.jobs[("tenant-demo", op)]["metadata"]["managedFields"] = [
+        {"manager": "kube-controller-manager", "operation": "Update"}
+    ]
+    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 60.0)
+    jobs._ops_list_cache.clear()
+    items, _ = jobs.list_ops_all("tenant-demo", "demo", None)
+    assert items and all("managedFields" not in j["metadata"] for j in items)
+    appmod._ops_auth_cache.clear()
+    assert c.get("/v1/operations", headers=H).status_code == 200  # the user's entry, generation A
+    gen_a = jobs._ops_list_cache[("tenant-demo", "demo", None)][1]
+    jobs._ops_list_cache.clear()
+    jobs.list_ops_all("tenant-demo", "demo", None)  # generation B (the warmer's refresh)
+    gen_b = jobs._ops_list_cache[("tenant-demo", "demo", None)][1]
+    assert gen_a is not gen_b
+    assert (
+        c.get("/v1/operations", headers={"Authorization": f"Bearer {ADMIN}"}).status_code == 200
+    )  # another principal lists
+    assert {id(v[0]) for v in appmod._ops_auth_cache.values()} == {id(gen_b)}  # the older generation is unpinned

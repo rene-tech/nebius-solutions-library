@@ -132,7 +132,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.147", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.148", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1735,9 +1735,11 @@ def list_operations(
                 entries.append((j["metadata"].get("creationTimestamp") or "", j["metadata"]["name"], j, None))
         now = time.time()
         # an entry holds its listing (~100 MB of Jobs for a tenant of 800, api 0.11.142): expired entries go now,
-        # so no generation outlives OPS_LIST_CACHE_S here. Keyed by id(live) before, every warmer refresh (4 s) left
-        # a whole generation behind until 256 had piled up: 2 GiB in minutes under a dozen pollers.
-        for k in [k for k, v in _ops_auth_cache.items() if v[1] <= now]:
+        # and so does every entry of an OLDER generation than the one being written (api 0.11.148): one entry per
+        # principal pinned the generation current at that principal's last listing, so six pollers kept up to six
+        # 100 MB generations alive while the warmer made a new one every 4 s (1.9 GiB under wave 3, 2026-10-20).
+        # Keyed by id(live) before 0.11.142, every refresh left a generation behind until 256 had piled up.
+        for k in [k for k, v in _ops_auth_cache.items() if v[1] <= now or v[0] is not live]:
             del _ops_auth_cache[k]
         if len(_ops_auth_cache) > 256:
             _ops_auth_cache.clear()
