@@ -17,6 +17,7 @@ dispatcher creates the work volume where the run is admitted, and the manager Jo
 back; pods, logs and billing come from the worker. Image references are fleet-wide (the logical registry
 host of fleet.yaml `images`, docs/IMAGES.md): nothing in a Job depends on the region it lands in."""
 
+import copy
 import json
 import logging
 import os
@@ -2019,14 +2020,38 @@ def list_related(ns: str, tenant: str, keep, complete: bool = True) -> list[dict
     and the OOM-killed API pods of 2026-10-14, api 0.11.110). `complete` fills the selected Jobs in like `get` (their
     pods, the worker's placement and reason: a handle needs them); a count of names does not. A region that cannot be
     read is skipped (as `list_ops_all`): its relatives are absent, never a failure of the lookup."""
+    hit = _ops_list_cache.get((ns, tenant, None)) if OPS_LIST_CACHE_S > 0 else None
+    if hit and hit[0] > time.time():
+        # the listing the warmer keeps for the tenant (docs/API.md "Pagination"): the same Jobs, already complete
+        # (pods, placement, reason), at most OPS_LIST_CACHE_S old, exactly what GET /v1/operations shows. Listing the
+        # tenant's every Job in every region through the typed client twice per view made an operation view of a
+        # tenant with 550 Jobs take 13-18 s (2026-10-20, api 0.11.146). Copies: the cached listing is read-only.
+        out = [copy.deepcopy(j) for j in hit[1] if not is_mirror(j) and keep(j)]
+        if complete:
+            # the SET of relatives and their immutable metadata come from the listing; the live state of an ACTIVE
+            # relative (its pods: the current attempt's identity, its placement, its reason) is re-read now, so a
+            # handle never names a finalizer attempt that ended within the listing's age
+            for j in out:
+                if normalise(j)["status"] in ("QUEUED", "RUNNING"):
+                    j.pop("_pods", None)
+                    if is_manager_job(j):
+                        uid = j["metadata"].get("uid", "")
+                        cluster = kube.workload_cluster_of(ns, uid) if uid else None
+                        _with_worker(
+                            j, ns, {uid: cluster} if cluster else {}, reason_of=lambda u: kube.workload_reason_of(ns, u)
+                        )
+                    else:
+                        _with_pods(j, ns, j.get("_region") or REGION)
+        out.sort(key=lambda j: j["metadata"]["name"])
+        out.sort(key=lambda j: j["metadata"].get("creationTimestamp", ""), reverse=True)
+        return out
     out = []
     for r in kube.regions():
         try:
             b = kube.batch(r)
-            found = [
-                b.api_client.sanitize_for_serialization(j)
-                for j in retry(b.list_namespaced_job, ns, label_selector=f"{LABEL}/tenant={tenant}").items
-            ]
+            found = _json_items(
+                b.list_namespaced_job, ns, label_selector=f"{LABEL}/tenant={tenant}", resource_version="0"
+            )
             found += list_jobsets(ns, r, f"{LABEL}/tenant={tenant}")
         except ApiException as e:
             if e.status in (403, 404):  # tenant not onboarded in that region

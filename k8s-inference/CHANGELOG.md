@@ -4,14 +4,29 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.146
+
+(API image only.)
+
+- An operation view of a tenant with ~550 live Jobs took 13-18 s (2026-10-20, api 0.11.144): its finalizer view
+  and its chain view each listed the tenant's every Job in every region through the typed client. The relatives
+  of an operation now come from the listing the warmer already keeps for the tenant (the same Jobs, complete, at
+  most `OPS_LIST_CACHE_S` = 10 s old, exactly what `GET /v1/operations` shows) for the SET of relatives and their
+  immutable metadata; every ACTIVE relative's pods, placement and reason are re-read live, so the handle's
+  `finalizing_by` and the finalizer attempt's identity are as fresh as before; the queried operation itself, its
+  attempt records, owner and ledger were never cached and are not now. When the listing is cold the lookup reads
+  the API server's JSON directly (the listing's own path) instead of typed objects. Semantics: a finalizer or
+  continuation created within the last 10 s may appear on the handle a few seconds later than before.
+
 ## charts/platform 0.1.16
 
 (Chart only; the control cluster's API route.)
 
 - The gateway's upstream connection pool to the API closes an idle connection after 4 s (BackendTrafficPolicy
   `timeout.http.connectionIdleTimeout`), below uvicorn's 5 s keep-alive: before, the gateway now and then reused
-  a connection the API pod had just closed and answered `503 UC` (upstream connection termination, 0 bytes) to a
-  request that never reached the API, about one or two a minute at low per-connection rates (2026-10-20). A
+  a connection the API pod had just closed and answered `503 UC` (upstream connection termination before a
+  completed response, 0 bytes), about one or two a minute at low per-connection rates (2026-10-20); such an
+  answer is safe to repeat for a GET (idempotent) and an unknown outcome for a POST (docs/API.md). A
   connection-pool setting only: request and stream timeouts (the HTTPRoute's `api.syncRequestTimeoutSeconds`,
   the API's own budgets) are unchanged, and nothing is retried by the gateway.
 

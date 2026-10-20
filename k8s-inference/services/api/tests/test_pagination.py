@@ -12,7 +12,7 @@ import app as appmod
 import catalog
 import jobs
 import kube
-from test_api import ADMIN, H, admin_keys, client, cluster  # noqa: F401 - pytest fixture registration
+from test_api import ADMIN, H, admin_keys, client, cluster, pod  # noqa: F401 - pytest fixture registration
 
 
 def test_page_helper_orders_cuts_and_issues_cursors():
@@ -434,3 +434,43 @@ def test_the_listing_auth_cache_keeps_no_expired_generation(client, monkeypatch)
     assert len(appmod._ops_auth_cache) == 1  # the newest entry only; eleven expired generations are gone
     (entry,) = appmod._ops_auth_cache.values()
     assert entry[0] is generations[-1]
+
+
+def test_relatives_come_from_the_warm_listing_without_a_new_read(client, monkeypatch):
+    """api 0.11.146: with the tenant's listing fresh in the cache, list_related answers from it (copies) and lists
+    nothing; cold, it reads the Jobs as raw JSON once per region."""
+    c, fake = client
+    r = c.post("/v1/models/hello-run:invoke", headers=H, json={"mode": "run", "input": {}})
+    assert r.status_code == 202, r.text
+    op = r.json()["id"]
+    calls = []
+    original = fake.list_namespaced_job
+
+    def counting(*a, **k):
+        calls.append(k.get("label_selector", ""))
+        return original(*a, **k)
+
+    monkeypatch.setattr(fake, "list_namespaced_job", counting)
+    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 60.0)
+    jobs._ops_list_cache.clear()
+    cold = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
+    assert [j["metadata"]["name"] for j in cold] == [op] and calls  # cold: the regions were listed
+    calls.clear()
+    jobs.list_ops_all("tenant-demo", "demo", None)  # the warmer's listing
+    calls.clear()
+    warm = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
+    assert [j["metadata"]["name"] for j in warm] == [op] and calls == []  # served from the listing, nothing listed
+    assert warm[0] is not jobs._ops_list_cache[("tenant-demo", "demo", None)][1][0]  # a copy, the listing untouched
+    # an ACTIVE relative's pods are re-read live, never taken from the listing: the current attempt's identity is fresh
+    pods_calls = []
+    original_pods = fake.list_namespaced_pod
+
+    def counting_pods(*a, **k):
+        pods_calls.append(k.get("label_selector", ""))
+        return original_pods(*a, **k)
+
+    monkeypatch.setattr(fake, "list_namespaced_pod", counting_pods)
+    running = pod(op, "Running")
+    fake.pods.append(running)
+    live = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
+    assert pods_calls and running["metadata"]["name"] in [p["metadata"]["name"] for p in live[0]["_pods"]]  # live
