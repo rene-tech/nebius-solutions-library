@@ -14,6 +14,10 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 - A run cancelled before any attempt is served with the metadata it was admitted with (model, owner, lineage,
   execution block) so the owner and model allow-list checks apply to the durable handle as to the live Job; the
   admission row is read once, only for a cancelled operation.
+- A stage member whose Job is gone keeps its `stage` identity (root, declared id, dependencies): from the retained
+  admission metadata when the member was cancelled before any attempt, else from the run ledger and the root's
+  sealed graph (an expired member with attempt rows); tenant-bound, nothing guessed. The App's stage gateway reads
+  terminal results and errors through it.
 
 ## api 0.11.151
 

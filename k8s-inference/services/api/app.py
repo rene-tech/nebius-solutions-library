@@ -2231,6 +2231,11 @@ def _operation(p: Principal, job: dict, id: str, region: str | None) -> dict:
         if op["status"] in ("EXPORT_FAILED", "FINALIZING", "FAILED") and attempts.enabled():
             op.update(_delivered(op, op["id"], root))  # a retry that delivered after the Job was gone
         _root_graph(p, op, root)  # a graph root keeps its graph when its Job is gone
+        # a stage member keeps its identity: the retained metadata first, else the ledger; a root that carries its
+        # graph cannot be a member (no ledger read for it)
+        st = stages.stage_of(job) or (None if "graph" in op else _ledger_stage(p, op["id"]))
+        if st:
+            op["stage"] = {k: v for k, v in st.items() if k != "waiting"}
         return op
     name = job["metadata"]["name"]
     records, root = _records(p, job, name, region)
@@ -2318,6 +2323,25 @@ def _stage_fields(p: Principal, op: dict, job: dict, root: str) -> None:
     if st := stages.stage_of(job):
         op["stage"] = {k: v for k, v in st.items() if k != "waiting"}
     _root_graph(p, op, root)
+
+
+def _ledger_stage(p: Principal, operation: str) -> dict | None:
+    """The stage identity of a gone stage member from the run ledger and its root's sealed graph (api 0.11.152):
+    root, declared id and dependencies exactly as sealed; tenant-bound through the graph; None for anything else."""
+    if not db.enabled():
+        return None
+    m = keys.member_of(operation)
+    if not m or m.get("kind") != "stage" or not m.get("stage"):
+        return None
+    g = keys.graph_of(m["root"])
+    if not g or g["tenant"] != p.tenant:
+        return None
+    return {
+        "root": m["root"],
+        "id": m["stage"],
+        "depends_on": list((g.get("stages") or {}).get(m["stage"]) or []),
+        "reason": None,
+    }
 
 
 def _root_graph(p: Principal, op: dict, root: str) -> None:

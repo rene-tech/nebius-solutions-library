@@ -3412,6 +3412,7 @@ def test_a_cancelled_queued_run_whose_job_is_gone_reads_and_cancels_again_for_it
     )
     monkeypatch.setattr(keys, "operation_owner", lambda root: ("demo", "alice", "alphafold3"))
     monkeypatch.setattr(keys, "graph_of", lambda root: None)
+    monkeypatch.setattr(keys, "member_of", lambda op: None)  # the ledger knows no member: a plain run
     monkeypatch.setattr(appmod, "_ledger_head", lambda ns, op: None)
     monkeypatch.setattr(
         keys, "owner_identity", lambda tenant, info, h: (info.get("metadata") or {}).get("who", "alice")
@@ -3542,6 +3543,7 @@ def test_a_gone_graph_root_with_attempt_rows_keeps_its_graph_and_a_plain_gone_ru
     monkeypatch.setattr(attempts, "_marks", lambda op: None)
     monkeypatch.setattr(attempts, "completion_of", lambda op: None)
     monkeypatch.setattr(keys, "graph_of", lambda root: graphs.get(root))
+    monkeypatch.setattr(keys, "member_of", lambda op: None)  # none of these is a stage member
     monkeypatch.setattr(keys, "run_head", lambda root: None)
     monkeypatch.setattr(stages, "graph_view", lambda ns, gg, root_state=None, memo=None: dict(view))
     monkeypatch.setattr(stages, "_state", lambda head, own: None)
@@ -3569,3 +3571,112 @@ def test_a_gone_graph_root_with_attempt_rows_keeps_its_graph_and_a_plain_gone_ru
     }
     op = appmod._operation(alice, job, "op-root-other", "control")
     assert "graph" not in op  # another tenant's graph is never attached
+
+
+def test_a_gone_stage_member_keeps_its_stage_identity(monkeypatch):
+    """api 0.11.152: a stage member whose Job is gone is served with `stage` (root, id, depends_on): a member cancelled
+    before any attempt from its retained admission metadata, an expired member with attempt rows from the ledger and
+    the sealed graph; a member of another tenant's graph and a plain run get none."""
+    from fastapi import HTTPException
+
+    import admissions
+    import attempts
+    import db
+    import keys
+    import stages
+    from auth import Principal
+
+    def gone(ns, op):
+        raise HTTPException(404, f"operation {op}: not found")
+
+    rec = {
+        "operation": "op-r-s-fold",
+        "tenant": "demo",
+        "region": "control",
+        "labels": {
+            f"{cfg.LABEL}/tenant": "demo",
+            f"{cfg.LABEL}/model": "alphafold3",
+            f"{cfg.LABEL}/mode": "run",
+            stages.STAGE_ROOT: "op-r",
+        },
+        "annotations": {f"{cfg.LABEL}/owner": "alice", stages.STAGE_ID: "fold", stages.DEPENDS_ON: "root,prep"},
+        "created_at": "2026-10-20T18:58:17+00:00",
+    }
+    graphs = {
+        "op-r": {"root": "op-r", "tenant": "demo", "stages": {"prep": ["root"], "fold": ["root", "prep"]}},
+        "op-f": {"root": "op-f", "tenant": "other", "stages": {"x": []}},
+    }
+    members = {
+        "op-r-s-fold": {"root": "op-r", "kind": "stage", "stage": "fold", "state": "settled"},
+        "op-old-s-prep": {"root": "op-r", "kind": "stage", "stage": "prep", "state": "settled"},
+        "op-f-s-x": {"root": "op-f", "kind": "stage", "stage": "x", "state": "settled"},
+        "op-plain": {"root": "op-plain", "kind": "continuation", "stage": None, "state": "settled"},
+    }
+    monkeypatch.setattr(jobs, "find", gone)
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "successor_of", lambda op: None)
+    monkeypatch.setattr(attempts, "completion_of", lambda op: None)
+    monkeypatch.setattr(admissions, "get", lambda op: dict(rec) if op == "op-r-s-fold" else None)
+    monkeypatch.setattr(keys, "operation_owner", lambda root: None)
+    monkeypatch.setattr(keys, "graph_of", lambda root: graphs.get(root))
+    monkeypatch.setattr(keys, "member_of", lambda op: members.get(op))
+    monkeypatch.setattr(keys, "run_head", lambda root: None)
+    monkeypatch.setattr(
+        stages, "graph_view", lambda ns, gg, root_state=None, memo=None: {"status": "CANCELLED", "stages": []}
+    )
+    monkeypatch.setattr(stages, "_state", lambda head, own: None)
+    monkeypatch.setattr(appmod, "_ledger_head", lambda ns, op: None)
+    monkeypatch.setattr(appmod, "_delivered", lambda op, i, r: {})
+    monkeypatch.setattr(keys, "owner_identity", lambda tenant, info, h: "alice")
+    alice = Principal(key="k", tenant="demo", info={})
+    # cancelled before any attempt: retained metadata
+    monkeypatch.setattr(attempts, "for_operation", lambda op: [])
+    monkeypatch.setattr(attempts, "_marks", lambda op: (3, "2026-10-20T19:14:28+00:00", None))
+    job, region = appmod._owned(alice, "op-r-s-fold")
+    op = appmod._operation(alice, job, "op-r-s-fold", region)
+    assert op["status"] == "CANCELLED" and op["stage"] == {
+        "root": "op-r",
+        "id": "fold",
+        "depends_on": ["root", "prep"],
+        "reason": None,
+    }
+    assert "graph" not in op  # a member is not the root
+    # expired with attempt rows: the ledger + the sealed graph
+    row = {
+        "operation": "op-old-s-prep",
+        "root": "op-r",
+        "tenant": "demo",
+        "pod": "op-old-s-prep-a",
+        "status": "failed",
+        "started_at": "2026-10-20T18:00:00+00:00",
+        "ended_at": "2026-10-20T18:05:00+00:00",
+        "epoch": 1,
+        "model": "alphafold3",
+        "mode": "run",
+        "region": "control",
+    }
+    monkeypatch.setattr(attempts, "_marks", lambda op: None)
+    monkeypatch.setattr(
+        attempts, "for_operation", lambda root: [dict(row)] if root in ("op-r", "op-old-s-prep") else []
+    )
+    job = {
+        "metadata": {"name": "op-old-s-prep", "annotations": {}},
+        "_synthetic": attempts.synthesize("op-old-s-prep", "demo"),
+    }
+    op = appmod._operation(alice, job, "op-old-s-prep", "control")
+    assert op["status"] == "FAILED" and op["stage"] == {
+        "root": "op-r",
+        "id": "prep",
+        "depends_on": ["root"],
+        "reason": None,
+    }
+    # another tenant's graph: no stage; a plain run: no stage
+    frow = dict(row, operation="op-f-s-x", root="op-f", pod="op-f-s-x-a")
+    monkeypatch.setattr(attempts, "for_operation", lambda root: [dict(frow)] if root in ("op-f", "op-f-s-x") else [])
+    job = {"metadata": {"name": "op-f-s-x", "annotations": {}}, "_synthetic": attempts.synthesize("op-f-s-x", "demo")}
+    assert "stage" not in appmod._operation(alice, job, "op-f-s-x", "control")
+    prow = dict(row, operation="op-plain", root="op-plain", pod="op-plain-a")
+    monkeypatch.setattr(attempts, "for_operation", lambda root: [dict(prow)] if root == "op-plain" else [])
+    job = {"metadata": {"name": "op-plain", "annotations": {}}, "_synthetic": attempts.synthesize("op-plain", "demo")}
+    assert "stage" not in appmod._operation(alice, job, "op-plain", "control")
