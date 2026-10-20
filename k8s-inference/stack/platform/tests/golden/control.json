@@ -77,7 +77,7 @@
  },
  "apps/Deployment/kueue-system/dispatcher": {
   "component": "dispatcher",
-  "sha256": "a09a0b3c42fcb7a5f1621a37d91b16c05d8d8bd660db8509064f369eb9ee40b6"
+  "sha256": "c8d9e40f263d25b8b5bc79ca969466ed8c53ea1d76a5ae40344ba0ccc1b832ad"
  },
  "apps/Deployment/monitoring/alert-sink": {
   "component": "observability",
@@ -85,7 +85,7 @@
  },
  "batch/CronJob/kueue-system/price-feed": {
   "component": "dispatcher",
-  "sha256": "b4821e7d032900312a9953e6bfe5dd0b232e8c41b960fb51362eac5bf16d335f"
+  "sha256": "3d12b6faba5f1d3b3b18c16e80ab9616c368c457ed090b883639e635d3dac963"
  },
  "batch/CronJob/monitoring/cost-export": {
   "component": "observability",

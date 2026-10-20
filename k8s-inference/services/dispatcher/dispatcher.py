@@ -43,6 +43,7 @@ import tempfile
 import threading
 import time
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import yaml
 from kubernetes import client, config
@@ -351,12 +352,47 @@ def manager_jobs(batch: client.BatchV1Api, ns: str, cache: dict) -> dict | None:
     if ns in cache:
         return cache[ns]
     try:
-        out = {j.metadata.name: j for j in batch.list_namespaced_job(ns).items}
+        raw = json.loads(batch.list_namespaced_job(ns, _preload_content=False).data)
+        out = {j["metadata"]["name"]: compact_job(j) for j in raw.get("items") or []}
     except Exception as e:  # noqa: BLE001 - unknown is a state of its own here
         log.warning("manager jobs %s: %s", ns, e)
         out = None
     cache[ns] = out
     return out
+
+
+def compact_job(j: dict):
+    """The fields of a manager Job the dispatcher reads (name, uid, labels, annotations, deletionTimestamp, suspend,
+    the template's volumes, status active/succeeded/conditions), with the typed client's attribute paths, from the
+    raw listing: 831 typed V1Job objects of one tenant (22 MB of JSON) exceeded the 256 MiB limit (dispatcher 0.2.16,
+    2026-10-20)."""
+    m, spec, st = j.get("metadata") or {}, j.get("spec") or {}, j.get("status") or {}
+    vols = [
+        SimpleNamespace(
+            name=v.get("name"),
+            persistent_volume_claim=SimpleNamespace(claim_name=v["persistentVolumeClaim"].get("claimName"))
+            if v.get("persistentVolumeClaim")
+            else None,
+        )
+        for v in ((spec.get("template") or {}).get("spec") or {}).get("volumes") or []
+    ]
+    return SimpleNamespace(
+        metadata=SimpleNamespace(
+            name=m.get("name"),
+            uid=m.get("uid"),
+            labels=m.get("labels") or {},
+            annotations=m.get("annotations") or {},
+            deletion_timestamp=m.get("deletionTimestamp"),
+        ),
+        spec=SimpleNamespace(suspend=spec.get("suspend"), template=SimpleNamespace(spec=SimpleNamespace(volumes=vols))),
+        status=SimpleNamespace(
+            active=st.get("active"),
+            succeeded=st.get("succeeded"),
+            conditions=[
+                SimpleNamespace(type=c.get("type"), status=c.get("status")) for c in st.get("conditions") or []
+            ],
+        ),
+    )
 
 
 def is_superseded(job) -> bool:
@@ -603,7 +639,7 @@ def released_claim(pod) -> str | None:
         msg = term.message or ""
         if not msg.startswith(RELEASED_MSG):
             return None
-        claim = msg[len(RELEASED_MSG) :].split()[0]
+        claim = (msg[len(RELEASED_MSG) :].split() or [""])[0]
         own = next(
             (
                 v.persistent_volume_claim.claim_name
@@ -626,6 +662,28 @@ def terminal_job(job, owner_uid: str) -> bool:
     return done and not (getattr(job.status, "active", 0) or 0)
 
 
+def terminal_pods(cname: str, core, page: int = 100):
+    """Succeeded and Failed pods of the tenant namespaces of a worker, one page (`limit`, `continue`) at a time so
+    that no cluster-wide pod list is ever held at once; a page that cannot be read ends the walk (unknown: nothing
+    is deleted on what was not read)."""
+    for phase in ("Succeeded", "Failed"):
+        token = None
+        while True:
+            try:
+                res = core.list_pod_for_all_namespaces(
+                    field_selector=f"status.phase={phase}", limit=page, _continue=token
+                )
+            except Exception as e:  # noqa: BLE001 - unknown is a state of its own here
+                log.warning("worker %s: list %s pods: %s", cname, phase.lower(), e)
+                return
+            for p in res.items:
+                if p.metadata.namespace.startswith(TENANT_NS_PREFIX):
+                    yield p
+            token = getattr(res.metadata, "_continue", None) if getattr(res, "metadata", None) else None
+            if not token:
+                break
+
+
 def sweep_released_pods(workers: dict) -> None:
     """Delete a terminal run pod whose own uploader released the pod's work claim (released_claim) once that claim is
     gone or deleting: the pod only pinned the node's attachable-volume slots until the Job's TTL (18 pods filled a
@@ -635,17 +693,7 @@ def sweep_released_pods(workers: dict) -> None:
     claims are untouched; a terminal Job never recreates a pod."""
     now = datetime.now(timezone.utc)
     for cname, w in workers.items():
-        try:
-            pods = [
-                p
-                for phase in ("Succeeded", "Failed")
-                for p in w["core"].list_pod_for_all_namespaces(field_selector=f"status.phase={phase}").items
-                if p.metadata.namespace.startswith(TENANT_NS_PREFIX)
-            ]
-        except Exception as e:  # noqa: BLE001 - unknown is a state of its own here
-            log.warning("worker %s: list terminal pods: %s", cname, e)
-            continue
-        for p in pods:
+        for p in terminal_pods(cname, w["core"]):
             claim = released_claim(p)
             owners = [o for o in (p.metadata.owner_references or []) if o.kind == "Job" and o.controller]
             if not claim or len(owners) != 1:

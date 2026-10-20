@@ -4,9 +4,9 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.154, jobs 0.1.33, dispatcher 0.2.15
+## api 0.11.154, jobs 0.1.33, dispatcher 0.2.16
 
-- Released terminal pods are deleted (dispatcher 0.2.15, jobs 0.1.33): the uploader writes `released work=<claim>`
+- Released terminal pods are deleted (dispatcher 0.2.16, jobs 0.1.33): the uploader writes `released work=<claim>`
   to its termination message only after the claim's DELETE was accepted (or `released leaf=` after a cleaned shared
   leaf); the dispatcher's reconcile deletes a terminal run pod only when that message names the pod's own work
   claim, the uploader exited 0, the owner Job (exact uid, native) is terminal, the claim is gone or deleting (a Bound
@@ -14,6 +14,12 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
   Jobs, claims and records are untouched. The worker role multikueue-manager gains pods get/list/delete (the only
   RBAC delta). Pods of older runners carry no message and are never swept. 18 such pods filled a 1-node CPU pool
   (2026-10-20).
+- Dispatcher memory (dispatcher 0.2.16): the control dispatcher OOM-looped at its 256Mi limit from 22:47Z on
+  2026-10-20 (12 + 11 OOMKilled restarts, ~80 s per incarnation; no reconcile completed, so no new work claim was
+  created and no volume was swept) once one tenant held 831 manager Jobs (22 MB of JSON, kept as typed V1Job objects
+  by manager_jobs). manager_jobs now keeps a compact record per Job from the raw listing (the fields the dispatcher
+  reads, same attribute paths), terminal pods are read in pages of 100 and never held as one list, and the
+  Deployment requests 512Mi / limits 1Gi (measured need ~350-400 MB at that count, 2x headroom).
 - The API's OpenAPI version string reads 0.11.154 (it had stayed at 0.11.152 through the 153 image).
 
 ## api 0.11.153, jobs 0.1.32

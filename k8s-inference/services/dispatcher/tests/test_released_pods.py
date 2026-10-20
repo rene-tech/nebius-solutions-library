@@ -58,8 +58,9 @@ class Core:
     def __init__(self, pods, pvc="deleting"):
         self.pods, self.pvc, self.deleted = pods, pvc, []
 
-    def list_pod_for_all_namespaces(self, field_selector=None):
-        return NS(items=[p for p in self.pods if f"status.phase={p.status.phase}" == field_selector])
+    def list_pod_for_all_namespaces(self, field_selector=None, limit=None, _continue=None):
+        items = [p for p in self.pods if f"status.phase={p.status.phase}" == field_selector]
+        return NS(items=items, metadata=NS(_continue=None))
 
     def read_namespaced_persistent_volume_claim(self, name, ns):
         if self.pvc == "absent":
@@ -127,3 +128,99 @@ def test_owner_job_and_claim_state_gate_the_delete():
     assert sweep(pod(), pvc="bound") == []  # present and not deleting: kept or restored
     assert d.released_claim(pod()) == "op-1-work"
     assert d.terminal_job(job(), "job-uid-1") and not d.terminal_job(None, "job-uid-1")
+
+
+class PagedCore(Core):
+    """A worker whose pod list answers in pages (`limit`, `continue`) of at most `page` items, as the API server does
+    for a large cluster; `fail_page` makes that page's read raise."""
+
+    def __init__(self, pods, pvc="deleting", page=2, fail_page=None):
+        super().__init__(pods, pvc)
+        self.page, self.fail_page, self.calls = page, fail_page, []
+
+    def list_pod_for_all_namespaces(self, field_selector=None, limit=None, _continue=None):
+        self.calls.append((field_selector, limit, _continue))
+        if self.fail_page is not None and len(self.calls) == self.fail_page:
+            raise RuntimeError("page unreadable")
+        items = [p for p in self.pods if f"status.phase={p.status.phase}" == field_selector]
+        start, size = int(_continue or 0), min(limit, self.page)
+        chunk = items[start : start + size]
+        nxt = str(start + size) if start + size < len(items) else None
+        return NS(items=chunk, metadata=NS(_continue=nxt))
+
+
+def five_pods():
+    pods = []
+    for i in range(5):
+        p = pod()
+        p.metadata.name, p.metadata.uid = f"op-{i}-x", f"uid-{i}"
+        p.metadata.owner_references = [NS(kind="Job", name=f"op-{i}", uid="job-uid-1", controller=True)]
+        pods.append(p)
+    return pods
+
+
+def test_terminal_pods_are_read_in_pages_and_every_page_is_processed():
+    core = PagedCore(five_pods(), page=2)
+    d.sweep_released_pods({"hub": {"core": core, "batch": Batch(job())}})
+    assert [n for _, n, _, _ in core.deleted] == [f"op-{i}-x" for i in range(5)]
+    assert [c for c in core.calls if c[0] == "status.phase=Succeeded"] == [
+        ("status.phase=Succeeded", 100, None),
+        ("status.phase=Succeeded", 100, "2"),
+        ("status.phase=Succeeded", 100, "4"),
+    ]  # exactly three pages for five pods of two per page, then the Failed walk (one empty page)
+    assert len(core.calls) == 4
+
+
+def test_an_unreadable_page_ends_the_walk_without_touching_what_was_not_read():
+    core = PagedCore(five_pods(), page=2, fail_page=2)
+    d.sweep_released_pods({"hub": {"core": core, "batch": Batch(job())}})
+    assert [n for _, n, _, _ in core.deleted] == ["op-0-x", "op-1-x"]  # the first page only; no later page, no raise
+    assert len(core.calls) == 2
+
+
+def test_empty_or_odd_release_marker_never_raises():
+    assert d.released_claim(pod(msg="released work=")) is None
+    assert d.released_claim(pod(msg="released work= http=200")) is None
+    assert d.released_claim(pod(msg="released work")) is None
+    assert sweep(pod(msg="released work=")) == []
+
+
+def test_manager_jobs_keeps_compact_records_from_the_raw_listing():
+    """831 typed V1Job objects of one tenant exceeded the dispatcher's memory; the compact record carries exactly the
+    attribute paths the sweeper, the volume fence and the pod sweep read."""
+    raw = {
+        "items": [
+            {
+                "metadata": {
+                    "name": "op-9",
+                    "uid": "u9",
+                    "labels": {f"{d.LABEL}/tenant": "t"},
+                    "annotations": {f"{d.LABEL}/successor": "op-10"},
+                },
+                "spec": {
+                    "suspend": True,
+                    "template": {
+                        "spec": {
+                            "volumes": [
+                                {"name": "work", "persistentVolumeClaim": {"claimName": "op-9-work"}},
+                                {"name": "shm", "emptyDir": {}},
+                            ]
+                        }
+                    },
+                },
+                "status": {"active": 0, "succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]},
+            }
+        ]
+    }
+
+    class RawBatch:
+        def list_namespaced_job(self, ns, _preload_content=True):
+            import json as _json
+
+            return NS(data=_json.dumps(raw).encode())
+
+    idx = d.manager_jobs(RawBatch(), "tenant-t", {})
+    j = idx["op-9"]
+    assert d.job_claim(j) == "op-9-work" and d.is_superseded(j) and j.spec.suspend is True
+    assert d.terminal_job(j, "u9") and not d.terminal_job(j, "other")
+    assert j.metadata.deletion_timestamp is None and j.status.succeeded == 1

@@ -61,6 +61,43 @@ def workload(job, cluster=None, pending=False, finished=False):
     }
 
 
+def raw_job(j) -> dict:
+    """The raw listing item of a fake typed Job (manager_jobs reads the raw list since dispatcher 0.2.16)."""
+    md, sp, st = j.metadata, getattr(j, "spec", None), getattr(j, "status", None)
+    vols = [
+        {
+            "name": v.name,
+            **(
+                {"persistentVolumeClaim": {"claimName": v.persistent_volume_claim.claim_name}}
+                if getattr(v, "persistent_volume_claim", None)
+                else {}
+            ),
+        }
+        for v in (getattr(getattr(getattr(sp, "template", None), "spec", None), "volumes", None) or [])
+    ]
+    return {
+        "metadata": {
+            "name": md.name,
+            "uid": getattr(md, "uid", None),
+            "labels": getattr(md, "labels", None) or {},
+            "annotations": getattr(md, "annotations", None) or {},
+            "deletionTimestamp": getattr(md, "deletion_timestamp", None),
+        },
+        "spec": {"suspend": getattr(sp, "suspend", None), "template": {"spec": {"volumes": vols}}},
+        "status": {
+            "active": getattr(st, "active", None),
+            "succeeded": getattr(st, "succeeded", None),
+            "conditions": [{"type": c.type, "status": c.status} for c in (getattr(st, "conditions", None) or [])],
+        },
+    }
+
+
+def raw_list(jobs: dict):
+    import json as _json
+
+    return NS(data=_json.dumps({"items": [raw_job(j) for j in jobs.values()]}).encode())
+
+
 def mjob(name, claim, successor=None):
     ann = {d.SUCCESSOR_ANN: successor} if successor else {}
     return NS(
@@ -128,11 +165,11 @@ class ControlBatch:
     def __init__(self, jobs):
         self.jobs, self.lists, self.reads = jobs, 0, []
 
-    def list_namespaced_job(self, ns):
+    def list_namespaced_job(self, ns, _preload_content=True):
         self.lists += 1
         if self.jobs is None:
             raise RuntimeError("manager unreachable")
-        return NS(items=[j for j in self.jobs.values()])
+        return raw_list(self.jobs) if not _preload_content else NS(items=[j for j in self.jobs.values()])
 
     def read_namespaced_job(self, name, ns):
         self.reads.append((name, ns))

@@ -223,15 +223,52 @@ def mjob(name: str, claim: str | None, successor: str | None = None, finished: b
     )
 
 
+def raw_job(j) -> dict:
+    """The raw listing item of a fake typed Job (manager_jobs reads the raw list since dispatcher 0.2.16)."""
+    md, sp, st = j.metadata, getattr(j, "spec", None), getattr(j, "status", None)
+    vols = [
+        {
+            "name": v.name,
+            **(
+                {"persistentVolumeClaim": {"claimName": v.persistent_volume_claim.claim_name}}
+                if getattr(v, "persistent_volume_claim", None)
+                else {}
+            ),
+        }
+        for v in (getattr(getattr(getattr(sp, "template", None), "spec", None), "volumes", None) or [])
+    ]
+    return {
+        "metadata": {
+            "name": md.name,
+            "uid": getattr(md, "uid", None),
+            "labels": getattr(md, "labels", None) or {},
+            "annotations": getattr(md, "annotations", None) or {},
+            "deletionTimestamp": getattr(md, "deletion_timestamp", None),
+        },
+        "spec": {"suspend": getattr(sp, "suspend", None), "template": {"spec": {"volumes": vols}}},
+        "status": {
+            "active": getattr(st, "active", None),
+            "succeeded": getattr(st, "succeeded", None),
+            "conditions": [{"type": c.type, "status": c.status} for c in (getattr(st, "conditions", None) or [])],
+        },
+    }
+
+
+def raw_list(jobs: dict):
+    import json as _json
+
+    return NS(data=_json.dumps({"items": [raw_job(j) for j in jobs.values()]}).encode())
+
+
 class FakeBatch:
     def __init__(self, jobs: dict | None):
         self.jobs, self.lists = jobs, 0
 
-    def list_namespaced_job(self, ns):
+    def list_namespaced_job(self, ns, _preload_content=True):
         self.lists += 1
         if self.jobs is None:
             raise RuntimeError("manager unreachable")
-        return NS(items=list(self.jobs.values()))
+        return raw_list(self.jobs) if not _preload_content else NS(items=list(self.jobs.values()))
 
 
 class FakeCore:
@@ -271,9 +308,11 @@ def test_superseded_root_releases_scratch_once_the_successor_has_its_own_volume(
     # the volume pass never recreates the superseded original's claim; an unknown manager keeps the old behaviour
     assert d.is_superseded(idx["op-1"]) and not d.is_superseded(idx["op-1-r-ab12cd34"]) and not d.is_superseded(None)
     cache = {}
-    assert (
-        d.manager_jobs(FakeBatch(idx), "t", cache) == idx and d.manager_jobs(FakeBatch(None), "t", cache) == idx
-    )  # one list per reconcile
+    got = d.manager_jobs(FakeBatch(idx), "t", cache)  # compact records of the raw listing (dispatcher 0.2.16)
+    assert set(got) == set(idx) and all(
+        d.job_claim(got[k]) == d.job_claim(idx[k]) and d.is_superseded(got[k]) == d.is_superseded(idx[k]) for k in idx
+    )
+    assert d.manager_jobs(FakeBatch(None), "t", cache) is got  # one list per reconcile
     assert d.manager_jobs(FakeBatch(None), "u", cache) is None
 
 

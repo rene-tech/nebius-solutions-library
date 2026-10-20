@@ -37,8 +37,8 @@ spec:
           volumeMounts:
             - { name: nebius-sa, mountPath: /etc/nebius, readOnly: true }
           resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            requests: { cpu: 50m, memory: 512Mi }   # one reconcile holds a tenant's manager Jobs (831 = 22 MB JSON,
+            limits: { cpu: 500m, memory: 1Gi }      # 2026-10-20) and the fleet's Workloads; 256Mi OOM-looped at that count
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
       volumes:
         - name: nebius-sa                     # <region>.json per GPU region (stack/platform/secrets.tf); without it the floors stay manual
