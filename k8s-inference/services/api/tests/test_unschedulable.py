@@ -72,6 +72,9 @@ def placed(client, monkeypatch):
     monkeypatch.setattr(kube, "deactivate_workload", lambda ns, uid, region="eu-north1": fences.append(uid) or 1)
     monkeypatch.setattr(kube, "activate_workload", lambda ns, uid, region="eu-north1": fences.remove(uid) or 1)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     r = c.post("/v1/models/af3-pipeline:invoke", json={"input": {}}, headers=H)
     assert r.status_code == 202, r.text
     op = r.json()["id"]
@@ -80,6 +83,9 @@ def placed(client, monkeypatch):
     # the live defect: the original render of 0.11.78 carried no fit term, and the worker's Kueue put it on the 1x pool
     job["spec"]["template"]["spec"].pop("affinity", None)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {job["metadata"]["uid"]: "north"})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     return c, fake, op, job, fences
 
 
@@ -144,8 +150,14 @@ def test_boundaries_wait_node_started_unplaced_cancelled(placed, monkeypatch):
     # not placed anywhere: that is the queue, not this
     fake.pods.append(_pending(op, "h100-reserved-1x"))
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     assert appmod.unschedulable_switch() == []
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {job["metadata"]["uid"]: "north"})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     # cancelled: never resurrected
     job["metadata"]["annotations"][f"{LABEL}/cancelled"] = "true"
     assert appmod.unschedulable_switch() == [] and not fences

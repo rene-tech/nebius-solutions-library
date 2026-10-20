@@ -272,6 +272,9 @@ def test_fleet_path_pins_the_chosen_class_for_the_dispatcher(client, monkeypatch
     monkeypatch.setattr(kube, "core", lambda region="control": both[region])
     monkeypatch.setattr(kube, "HUB_REGION", "eu-north1")
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     for mod in (appmod, jobs, appmod.artifacts):
         monkeypatch.setattr(mod, "REGION", "control")
     monkeypatch.setattr(appmod, "FLEET_MANAGER", True)

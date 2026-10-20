@@ -322,3 +322,32 @@ def test_a_keys_priority_is_set_at_creation_changed_by_patch_and_bounds_the_requ
     assert keys.effective_priority(info, "low") == "low"  # a request may lower
     assert keys.effective_priority({"metadata": {"priority": "low"}}, "high") == "low"  # never raise
     assert keys.effective_priority({}, None) == "normal" and keys.effective_priority({}, "high") == "normal"
+
+
+def test_a_single_view_reads_one_workload_and_misses_refresh_single_flight(client, monkeypatch):
+    """api 0.11.144: a single operation view asks for the Job's own Workload by its uid label, never the namespace's
+    whole list; and concurrent misses of the namespace list share one read (the bulk readers' cache)."""
+    import threading
+
+    c, fake = client
+    r = c.post("/v1/models/hello-run:invoke", headers=H, json={"mode": "run", "input": {}})
+    assert r.status_code == 202, r.text
+    calls = []
+    original = fake.list_namespaced_custom_object
+
+    def counting(group, version, ns, plural, label_selector=""):
+        calls.append(label_selector)
+        return original(group, version, ns, plural, label_selector=label_selector)
+
+    monkeypatch.setattr(fake, "list_namespaced_custom_object", counting)
+    monkeypatch.setattr(kube, "WORKLOADS_CACHE_S", 60.0)
+    monkeypatch.setattr(kube, "_workloads_cache", {})
+    kube._workloads("tenant-demo")
+    threads = [threading.Thread(target=kube._workloads, args=("tenant-demo",)) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert calls.count("") == 1  # the warm read; eight concurrent readers served from it
+    assert kube.workload_cluster_of("tenant-demo", "no-such-uid") is None
+    assert calls[-1] == f"{kube.KUEUE_JOB_UID_LABEL}=no-such-uid"  # one label-selected read, not the list

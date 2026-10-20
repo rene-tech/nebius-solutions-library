@@ -1757,6 +1757,7 @@ def test_fleet_manager_path(client, monkeypatch):
     monkeypatch.setattr(kube, "HUB_REGION", "eu-north1")
     placed = {}
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: dict(placed))
+    monkeypatch.setattr(kube, "workload_cluster_of", lambda ns, uid: dict(placed).get(uid))  # a single view (0.11.144)
     for mod in (appmod, jobs, appmod.artifacts):
         monkeypatch.setattr(mod, "REGION", "control")
     monkeypatch.setattr(appmod, "FLEET_MANAGER", True)

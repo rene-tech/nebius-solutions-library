@@ -4,6 +4,7 @@ and the KServe read helpers the catalog uses."""
 import logging
 import os
 import re
+import threading
 import time
 
 from fastapi import HTTPException
@@ -439,17 +440,76 @@ def activate_workload(ns: str, job_uid: str, region: str = REGION) -> int:
 # pass anyway. 0 disables it (the tests).
 WORKLOADS_CACHE_S = float(os.environ.get("WORKLOADS_CACHE_S", "2"))
 _workloads_cache: dict[str, tuple[float, list]] = {}
+_workloads_lock = threading.Lock()  # one refresh at a time: concurrent misses share one parse (api 0.11.144)
 
 
 def _workloads(ns: str) -> list:
+    """The namespace's Workloads, one list per WORKLOADS_CACHE_S. A cache miss is single-flight: 12 concurrent
+    operation views on a miss used to parse 12 copies of the list (570 Workloads, 8.6 MB of JSON, ~42 MB of
+    objects each), which is what the request thread pool's worth of concurrent reads did to the 2 GiB limit
+    (2026-10-20, api 0.11.143)."""
     hit = _workloads_cache.get(ns) if WORKLOADS_CACHE_S > 0 else None
     now = time.time()
     if hit and hit[0] > now:
         return hit[1]
-    items = retry(api().list_namespaced_custom_object, "kueue.x-k8s.io", "v1beta2", ns, "workloads").get("items", [])
-    if WORKLOADS_CACHE_S > 0:
-        _workloads_cache[ns] = (now + WORKLOADS_CACHE_S, items)
-    return items
+    with _workloads_lock:
+        hit = _workloads_cache.get(ns) if WORKLOADS_CACHE_S > 0 else None
+        now = time.time()
+        if hit and hit[0] > now:  # refreshed by the reader that held the lock
+            return hit[1]
+        items = retry(api().list_namespaced_custom_object, "kueue.x-k8s.io", "v1beta2", ns, "workloads").get(
+            "items", []
+        )
+        if WORKLOADS_CACHE_S > 0:
+            _workloads_cache[ns] = (now + WORKLOADS_CACHE_S, items)
+        return items
+
+
+def _placed(w: dict) -> str | None:
+    """The worker cluster a Workload was admitted on: status.clusterName while the worker's copy exists, afterwards
+    the dispatcher's record on the Workload (`serverless2.nebius/admitted-cluster`); None while only nominated."""
+    st = w.get("status") or {}
+    return st.get("clusterName") or (w.get("metadata", {}).get("annotations") or {}).get(f"{LABEL}/admitted-cluster")
+
+
+def _not_admitted_reason(w: dict) -> str | None:
+    """Why a Workload is not admitted (the condition messages Kueue writes); None once Admitted."""
+    conds = {c.get("type"): c for c in ((w.get("status") or {}).get("conditions") or [])}
+    if (conds.get("Admitted") or {}).get("status") == "True":
+        return None
+    for t in ("Evicted", "QuotaReserved", "Admitted", "PodsReady"):
+        c = conds.get(t)
+        if c and c.get("status") != "True" and c.get("message"):
+            return c["message"][:300]
+    return None
+
+
+def workload_of(ns: str, job_uid: str) -> dict | None:
+    """A Job's own Workload by its job-uid label: one small read instead of the namespace's whole list, for a
+    single operation view (api 0.11.144). None when absent or ambiguous; read errors answer None like the bulk
+    readers (advisory data)."""
+    try:
+        items = retry(
+            api().list_namespaced_custom_object,
+            "kueue.x-k8s.io",
+            "v1beta2",
+            ns,
+            "workloads",
+            label_selector=f"{KUEUE_JOB_UID_LABEL}={job_uid}",
+        ).get("items", [])
+    except ApiException:
+        return None
+    return items[0] if len(items) == 1 else None
+
+
+def workload_cluster_of(ns: str, job_uid: str) -> str | None:
+    w = workload_of(ns, job_uid)
+    return _placed(w) if w else None
+
+
+def workload_reason_of(ns: str, job_uid: str) -> str | None:
+    w = workload_of(ns, job_uid)
+    return _not_admitted_reason(w) if w else None
 
 
 def workload_reasons(ns: str) -> dict[str, str]:
@@ -462,14 +522,9 @@ def workload_reasons(ns: str) -> dict[str, str]:
     out = {}
     for w in items:
         uid = (w.get("metadata", {}).get("labels") or {}).get(KUEUE_JOB_UID_LABEL)
-        conds = {c.get("type"): c for c in ((w.get("status") or {}).get("conditions") or [])}
-        if not uid or (conds.get("Admitted") or {}).get("status") == "True":
-            continue
-        for t in ("Evicted", "QuotaReserved", "Admitted", "PodsReady"):
-            c = conds.get(t)
-            if c and c.get("status") != "True" and c.get("message"):
-                out[uid] = c["message"][:300]
-                break
+        reason = _not_admitted_reason(w) if uid else None
+        if reason:
+            out[uid] = reason
     return out
 
 
@@ -484,10 +539,7 @@ def workload_clusters(ns: str) -> dict[str, str]:
     out = {}
     for w in items:
         uid = (w.get("metadata", {}).get("labels") or {}).get(KUEUE_JOB_UID_LABEL)
-        st = w.get("status") or {}
-        placed = st.get("clusterName") or (w.get("metadata", {}).get("annotations") or {}).get(
-            f"{LABEL}/admitted-cluster"
-        )
+        placed = _placed(w)
         if uid and placed:
             out[uid] = placed
     return out

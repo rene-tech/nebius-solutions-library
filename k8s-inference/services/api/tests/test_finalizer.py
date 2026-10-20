@@ -473,6 +473,9 @@ def test_finalizer_of_a_fleet_run_is_pinned_to_the_admitting_cluster(client, mon
     )
     monkeypatch.setattr(appmod, "FLEET_MANAGER", True)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     m["regions"] = ["south", "north"]  # the new fleet names regions by cluster id
     r = c.post(
         "/v1/models/md:invoke",

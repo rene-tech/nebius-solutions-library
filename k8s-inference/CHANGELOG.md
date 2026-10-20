@@ -4,6 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.144
+
+(API image only.)
+
+- Memory under concurrent operation views: a single operation view read the tenant namespace's whole Kueue
+  Workload list (570 Workloads, 8.6 MB of JSON, ~42 MB of objects) and, on a cache miss, every concurrent reader
+  parsed its own copy, so a dozen pollers held ~0.8 GiB and the request pool's worth could reach the 2 GiB limit
+  (OOMKilled 2026-10-20 14:47Z, api 0.11.143, reproduced in an isolated pod: 12 readers, 229 -> 800 MiB). A single
+  view now reads the Job's own Workload by its uid label (one small object), and the namespace list, which the
+  listing, billing and reconciliation passes still use once per pass, refreshes single-flight.
+
 ## api 0.11.143, jobs 0.1.30
 
 (API image, jobs image.)

@@ -85,6 +85,9 @@ def lost_run(client, monkeypatch):
     )
     # the worker admitted it, the pod ran, then the node was reclaimed: the uploader's record is `interrupted`
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {job["metadata"].get("uid", ""): "us-central1"})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     records = [
         {
             "operation": op,

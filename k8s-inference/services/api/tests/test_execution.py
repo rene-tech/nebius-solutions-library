@@ -260,6 +260,9 @@ def test_application_io_refuses_bucket_prefixes_and_sync_calls_take_no_execution
 def test_resume_delivers_binding_before_job_is_admitted(client, monkeypatch):
     c, fake = client
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     assert c.put("/v1/bindings/resume-input", json={"data": {"input.json": "private"}}, headers=H).status_code == 200
     r = c.post(
         "/v1/models/container-run:invoke",

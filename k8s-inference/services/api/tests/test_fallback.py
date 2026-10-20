@@ -52,6 +52,7 @@ def _env(monkeypatch):
     monkeypatch.setattr(kube, "cluster_region", lambda c: "eu-north1" if c == "hub" else c)
     monkeypatch.setattr(kube, "regions", lambda: ["eu-north1", "us-central1"])
     monkeypatch.setattr(kube, "workload_reasons", lambda ns: {})
+    monkeypatch.setattr(kube, "workload_reason_of", lambda ns, uid: kube.workload_reasons(ns).get(uid))  # 0.11.144
     monkeypatch.setattr(appmod, "FLEET_MANAGER", True)
     monkeypatch.setattr(reconciliation, "FLEET_MANAGER", True)
     monkeypatch.setattr(
@@ -84,6 +85,9 @@ def test_fallback_moves_a_queued_run_to_the_next_class(client, monkeypatch):
     m = _fold_model()
     monkeypatch.setattr(catalog, "get", lambda name: m if name == "fold" else None)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     r = c.post(
         "/v1/models/fold:invoke",
         json={
@@ -165,6 +169,9 @@ def _queued_split_run(c, fake, monkeypatch, allowed, pin=None):
     m = _fold_model()
     monkeypatch.setattr(catalog, "get", lambda name: m if name == "fold" else None)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     placement = {"gpu_preference": ["rtx-pro-6000", "l40s"], "fallback_wait_s": 60, "allowed_clusters": allowed}
     r = c.post("/v1/models/fold:invoke", json={"input": {}, "execution": {"placement": placement}}, headers=H)
     assert r.status_code == 202, r.text
@@ -308,6 +315,9 @@ def test_cluster_ids_map_to_regions_through_the_fleet_document(client, monkeypat
     )  # the dispatcher still gets the id
     uid = fake.jobs[("tenant-demo", op)]["metadata"].get("uid", "")
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {uid: "south"})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     seen.clear()
     got = c.get(f"/v1/operations/{op}", headers=H)
     assert got.status_code == 200 and "eu-south1" in seen and "south" not in seen
@@ -512,6 +522,9 @@ def test_fallback_delivers_private_input_before_creating_successor(client, monke
     monkeypatch.setattr(kube, "fleet", lambda: TWO_CLASS_FLEET)
     monkeypatch.setattr(catalog, "get", lambda name: _fold_model() if name == "fold" else None)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     assert (
         c.put("/v1/bindings/private-fallback", json={"data": {"input.json": "private"}}, headers=H).status_code == 200
     )
@@ -556,6 +569,9 @@ def test_resume_with_a_checkpoint_reference_needs_no_volume_and_may_change_class
     m = _fold_model()
     monkeypatch.setattr(catalog, "get", lambda name: m if name == "fold" else None)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     r = c.post(
         "/v1/models/fold:invoke",
         json={"input": {}, "region": "us-central1", "execution": {"recovery": {"on_infrastructure_loss": "fail"}}},
@@ -626,7 +642,11 @@ def test_admitted_queued_run_names_its_cluster_phase_and_wait(client, monkeypatc
     monkeypatch.setattr(attempts, "_marks", lambda operation: None)
     monkeypatch.setattr(attempts, "mark_successor", lambda operation, successor: None)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     monkeypatch.setattr(kube, "workload_reasons", lambda ns: {})
+    monkeypatch.setattr(kube, "workload_reason_of", lambda ns, uid: kube.workload_reasons(ns).get(uid))  # 0.11.144
     r = c.post(
         "/v1/models/fold:invoke",
         json={"input": {}, "execution": {"placement": {"allowed_clusters": ["us-central1"]}}},
@@ -643,6 +663,9 @@ def test_admitted_queued_run_names_its_cluster_phase_and_wait(client, monkeypatc
     )
     # admitted on us-central1, no pod yet (the worker's copy is being created)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {uid: "us-central1"})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     got = c.get(f"/v1/operations/{op}", headers=H).json()
     assert (
         got["status"] == "QUEUED"
@@ -709,6 +732,9 @@ def test_admitted_queued_run_names_its_cluster_phase_and_wait(client, monkeypatc
 def test_queued_operation_reports_the_workload_reason(client, monkeypatch):
     c, fake = client
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     r = c.post("/v1/models/container-run:invoke", json={"input": {"image": "x", "command": "y"}}, headers=H)
     op = r.json()["id"]
     monkeypatch.setattr(
@@ -725,6 +751,9 @@ def test_queued_operation_reports_the_workload_reason(client, monkeypatch):
 def test_resume_replays_one_continuation_per_idempotency_key(client, monkeypatch):
     c, fake = client
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     r = c.post(
         "/v1/models/container-run:invoke",
         json={"input": {"image": "x", "command": "y"}, "region": "eu-north1"},
@@ -752,6 +781,9 @@ def test_resume_uses_the_acknowledged_checkpoint_pointer(client, monkeypatch):
     m = _fold_model()
     monkeypatch.setattr(catalog, "get", lambda name: m if name == "fold" else None)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     r = c.post(
         "/v1/models/fold:invoke",
         json={

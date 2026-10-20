@@ -1706,18 +1706,25 @@ def get(ns: str, name: str, region: str = REGION) -> dict:
     if is_mirror(job):
         raise HTTPException(404, f"operation {name}: not found")  # the operation is the manager's Job
     if is_manager_job(job):
-        return _with_worker(job, ns, kube.workload_clusters(ns))
+        # one read: the Job's own Workload by uid, never the namespace's whole list for a single view (api 0.11.144)
+        uid = job["metadata"].get("uid", "")
+        cluster = kube.workload_cluster_of(ns, uid) if uid else None
+        return _with_worker(
+            job, ns, {uid: cluster} if cluster else {}, reason_of=lambda u: kube.workload_reason_of(ns, u)
+        )
     return _with_pods(job, ns, region)
 
 
-def _with_worker(job: dict, ns: str, clusters: dict) -> dict:
+def _with_worker(job: dict, ns: str, clusters: dict, reason_of=None) -> dict:
     """A manager Job: pods (attempts) come from the worker that admitted its Workload; nothing yet while
-    the dispatcher still has to place it. `_region` is the worker's region or None."""
+    the dispatcher still has to place it. `_region` is the worker's region or None. `reason_of(uid)` reads one
+    Workload's reason (a single view); the listing paths leave it unset and use the namespace list once."""
     cluster = clusters.get(job["metadata"].get("uid", ""))
     if not cluster:
         job["_pods"], job["_region"], job["_cluster"] = [], None, None
         try:
-            job["_reason"] = kube.workload_reasons(ns).get(job["metadata"].get("uid", ""))
+            uid = job["metadata"].get("uid", "")
+            job["_reason"] = reason_of(uid) if reason_of else kube.workload_reasons(ns).get(uid)
         except Exception:  # noqa: BLE001 - advisory
             job["_reason"] = None
         return job

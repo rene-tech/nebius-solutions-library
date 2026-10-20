@@ -295,6 +295,9 @@ def test_a_gpu_free_run_is_constrained_to_the_pools_whose_node_holds_it(client, 
     assert m["job"]["ephemeralStorage"] == "32Gi" and m["job"]["cpu"] == "16"
     monkeypatch.setattr(catalog, "get", lambda name: m if name == "af3-pipeline" else None)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     r = c.post("/v1/models/af3-pipeline:invoke", json={"input": {}}, headers=H)
     assert r.status_code == 202, r.text
     job = fake.jobs[("tenant-demo", r.json()["id"])]

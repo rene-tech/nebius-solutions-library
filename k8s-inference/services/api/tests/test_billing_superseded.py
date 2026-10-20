@@ -312,6 +312,9 @@ def test_real_ledger_settles_each_member_once_after_annotation_loss(database, mo
     monkeypatch.setattr(kube, "core", lambda region: core)
     monkeypatch.setattr(kube, "workload_inactive", lambda *a: True)
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {"uid-" + ROOT: "south", "uid-" + NEXT: "north"})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     monkeypatch.setattr(kube, "cluster_region", lambda region: {"south": "eu-south1", "north": "eu-north1"}[region])
     monkeypatch.setattr(jobs, "get", lambda ns, name, region: copy.deepcopy(all_jobs[name]))
     monkeypatch.setattr(billing.catalog, "get", lambda mid: None)

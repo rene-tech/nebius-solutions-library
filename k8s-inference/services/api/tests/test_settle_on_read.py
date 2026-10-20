@@ -225,6 +225,9 @@ def test_a_cancelled_gang_settles_once_kueue_holds_nothing_of_it(client, monkeyp
     monkeypatch.setattr(attempts, "for_operation", lambda root: [rec] if root == name else [])
     monkeypatch.setattr(jobs, "get", lambda ns, n, region: dict(js))
     monkeypatch.setattr(kube, "workload_clusters", lambda ns: {"uid-gang-cancel-1": "north"})
+    monkeypatch.setattr(
+        kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid)
+    )  # 0.11.144: the single view
     monkeypatch.setattr(kube, "cluster_region", lambda c: "eu-north1")
     monkeypatch.setattr(billing, "cost_of", lambda job, m, records, region: (billing.measured_usage(job, records), 0.0))
     patched = []
