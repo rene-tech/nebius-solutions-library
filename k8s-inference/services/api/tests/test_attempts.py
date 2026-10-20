@@ -740,3 +740,63 @@ def test_a_gone_job_without_a_cancel_mark_reads_no_admission_row(monkeypatch):
     monkeypatch.setattr(admissions, "get", never)
     assert attempts.synthesize("op-old", "demo") is None  # superseded, not cancelled: the successor path stands
     assert attempts.synthesize("op-vanished", "demo") is None  # no mark at all
+
+
+def test_a_started_mains_record_without_export_is_pending_a_never_started_one_is_n_a(database):
+    """api 0.11.153: attempts.record defaults export_state to "n/a" only for an application-I/O main that never
+    started; a started main's terminal record without the field leaves it NULL (pending the delivery record)."""
+    import db
+
+    db.migrate()
+    attempts.record(
+        "eu-north1",
+        "tenant-demo",
+        "op-pend-a",
+        {
+            "operation": "op-pend",
+            "root": "op-pend",
+            "status": "started",
+            "io_mode": "application",
+            "started_at": "2026-10-20T21:53:31Z",
+        },
+    )
+    attempts.record(
+        "eu-north1",
+        "tenant-demo",
+        "op-pend-a",
+        {
+            "operation": "op-pend",
+            "root": "op-pend",
+            "status": "failed",
+            "exit_code": 2,
+            "io_mode": "application",
+            "started_at": "2026-10-20T21:53:31Z",
+            "ended_at": "2026-10-20T21:53:49Z",
+        },
+    )
+    rows = attempts.for_operation("op-pend")
+    assert rows[-1]["status"] == "failed" and rows[-1]["export_state"] is None
+    attempts.record(
+        "eu-north1",
+        "tenant-demo",
+        "op-pend-a",
+        {
+            "operation": "op-pend",
+            "root": "op-pend",
+            "status": "failed",
+            "exit_code": 2,
+            "io_mode": "application",
+            "started_at": "2026-10-20T21:53:31Z",
+            "ended_at": "2026-10-20T21:53:49Z",
+            "export": "succeeded",
+            "result_ref": "scientific-ai:native:y",
+        },
+    )
+    assert attempts.for_operation("op-pend")[-1]["export_state"] == "succeeded"
+    attempts.record(
+        "eu-north1",
+        "tenant-demo",
+        "op-never-a",
+        {"operation": "op-never", "root": "op-never", "status": "failed", "exit_code": 1, "io_mode": "application"},
+    )
+    assert attempts.for_operation("op-never")[-1]["export_state"] == "n/a"

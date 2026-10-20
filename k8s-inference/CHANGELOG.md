@@ -4,6 +4,24 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.153, jobs 0.1.32
+
+- Delivery before the terminal record (jobs 0.1.32): under application-managed I/O the uploader reads RESULT.json
+  before its one terminal record, so no preliminary "failed, export n/a" row exists for a reader to take as the
+  delivery (ctoxpred2 op-604f95bfb719109e, 2026-10-20 21:53:52Z). The API defaults export to "n/a" only for a main
+  that never started; a started main's record without the field is pending, and the operation reads FINALIZING
+  (not FAILED without delivery) for FINALIZING_GRACE_S after its end while the capture record is coming.
+- Captured endpoint errors release their volume (jobs 0.1.32): a trusted async caller that captured, delivered,
+  proved (scratch.sh proof) and had acknowledged the endpoint's error answer (exit 2 or 5) releases its work volume
+  or scratch leaf like a delivered success; exit 4, partial or failed exports, scientific runs and KEEP_* flags keep
+  it. Inference is never marked successful by this.
+- Terminal pods whose work claim was released are deleted by the dispatcher's sweep (released_pod): they only pinned
+  the node's attachable-volume slots until the Job's 90 d TTL (18 pods filled a 1-node CPU pool, 2026-10-20). Jobs,
+  claims and records untouched; a terminal Job never recreates a pod.
+- Memory: the operations auth cache holds names fenced by the listing's monotonic generation (jobs.Listing), no
+  Job dicts and no listing reference; cached Workloads keep only the fields the readers use (no pod template, no
+  managedFields). Both measured as the growth under the cohort (1.9 GiB, 2026-10-20).
+
 ## gateway: the refusal-marker patch targets the https listener only
 
 - The EnvoyPatchPolicy no longer patches the :80 listener: that listener is the HTTPS redirect and carries a

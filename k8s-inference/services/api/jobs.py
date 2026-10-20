@@ -18,6 +18,7 @@ back; pods, logs and billing come from the worker. Image references are fleet-wi
 host of fleet.yaml `images`, docs/IMAGES.md): nothing in a Job depends on the region it lands in."""
 
 import copy
+import itertools
 import json
 import logging
 import os
@@ -1841,12 +1842,25 @@ def list_ops_all(ns: str, tenant: str, model: str | None) -> tuple[list[dict], l
         return _refresh_ops_listing(key)
 
 
+class Listing(list):
+    """A cached operations listing: a list with a monotonic `generation` (every refresh is a new one, never reused:
+    api 0.11.153), the token readers fence their per-listing caches with instead of the list's identity (an object id
+    is reused once the list is gone)."""
+
+    generation: int = 0
+
+
+_ops_list_generation = itertools.count(1)
+
+
 def _refresh_ops_listing(key: tuple) -> tuple[list[dict], list[str]]:
     """Read the listing and cache it (OPS_LIST_CACHE_S); a listing with a region missing is never reused, so its
     return shows at once."""
     ns, tenant, model = key
     items, skipped = _list_ops_all(ns, tenant, model)
     if OPS_LIST_CACHE_S > 0 and not skipped:
+        items = Listing(items)
+        items.generation = next(_ops_list_generation)
         _ops_list_cache[key] = (time.time() + OPS_LIST_CACHE_S, items, skipped)
     return items, skipped
 

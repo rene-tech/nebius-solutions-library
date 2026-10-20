@@ -337,6 +337,26 @@ def cancel_attempt(attempts: list, cancelled: bool) -> list:
     return attempts
 
 
+def _capture_pending(attempts: list, ann: dict) -> bool:
+    """A started main under application I/O that ended with an error and whose newest record carries no delivery yet:
+    the uploader posts the record of the delivered capture right after (api 0.11.153; before, the first record was
+    read as "failed, export n/a"). Bounded by FINALIZING_GRACE_S after the attempt's end; a main that never started
+    (no started_at) is a genuine failure and never pending."""
+    if not attempts:
+        return False
+    a = attempts[-1]
+    if a.get("status") != "FAILED" or a.get("export_state") is not None or not a.get("started_at"):
+        return False
+    if (_json(ann.get(f"{LABEL}/execution")) or {}).get("io_mode") != "application":
+        return False
+    ended = a.get("ended_at")
+    try:
+        done = datetime.fromisoformat(str(ended).replace("Z", "+00:00")) if ended else None
+    except ValueError:
+        done = None
+    return done is not None and (datetime.now(timezone.utc) - done).total_seconds() <= FINALIZING_GRACE_S
+
+
 def normalise(job: dict, price_per_call: float | None = None, records: list | None = None) -> dict:
     md, st, sp = job.get("metadata", {}), job.get("status", {}) or {}, job.get("spec", {})
     labels, ann = md.get("labels", {}), accounting_annotations(job)
@@ -435,13 +455,18 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
                 status = "FINALIZING"
     elif "Failed" in conds or "FailureTarget" in conds:
         status = "CANCELLED" if ann.get(f"{LABEL}/cancelled") else "FAILED"
+        if status == "FAILED" and _capture_pending(attempts, ann):
+            status = "FINALIZING"  # main ended with an error; the record of its delivered capture is still being posted
     elif ann.get(f"{LABEL}/cancelled"):
         status = "CANCELLED"
     elif attempts and attempts[-1]["status"] == "FAILED" and _fails_job(job, attempts[-1].get("exit_code")):
         # the main container ended with an exit code the Job's failure policy turns into FailJob: the Job fails as soon
         # as the pod ends (the uploader may still be posting the record); the operation is over now, not RUNNING
-        status = "FAILED"
-        error = f"main exited {attempts[-1].get('exit_code')}: {attempts[-1].get('reason') or 'the Job fails on this exit code'}"
+        if _capture_pending(attempts, ann):
+            status = "FINALIZING"
+        else:
+            status = "FAILED"
+            error = f"main exited {attempts[-1].get('exit_code')}: {attempts[-1].get('reason') or 'the Job fails on this exit code'}"
     elif any(a["status"] == "RUNNING" for a in attempts) or any(
         (p.get("status") or {}).get("phase") == "Running" for p in job.get("_pods", [])
     ):

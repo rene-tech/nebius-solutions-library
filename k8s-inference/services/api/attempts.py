@@ -151,7 +151,11 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
         if status in TERMINAL and cancelled and cancelled[0] and status == "succeeded":
             raise HTTPException(409, f"operation {operation} was cancelled: finalization refused")
         export = body.get("export") or (
-            "n/a" if body.get("io_mode") == "application" and status != "succeeded" else None
+            # a main that never started delivered nothing (n/a); a started main's record without the field is a record
+            # posted before its delivery was read (jobs <= 0.1.31): pending, never "n/a" (api 0.11.153)
+            "n/a"
+            if body.get("io_mode") == "application" and status != "succeeded" and not body.get("started_at")
+            else None
         )
         capture = _capture_of(body.get("capture"), operation, root, c)
         resume = (

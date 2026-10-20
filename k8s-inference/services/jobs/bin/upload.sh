@@ -171,16 +171,46 @@ checkpoint_changed() {   # the application published a new checkpoint pointer (C
   CKPT_SEEN="$now"; return 0
 }
 
+release_work() {   # $1 = delivered (true|false): the work volume / scratch leaf goes only with a delivery that is durable
+  local delivered="$1"
+  if [ "${SCRATCH:-}" = shared ]; then
+    # a durable endpoint call on the tenant's shared scratch (scratch.sh): the leaf is emptied only with the delivery
+    # acknowledged by the API and the capture proven intact (manifest, hash, RESULT.json); anything else keeps it
+    # (export retry, recovery, retention), exactly as a kept volume; the shared claim is never deleted
+    if [ "$delivered" = true ] && [ "${KEEP_SCRATCH:-false}" != "true" ] && /usr/local/bin/scratch.sh proof /work; then
+      /usr/local/bin/scratch.sh cleanup /work 10001 || echo "scratch leaf ${SCRATCH_LEAF:-?} kept: cleanup refused (see above)"
+    else
+      echo "scratch leaf ${SCRATCH_LEAF:-?} kept: delivery not proven/acknowledged (export=$EXPORT ack=$ACK result=$([ -f /work/RESULT.json ] && echo yes || echo no)); POST /v1/operations/$OPERATION:export retries the delivery"
+    fi
+  elif [ -n "${PVC_NAME:-}" ] && [ "${KEEP_PVC:-false}" != "true" ] && [ "$delivered" = true ]; then
+    curl -sS -o /dev/null -w "pvc delete %{http_code}\n" --cacert "$CA" -H "Authorization: Bearer $TOKEN" -X DELETE \
+      "$API/api/v1/namespaces/$POD_NAMESPACE/persistentvolumeclaims/$PVC_NAME"
+  elif [ -n "${PVC_NAME:-}" ]; then
+    echo "volume $PVC_NAME kept: delivery not acknowledged (export=$EXPORT ack=$ACK result=$([ -f /work/RESULT.json ] && echo yes || echo no)); POST /v1/operations/$OPERATION:export retries the delivery"
+  fi
+}
+
+captured_error_delivered() {   # jobs 0.1.32: an async endpoint caller's exit 2/5 with its capture delivered, proven and ACKed
+  [ "$MODE" = record ] && [ "${OPERATION_MODE:-}" = async ] || return 1
+  [ "$EXIT" = 2 ] || [ "$EXIT" = 5 ] || return 1
+  [ -f /work/RESULT.json ] && jq -e '.export == "succeeded" and (.capture.sha256 // "") != ""' /work/RESULT.json > /dev/null 2>&1 || return 1
+  if [ -n "${API_URL:-}" ]; then [ "$ACK" = 200 ] || return 1; fi
+  /usr/local/bin/scratch.sh proof /work
+}
+
 upload() {   # $1 = status
   local st="$1"                                 # the positional parameters are replaced below (UPLOAD_EXCLUDES)
   cd /work || return
-  record "$st"
   if [ "$MODE" = record ]; then
     # application-managed I/O: the run (or the endpoint caller, docs/API.md "Endpoint calls") delivered its own output;
-    # RESULT.json may say how that went (export: succeeded | failed), else the platform exported nothing (n/a)
+    # RESULT.json may say how that went (export: succeeded | failed), else the platform exported nothing (n/a). Read it
+    # BEFORE the terminal record, so the one record carries the delivery: jobs 0.1.31 posted a preliminary terminal
+    # record first, and a reader between the two saw "failed, export n/a" for a delivered capture (op-604f95bfb719109e,
+    # 2026-10-20 21:53:52Z).
     EXPORT=$(jq -r '.export // "n/a"' /work/RESULT.json 2>/dev/null || echo n/a); [ -n "$EXPORT" ] || EXPORT="n/a"
     record "$st"; echo "RECORD $(date -u +%FT%TZ) status=$st export=$EXPORT (application-managed I/O)"; return
   fi
+  record "$st"
   # multi-node runs (UPLOAD_SCOPE=rank0, docs/JOBS.md): every pod records its attempt, only rank 0 publishes the
   # results and STATUS.json (the ranks share nothing under /work; outputs are written by rank 0 by convention)
   if [ "${UPLOAD_SCOPE:-all}" = rank0 ] && [ "${NODE_RANK:-0}" != 0 ]; then
@@ -285,26 +315,21 @@ if [ "$EXIT" = "0" ]; then
     [ "$EXPORT" = succeeded ] && delivered=true
   fi
   if [ -n "${API_URL:-}" ] && [ "$ACK" != 200 ]; then delivered=false; fi
-  if [ "${SCRATCH:-}" = shared ]; then
-    # a durable endpoint call on the tenant's shared scratch (scratch.sh): the leaf is emptied only with the delivery
-    # acknowledged by the API and the capture proven intact (manifest, hash, RESULT.json); anything else keeps it
-    # (export retry, recovery, retention), exactly as a kept volume; the shared claim is never deleted
-    if [ "$delivered" = true ] && [ "${KEEP_SCRATCH:-false}" != "true" ] && /usr/local/bin/scratch.sh proof /work; then
-      /usr/local/bin/scratch.sh cleanup /work 10001 || echo "scratch leaf ${SCRATCH_LEAF:-?} kept: cleanup refused (see above)"
-    else
-      echo "scratch leaf ${SCRATCH_LEAF:-?} kept: delivery not proven/acknowledged (export=$EXPORT ack=$ACK result=$([ -f /work/RESULT.json ] && echo yes || echo no)); POST /v1/operations/$OPERATION:export retries the delivery"
-    fi
-  elif [ -n "${PVC_NAME:-}" ] && [ "${KEEP_PVC:-false}" != "true" ] && [ "$delivered" = true ]; then
-    curl -sS -o /dev/null -w "pvc delete %{http_code}\n" --cacert "$CA" -H "Authorization: Bearer $TOKEN" -X DELETE \
-      "$API/api/v1/namespaces/$POD_NAMESPACE/persistentvolumeclaims/$PVC_NAME"
-  elif [ -n "${PVC_NAME:-}" ]; then
-    echo "volume $PVC_NAME kept: delivery not acknowledged (export=$EXPORT ack=$ACK result=$([ -f /work/RESULT.json ] && echo yes || echo no)); POST /v1/operations/$OPERATION:export retries the delivery"
-  fi
+  release_work "$delivered"
 elif [ -z "$EXIT" ]; then
   upload interrupted
   echo "$MAIN interrupted: outputs uploaded, PVC ${PVC_NAME:-?} kept (resumes automatically after a preemption; POST /v1/operations/$OPERATION:resume after a cancel)"
 else
   upload failed
-  echo "$MAIN exited $EXIT: outputs uploaded, PVC ${PVC_NAME:-?} kept for a resume (POST /v1/operations/$OPERATION:resume)"
+  if captured_error_delivered; then
+    # a trusted async endpoint caller whose main captured and DELIVERED the endpoint's error answer (exit 2: the
+    # caller's 4xx, exit 5: the endpoint's 5xx): endpoint inference is not resumable and the capture IS the result, so
+    # the volume/leaf is released like a delivered success (jobs 0.1.32). Exit 4 (unknown outcome), a partial or
+    # failed export and every scientific run (mode run: its volume is for :resume) keep it; KEEP_* flags still win.
+    echo "$MAIN exited $EXIT: the endpoint's error answer was captured, delivered and acknowledged; nothing to resume"
+    release_work true
+  else
+    echo "$MAIN exited $EXIT: outputs uploaded, PVC ${PVC_NAME:-?} kept for a resume (POST /v1/operations/$OPERATION:resume)"
+  fi
 fi
 exit 0

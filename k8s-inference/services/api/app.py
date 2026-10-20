@@ -1730,8 +1730,18 @@ def list_operations(
     # as long as the listing itself is reused (api 0.11.129)
     auth_key = (p.hash, p.role, tuple(p.info.get("models") or []))  # one entry per principal, never per generation
     hit = _ops_auth_cache.get(auth_key)
-    if hit and hit[0] is live and hit[1] > time.time():
-        live_names, entries = set(hit[2]), list(hit[3])
+    generation = getattr(live, "generation", None)  # the listing's monotonic token (jobs.Listing); None = uncached
+    if hit and generation is not None and hit[0] == generation and hit[1] > time.time():
+        # the entry names what this principal may read of THIS listing generation and holds no Job: the entries are
+        # rebuilt from the current listing (api 0.11.153; before, an entry kept the listing and every readable Job dict
+        # alive until its own expiry: ~100 MB per principal under the cohort). The token is the generation, never the
+        # list's id (reused once the list is gone).
+        live_names = set(hit[2])
+        entries = [
+            (j["metadata"].get("creationTimestamp") or "", j["metadata"]["name"], j, None)
+            for j in live
+            if j["metadata"]["name"] in live_names
+        ]
     else:
         for j in live:
             if _may_read_operation(p, j):
@@ -1743,11 +1753,12 @@ def list_operations(
         # principal pinned the generation current at that principal's last listing, so six pollers kept up to six
         # 100 MB generations alive while the warmer made a new one every 4 s (1.9 GiB under wave 3, 2026-10-20).
         # Keyed by id(live) before 0.11.142, every refresh left a generation behind until 256 had piled up.
-        for k in [k for k, v in _ops_auth_cache.items() if v[1] <= now or v[0] is not live]:
+        for k in [k for k, v in _ops_auth_cache.items() if v[1] <= now or v[0] != generation]:
             del _ops_auth_cache[k]
         if len(_ops_auth_cache) > 256:
             _ops_auth_cache.clear()
-        _ops_auth_cache[auth_key] = (live, now + cfg.OPS_LIST_CACHE_S, set(live_names), list(entries))
+        if generation is not None:
+            _ops_auth_cache[auth_key] = (generation, now + cfg.OPS_LIST_CACHE_S, set(live_names))
     durable: list[dict] = []
     if attempts.enabled():
         try:

@@ -3684,3 +3684,139 @@ def test_a_gone_stage_member_keeps_its_stage_identity(monkeypatch):
     monkeypatch.setattr(attempts, "for_operation", lambda root: [dict(prow)] if root == "op-plain" else [])
     job = {"metadata": {"name": "op-plain", "annotations": {}}, "_synthetic": attempts.synthesize("op-plain", "demo")}
     assert "stage" not in appmod._operation(alice, job, "op-plain", "control")
+
+
+def test_a_failed_main_whose_capture_record_is_still_coming_is_finalizing_not_failed_with_no_delivery():
+    """api 0.11.153: an application-I/O endpoint call whose main ended with an error (exit 2/5) is FINALIZING while its
+    newest record carries no delivery yet and the end is recent (the uploader posts the capture record next); FAILED
+    with the delivery once the record carries it; FAILED after the grace; a main that never started is FAILED at once."""
+    import datetime
+
+    import status
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    recent = (now - datetime.timedelta(seconds=30)).isoformat()
+    old = (now - datetime.timedelta(seconds=status.FINALIZING_GRACE_S + 60)).isoformat()
+
+    def job(records):
+        return (
+            {
+                "metadata": {
+                    "name": "op-cap",
+                    "labels": {
+                        f"{cfg.LABEL}/mode": "async",
+                        f"{cfg.LABEL}/model": "ctoxpred2",
+                        f"{cfg.LABEL}/tenant": "demo",
+                    },
+                    "annotations": {f"{cfg.LABEL}/execution": json.dumps({"io_mode": "application"})},
+                },
+                "spec": {},
+                "status": {
+                    "conditions": [
+                        {"type": "Failed", "status": "True", "reason": "PodFailurePolicy", "lastTransitionTime": recent}
+                    ]
+                },
+                "_pods": [],
+            },
+            None,
+            records,
+        )  # normalise(job, price_per_call, records)
+
+    base = {
+        "operation": "op-cap",
+        "root": "op-cap",
+        "pod": "op-cap-a",
+        "status": "failed",
+        "exit_code": 2,
+        "epoch": 1,
+        "io_mode": "application",
+        "tenant": "demo",
+    }
+    pending = status.normalise(*job([{**base, "started_at": recent, "ended_at": recent, "export_state": None}]))
+    assert pending["status"] == "FINALIZING"
+    delivered = status.normalise(
+        *job(
+            [
+                {
+                    **base,
+                    "started_at": recent,
+                    "ended_at": recent,
+                    "export_state": "succeeded",
+                    "result_ref": "scientific-ai:native:x",
+                }
+            ]
+        )
+    )
+    assert (
+        delivered["status"] == "FAILED"
+    )  # delivery fields are the lifecycle's (app._operation), the status is the point here
+    late = status.normalise(*job([{**base, "started_at": old, "ended_at": old, "export_state": None}]))
+    assert late["status"] == "FAILED"
+    never = status.normalise(*job([{**base, "started_at": None, "ended_at": recent, "export_state": "n/a"}]))
+    assert never["status"] == "FAILED"
+
+
+def test_the_operations_auth_cache_holds_no_jobs_and_the_workload_cache_is_compact(client, monkeypatch):
+    """api 0.11.153: an auth-cache entry names what a principal may read of one listing generation (id + size) and
+    holds no Job dict; a cached Workload keeps only the fields the readers use (no pod template, no managedFields)."""
+    c, cl = client
+    appmod._ops_auth_cache.clear()
+    assert c.get("/v1/operations", headers=H).status_code == 200
+    assert appmod._ops_auth_cache, "a listing populates the auth cache"
+    for v in appmod._ops_auth_cache.values():
+        assert isinstance(v[0], int) and isinstance(v[2], set)  # (generation, expiry, names)
+        assert not any(isinstance(x, (dict, list)) for x in v)
+        assert all(isinstance(n, str) for n in v[2])
+    # the fence is the listing's monotonic generation, never the list object's id: a later listing that happens to
+    # reuse the same id and size (forced here by handing the cache the same object with a new generation) is a miss
+    gen_before = max(v[0] for v in appmod._ops_auth_cache.values())
+    live, _ = jobs.list_ops_all("tenant-demo", "demo", None)
+    assert isinstance(live, jobs.Listing) and live.generation == gen_before
+    live.generation = gen_before + 1  # the same object, a newer generation: the entry must not be trusted
+    hits_before = dict(appmod._ops_auth_cache)
+    assert c.get("/v1/operations", headers=H).status_code == 200
+    assert all(v[0] == gen_before + 1 for v in appmod._ops_auth_cache.values()) and hits_before != dict(
+        appmod._ops_auth_cache
+    )
+    full = {
+        "metadata": {
+            "name": "job-op-1-abc",
+            "uid": "u1",
+            "namespace": "tenant-demo",
+            "labels": {cfg.KUEUE_JOB_UID_LABEL: "job-uid-1", "other": "x"},
+            "annotations": {
+                f"{cfg.LABEL}/admitted-cluster": "north",
+                "kubectl.kubernetes.io/last-applied-configuration": "x" * 5000,
+            },
+            "managedFields": [{"manager": "kueue", "fieldsV1": {"f": "x" * 20000}}],
+            "ownerReferences": [{"kind": "Job", "name": "op-1", "uid": "job-uid-1", "apiVersion": "batch/v1"}],
+        },
+        "spec": {
+            "active": True,
+            "podSets": [{"template": {"spec": {"containers": [{"image": "x" * 100000}]}}}],
+            "queueName": "q",
+        },
+        "status": {
+            "conditions": [{"type": "Admitted", "status": "True"}],
+            "clusterName": "north",
+            "admission": {"clusterQueue": "cq"},
+            "reclaimablePods": ["x" * 1000],
+        },
+    }
+    compact = kube._compact_workload(full)
+    assert compact["metadata"]["labels"] == {cfg.KUEUE_JOB_UID_LABEL: "job-uid-1"} and compact["metadata"][
+        "annotations"
+    ] == {f"{cfg.LABEL}/admitted-cluster": "north"}
+    assert (
+        compact["spec"] == {"active": True}
+        and compact["status"]["clusterName"] == "north"
+        and compact["status"]["admission"] == {"clusterQueue": "cq"}
+        and compact["status"]["conditions"] == [{"type": "Admitted", "status": "True"}]
+    )
+    assert (
+        "managedFields" not in compact["metadata"]
+        and "podSets" not in compact["spec"]
+        and "reclaimablePods" not in compact["status"]
+    )
+    assert kube._placed(compact) == "north" and kube._not_admitted_reason(compact) is None
+    assert len(json.dumps(compact)) < 600 < len(json.dumps(full))

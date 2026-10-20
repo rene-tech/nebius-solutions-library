@@ -546,7 +546,12 @@ remaining budget read it, never the allowance. A run that fails before any attem
 DeadlineExceeded) reports the Job's own Failed transition as `ended_at`. Every attempt record carries a bounded
 `reason` (300 characters) the API persists, so the cause survives the pod's deletion: the platform's timeout reason,
 else main's termination message (`/dev/termination-log`, written by call.sh and by applications), else the kubelet's
-reason (`OOMKilled`, `Error`); it is reported through attempts, the operation's status and the result.
+reason (`OOMKilled`, `Error`); it is reported through attempts, the operation's status and the result. Under
+application-managed I/O the uploader reads RESULT.json before its one terminal record (jobs 0.1.32), so the record
+carries the delivery; while a started main's capture record is still coming the operation reads FINALIZING (api
+0.11.153), never "failed, export n/a". A trusted async endpoint caller whose main captured, delivered, proved and had
+acknowledged the endpoint's error answer (exit 2 or 5) releases its volume or scratch leaf like a delivered success:
+endpoint inference is not resumable; exit 4, partial or failed exports, scientific runs and KEEP_* flags keep it.
 
 ## Attempts and finalization
 

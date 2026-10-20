@@ -162,4 +162,36 @@ out=$(run_reason "" '{"exitCode":0,"message":"done"}')
 [ "$out" = - ] || fail "reason: a succeeded main carries no reason, got: $out"
 out=$(run_reason "" "{\"exitCode\":1,\"message\":\"$(printf 'x%.0s' $(seq 1 400))\"}")
 [ "${#out}" = 300 ] || fail "reason: bounded to 300 characters, got ${#out}"
+# 9. application-managed I/O: upload() reads RESULT.json BEFORE its one terminal record (jobs 0.1.32): the record posted
+#    carries export (and so the API never stores a preliminary "failed/n-a" row that a reader can take for the delivery)
+# shellcheck disable=SC2016
+sed -n '/^upload() {/,/^}/p' "$U" | sed 's#^  cd /work || return#  cd "$WORK" || return#; s#/work/RESULT.json#"$WORK/RESULT.json"#g' > "$T/upload-fn.sh"
+grep -q 'cd "$WORK" || return' "$T/upload-fn.sh" || fail "upload() no longer starts with cd /work"
+out=$(bash -c '
+  set -u; WORK=$(mktemp -d); printf "%s" "$1" > "$WORK/RESULT.json"
+  MODE=record; EXPORT=""; CALLS=0
+  record() { CALLS=$((CALLS+1)); echo "record#$CALLS status=$1 export=${EXPORT:-unset}"; }
+  . "$T/upload-fn.sh"; upload failed > "$WORK/log" 2>&1; grep "^record#" "$WORK/log"; rm -rf "$WORK"' _ '{"export":"succeeded","result_ref":"r"}' 2>/dev/null)
+[ "$out" = "record#1 status=failed export=succeeded" ] || fail "application I/O: the one terminal record must carry the export read first: $out"
+# 10. jobs 0.1.32: captured_error_delivered() releases only a trusted async caller's exit 2/5 with a delivered, proven,
+#     acknowledged capture; exit 4, a run (mode run), a failed/partial export, a missing ACK or a failed proof keep the volume
+sed -n '/^captured_error_delivered() {/,/^}/p' "$U" | sed 's#/work/RESULT.json#"$WORK/RESULT.json"#g; s#/usr/local/bin/scratch.sh proof /work#proof_stub#' > "$T/ced.sh"
+grep -q 'proof_stub' "$T/ced.sh" || fail "captured_error_delivered() not found in upload.sh"
+ced() { # <MODE> <OPERATION_MODE> <EXIT> <RESULT.json or -> <ACK> <proof rc>: prints rc of captured_error_delivered
+  bash -c '
+    set -u; WORK=$(mktemp -d); MODE=$1; OPERATION_MODE=$2; EXIT=$3; [ "$4" = - ] || printf "%s" "$4" > "$WORK/RESULT.json"; ACK=$5; API_URL=http://api.invalid
+    proof_stub() { return '"$6"'; }
+    . "$T/ced.sh"; captured_error_delivered; echo $?; rm -rf "$WORK"' _ "$1" "$2" "$3" "$4" "$5" 2>/dev/null
+}
+R='{"export":"succeeded","capture":{"sha256":"abc","http_status":422}}'
+[ "$(ced record async 2 "$R" 200 0)" = 0 ] || fail "captured 4xx delivered+proven+ACKed must release"
+[ "$(ced record async 5 "$R" 200 0)" = 0 ] || fail "captured 5xx delivered+proven+ACKed must release"
+[ "$(ced record async 4 "$R" 200 0)" = 1 ] || fail "exit 4 (unknown outcome) must keep"
+[ "$(ced record run 2 "$R" 200 0)" = 1 ] || fail "a scientific run (not an async caller) must keep its volume"
+[ "$(ced sync async 2 "$R" 200 0)" = 1 ] || fail "managed I/O never releases through this path"
+[ "$(ced record async 2 '{"export":"failed","capture":{"sha256":"abc"}}' 200 0)" = 1 ] || fail "a failed export must keep"
+[ "$(ced record async 2 '{"export":"succeeded"}' 200 0)" = 1 ] || fail "no capture manifest must keep"
+[ "$(ced record async 2 "$R" 503 0)" = 1 ] || fail "an unacknowledged record must keep"
+[ "$(ced record async 2 "$R" 200 1)" = 1 ] || fail "a failed integrity proof must keep"
+[ "$(ced record async 2 - 200 0)" = 1 ] || fail "no RESULT.json must keep"
 echo "   ok upload.sh record(): timer from main start; start-record init step (200 releases main, 409/401/403 fail it, transients retried to the bound); the cause from main's termination message/reason; 503/000 then 200 acknowledged (prior ack kept, transient body apart), 4 x transient recovered at the next poll, 409/401/403 never retried"

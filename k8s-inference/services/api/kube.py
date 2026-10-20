@@ -460,9 +460,37 @@ def _workloads(ns: str) -> list:
         items = retry(api().list_namespaced_custom_object, "kueue.x-k8s.io", "v1beta2", ns, "workloads").get(
             "items", []
         )
+        items = [_compact_workload(w) for w in items]  # what the readers below use; never spec.podSets/managedFields
         if WORKLOADS_CACHE_S > 0:
             _workloads_cache[ns] = (now + WORKLOADS_CACHE_S, items)
         return items
+
+
+def _compact_workload(w: dict) -> dict:
+    """The fields the Workload readers of this module use (workload_of, workload_reasons, workload_clusters, _placed,
+    _not_admitted_reason): identity, the Job-uid label, the admitted-cluster annotation, owner references, spec.active,
+    status conditions/clusterName/admission. A listed Workload carries its full pod template and managedFields
+    (~260 KB each); a tenant namespace of hundreds of them was cached whole every few seconds (api 0.11.153)."""
+    md, st, sp = w.get("metadata") or {}, w.get("status") or {}, w.get("spec") or {}
+    return {
+        "metadata": {
+            "name": md.get("name"),
+            "uid": md.get("uid"),
+            "namespace": md.get("namespace"),
+            "labels": {k: v for k, v in (md.get("labels") or {}).items() if k == KUEUE_JOB_UID_LABEL},
+            "annotations": {k: v for k, v in (md.get("annotations") or {}).items() if k.startswith(LABEL)},
+            "ownerReferences": [
+                {"kind": o.get("kind"), "name": o.get("name"), "uid": o.get("uid")}
+                for o in (md.get("ownerReferences") or [])
+            ],
+        },
+        "spec": {"active": sp.get("active")},
+        "status": {
+            "conditions": st.get("conditions") or [],
+            "clusterName": st.get("clusterName"),
+            "admission": st.get("admission"),
+        },
+    }
 
 
 def _placed(w: dict) -> str | None:
