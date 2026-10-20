@@ -10,6 +10,7 @@ from fastapi import HTTPException, Response
 
 import app as appmod
 import catalog
+import config as cfg
 import jobs
 import kube
 from test_api import ADMIN, H, admin_keys, client, cluster, pod  # noqa: F401 - pytest fixture registration
@@ -474,3 +475,28 @@ def test_relatives_come_from_the_warm_listing_without_a_new_read(client, monkeyp
     fake.pods.append(running)
     live = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
     assert pods_calls and running["metadata"]["name"] in [p["metadata"]["name"] for p in live[0]["_pods"]]  # live
+
+
+def test_counts_of_relatives_never_come_from_the_listing(client, monkeypatch):
+    """api 0.11.147: a count (complete=False: the next export/continuation ordinal) lists fresh even with the tenant
+    listing warm, so a relative created within the listing's age (here or on another replica) is counted; the view
+    (complete=True) keeps using the listing."""
+    c, fake = client
+    r = c.post("/v1/models/hello-run:invoke", headers=H, json={"mode": "run", "input": {}})
+    assert r.status_code == 202, r.text
+    op = r.json()["id"]
+    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 60.0)
+    jobs._ops_list_cache.clear()
+    jobs.list_ops_all("tenant-demo", "demo", None)  # the warm listing: one Job
+    # a retry created after the listing was taken (another replica's export, or this one's a moment ago)
+    late = copy.deepcopy(fake.jobs[("tenant-demo", op)])
+    late["metadata"] = {
+        **late["metadata"],
+        "name": f"{op}-x1",
+        "annotations": {**late["metadata"].get("annotations", {}), f"{cfg.LABEL}/export-of": op},
+    }
+    fake.jobs[("tenant-demo", f"{op}-x1")] = late
+    assert jobs.export_retries("tenant-demo", "demo", op) == 1  # counted fresh
+    assert jobs.continuations("tenant-demo", "demo", op) == 0
+    view = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"].startswith(op))
+    assert [j["metadata"]["name"] for j in view] == [op]  # the view is the listing's copy (<= OPS_LIST_CACHE_S old)

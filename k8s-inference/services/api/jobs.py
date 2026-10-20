@@ -2020,8 +2020,12 @@ def list_related(ns: str, tenant: str, keep, complete: bool = True) -> list[dict
     and the OOM-killed API pods of 2026-10-14, api 0.11.110). `complete` fills the selected Jobs in like `get` (their
     pods, the worker's placement and reason: a handle needs them); a count of names does not. A region that cannot be
     read is skipped (as `list_ops_all`): its relatives are absent, never a failure of the lookup."""
-    hit = _ops_list_cache.get((ns, tenant, None)) if OPS_LIST_CACHE_S > 0 else None
+    hit = _ops_list_cache.get((ns, tenant, None)) if OPS_LIST_CACHE_S > 0 and complete else None
     if hit and hit[0] > time.time():
+        # only a VIEW of relatives (complete=True) is served from the listing; a COUNT (complete=False: the next
+        # retry ordinal and the retry bound, export_retries/continuations) always lists fresh, since a relative
+        # created within the listing's age, here or on the other replica, would be missed and its ordinal reused
+        # (create() returns the existing Job for AlreadyExists: the second export would silently be the first).
         # the listing the warmer keeps for the tenant (docs/API.md "Pagination"): the same Jobs, already complete
         # (pods, placement, reason), at most OPS_LIST_CACHE_S old, exactly what GET /v1/operations shows. Listing the
         # tenant's every Job in every region through the typed client twice per view made an operation view of a

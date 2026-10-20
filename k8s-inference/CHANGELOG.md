@@ -4,6 +4,15 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.147
+
+(API image only.)
+
+- Counts of an operation's relatives (the next export or continuation ordinal, the retry bound) never come from
+  the listing cache 0.11.146 introduced for views: a retry created within the listing's age, on this replica or
+  the other, was not counted, and `create()` answers AlreadyExists with the existing Job, so a second `:export`
+  within 10 s would silently have returned the first retry. Views keep the listing; counts list fresh.
+
 ## api 0.11.146
 
 (API image only.)
