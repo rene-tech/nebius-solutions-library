@@ -636,3 +636,28 @@ def test_epoch_fencing_in_the_database(database):
     assert e.value.status_code == 409
     lc = attempts.lifecycle("op-x", "op-x", attempts.for_operation("op-x"))
     assert lc["epoch"] == 2 and lc["attempt_id"] == "op-x-b"
+
+
+def test_a_record_keeps_its_bounded_reason(database):
+    """api 0.11.149: the uploader's reason (an enforced execution timeout, a termination message) is stored with
+    the record (migration 31), bounded to 300 characters, kept by later records without one."""
+    import attempts
+    import db
+
+    db.migrate()
+    attempts.record("eu-north1", "tenant-demo", "op-r-abc", {"operation": "op-r", "root": "op-r", "status": "started"})
+    attempts.record(
+        "eu-north1",
+        "tenant-demo",
+        "op-r-abc",
+        {"operation": "op-r", "root": "op-r", "status": "failed", "exit_code": 143, "reason": "x" * 400},
+    )
+    rows = attempts.for_operation("op-r")
+    assert rows and rows[-1]["reason"] == "x" * 300
+    attempts.record(
+        "eu-north1",
+        "tenant-demo",
+        "op-r-abc",
+        {"operation": "op-r", "root": "op-r", "status": "failed", "exit_code": 143},
+    )
+    assert attempts.for_operation("op-r")[-1]["reason"] == "x" * 300  # a later record without one keeps the first

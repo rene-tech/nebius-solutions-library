@@ -429,6 +429,11 @@ create table if not exists operation_marks (
         updated_at timestamptz not null default now()
     );
     """,
+    # 31: the bounded cause an attempt record carries (the uploader's: an execution timeout it enforced, the
+    # container's termination message), kept with the record so a deleted pod's attempt still names it (api 0.11.149)
+    """
+    alter table attempts add column if not exists reason text;
+    """,
 ]
 
 _pool = None

@@ -26,6 +26,53 @@ MAIN="${MAIN_CONTAINER:-main}"; EXIT=""; POD="{}"; SEEN=0; DIGEST_SEEN=0
 pod() { TOKEN=$(cat "$TOKEN_FILE"); POD=$(curl -sS --cacert "$CA" -H "Authorization: Bearer $TOKEN" "$POD_URL" 2>/dev/null || echo '{}'); }
 field() { jq -r --arg m "$MAIN" "$1" <<<"$POD"; }
 
+main_pids() {    # every process whose ancestry ends neither at this shell nor at pid 1 (pause): main's (shared PID namespace)
+  local d p root rest pp
+  local -a stat_fields
+  for d in /proc/[0-9]*; do
+    p=${d#/proc/}; root=$p
+    while :; do
+      rest=$(cat "/proc/$root/stat" 2>/dev/null) || break
+      rest=${rest##*) }; read -r -a stat_fields <<< "$rest"; pp=${stat_fields[1]}
+      [ -z "${pp:-}" ] || [ "$pp" = 0 ] && break
+      root=$pp
+    done
+    [ "$root" = "$$" ] && continue
+    [ "$root" = 1 ] && continue
+    [ -d "$d" ] && echo "$p"
+  done
+}
+
+epoch_of() { date -u -D %Y-%m-%dT%H:%M:%SZ -d "$1" +%s 2>/dev/null || date -u -d "$1" +%s 2>/dev/null; }
+
+kill_main() {    # TERM to every process of main, KILL after TERM_GRACE_S (30): the platform ends the attempt.
+  # The runner is uid 10001 with every capability dropped (render.RUNNER_SECURITY_CONTEXT): it can signal only
+  # processes of its own uid. A main of another uid (root) refuses every signal (EPERM): return 1 at once, DENIED_UID
+  # names its uid, and the caller must not claim the termination (the Job deadline ends such an attempt)
+  local pids p err sent=0; DENIED_UID=""; pids=$(main_pids); [ -n "$pids" ] || return 0
+  for p in $pids; do
+    if err=$(kill -TERM "$p" 2>&1); then sent=1
+    else case "$err" in *"not permitted"*) DENIED_UID=$(awk '/^Uid:/{print $2}' "/proc/$p/status" 2>/dev/null) ;; esac; fi
+  done
+  [ "$sent" = 1 ] || { [ -z "$DENIED_UID" ] || return 1; return 0; }   # nothing signalled: all gone, or all denied
+  sleep "${TERM_GRACE_S:-30}" & wait $!
+  pids=$(main_pids | tr '\n' ' '); [ -n "$pids" ] || return 0
+  # shellcheck disable=SC2086
+  kill -KILL $pids 2>/dev/null; return 0
+}
+
+enforce_execution_timeout() {   # jobs 0.1.31: timeout_s counts from MAIN's ACTUAL start (its running.startedAt), never from
+  # the Job's resume or the pod's creation (node and pull time are the Job deadline's start-up allowance); 0 = enforced now
+  [ -n "${EXECUTION_TIMEOUT_S:-}" ] && [ "${TIMED_OUT:-0}" = 0 ] || return 1
+  local s se now; s=$(field '.status.containerStatuses[]? | select(.name==$m) | .state.running.startedAt // empty'); [ -n "$s" ] || return 1
+  se=$(epoch_of "$s") || return 1; [ -n "$se" ] || return 1; now=$(date -u +%s)
+  [ $(( now - se )) -ge "$EXECUTION_TIMEOUT_S" ] || return 1
+  REASON="timeout_s ${EXECUTION_TIMEOUT_S} exceeded $(( now - se ))s after main started at $s"; TIMED_OUT=1
+  if kill_main; then REASON="$REASON; terminated by the platform"
+  else REASON="$REASON; the runner (uid $(id -u)) cannot signal main's processes (uid ${DENIED_UID:-?}): the Job deadline ends the attempt"; fi
+  echo "$REASON"; echo "$REASON" > /dev/termination-log 2>/dev/null; return 0
+}
+
 main_alive() {   # any process whose ancestry ends neither at this shell nor at pid 1 (pause) belongs to another container
   local d p root rest pp
   local -a stat_fields
@@ -71,12 +118,20 @@ record() {   # $1 = status; the attempt as the uploader sees it now (main may st
   REC=/work/attempts
   if ! mkdir -p "$REC" 2>/dev/null || ! [ -w "$REC" ]; then REC=/tmp/attempts; mkdir -p "$REC"; echo "WARN: /work is not writable by the uploader; records kept under $REC"; fi
   [ "$1" = started ] && ended="" || ended="${ended:-$(date -u +%FT%TZ)}"   # a start record has no end yet
+  # the cause (bounded): the platform's own reason (timeout) first, else main's termination message (call.sh and
+  # applications write it to /dev/termination-log), else the kubelet's reason (OOMKilled, Error); only for a failed
+  # main, and persisted by the API so the cause survives the pod's deletion
+  local rsn="${REASON:-}"
+  if [ -z "$rsn" ] && [ "$1" != started ]; then
+    rsn=$(field '.status.containerStatuses[]? | select(.name==$m) | .state.terminated // empty | select(.exitCode != 0) | (.message // .reason // empty)' | tr '\n' ' ' | sed 's/[[:space:]]*$//' | head -c 300)
+  fi
   jq -cn --arg op "$OPERATION" --arg pod "$POD_NAME" --arg node "$node" --arg pool "$pool" --arg st "$1" --argjson exit "${EXIT:-null}" \
     --argjson gpus "${GPUS:-0}" --arg cls "${GPU_CLASS:-}" --arg s "$started" --arg e "$ended" --arg img "$image" --arg dg "$digest" \
     --arg exp "${EXPORT:-}" --arg res "$result" --arg ck "$ckpt" --arg gen "$gen" --arg mode "$([ "$MODE" = record ] && echo application || echo managed)" \
-    --arg opmode "${OPERATION_MODE:-}" --arg model "${MODEL:-}" --arg cap "$cap" \
+    --arg opmode "${OPERATION_MODE:-}" --arg model "${MODEL:-}" --arg cap "$cap" --arg rsn "$rsn" \
     '{operation:$op,pod:$pod,node:$node,pool:$pool,status:$st,exit_code:$exit,gpus:$gpus,gpu_class:$cls,started_at:$s,ended_at:$e,
       image:$img,image_digest:$dg,io_mode:$mode} + (if $exp != "" then {export:$exp} else {} end)
+      + (if $rsn != "" then {reason:$rsn} else {} end)
       + (if $cap != "" then {capture:($cap|fromjson)} else {} end)
       + (if $opmode != "" then {mode:$opmode} else {} end) + (if $model != "" then {model:$model} else {} end)
       + (if $res != "" then {result_ref:$res} else {} end) + (if $ck != "" then {checkpoint_ref:$ck} else {} end)
@@ -157,6 +212,25 @@ upload() {   # $1 = status
 on_term() { echo "SIGTERM $(date -u +%FT%TZ): partial upload, then waiting for $MAIN to end"; EXIT=""; upload interrupted; }
 trap on_term TERM
 
+if [ "${1:-}" = start-record ]; then
+  # the init step (jobs 0.1.31, docs/JOBS.md "Attempts and finalization"): main starts only behind its ACCEPTED start
+  # record (200), so its first broker call never precedes its own record; no digest yet (the uploader republishes
+  # with it). A fenced (409) or rejected (401/403) record ends the attempt here: this step fails, main never starts,
+  # nothing is retried. A transient answer is retried (record()'s tries, then every 10 s) until START_RECORD_WAIT_S
+  # (600), then the step fails and the Job's next pod records afresh. Without an API there is nothing to acknowledge.
+  pod; deadline=$(( $(date +%s) + ${START_RECORD_WAIT_S:-600} ))
+  while :; do
+    record started
+    case "$ACK" in
+      200|"") echo "start record acknowledged: ${ACK:-no API}"; exit 0 ;;
+      409|401|403) msg="start record refused ($ACK): main does not start" ;;
+      *) [ "$(date +%s)" -lt "$deadline" ] && { sleep 10 & wait $!; continue; }
+         msg="start record unacknowledged for ${START_RECORD_WAIT_S:-600}s (last answer ${ACK:-none}): main does not start" ;;
+    esac
+    echo "$msg"; echo "$msg" > /dev/termination-log 2>/dev/null; exit 1
+  done
+fi
+
 gone=0
 while true; do
   pod
@@ -182,6 +256,7 @@ while true; do
     if [ "${START_ACK:-1}" = 0 ]; then       # the start is still unacknowledged (transient failures): once more per poll
       record started; case "$ACK" in 200|409|401|403) START_ACK=1 ;; esac
     fi
+    enforce_execution_timeout && { sleep 3 & wait $!; continue; }   # main is being ended: its exit comes next
     checkpoint_changed && record started     # the live pointer, fenced and acknowledged through the API
     if [ "$DIGEST_SEEN" = 0 ] && [ -n "$(field '.status.containerStatuses[]? | select(.name==$m) | .imageID // empty')" ]; then
       record started                         # the digest arrived after the start record: published once, same attempt

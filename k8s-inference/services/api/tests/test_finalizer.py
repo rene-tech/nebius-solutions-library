@@ -10,6 +10,7 @@ import pytest
 import app as appmod
 import attempts
 import catalog
+import config as cfg
 import execution
 import kube
 import models as models_mod
@@ -152,7 +153,8 @@ def test_export_runs_the_model_finalizer_on_the_kept_volume(failed_run):
         and "DELIVERY" not in reset
     )
     assert "nvidia.com/gpu" not in json.dumps(spec["initContainers"])
-    assert j["spec"]["activeDeadlineSeconds"] == 900
+    assert j["spec"]["activeDeadlineSeconds"] == 900 + cfg.ENDPOINT_START_WAIT_S  # the bound + start-up allowance
+    assert j["metadata"]["annotations"][f"{cfg.LABEL}/timeout-s"] == "900"
     assert (
         j["metadata"]["annotations"][f"{LABEL}/attempt-role"] == "finalize"
         and j["metadata"]["annotations"][f"{LABEL}/finalize-of"] == f"{op}-abc"

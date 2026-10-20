@@ -132,7 +132,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.148", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.149", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -178,6 +178,9 @@ def _job_deadline(job: dict) -> int | None:
             for rj in spec.get("replicatedJobs") or []
         ]
         return max(ds) if ds and max(ds) else None
+    ts = (job.get("metadata", {}).get("annotations") or {}).get(f"{cfg.LABEL}/timeout-s")
+    if ts and str(ts).isdigit():  # the execution bound (api 0.11.149): the Job deadline above it is start-up allowance
+        return int(ts)
     d = spec.get("activeDeadlineSeconds")
     return int(d) if d else None
 

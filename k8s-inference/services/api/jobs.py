@@ -67,6 +67,7 @@ from render import (
     _job_shell,
     _meta,
     _render,
+    _start_record,
     _uploader,
     class_images,
     gpu_classes,
@@ -735,7 +736,18 @@ def build_run(
         meta["annotations"][f"{LABEL}/child-endpoints"] = ",".join(r["childEndpoints"])
         meta["annotations"][f"{LABEL}/child-max-units"] = str(int(r.get("childMaxUnits") or 0))
         meta["annotations"][f"{LABEL}/child-delivery"] = str(r.get("childDelivery") or "platform")
-    job = _job_shell(name, meta, pod, timeout_s, placement, model.get("podMetadata"))
+    uploader = next(c for c in pod["containers"] if c["name"] == "uploader")
+    if timeout_s:
+        # the execution bound is the uploader's timer from main's ACTUAL start (EXECUTION_TIMEOUT_S, jobs 0.1.31) and
+        # is recorded on the Job (the reservation and the handle read it); the Job's own deadline adds the bounded
+        # start-up allowance (node, pull), so a run is never killed before its first attempt by a slow spot node
+        # (7 roots DeadlineExceeded at 1200 s with zero attempts, 2026-10-20 16:52Z, docs/JOBS.md "Deadlines")
+        uploader["env"].append({"name": "EXECUTION_TIMEOUT_S", "value": str(timeout_s)})
+        meta["annotations"][f"{LABEL}/timeout-s"] = str(timeout_s)
+    pod["initContainers"] = list(pod.get("initContainers") or []) + [_start_record(uploader)]
+    job = _job_shell(
+        name, meta, pod, timeout_s + ENDPOINT_START_WAIT_S if timeout_s else None, placement, model.get("podMetadata")
+    )
     if (fz := r.get("finalize")) and fz.get("onExitCodes"):
         # "compute done, delivery pending" ends the Job at once: the GPU computation is never restarted by the Job's
         # backoff for a delivery problem; re-delivery is the model's finalizer through :export (bounded there)
@@ -1259,6 +1271,9 @@ def build_async(
             meta["annotations"][f"{LABEL}/scratch-fallback"] = fallback
     # the deadline covers the bounded wait for a cold endpoint on top of the call's own timeout_s: a spot node that
     # takes 20 minutes to start must not eat the inference budget of an accepted call (docs/API.md "Cold endpoints")
+    if timeout_s:
+        meta["annotations"][f"{LABEL}/timeout-s"] = str(timeout_s)
+    pod["initContainers"] = list(pod.get("initContainers") or []) + [_start_record(uploader)]
     job = _job_shell(name, meta, pod, timeout_s + ENDPOINT_START_WAIT_S if timeout_s else None)
     job["spec"]["backoffLimit"] = 6
     # a 4xx from the endpoint is the caller's error (call.sh exit 2): fail the Job, no pod retries; the endpoint's own

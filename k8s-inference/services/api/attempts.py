@@ -219,6 +219,11 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
                 resume[2],
             ),
         )
+        if body.get("reason"):  # the bounded cause (api 0.11.149): a later record without one keeps the first
+            c.execute(
+                "update attempts set reason = coalesce(attempts.reason, %s) where operation = %s and pod = %s",
+                (str(body["reason"])[:300], operation, pod),
+            )
         return _row(c, operation, pod)
 
 
@@ -382,7 +387,7 @@ def gang_status(rows: list[dict]) -> str | None:
 COLS = (
     "operation, pod, root, tenant, namespace, epoch, region, node, pool, gpu_class, gpus, image, image_digest, status, exit_code, "
     "started_at, ended_at, export_state, result_ref, checkpoint_ref, checkpoint_generation, revision, updated_at, role, cluster, "
-    "mode, model, io_mode, gang_rank, gang_restart, pod_uid, capture, resume_checkpoint_ref, resume_source_epoch, resume_source"
+    "mode, model, io_mode, gang_rank, gang_restart, pod_uid, capture, resume_checkpoint_ref, resume_source_epoch, resume_source, reason"
 )
 
 

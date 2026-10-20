@@ -204,6 +204,24 @@ def _uploader(
     }
 
 
+def _start_record(uploader: dict) -> dict:
+    """The attempt's start record as an init step (jobs 0.1.31): the same image and environment as the uploader,
+    `upload.sh start-record` records `started` and waits for its acknowledgement (bounded, docs/JOBS.md) BEFORE main
+    starts, so no main container can reach the broker before its attempt exists (the replacement attempt of
+    op-6031e9ec5b9077b9 was refused 403 two seconds before its record landed, 2026-10-20). The uploader republishes
+    the record with the runtime digest and the terminal state as before; the execution timer is the uploader's,
+    from main's actual start, never from this step."""
+    return {
+        "name": "attempt-start",
+        "image": uploader["image"],
+        "command": ["/usr/local/bin/upload.sh", "start-record"],
+        "env": [e for e in uploader["env"] if e["name"] != "UPLOAD_EXCLUDES"],
+        "resources": {"requests": {"cpu": "50m", "memory": "64Mi"}, "limits": {"cpu": "500m", "memory": "256Mi"}},
+        "volumeMounts": list(uploader["volumeMounts"]),
+        "securityContext": RUNNER_SECURITY_CONTEXT,
+    }
+
+
 # Hardening of every rendered pod (tenant containers share the GPU nodes, README "Security notes"): no privilege
 # escalation, no capabilities, the
 # runtime's default seccomp profile. The runner containers (fetch, uploader, call) run as the image's uid 10001;

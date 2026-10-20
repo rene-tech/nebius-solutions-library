@@ -529,6 +529,25 @@ run may be preempted any number of times and still have its `max_attempts` appli
 total pods). `max_attempts` 1..10; single-node runs only (a multi-node run restarts as a whole). The retained
 scientific policy is `{"max_attempts": 2, "on_exit_codes": [137, 143]}` with `graceSeconds: 60`.
 
+## Deadlines (api 0.11.149, jobs 0.1.31)
+
+A run's `timeout_s` is its execution bound: the uploader counts it from main's ACTUAL start (the container's
+`running.startedAt`, `EXECUTION_TIMEOUT_S`) and ends main (TERM, then KILL after 30 s) when it is exceeded, with
+the cause on the attempt (`timeout_s N exceeded ...; terminated by the platform`). The runner is uid 10001 with every
+capability dropped, so it can signal only a main of its own uid (the catalog's runtime images run as 10001; a root
+or other-uid main refuses the signal): then the timer claims no termination (`...; the runner (uid 10001) cannot
+signal main's processes (uid 0): the Job deadline ends the attempt`) and the Job's `activeDeadlineSeconds` below is
+what ends such an attempt. The Kubernetes Job's
+`activeDeadlineSeconds` is `timeout_s` plus the fleet's start-up allowance (`ENDPOINT_START_WAIT_S`, 3600 s): it
+counts from the moment Kueue resumes the Job and so also covers node provisioning and image pull, which before
+0.11.149 consumed a 1200 s run on a slow spot node before any attempt existed (7 roots, 2026-10-20). The bound is
+recorded on the Job (`serverless2.nebius/timeout-s`): reservations, the handle's `timeout_s` and a continuation's
+remaining budget read it, never the allowance. A run that fails before any attempt ended (the Job's
+DeadlineExceeded) reports the Job's own Failed transition as `ended_at`. Every attempt record carries a bounded
+`reason` (300 characters) the API persists, so the cause survives the pod's deletion: the platform's timeout reason,
+else main's termination message (`/dev/termination-log`, written by call.sh and by applications), else the kubelet's
+reason (`OOMKilled`, `Error`); it is reported through attempts, the operation's status and the result.
+
 ## Attempts and finalization
 
 Every attempt (a pod of an operation) is on record twice: the uploader writes `attempts/<pod>.json` into the tenant
@@ -540,8 +559,11 @@ without a bucket. Every operation reports `root_operation_id` (the first operati
 (the newest pod), `epoch` (monotonic over the chain), `revision` (a cursor: `GET /v1/operations/<id>?since=<revision>`
 answers 304 while nothing changed), `cluster`, `image_digest`, `export_state`, `result_ref` and `checkpoint_ref`.
 `image_digest` is the exact **runtime** digest of the attempt's main container (`containerStatuses[main].imageID`),
-never the expected image: the uploader waits for it (bounded) before its start record and republishes the start record
-once when it appears later; the API also fills a start record from the pod it reads and, at `GET` time, takes the
+never the expected image: the attempt's start record is an init step of the pod (`upload.sh start-record`, jobs
+0.1.31): main starts only behind its ACCEPTED start record (200), so main's first broker call never precedes its own
+record; a fenced (409) or rejected (401/403) start record fails the init step at once (main never starts, nothing is
+retried), a transient answer is retried until `START_RECORD_WAIT_S` (600 s), then the step fails and the Job's next pod
+records afresh; the uploader republishes the start record once the runtime digest appears; the API also fills a start record from the pod it reads and, at `GET` time, takes the
 newest attempt's live pod. `image_digest_state` says what a null means: `pending` (the attempt runs, the kubelet has not
 reported it yet: transient, a reader retries the `GET`), `unknown` (the attempt ended without one), `observed`.
 The start record is acknowledged like a terminal one (jobs 0.1.29): four tries 3 s apart (each a 10 s request: 49 s

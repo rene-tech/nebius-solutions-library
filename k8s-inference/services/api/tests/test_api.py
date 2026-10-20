@@ -13,6 +13,7 @@ import app as appmod
 import auth
 import catalog
 import config
+import config as cfg
 import jobs
 import keys
 import kube
@@ -720,7 +721,14 @@ def test_render_and_build_run(cluster):
         job["metadata"]["labels"][f"{L}/region"] == "eu-south1"
         and job["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "bulk-backfill"
     )
-    assert job["spec"]["activeDeadlineSeconds"] == 3600 and "--batch-size 200" in _main(job)["command"][2]
+    assert job["spec"]["activeDeadlineSeconds"] == 3600 + cfg.ENDPOINT_START_WAIT_S  # + start-up allowance (0.11.149)
+    assert job["metadata"]["annotations"][f"{cfg.LABEL}/timeout-s"] == "3600"  # the execution bound, recorded
+    assert "--batch-size 200" in _main(job)["command"][2]
+    uploader = next(c for c in job["spec"]["template"]["spec"]["containers"] if c["name"] == "uploader")
+    assert {"name": "EXECUTION_TIMEOUT_S", "value": "3600"} in uploader["env"]  # the timer from main's actual start
+    starts = [c for c in job["spec"]["template"]["spec"]["initContainers"] if c["name"] == "attempt-start"]
+    assert len(starts) == 1 and starts[0]["command"] == ["/usr/local/bin/upload.sh", "start-record"]
+    assert starts[0]["image"] == uploader["image"] and "envFrom" not in starts[0]
     op = jobs.normalise(job)
     assert (
         op["region"] == "eu-south1" and op["logs_url"] is None and op["priority"] == "low" and op["timeout_s"] == 3600
@@ -3238,3 +3246,82 @@ def test_an_async_call_deadline_covers_the_start_wait(client, monkeypatch):
     assert (
         job["spec"]["activeDeadlineSeconds"] == 120 + appmod.cfg.ENDPOINT_START_WAIT_S and env["CALL_TIMEOUT"] == "120"
     )
+
+
+def test_a_run_that_failed_before_any_attempt_keeps_the_jobs_failure_time_and_the_execution_bound(client):
+    """api 0.11.149: a Job that failed while its pods waited (DeadlineExceeded with zero attempts) reports the Job's
+    own Failed transition as ended_at (never null), the execution bound as timeout_s (not the Job deadline with its
+    allowance), and its enforced deadline for reservations stays the execution bound."""
+    import status
+
+    job = {
+        "metadata": {
+            "name": "op-never-started",
+            "labels": {f"{cfg.LABEL}/tenant": "demo", f"{cfg.LABEL}/model": "hello-run", f"{cfg.LABEL}/mode": "run"},
+            "annotations": {f"{cfg.LABEL}/timeout-s": "1200"},
+            "creationTimestamp": "2026-10-20T16:32:32Z",
+        },
+        "spec": {"activeDeadlineSeconds": 1200 + cfg.ENDPOINT_START_WAIT_S},
+        "status": {
+            "startTime": "2026-10-20T16:32:48Z",
+            "failed": 1,
+            "conditions": [
+                {
+                    "type": "FailureTarget",
+                    "status": "True",
+                    "lastTransitionTime": "2026-10-20T16:52:48Z",
+                    "reason": "DeadlineExceeded",
+                },
+                {
+                    "type": "Failed",
+                    "status": "True",
+                    "lastTransitionTime": "2026-10-20T16:52:49Z",
+                    "reason": "DeadlineExceeded",
+                    "message": "Job was active longer than specified deadline",
+                },
+            ],
+        },
+        "_pods": [],
+        "_region": "eu-north1",
+    }
+    op = status.normalise(job)
+    assert op["status"] == "FAILED" and op["ended_at"] == "2026-10-20T16:52:49Z" and op["timeout_s"] == 1200
+    assert "deadline" in (op["error"] or "").lower()
+    assert appmod._job_deadline(job) == 1200  # the reservation's bound: the execution bound, not the allowance
+
+
+def test_an_attempt_reports_its_containers_termination_message_as_the_cause(client):
+    """api 0.11.149: the bounded termination message (what call.sh / the uploader write to /dev/termination-log,
+    or the application's own) is the attempt's reason, before the kubelet's one-word reason; a deleted pod's
+    record carries the uploader's reason."""
+    import status
+
+    p = pod("op-x", "Failed")
+    p["status"]["containerStatuses"] = [
+        {
+            "name": "main",
+            "state": {
+                "terminated": {
+                    "exitCode": 143,
+                    "reason": "Error",
+                    "finishedAt": "2026-10-20T17:00:00Z",
+                    "startedAt": "2026-10-20T16:30:00Z",
+                    "message": "timeout_s 1200 exceeded 1203s after main started; terminated by the platform",
+                }
+            },
+        }
+    ]
+    a = status._attempts([p])[0]
+    assert a["reason"].startswith("timeout_s 1200 exceeded") and a["exit_code"] == 143
+    rec = {
+        "pod": "op-x-gone",
+        "operation": "op-x",
+        "status": "failed",
+        "exit_code": 2,
+        "reason": "refresh refused (403): attempt not on record",
+        "started_at": "2026-10-20T16:30:00Z",
+        "ended_at": "2026-10-20T16:31:00Z",
+        "gpus": 0,
+    }
+    b = [x for x in status._attempts([], [rec]) if x["attempt_id"] == "op-x-gone"][0]
+    assert b["reason"] == "refresh refused (403): attempt not on record"

@@ -4,6 +4,30 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.149, jobs 0.1.31
+
+(API image, jobs image; migration 31 adds `attempts.reason`.)
+
+- Deadlines (docs/JOBS.md "Deadlines"): a run's `timeout_s` is enforced by the uploader from main's actual start;
+  the Job's own deadline is `timeout_s` plus the start-up allowance, so node provisioning and image pull no longer
+  consume the budget (7 roots DeadlineExceeded at 1200 s with zero attempts, 2026-10-20). The bound is recorded on
+  the Job and read by reservations, the handle and continuations; async callers record it too. The runner (uid
+  10001, no capabilities) can end only a main of its own uid: for a root or other-uid main the timer records that it
+  could not signal main and that the Job deadline ends the attempt, never a termination it did not deliver.
+- Start ordering: the attempt's start record is an init step (`attempt-start`, the uploader image); main starts only
+  behind an accepted (200) record, so a replacement attempt's first broker call can no longer precede its record (403
+  at 17:20:13 before the 17:20:15 acknowledgement, op-6031e9ec5b9077b9). A fenced or rejected start record (409,
+  401, 403) fails the step at once; transient answers are retried for `START_RECORD_WAIT_S` (600 s), then the step
+  fails and the Job's next pod records afresh.
+- The attempt's `reason` (bounded, persisted by the API): the platform's timeout reason, else main's termination
+  message (call.sh and applications write it to `/dev/termination-log`), else the kubelet's reason (`OOMKilled`,
+  `Error`); the cause survives the pod's deletion.
+- A run that failed before any attempt ended reports the Job's Failed transition as `ended_at` (was null, which
+  let 20 children skip their 1800 s settlement).
+- Cause: an attempt's reason is its container's bounded termination message (what call.sh and the uploader write)
+  before the kubelet's one-word reason; the uploader's record carries it (`reason`), so a deleted pod's attempt
+  still names it; call.sh writes every failure cause to the termination log.
+
 ## api 0.11.148
 
 (API image only.)

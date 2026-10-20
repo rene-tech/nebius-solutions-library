@@ -4,6 +4,7 @@ on a Job (never truncated), a liveness probe without the database, the endpoint 
 import json
 
 import app as appmod
+import config as cfg
 import kube
 import models
 from test_api import H, client, cluster  # noqa: F401 - fixtures
@@ -53,7 +54,10 @@ def test_fourteen_day_runs_and_recovery_deadlines_are_accepted(client, monkeypat
     }
     r = c.post("/v1/models/hello-run:invoke", headers=H, json=body)
     assert r.status_code == 202, r.text
-    assert cl.jobs[("tenant-demo", r.json()["id"])]["spec"]["activeDeadlineSeconds"] == 14 * 86400
+    assert (
+        cl.jobs[("tenant-demo", r.json()["id"])]["spec"]["activeDeadlineSeconds"]
+        == 14 * 86400 + cfg.ENDPOINT_START_WAIT_S
+    )
     assert appmod.INVOKE_TIMEOUT_MAX_S == 14 * 86400
     body["timeout_s"] = 14 * 86400 + 1
     assert c.post("/v1/models/hello-run:invoke", headers=H, json=body).status_code == 422

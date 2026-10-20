@@ -12,6 +12,7 @@ from fastapi import HTTPException
 import app as appmod
 import attempts
 import catalog
+import config as cfg
 import execution
 import jobs
 import kube
@@ -264,7 +265,9 @@ def test_recovery_inherits_the_roots_remaining_deadline(lost_run):
     job["metadata"]["creationTimestamp"] = _ago(3000)
     moved = appmod.recovery_switch()
     succ = fake.jobs[(NS, moved[0])]
-    assert 500 <= succ["spec"]["activeDeadlineSeconds"] <= 600  # never a fresh full budget
+    bound = int(succ["metadata"]["annotations"][f"{cfg.LABEL}/timeout-s"])
+    assert 500 <= bound <= 600  # never a fresh full budget: the execution bound is what remained of the root's
+    assert succ["spec"]["activeDeadlineSeconds"] == bound + cfg.ENDPOINT_START_WAIT_S  # plus the start-up allowance
     # past the deadline nothing is created and the original says why
     fake.jobs.pop((NS, moved[0]))
     job["metadata"]["annotations"].pop(f"{LABEL}/successor")

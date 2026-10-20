@@ -221,7 +221,7 @@ def test_fallback_to_the_per_call_claim_where_the_leaf_cannot_be_carried(shared,
         assert vols["work"]["persistentVolumeClaim"]["claimName"] == f"{oid}-work" and (NS, f"{oid}-work") in cl.pvcs
         ann = job["metadata"]["annotations"]
         assert ann[f"{LABEL}/pvc"] == f"{oid}-work" and ann[f"{LABEL}/scratch"] == "network"
-        assert not job["spec"]["template"]["spec"].get("initContainers")
+        assert [c["name"] for c in job["spec"]["template"]["spec"].get("initContainers", [])] == ["attempt-start"]
         assert "PVC_NAME" in _env(_uploader(job)) and "SCRATCH" not in _env(_uploader(job))
         return ann[f"{LABEL}/scratch-fallback"], job["spec"]["template"]["spec"]
 

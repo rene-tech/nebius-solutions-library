@@ -152,7 +152,11 @@ def _attempts(pods: list, records: list | None = None, name: str | None = None) 
                 if (phase == "Failed" and disrupted) or p["metadata"].get("deletionTimestamp")
                 else PHASE.get(phase, "QUEUED")
             )
-        reason = term.get("reason") if term else (st.get("reason") or None)
+        # the cause: the container's own termination message (bounded; what call.sh and the uploader write to
+        # /dev/termination-log, or the application's) before the kubelet's one-word reason (api 0.11.149)
+        reason = (
+            (str(term.get("message") or "").strip()[:300] or term.get("reason")) if term else (st.get("reason") or None)
+        )
         if disrupted:
             reason = next((c.get("message") for c in st["conditions"] if c.get("type") == "DisruptionTarget"), reason)
         seen.add(p["metadata"]["name"])
@@ -195,7 +199,8 @@ def _attempts(pods: list, records: list | None = None, name: str | None = None) 
                 "_pool": r.get("pool"),
                 "pool": r.get("pool") or None,
                 "attempt_id": r.get("pod"),
-                "reason": {
+                "reason": r.get("reason")
+                or {
                     "interrupted": "pod deleted (preempted)",
                     "started": "node lost without warning (no end record)",
                 }.get(r.get("status")),
@@ -455,6 +460,10 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
     ended = st.get("completionTime") or (
         max((a["ended_at"] or "" for a in attempts), default=None) if status in ("FAILED", "CANCELLED") else None
     )
+    if not ended and status in ("FAILED", "CANCELLED"):
+        # a Job that failed before any attempt ended (DeadlineExceeded while its pods waited for a node: 7 roots
+        # 2026-10-20): the Job's own Failed transition is the authoritative end, never null (api 0.11.149)
+        ended = (conds.get("Failed") or conds.get("FailureTarget") or {}).get("lastTransitionTime") or None
     return {
         "id": md["name"],
         "name": ann.get(f"{LABEL}/name"),
@@ -469,7 +478,9 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
         "started_at": st.get("startTime"),
         "ended_at": ended or None,
         "duration_s": _secs(st.get("startTime"), ended),
-        "timeout_s": sp.get("activeDeadlineSeconds") if sp.get("activeDeadlineSeconds") != 1 else None,
+        "timeout_s": int(ann[f"{LABEL}/timeout-s"])
+        if str(ann.get(f"{LABEL}/timeout-s") or "").isdigit()
+        else (sp.get("activeDeadlineSeconds") if sp.get("activeDeadlineSeconds") != 1 else None),
         "attempts": attempts,
         "logs_url": logs_url(md.get("namespace", ""), md["name"], region),
         "error": error,

@@ -123,6 +123,7 @@ finish() {   # $1 = export state; RESULT.json is what the uploader's attempt rec
     cap=$(jq -c '{sha256, content_type, size_bytes, http_status, capture_attempt_id: .attempt_id, posted_at: .timings.posted_at, completed_at: .timings.completed_at}' call.json 2>/dev/null || echo null)
     jq -cn --arg r "$ref" --arg a "${CAPTURE_ATTEMPT:-${POD_NAME:-}}" --argjson c "${cap:-null}" '{result_ref:$r, export:"succeeded", capture_attempt_id:$a} + (if $c != null and $c.sha256 != null then {capture:$c} else {} end)' > RESULT.json.tmp && wrote=1
   else
+    [ -n "${2:-}" ] && echo "${2:0:300}" > /dev/termination-log 2>/dev/null   # the cause reaches the attempt (jobs 0.1.31)
     jq -cn --arg r "$ref" --arg e "${2:-}" '{export:"failed", error:$e} + (if $r != "" then {result_ref_pending:$r} else {} end)' > RESULT.json.tmp && wrote=1
   fi
   # the write itself is checked (jq's exit status, and the file parses as JSON: a short write leaves a non-empty
