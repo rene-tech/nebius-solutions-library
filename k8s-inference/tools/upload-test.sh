@@ -167,6 +167,7 @@ out=$(run_reason "" "{\"exitCode\":1,\"message\":\"$(printf 'x%.0s' $(seq 1 400)
 # shellcheck disable=SC2016
 sed -n '/^upload() {/,/^}/p' "$U" | sed 's#^  cd /work || return#  cd "$WORK" || return#; s#/work/RESULT.json#"$WORK/RESULT.json"#g' > "$T/upload-fn.sh"
 grep -q 'cd "$WORK" || return' "$T/upload-fn.sh" || fail "upload() no longer starts with cd /work"
+# shellcheck disable=SC2016
 out=$(bash -c '
   set -u; WORK=$(mktemp -d); printf "%s" "$1" > "$WORK/RESULT.json"
   MODE=record; EXPORT=""; CALLS=0
@@ -177,6 +178,7 @@ out=$(bash -c '
 #     acknowledged capture; exit 4, a run (mode run), a failed/partial export, a missing ACK or a failed proof keep the volume
 sed -n '/^captured_error_delivered() {/,/^}/p' "$U" | sed 's#/work/RESULT.json#"$WORK/RESULT.json"#g; s#/usr/local/bin/scratch.sh proof /work#proof_stub#' > "$T/ced.sh"
 grep -q 'proof_stub' "$T/ced.sh" || fail "captured_error_delivered() not found in upload.sh"
+# shellcheck disable=SC2016
 ced() { # <MODE> <OPERATION_MODE> <EXIT> <RESULT.json or -> <ACK> <proof rc>: prints rc of captured_error_delivered
   bash -c '
     set -u; WORK=$(mktemp -d); MODE=$1; OPERATION_MODE=$2; EXIT=$3; [ "$4" = - ] || printf "%s" "$4" > "$WORK/RESULT.json"; ACK=$5; API_URL=http://api.invalid
