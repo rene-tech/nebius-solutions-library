@@ -3434,3 +3434,139 @@ def test_a_cancelled_queued_run_whose_job_is_gone_reads_and_cancels_again_for_it
     with pytest.raises(HTTPException) as e:
         appmod.cancel("op-queued", bob)
     assert e.value.status_code == 404
+
+
+def test_a_gone_graph_root_keeps_its_admitted_metadata_and_its_graph(monkeypatch):
+    """api 0.11.152: a queued-cancelled graph root (no attempt row) is served with the metadata it was admitted with
+    (model for the allow-list, owner, lineage, execution) and its graph from the ledger; a key that is not granted the
+    admitted model gets 404 as for a live Job."""
+    from fastapi import HTTPException
+
+    import admissions
+    import attempts
+    import db
+    import keys
+    import stages
+    from auth import Principal
+
+    def gone(ns, op):
+        raise HTTPException(404, f"operation {op}: not found")
+
+    rec = {
+        "operation": "op-graph-root",
+        "tenant": "demo",
+        "region": "control",
+        "labels": {f"{cfg.LABEL}/tenant": "demo", f"{cfg.LABEL}/model": "alphafold3", f"{cfg.LABEL}/mode": "run"},
+        "annotations": {
+            f"{cfg.LABEL}/owner": "alice",
+            f"{cfg.LABEL}/execution": json.dumps({"io_mode": "application"}),
+        },
+        "created_at": "2026-10-20T18:58:17+00:00",
+    }
+    g = {
+        "root": "op-graph-root",
+        "tenant": "demo",
+        "stages": {"inference-main": []},
+        "cancelled_at": "2026-10-20T19:14:28+00:00",
+    }
+    view = {"status": "CANCELLED", "stages": [{"id": "inference-main", "status": "CANCELLED"}], "cancelled": True}
+    monkeypatch.setattr(jobs, "find", gone)
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "for_operation", lambda op: [])
+    monkeypatch.setattr(attempts, "successor_of", lambda op: None)
+    monkeypatch.setattr(attempts, "_marks", lambda op: (3, "2026-10-20T19:14:28+00:00", None))
+    reads = []
+    monkeypatch.setattr(admissions, "get", lambda op: reads.append(op) or dict(rec))
+    monkeypatch.setattr(
+        keys, "operation_owner", lambda root: None
+    )  # pre-ledger: the admission's owner annotation decides
+    monkeypatch.setattr(keys, "graph_of", lambda root: dict(g) if root == "op-graph-root" else None)
+    monkeypatch.setattr(keys, "run_head", lambda root: None)
+    monkeypatch.setattr(stages, "graph_view", lambda ns, gg, root_state=None, memo=None: dict(view))
+    monkeypatch.setattr(stages, "_state", lambda head, own: None)
+    monkeypatch.setattr(appmod, "_ledger_head", lambda ns, op: None)
+    monkeypatch.setattr(
+        keys, "owner_identity", lambda tenant, info, h: (info.get("metadata") or {}).get("who", "alice")
+    )
+    monkeypatch.setattr(appmod, "allows_model", lambda p, m: m in (p.info.get("models") or [m]))
+    alice = Principal(key="k", tenant="demo", info={})
+    job, region = appmod._owned(alice, "op-graph-root")
+    assert job["metadata"]["labels"][f"{cfg.LABEL}/model"] == "alphafold3"  # the admitted metadata, not a bare handle
+    op = appmod._operation(alice, job, "op-graph-root", region)
+    assert op["status"] == "CANCELLED" and op["model"] == "alphafold3" and op["execution"] == {"io_mode": "application"}
+    assert op["graph"] == view and op["attempts"] == [] and op["nodes"] is None
+    assert reads == ["op-graph-root"] and "_admission" not in op  # one admission read, shared, never served
+    bob = Principal(key="k2", tenant="demo", info={"metadata": {"who": "bob"}})
+    with pytest.raises(HTTPException) as e:
+        appmod._owned(bob, "op-graph-root")
+    assert e.value.status_code == 404
+    narrow = Principal(key="k3", tenant="demo", info={"models": ["esmfold2"]})  # alice's identity, another model grant
+    with pytest.raises(HTTPException) as e:
+        appmod._owned(narrow, "op-graph-root")
+    assert e.value.status_code == 404
+
+
+def test_a_gone_graph_root_with_attempt_rows_keeps_its_graph_and_a_plain_gone_run_has_none(monkeypatch):
+    """api 0.11.152: the graph is attached to every durable (synthetic) view of a graph root, with attempt rows too;
+    a gone run without a graph is served exactly as before (no `graph` key); a graph of another tenant is never
+    attached."""
+    import attempts
+    import db
+    import keys
+    import stages
+
+    rows = [
+        {
+            "operation": "op-root-x",
+            "root": "op-root-x",
+            "tenant": "demo",
+            "pod": "op-root-x-a",
+            "status": "failed",
+            "started_at": "2026-10-20T18:00:00+00:00",
+            "ended_at": "2026-10-20T18:05:00+00:00",
+            "epoch": 1,
+            "model": "alphafold3",
+            "mode": "run",
+            "region": "control",
+            "io_mode": "application",
+        }
+    ]
+    graphs = {
+        "op-root-x": {"root": "op-root-x", "tenant": "demo", "stages": {"s1": []}, "cancelled_at": None},
+        "op-root-other": {"root": "op-root-other", "tenant": "other", "stages": {}},
+    }
+    view = {"status": "FAILED", "stages": [{"id": "s1", "status": "FAILED"}], "cancelled": False}
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "enabled", lambda: True)
+    monkeypatch.setattr(attempts, "_marks", lambda op: None)
+    monkeypatch.setattr(attempts, "completion_of", lambda op: None)
+    monkeypatch.setattr(keys, "graph_of", lambda root: graphs.get(root))
+    monkeypatch.setattr(keys, "run_head", lambda root: None)
+    monkeypatch.setattr(stages, "graph_view", lambda ns, gg, root_state=None, memo=None: dict(view))
+    monkeypatch.setattr(stages, "_state", lambda head, own: None)
+    monkeypatch.setattr(appmod, "_delivered", lambda op, i, r: {})
+    from auth import Principal
+
+    alice = Principal(key="k", tenant="demo", info={})
+    synth = attempts.synthesize("op-root-x", "demo") if False else None  # built below from rows directly
+    import copy
+
+    def synthetic_for(name, rs):
+        monkeypatch.setattr(attempts, "for_operation", lambda root: copy.deepcopy(rs))
+        return attempts.synthesize(name, "demo")
+
+    job = {"metadata": {"name": "op-root-x", "annotations": {}}, "_synthetic": synthetic_for("op-root-x", rows)}
+    op = appmod._operation(alice, job, "op-root-x", "control")
+    assert op["status"] == "FAILED" and len(op["attempts"]) == 1 and op["graph"] == view
+    plain = [dict(r, operation="op-plain", root="op-plain", pod="op-plain-a") for r in rows]
+    job = {"metadata": {"name": "op-plain", "annotations": {}}, "_synthetic": synthetic_for("op-plain", plain)}
+    op = appmod._operation(alice, job, "op-plain", "control")
+    assert op["status"] == "FAILED" and "graph" not in op
+    foreign = [dict(r, operation="op-root-other", root="op-root-other", pod="op-root-other-a") for r in rows]
+    job = {
+        "metadata": {"name": "op-root-other", "annotations": {}},
+        "_synthetic": synthetic_for("op-root-other", foreign),
+    }
+    op = appmod._operation(alice, job, "op-root-other", "control")
+    assert "graph" not in op  # another tenant's graph is never attached

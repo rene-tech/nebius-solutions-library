@@ -4,6 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.152
+
+- A graph root whose Job is gone (cancelled while queued, or expired with attempt rows) is served with its `graph`
+  from the graph ledger through the same view as a live root (`_root_graph`, the code the :cancel path used
+  already): the cancelled root and its declared stages, tenant-bound, no invented members or attempts; a gone run
+  without a graph is served exactly as before. Wave 5 AlphaFold3 roots: the App's stage gateway requires the
+  immutable graph and answered 503 on the 151 body without it.
+- A run cancelled before any attempt is served with the metadata it was admitted with (model, owner, lineage,
+  execution block) so the owner and model allow-list checks apply to the durable handle as to the live Job; the
+  admission row is read once, only for a cancelled operation.
+
 ## api 0.11.151
 
 - A run cancelled while queued (its Job deleted by the cancel before any attempt existed) keeps a durable

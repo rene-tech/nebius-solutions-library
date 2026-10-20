@@ -11,6 +11,7 @@ export and finalization state that decides whether "exit 0" became a delivered r
 
 """
 
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -606,6 +607,10 @@ def _never_started(operation: str, tenant: str) -> dict | None:
         return None
     labels, ann = a.get("labels") or {}, a.get("annotations") or {}
     root = ann.get(f"{LABEL}/resumed-from") or operation  # a resumed lineage keeps its root (retained annotation)
+    try:  # the execution block the run was admitted with (retained annotation), never a fabricated one
+        execution = json.loads(ann.get(f"{LABEL}/execution") or "null") or None
+    except ValueError:
+        execution = None
     return {
         "id": operation,
         "name": None,
@@ -626,7 +631,8 @@ def _never_started(operation: str, tenant: str) -> dict | None:
         "image": None,
         "resumable": False,
         "nodes": None,  # no execution was observed: nothing to claim
-        "execution": None,
+        "execution": execution,
+        "_admission": a,  # the retained admission, for the caller's handle metadata (app._owned); never served
         "reason": "cancelled before any attempt started; this is the durable record",
         "cost": None,
         "gpu_seconds": None,

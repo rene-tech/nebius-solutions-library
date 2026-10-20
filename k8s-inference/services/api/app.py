@@ -18,6 +18,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.responses import JSONResponse
 from kubernetes.client.rest import ApiException
 
+import admissions
 import artifacts
 import attempts
 import billing
@@ -132,7 +133,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.151", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.152", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1805,6 +1806,7 @@ def list_operations(
             out.append(_who(instances.enrich_operation(op), j))
         else:
             op = attempts.synthesize(name, p.tenant)  # the durable record of an expired operation
+            (op or {}).pop("_admission", None)
             if op is not None:
                 out.append(_who(instances.enrich_operation(op), None))
     return out
@@ -1922,21 +1924,28 @@ def _owned(p: Principal, id: str, follow: bool = True) -> tuple[dict, str]:
             if not rows and previous is not None:
                 return previous  # a verified owner's successor is not created yet
             last = rows[-1] if rows else {}
-            synthetic_job = {
-                "metadata": {
-                    "name": current,
-                    "labels": {
-                        f"{cfg.LABEL}/tenant": p.tenant,
-                        f"{cfg.LABEL}/mode": last.get("mode") or "run",
-                        **(
-                            {f"{cfg.LABEL}/model": last["model"]} if last.get("model") else {}
-                        ),  # the allow-list applies
-                    },
-                    "annotations": {f"{cfg.LABEL}/resumed-from": last.get("root") or current},
+            synthetic = attempts.synthesize(current, p.tenant)  # tenant-bound; reads the admission only when cancelled
+            admitted = (synthetic or {}).pop("_admission", None)
+            if admitted:
+                # a run cancelled before any attempt: the verified metadata it was admitted with (model, owner, key,
+                # lineage, execution); the owner and allow-list checks apply to it exactly as to the live Job (0.11.152)
+                synthetic_job = admissions.as_job(admitted)
+                synthetic_job["metadata"]["labels"].setdefault(f"{cfg.LABEL}/tenant", p.tenant)
+            else:
+                synthetic_job = {
+                    "metadata": {
+                        "name": current,
+                        "labels": {
+                            f"{cfg.LABEL}/tenant": p.tenant,
+                            f"{cfg.LABEL}/mode": last.get("mode") or "run",
+                            **(
+                                {f"{cfg.LABEL}/model": last["model"]} if last.get("model") else {}
+                            ),  # the allow-list applies
+                        },
+                        "annotations": {f"{cfg.LABEL}/resumed-from": last.get("root") or current},
+                    }
                 }
-            }
             _check_operation_owner(p, synthetic_job)
-            synthetic = attempts.synthesize(current, p.tenant)
             nxt = attempts.successor_of(current) or (_ledger_head(p.namespace, current) if follow else None)
             if follow and nxt and nxt != current:
                 if synthetic is not None:  # the named operation's durable view stands in when its head is gone too
@@ -2217,9 +2226,11 @@ def _persist_observed_completion(job: dict, op: dict, records: list) -> None:
 def _operation(p: Principal, job: dict, id: str, region: str | None) -> dict:
     if job.get("_synthetic"):
         op = dict(job["_synthetic"])
+        op.pop("_admission", None)  # the handle's private input, never served
+        root = (job["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/resumed-from") or op["id"]
         if op["status"] in ("EXPORT_FAILED", "FINALIZING", "FAILED") and attempts.enabled():
-            root = (job["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/resumed-from") or op["id"]
             op.update(_delivered(op, op["id"], root))  # a retry that delivered after the Job was gone
+        _root_graph(p, op, root)  # a graph root keeps its graph when its Job is gone
         return op
     name = job["metadata"]["name"]
     records, root = _records(p, job, name, region)
@@ -2306,6 +2317,12 @@ def _stage_fields(p: Principal, op: dict, job: dict, root: str) -> None:
     is terminal only with them; a stage reports its root, dependencies and why it still waits."""
     if st := stages.stage_of(job):
         op["stage"] = {k: v for k, v in st.items() if k != "waiting"}
+    _root_graph(p, op, root)
+
+
+def _root_graph(p: Principal, op: dict, root: str) -> None:
+    """The root handle's `graph` (docs/API.md "Operations") from the graph ledger, on a live Job and on a durable
+    (synthetic) view alike (api 0.11.152: a gone graph root was served without it)."""
     if not db.enabled():
         return
     g = keys.graph_of(root)
