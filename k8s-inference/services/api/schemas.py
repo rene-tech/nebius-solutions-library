@@ -261,6 +261,7 @@ class KeyRequest(BaseModel):
     expires_days: int | None = Field(default=None, ge=0)
     owner_of: str | None = None
     scopes: list[str] | None = None
+    priority: Literal["low", "normal", "high"] | None = None  # the key's scheduling priority (docs/API.md "Priority")
 
 
 class KeyUpdate(BaseModel):
@@ -271,6 +272,7 @@ class KeyUpdate(BaseModel):
     budget: float | None = Field(default=None, ge=0)
     models: list[str] | None = None
     expires_days: int | None = Field(default=None, ge=0)
+    priority: Literal["low", "normal", "high"] | None = None  # the key's scheduling priority (docs/API.md "Priority")
 
 
 class KeyImportRequest(BaseModel):
@@ -1192,6 +1194,7 @@ class ApiKey(BaseModel):
     status: Literal["active", "exhausted", "expired", "blocked"] | None = None
     blocked: bool | None = None  # a retained blocked key (imported with unknown scopes, or blocked by the admin)
     scopes: list[str] | None = None
+    priority: Literal["low", "normal", "high"] | None = None  # the key's scheduling priority
     max_concurrent: int | None = None
     budget_requests: float | None = None
     spent_requests: float | None = None

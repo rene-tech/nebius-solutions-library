@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.139
+
+(API image only.)
+
+- Priority is a property of the API key (docs/API.md "Priority"): `low` | `normal` | `high` on key creation and
+  `PATCH`, shown on every key view. Runs and the caller Jobs of asynchronous endpoint calls (Kueue workloads both)
+  are scheduled with it: Kueue WorkloadPriorityClass `bulk-backfill` for low, `customer-batch` otherwise, and the
+  matching pod priority class; a request's `priority` may lower the key's, never raise it. Before, priority was per
+  request only and the callers of asynchronous endpoint calls always queued as customer work.
+
 ## api 0.11.138
 
 (API image only.)

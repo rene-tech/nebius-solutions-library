@@ -298,3 +298,27 @@ def test_a_fleet_operator_reads_the_fleet_overview_without_a_tenant_of_its_own(d
         assert r.status_code == 200, r.text
         body = r.json()
         assert body.get("tenant") is None and body.get("execution") is None and "pools" in body
+
+
+def test_a_keys_priority_is_set_at_creation_changed_by_patch_and_bounds_the_request(database, client, monkeypatch):
+    """docs/API.md "Priority": the key carries low | normal | high (default normal) for everything it submits; a
+    request may lower it, never raise it."""
+    import keys
+
+    c, _ = _rig(database, client, monkeypatch)
+    made = c.post("/v1/fleet/tenants/demo/keys", headers=FLEET_KEY, json={"alias": "batch", "priority": "low"})
+    assert made.status_code == 201, made.text
+    assert made.json()["priority"] == "low"
+    listed = {k["alias"]: k for k in c.get("/v1/fleet/tenants/demo/keys", headers=FLEET_KEY).json()}
+    assert listed["demo-batch"]["priority"] == "low" and listed["demo-lab-1"]["priority"] == "normal"
+    edited = c.patch("/v1/fleet/tenants/demo/keys/demo-batch", headers=FLEET_KEY, json={"priority": "high"})
+    assert edited.status_code == 200 and edited.json()["priority"] == "high"
+    assert (
+        c.patch("/v1/fleet/tenants/demo/keys/demo-batch", headers=FLEET_KEY, json={"priority": "urgent"}).status_code
+        == 422
+    )
+    info = keys.by_alias("demo", "demo-batch")
+    assert keys.effective_priority(info, None) == "high"
+    assert keys.effective_priority(info, "low") == "low"  # a request may lower
+    assert keys.effective_priority({"metadata": {"priority": "low"}}, "high") == "low"  # never raise
+    assert keys.effective_priority({}, None) == "normal" and keys.effective_priority({}, "high") == "normal"

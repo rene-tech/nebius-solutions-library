@@ -3128,3 +3128,24 @@ def test_fleet_info_reports_the_tenant_quotas_and_usage(client, monkeypatch):
     assert t == {"name": "demo", "gpu_quota": 4, "fair_share_weight": 2, "dedicated_pools": ["h100-lab-1x"]}
     live = c.get("/v1/fleet?live=true", headers=H).json()["tenant"]
     assert live["usage"]["eu-north1"] == {"gpus_by_pool": {"h100-spot-1x": 2}, "admitted": 1, "pending": 3}
+
+
+def test_an_async_endpoint_caller_carries_the_keys_kueue_priority(client, monkeypatch):
+    """The caller Job of an async endpoint call is a Kueue workload like a run: its WorkloadPriorityClass and pod
+    priority follow the key's priority (bounded by the request), so Kueue orders and preempts it (docs/API.md
+    "Priority")."""
+    import jobs
+
+    m = catalog.get("llm-example")
+    low = jobs.build_async("op-a", m, {"x": 1}, "demo", "sk-good", None, "k1", 600, "", "eu-north1", priority="low")[0]
+    high = jobs.build_async("op-b", m, {"x": 1}, "demo", "sk-good", None, "k2", 600, "", "eu-north1", priority="high")[
+        0
+    ]
+    plain = jobs.build_async("op-c", m, {"x": 1}, "demo", "sk-good", None, "k3", 600, "", "eu-north1")[0]
+    assert low["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "bulk-backfill"
+    assert low["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch"
+    assert high["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "customer-batch"
+    assert high["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch-priority"
+    assert plain["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "customer-batch"
+    assert plain["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch"
+    assert low["metadata"]["labels"]["kueue.x-k8s.io/queue-name"]

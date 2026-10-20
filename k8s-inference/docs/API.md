@@ -188,6 +188,15 @@ listing `GET /v1/keys` carries the same safe limit and usage fields per key (`sc
 GPU-second budgets with their spend, `rate_limit`, `principal_id`, `usage`) plus `blocked`; a retained blocked key says
 `status: blocked`; never the hash, the raw metadata or a secret (`id` is the alias).
 
+### Priority
+
+Every key carries a scheduling priority, `low`, `normal` (the default) or `high`, set at creation (`priority`) or by
+`PATCH` and shown on every key view. It is what the key's work is scheduled with: a run's Kueue WorkloadPriorityClass
+(`bulk-backfill` for low, `customer-batch` otherwise) and pod priority class, and the same for the caller Job of an
+asynchronous endpoint call, which is a Kueue workload like a run. A request's `priority` may lower the key's for
+that submission, never raise it. Kueue orders admission by it and may preempt lower-priority work within a queue
+(charts/platform scheduling classes). A synchronous call is proxied, not queued: it carries no Kueue priority.
+
 **Scopes and limits beyond the USD budget.** A key may carry `scopes` (what it may do; empty = everything of its
 role): `invoke:sync`, `invoke:async`, `run:submit`, `run:control` (cancel, resume, export), `read:catalog`,
 `read:operations`, `read:results`, `read:logs`, `read:metrics`, `artifacts:write`. Every direct path checks its

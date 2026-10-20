@@ -1099,6 +1099,7 @@ def build_async(
     pvc: str | None = None,
     transfer_only: bool = False,
     scratch_leaf_of: str | None = None,
+    priority: str | None = None,
 ) -> tuple[dict, dict]:
     """(Job, Secret): a queued endpoint call through LiteLLM's pass-through route when the model has
     one (spend lands on the caller's key), else through the gateway of the endpoint's region with the caller's key
@@ -1210,7 +1211,7 @@ def build_async(
         "restartPolicy": "Never",
         "serviceAccountName": EXECUTOR_SA,
         "terminationGracePeriodSeconds": 60,
-        "priorityClassName": "serverless2-batch",
+        "priorityClassName": PRIORITY_CLASS.get(priority, "serverless2-batch"),
         # the runner (uid/gid 10001) writes the work volume (a claim's root is root-owned until the kubelet applies the
         # group) and reads the private binding (a Secret volume, mode 0440): the file-system group makes both its, as
         # for a run's pod (build_run)
@@ -1242,7 +1243,7 @@ def build_async(
         execution.apply_async(pod, ex, name)
     if leaf:
         _mount_scratch_leaf(pod, leaf, pools)
-    meta = _meta(name, tenant, model["name"], "async", region, label, inp, idem, None, key_hash, execution=ex)
+    meta = _meta(name, tenant, model["name"], "async", region, label, inp, idem, priority, key_hash, execution=ex)
     if leaf:  # the capture is retained on the tenant's shared-scratch leaf (no claim of its own, nothing to attach)
         meta["annotations"][f"{LABEL}/scratch"] = "shared"
         meta["annotations"][f"{LABEL}/scratch-leaf"] = leaf

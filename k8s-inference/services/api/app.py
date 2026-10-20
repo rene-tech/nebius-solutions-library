@@ -125,7 +125,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.138", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.139", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1150,6 +1150,7 @@ def _invoke_job(
             ex=ex,
             key_hash=billing.key_hash(p.key),
             admitted=_admitted_token(keys.key_hash(p.key), m["name"], name) if cfg.ROUTER_KEY else None,
+            priority=keys.effective_priority(p.info, req.priority),
         )
     elif FLEET_MANAGER:
         _guard_run_input(m, req, p, REGION, ex)
@@ -1172,7 +1173,7 @@ def _invoke_job(
             req.name,
             idempotency_key,
             timeout,
-            req.priority,
+            keys.effective_priority(p.info, req.priority),
             region,
             defaults,
             billing.key_hash(p.key),
@@ -1414,7 +1415,7 @@ def _fleet_run(
         req.name,
         idempotency_key,
         timeout,
-        req.priority,
+        keys.effective_priority(p.info, req.priority),
         region,
         defaults,
         billing.key_hash(p.key),
@@ -3422,6 +3423,8 @@ def _key_minted(tenant: str, req: KeyRequest, metadata: dict, by: str | None) ->
             metadata = {**metadata, "owner": keys.owner_identity(tenant, previous, previous["token"])}
     if req.scopes is not None and (unknown := sorted(set(req.scopes) - set(keys.SCOPES))):
         raise HTTPException(400, f"unknown scopes {unknown}; known: {', '.join(keys.SCOPES)}")
+    if req.priority:
+        metadata = {**metadata, "priority": req.priority}
     value, i = keys.create(
         tenant,
         alias,
@@ -3450,9 +3453,21 @@ def fleet_update_key(tenant: str, alias: str, req: KeyUpdate, p: Principal = Dep
     """Budget, model allow-list (the grant) or expiry of a tenant's key; spend untouched."""
     _fleet_only()
     tenant = _fleet_tenant(tenant)
-    if "budget" not in req.model_fields_set and req.models is None and req.expires_days is None:
-        raise HTTPException(400, "nothing to change: pass budget (null = unlimited), models or expires_days")
-    i = keys.update(tenant, alias, _budget_change(req), req.models, req.expires_days)
+    if (
+        "budget" not in req.model_fields_set
+        and req.models is None
+        and req.expires_days is None
+        and req.priority is None
+    ):
+        raise HTTPException(400, "nothing to change: pass budget (null = unlimited), models, expires_days or priority")
+    i = keys.update(
+        tenant,
+        alias,
+        _budget_change(req),
+        req.models,
+        req.expires_days,
+        **({"priority": req.priority} if req.priority else {}),
+    )
     if i is None:
         raise HTTPException(404, f"key {alias} not found in tenant {tenant}")
     forget_hash(i["token"])
@@ -3514,9 +3529,21 @@ def import_keys(req: KeyImportRequest, p: Principal = Depends(admin)):
 def update_key(alias: str, req: KeyUpdate, p: Principal = Depends(admin)):
     """Change a key's budget, allowed models or expiry; the spend ledger is untouched (docs/RELIABILITY.md)."""
     _fleet_only()
-    if "budget" not in req.model_fields_set and req.models is None and req.expires_days is None:
-        raise HTTPException(400, "nothing to change: pass budget (null = unlimited), models or expires_days")
-    i = keys.update(p.tenant, alias, _budget_change(req), req.models, req.expires_days)
+    if (
+        "budget" not in req.model_fields_set
+        and req.models is None
+        and req.expires_days is None
+        and req.priority is None
+    ):
+        raise HTTPException(400, "nothing to change: pass budget (null = unlimited), models, expires_days or priority")
+    i = keys.update(
+        p.tenant,
+        alias,
+        _budget_change(req),
+        req.models,
+        req.expires_days,
+        **({"priority": req.priority} if req.priority else {}),
+    )
     if i is None:
         raise HTTPException(404, f"key {alias} not found")
     forget_hash(i["token"])  # a cached principal would keep the old budget for AUTH_CACHE_S

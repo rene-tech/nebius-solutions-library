@@ -141,6 +141,23 @@ def _info(r) -> dict:
     }
 
 
+PRIORITIES = ("low", "normal", "high")  # docs/API.md "Priority": Kueue WorkloadPriorityClass order for the key's work
+
+
+def priority_of(info: dict) -> str:
+    """The key's scheduling priority (`metadata.priority`, default normal)."""
+    p = (info.get("metadata") or {}).get("priority")
+    return p if p in PRIORITIES else "normal"
+
+
+def effective_priority(info: dict, requested: str | None) -> str:
+    """What a submission is scheduled with: the key's priority, which a request may lower but never raise."""
+    key = priority_of(info)
+    if requested in PRIORITIES and PRIORITIES.index(requested) < PRIORITIES.index(key):
+        return requested
+    return key
+
+
 def owner_identity(tenant: str, info: dict, h: str) -> str:
     """The opaque, stable owner of a key's operations (docs/API.md "Keys", "Owner"): `metadata.owner` when the key was
     minted as another key's successor (`owner_of`), else the imported principal of the tenant, else the key itself.
@@ -241,10 +258,14 @@ def update(
     budget=UNSET,
     models: list[str] | None = None,
     expires_days: int | None = None,
+    priority: str | None = None,
 ) -> dict | None:
-    """Budget (a number, or None for unlimited; UNSET keeps it), allowed models, expiry (days from now; 0 = never);
-    fields left out stay. Spend never changes here."""
+    """Budget (a number, or None for unlimited; UNSET keeps it), allowed models, expiry (days from now; 0 = never),
+    scheduling priority (low | normal | high); fields left out stay. Spend never changes here."""
     sets, args = [], []
+    if priority is not None:
+        sets.append("metadata = coalesce(metadata, '{}'::jsonb) || %s::jsonb")
+        args.append(json.dumps({"priority": priority}))
     if budget is not UNSET:
         sets.append("budget = %s")
         args.append(budget)

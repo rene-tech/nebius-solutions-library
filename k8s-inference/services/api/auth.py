@@ -77,6 +77,7 @@ def limits_view(i: dict) -> dict:
     legacy = (i.get("metadata") or {}).get("legacy") or {}
     return {
         "scopes": i.get("scopes") or [],
+        "priority": keys.priority_of(i),
         "max_concurrent": i.get("max_concurrent"),
         "budget_requests": i.get("budget_requests"),
         "spent_requests": i.get("spent_requests") or 0,
