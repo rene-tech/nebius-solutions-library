@@ -180,6 +180,7 @@ sed -n '/^captured_error_delivered() {/,/^}/p' "$U" | sed 's#/work/RESULT.json#"
 grep -q 'proof_stub' "$T/ced.sh" || fail "captured_error_delivered() not found in upload.sh"
 # shellcheck disable=SC2016
 ced() { # <MODE> <OPERATION_MODE> <EXIT> <RESULT.json or -> <ACK> <proof rc>: prints rc of captured_error_delivered
+  # shellcheck disable=SC2016
   bash -c '
     set -u; WORK=$(mktemp -d); MODE=$1; OPERATION_MODE=$2; EXIT=$3; [ "$4" = - ] || printf "%s" "$4" > "$WORK/RESULT.json"; ACK=$5; API_URL=http://api.invalid
     proof_stub() { return '"$6"'; }
