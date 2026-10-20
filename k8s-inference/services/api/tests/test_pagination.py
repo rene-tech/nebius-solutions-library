@@ -423,7 +423,8 @@ def test_the_listing_auth_cache_keeps_no_expired_generation(client, monkeypatch)
     generations = []
 
     def fresh(ns, tenant, model):
-        generations.append([])  # a new listing object per refresh, as the warmer produces
+        generations.append(jobs.Listing())  # a new listing generation per refresh, as the warmer produces
+        generations[-1].generation = next(jobs._ops_list_generation)
         return generations[-1], []
 
     monkeypatch.setattr(jobs, "list_ops_all", fresh)
@@ -434,7 +435,7 @@ def test_the_listing_auth_cache_keeps_no_expired_generation(client, monkeypatch)
     assert len(generations) == 12
     assert len(appmod._ops_auth_cache) == 1  # the newest entry only; eleven expired generations are gone
     (entry,) = appmod._ops_auth_cache.values()
-    assert entry[0] is generations[-1]
+    assert entry[0] == generations[-1].generation  # the token of the newest generation, never the list
 
 
 def test_relatives_come_from_the_warm_listing_without_a_new_read(client, monkeypatch):
@@ -534,4 +535,4 @@ def test_listings_drop_managed_fields_and_auth_entries_pin_one_generation(client
     assert (
         c.get("/v1/operations", headers={"Authorization": f"Bearer {ADMIN}"}).status_code == 200
     )  # another principal lists
-    assert {id(v[0]) for v in appmod._ops_auth_cache.values()} == {id(gen_b)}  # the older generation is unpinned
+    assert {v[0] for v in appmod._ops_auth_cache.values()} == {gen_b.generation}  # the older generation is unpinned
