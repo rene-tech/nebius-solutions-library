@@ -598,9 +598,11 @@ def _never_started(operation: str, tenant: str) -> dict | None:
     no GPU time); any other operation without rows stays unknown (None). Same tenant only: the owner check applies."""
     import admissions
 
+    m = _marks(operation)  # the cancel mark first: without one there is nothing to project (and no admission read)
+    if not (m and m[1]):
+        return None
     a = admissions.get(operation)
-    m = _marks(operation)
-    if not a or a["tenant"] != tenant or not (m and m[1]):
+    if not a or a["tenant"] != tenant:
         return None
     labels, ann = a.get("labels") or {}, a.get("annotations") or {}
     root = ann.get(f"{LABEL}/resumed-from") or operation  # a resumed lineage keeps its root (retained annotation)
