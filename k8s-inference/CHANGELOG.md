@@ -4,6 +4,20 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.158
+
+- Memory (charts/platform, api Deployment env `MALLOC_ARENA_MAX=2`): the replicas climbed to the 2Gi limit under every
+  sustained observer mix (154-157) while Python-owned memory stayed ~3 MiB: glibc gives each request thread its own
+  malloc arena and never returned the freed per-request parses (100+ MB per heavy operation view). Measured in an
+  isolated pod on the live state with the live principals' request kinds, same throughput, 150 s: 1044 MiB with the
+  default arenas vs 540 MiB with two (2026-10-21 02:28-02:35Z). No code change for this.
+- The `execution.require_converged` refusal is structured (api 0.11.158): still 409 before ownership and admission
+  (nothing created), now with `X-Serverless2-Admission: refused` (definitely not submitted, the header the pause and
+  key-limit refusals carry), `Retry-After` (30 s while a candidate revision is created but not ready, else 10 s) and
+  a value-only body `{"detail": ..., "code": "rollout_pending", "retryable": true, "retry_after_s": N}`; the rollout
+  reason (revision names, digests) goes to the API log only. Plain conflict 409s carry neither header nor code. The
+  API never replays a POST.
+
 ## api 0.11.157
 
 - FINALIZING authority, producer side (api 0.11.157): the attempt-start step posts the start record BEFORE main runs,

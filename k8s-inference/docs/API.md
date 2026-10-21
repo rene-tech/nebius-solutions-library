@@ -413,6 +413,13 @@ model can answer 408/429 itself after partial execution, so a bare one is its an
 explicitly (above). Before, the managed asynchronous caller posted into the cold endpoint and re-posted on every
 5xx or broken connection for as long as the Job lived, and a synchronous call was cut at the revision timeout.
 
+With `execution.require_converged` an endpoint call whose endpoint rollout is not converged (a candidate revision
+created but not ready, or reconciliation lag) is refused before ownership and admission with `409`,
+`X-Serverless2-Admission: refused` (nothing was created), `Retry-After` (30 s while a candidate revision is pending,
+else 10 s) and the body `{"detail": "...", "code": "rollout_pending", "retryable": true, "retry_after_s": N}`; the
+rollout reason stays in the API log. Conflict 409s (idempotency, superseded, cancelled, a duplicate attempt) carry no
+`X-Serverless2-Admission` header and no `code`. The API never retries a submission on the client's behalf.
+
 ## Synchronous calls: timeouts and the caller's disconnect (api 0.11.127)
 
 `:invoke` with `mode: sync` proxies the request and waits up to `timeout_s` (default SYNC_TIMEOUT_S, 600 s). Every

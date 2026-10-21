@@ -145,6 +145,11 @@ spec:
             # the SAME value Knative's config-defaults got (max-revision-timeout-seconds): registration refuses an
             # endpoint timeout_s above it instead of storing a definition that never reconciles
             - { name: KNATIVE_MAX_REVISION_TIMEOUT_S, value: {{ .Values.knative.maxRevisionTimeoutSeconds | quote }} }
+            # glibc malloc arenas: one per request thread (uvicorn's pool + to_thread workers) kept the freed
+            # per-request parses (100+ MB per heavy operation view) and never returned them: RSS climbed to the 2Gi
+            # limit under every sustained observer mix while Python-owned memory stayed ~3 MiB. Measured on the live
+            # state in an isolated pod, same mix and throughput: 1044 MiB vs 540 MiB after 150 s (api 0.11.158).
+            - { name: MALLOC_ARENA_MAX, value: "2" }
             {{- toYaml .Values.api.env | nindent 12 }}
           volumeMounts:
             - { name: kubeconfigs, mountPath: /etc/kubeconfigs, readOnly: true }

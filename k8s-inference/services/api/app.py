@@ -133,7 +133,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.157", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.158", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1269,10 +1269,33 @@ def _rollout_fence(m: dict, region: str, ex: dict | None) -> dict | None:
     if ex and ex.get("require_converged"):
         if not rollout or not rollout.get("converged"):
             why = (rollout or {}).get("reason") or "rollout state unavailable"
-            raise HTTPException(
-                409, f"endpoint {m['name']} rollout not converged in {region}: {why} (execution.require_converged)"
-            )
+            # a candidate revision exists but is not the ready one: the rollout is in flight (30 s); otherwise only
+            # reconciliation lag (10 s). The why (revision names, digests) goes to the log, never to the body.
+            pending = bool(rollout) and rollout.get("latest_created") != rollout.get("latest_ready")
+            log.info("rollout fence: endpoint %s in %s not converged: %s", m["name"], region, why)
+            raise RolloutPending(m["name"], region, 30 if pending else 10)
     return rollout
+
+
+class RolloutPending(HTTPException):
+    """The require_converged refusal (api 0.11.158): 409 with `X-Serverless2-Admission: refused` (definitely not
+    submitted, nothing created: the same header the pause and the key-limit refusals carry), `Retry-After`, and a
+    value-only body with a top-level `code` so a client tells it from a conflict without reading text. Never an
+    automatic replay: the client decides."""
+
+    def __init__(self, model: str, region: str, retry_after_s: int):
+        super().__init__(
+            409,
+            f"endpoint {model} rollout not converged in {region} (execution.require_converged)",
+            headers={"X-Serverless2-Admission": "refused", "Retry-After": str(retry_after_s)},
+        )
+        self.retry_after_s = retry_after_s
+
+
+@app.exception_handler(RolloutPending)
+async def _rollout_pending(_: Request, e: RolloutPending) -> JSONResponse:
+    body = {"detail": e.detail, "code": "rollout_pending", "retryable": True, "retry_after_s": e.retry_after_s}
+    return JSONResponse(body, status_code=409, headers=e.headers)
 
 
 def _stage_request(

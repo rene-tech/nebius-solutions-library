@@ -256,10 +256,19 @@ def test_require_converged_fences_an_endpoint_call_and_records_the_ready_revisio
         "execution": {"io_mode": "application", "private_input_ref": "call-1", "require_converged": True},
     }
     r = c.post("/v1/models/llm-example:invoke", json=body, headers=H)
-    assert (
-        r.status_code == 409 and "not converged" in r.json()["detail"] and "revisions differ" in r.json()["detail"]
-    ), r.text
+    # api 0.11.158: a typed refusal the client tells from a conflict without reading text: the admission-refused
+    # header (nothing created), Retry-After (30 s: a candidate revision is created but not ready), a top-level code;
+    # the rollout reason (revision names, digests) is not in the body
+    assert r.status_code == 409 and "not converged" in r.json()["detail"], r.text
+    assert r.json()["code"] == "rollout_pending" and r.json()["retryable"] is True and r.json()["retry_after_s"] == 30
+    assert r.headers["x-serverless2-admission"] == "refused" and r.headers["retry-after"] == "30"
+    assert "revisions differ" not in r.text and "r-5" not in r.text
     assert not [k for k in cl.jobs if k[0] == NS_T]  # nothing admitted
+    # rollout state unavailable (no candidate revision known): still refused, 10 s
+    saved = state.pop("rollout")
+    r = c.post("/v1/models/llm-example:invoke", json=body, headers=H)
+    assert r.status_code == 409 and r.json()["retry_after_s"] == 10 and r.headers["retry-after"] == "10", r.text
+    state["rollout"] = saved
     # converged at zero: admitted, the ready revision and image recorded on the call
     state["rollout"].update(
         {"latest_ready": "r-5", "latest_rolled_out": "r-5", "serving_images": [], "converged": True, "reason": None}
