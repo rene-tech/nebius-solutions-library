@@ -102,6 +102,58 @@ def test_namespace_trust_configmaps_are_per_namespace_and_bounded(client):
     assert e.value.status_code == 502 and len(cl.configmap_writes) == 2
 
 
+def test_a_concurrent_writer_never_wins_with_another_bundle(client):
+    """Two API replicas of a rolling update (or two calls) race on the ConfigMap: a 409 on create re-reads and, when the
+    winner holds another bundle, replaces it with THIS one (resourceVersion-conditioned); the same bundle is accepted
+    as is; a replace that conflicts re-reads and settles; a race that never settles is a 502, not a silent accept."""
+    from fastapi import HTTPException
+    from kubernetes.client.rest import ApiException
+
+    c, cl = client
+    ns = "tenant-race"
+    real_create = cl.create_namespaced_config_map
+
+    def racing_create(ns_, body):  # another writer got there first, with another bundle
+        other = copy.deepcopy(body)
+        other["data"] = {"ca-bundle.pem": "OTHER"}
+        other["metadata"]["annotations"] = {"serverless2.nebius/bundle-sha256": "0" * 64}
+        other["metadata"]["resourceVersion"] = "7"
+        real_create(ns_, other)
+        raise ApiException(status=409, reason="AlreadyExists")
+
+    cl.create_namespaced_config_map = racing_create
+    jobs.ensure_trust(ns, "eu-north1", PEM)
+    assert cl.configmaps[(ns, "fleet-trust")]["data"] == {"ca-bundle.pem": PEM}
+    assert cl.configmaps[(ns, "fleet-trust")]["metadata"]["resourceVersion"] == "7"  # conditioned on what was read
+    assert [w for w in cl.configmap_writes if w[1] == ns] == [
+        ("create", ns, "fleet-trust"),
+        ("replace", ns, "fleet-trust"),
+    ]
+    # the winner holds the same bundle: accepted, no write
+    del cl.configmaps[(ns, "fleet-trust")]
+
+    def same_create(ns_, body):
+        real_create(ns_, body)
+        raise ApiException(status=409, reason="AlreadyExists")
+
+    cl.create_namespaced_config_map = same_create
+    n = len(cl.configmap_writes)
+    jobs.ensure_trust(ns, "eu-north1", PEM)
+    assert cl.configmap_writes[n:] == [("create", ns, "fleet-trust")]
+    # a replace that keeps conflicting (another writer keeps changing it to another bundle): 502 after the tries
+    cl.configmaps[(ns, "fleet-trust")]["data"] = {"ca-bundle.pem": "OTHER"}
+    cl.configmaps[(ns, "fleet-trust")]["metadata"]["annotations"] = {"serverless2.nebius/bundle-sha256": "1" * 64}
+
+    def conflicting_replace(name, ns_, body):
+        raise ApiException(status=409, reason="Conflict")
+
+    cl.replace_namespaced_config_map = conflicting_replace
+    with pytest.raises(HTTPException) as e:
+        jobs.ensure_trust(ns, "eu-north1", PEM)
+    assert e.value.status_code == 502 and "did not settle" in e.value.detail
+    assert cl.configmaps[(ns, "fleet-trust")]["data"] == {"ca-bundle.pem": "OTHER"}  # never silently accepted
+
+
 def test_export_retry_of_an_old_shape_caller_mounts_the_configmap_and_carries_no_bundle(client, monkeypatch):
     """A caller created by api <= 0.11.160 kept the bundle under ca-bundle.pem in its own Secret and mounted that
     Secret: it is left as it is, and its transfer-only export retry is rendered the new way (the namespace ConfigMap,

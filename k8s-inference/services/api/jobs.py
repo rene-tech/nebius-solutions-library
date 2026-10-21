@@ -1418,9 +1418,11 @@ def trust_bundle() -> str | None:
 
 
 def ensure_trust(ns: str, region: str, pem: str) -> None:
-    """The tenant namespace's trust ConfigMap (TRUST_CONFIGMAP, the bundle under TRUST_KEY) in the Job's region:
+    """The tenant namespace's trust ConfigMap (TRUST_CONFIGMAP, the bundle under TRUST_KEY) in the given cluster:
     created when absent, replaced only when its TRUST_SHA annotation is not this bundle's hash (an API rollout with other
-    CAs), untouched otherwise. Public CA material only. Retained Jobs of api <= 0.11.160 keep their own Secret copy."""
+    CAs), untouched otherwise. A concurrent writer (another call, another API replica of a rolling update) never wins
+    with a different bundle: a 409 on create or on the resourceVersion-conditioned replace re-reads and settles on THIS
+    bundle (two tries). Public CA material only. Retained Jobs of api <= 0.11.160 keep their own Secret copy."""
     import hashlib
 
     if len(pem.encode()) > TRUST_MAX_BYTES:
@@ -1438,23 +1440,41 @@ def ensure_trust(ns: str, region: str, pem: str) -> None:
         },
         "data": {TRUST_KEY: pem},
     }
-    try:
-        cur = core.api_client.sanitize_for_serialization(retry(core.read_namespaced_config_map, TRUST_CONFIGMAP, ns))
-    except ApiException as e:
-        if e.status != 404:
-            raise HTTPException(
-                502, f"kubernetes ({region}): trust ConfigMap {ns}/{TRUST_CONFIGMAP}: {e.status} {e.reason}"
+    for _ in range(3):
+        try:
+            cur = core.api_client.sanitize_for_serialization(
+                retry(core.read_namespaced_config_map, TRUST_CONFIGMAP, ns)
             )
-        _create_ignore_exists(core.create_namespaced_config_map, ns, body, region)  # 409: a concurrent call made it
-        return
-    if ((cur.get("metadata") or {}).get("annotations") or {}).get(TRUST_SHA) == sha:
-        return
-    try:
-        retry(core.replace_namespaced_config_map, TRUST_CONFIGMAP, ns, body)
-    except ApiException as e:
-        raise HTTPException(
-            502, f"kubernetes ({region}): trust ConfigMap {ns}/{TRUST_CONFIGMAP}: {e.status} {e.reason}"
-        )
+        except ApiException as e:
+            if e.status != 404:
+                raise HTTPException(502, f"kubernetes ({region}): trust ConfigMap {ns}/{TRUST_CONFIGMAP}: {e.reason}")
+            try:
+                retry(core.create_namespaced_config_map, ns, body)
+                return
+            except ApiException as e:
+                if e.status != 409:
+                    raise HTTPException(
+                        502, f"kubernetes ({region}): trust ConfigMap {ns}/{TRUST_CONFIGMAP}: {e.reason}"
+                    )
+                continue  # a concurrent writer made it: read what it holds
+        md = cur.get("metadata") or {}
+        if (md.get("annotations") or {}).get(TRUST_SHA) == sha:
+            return
+        try:
+            retry(
+                core.replace_namespaced_config_map,
+                TRUST_CONFIGMAP,
+                ns,
+                {**body, "metadata": {**body["metadata"], "resourceVersion": md.get("resourceVersion")}},
+            )
+            return
+        except ApiException as e:
+            if e.status not in (404, 409):
+                raise HTTPException(502, f"kubernetes ({region}): trust ConfigMap {ns}/{TRUST_CONFIGMAP}: {e.reason}")
+            continue  # replaced or deleted under us: read again
+    raise HTTPException(
+        502, f"kubernetes ({region}): trust ConfigMap {ns}/{TRUST_CONFIGMAP} did not settle on this bundle"
+    )
 
 
 def mounts_trust(job: dict) -> bool:
@@ -1704,7 +1724,10 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
         pem = trust_bundle()
         if not pem:
             raise HTTPException(500, "the fleet trust bundle is not readable; the caller cannot be created without it")
-        ensure_trust(ns, region, pem)  # before the Job: its pod mounts the ConfigMap
+        # before the Job, in every cluster its pod may land in: the placement boundary execution.deliver uses (an
+        # endpoint caller is created in its endpoint's cluster and carries no placement, so that one cluster)
+        for r in placement_regions(job) or [region]:
+            ensure_trust(ns, r, pem)
     was_created = True
     try:
         if is_jobset(job):
