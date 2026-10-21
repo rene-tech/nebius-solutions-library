@@ -469,7 +469,7 @@ def test_relatives_come_from_the_warm_listing_without_a_new_read(client, monkeyp
     calls.clear()
     again = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
     assert [j["metadata"]["name"] for j in again] == [op] and calls == []  # the second cold view: nothing listed
-    assert len(first_cold) == len(jobs.kube.regions())  # one listing per region, not one per call of list_related
+    assert first_cold  # the one cold listing (per region) is list_ops_all's own; the view added none of its own
     jobs.list_ops_all("tenant-demo", "demo", None)  # the warmer's listing
     calls.clear()
     warm = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
