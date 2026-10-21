@@ -124,9 +124,10 @@ def test_stage_waits_without_queue_and_runs_after_its_dependencies(world):
         assert job["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] == stages.WAITING_QUEUE  # never a real queue
         assert job["metadata"]["labels"][stages.WAITING] == "true"
         assert job["metadata"]["labels"][stages.STAGE_ROOT] == root
-        assert _main_env(job)["DEPENDENCY_RESULTS"]["valueFrom"]["fieldRef"]["fieldPath"].endswith(
-            f"['{stages.RESULTS}']"
-        )
+        assert _main_env(job)["DEPENDENCY_RESULTS"]["valueFrom"]["secretKeyRef"] == {
+            "name": f"{names[sid]}-dependencies",
+            "key": stages.RESULTS_KEY,
+        }
         # api 0.11.160: no dependency-results annotation on the pod template before the gate (Kueue captures the
         # template into the Workload at creation and its admission write keeps the Workload's values: a "{}" here
         # came back over the gate's real results on 7 stages, 2026-10-21); the env fieldRef alone until the gate
@@ -166,7 +167,9 @@ def test_stage_waits_without_queue_and_runs_after_its_dependencies(world):
             == job["metadata"]["labels"]["serverless2.nebius/profile"]
         )
         assert stages.WAITING not in job["metadata"]["labels"]
-        bound = json.loads(job["spec"]["template"]["metadata"]["annotations"][stages.RESULTS])
+        assert stages.RESULTS not in (job["spec"]["template"]["metadata"].get("annotations") or {})  # never patched
+        bound = json.loads(cl.secrets[(NS, f"{names[sid]}-dependencies")]["stringData"][stages.RESULTS_KEY])
+        assert json.loads(job["metadata"]["annotations"][stages.RESULTS]) == bound  # the record continuations inherit
         assert bound == {
             "root": {
                 "operation": root,
@@ -186,7 +189,7 @@ def test_stage_waits_without_queue_and_runs_after_its_dependencies(world):
     _succeed(cl, rows, names["gpu-0"], "s3://b/g0")
     _succeed(cl, rows, names["gpu-1"], "s3://b/g1")
     assert reconciliation.gate_stages() == [f"{names['collect']}:admitted"]
-    bound = json.loads(cl.jobs[(NS, names["collect"])]["spec"]["template"]["metadata"]["annotations"][stages.RESULTS])
+    bound = json.loads(cl.secrets[(NS, f"{names['collect']}-dependencies")]["stringData"][stages.RESULTS_KEY])
     assert {k: v["result_ref"] for k, v in bound.items()} == {"gpu-0": "s3://b/g0", "gpu-1": "s3://b/g1"}
     op = c.get(f"/v1/operations/{root}", headers=H).json()
     assert op["status"] == "RUNNING" and op["graph"]["status"] == "PENDING"
@@ -258,7 +261,9 @@ def test_failed_dependency_holds_its_dependents_until_resumed_or_cancelled(world
     assert sj["metadata"]["labels"]["kueue.x-k8s.io/queue-name"]  # not gated again: its dependencies delivered already
     assert sj["metadata"]["annotations"][stages.STAGE_ID] == "gpu-1"
     assert (
-        json.loads(sj["spec"]["template"]["metadata"]["annotations"][stages.RESULTS])["root"]["result_ref"]
+        json.loads(cl.secrets[(NS, f"{sj['metadata']['name']}-dependencies")]["stringData"][stages.RESULTS_KEY])[
+            "root"
+        ]["result_ref"]
         == "s3://b/root"
     )
     assert "DEPENDENCY_RESULTS" in _main_env(sj)
@@ -267,7 +272,7 @@ def test_failed_dependency_holds_its_dependents_until_resumed_or_cancelled(world
     assert again.status_code == 200 and again.json()["id"] == succ
     _succeed(cl, rows, succ, "s3://b/g1-again")
     assert reconciliation.gate_stages() == [f"{col}:admitted"]
-    bound = json.loads(cl.jobs[(NS, col)]["spec"]["template"]["metadata"]["annotations"][stages.RESULTS])
+    bound = json.loads(cl.secrets[(NS, f"{col}-dependencies")]["stringData"][stages.RESULTS_KEY])
     assert bound["gpu-1"] == {
         "operation": succ,
         "producer": succ,
@@ -438,9 +443,9 @@ def test_second_continuation_keeps_the_stage_identity_and_results(world):
         assert j["metadata"]["annotations"][stages.STAGE_ID] == "gpu-1"
         assert j["metadata"]["annotations"][stages.DEPENDS_ON] == "root"
         assert json.loads(j["metadata"]["annotations"][stages.RESULTS])["root"]["result_ref"] == "s3://b/root"
-        assert json.loads(j["spec"]["template"]["metadata"]["annotations"][stages.RESULTS])["root"]["result_ref"] == (
-            "s3://b/root"
-        )
+        assert json.loads(cl.secrets[(NS, f"{j['metadata']['name']}-dependencies")]["stringData"][stages.RESULTS_KEY])[
+            "root"
+        ]["result_ref"] == ("s3://b/root")
         assert "DEPENDENCY_RESULTS" in _main_env(j)
     assert [x[3] for x in fk.calls if x[0] == "prepare" and x[2] in (r1, r2)] == [g1, r1]  # each after the previous
     # an export retry of the second resume keeps it all, too
@@ -546,7 +551,7 @@ def test_dependency_delivered_by_a_finalizer_names_the_delivering_attempt(world)
         }
     )
     assert reconciliation.gate_stages() == [f"{col}:admitted"]
-    bound = json.loads(cl.jobs[(NS, col)]["spec"]["template"]["metadata"]["annotations"][stages.RESULTS])
+    bound = json.loads(cl.secrets[(NS, f"{col}-dependencies")]["stringData"][stages.RESULTS_KEY])
     assert bound["gpu-0"] == {
         "operation": f"{g0}-x1",
         "producer": g0,
@@ -703,7 +708,7 @@ def test_manual_resume_links_its_successor_so_handle_and_gate_follow_after_ttl(w
     # the successor delivers: the child is admitted with the successor's result
     _succeed(cl, rows, succ, "s3://b/root-again")
     assert reconciliation.gate_stages() == [f"{g0}:admitted"]
-    bound = json.loads(cl.jobs[(NS, g0)]["spec"]["template"]["metadata"]["annotations"][stages.RESULTS])
+    bound = json.loads(cl.secrets[(NS, f"{g0}-dependencies")]["stringData"][stages.RESULTS_KEY])
     assert bound["root"]["operation"] == succ and bound["root"]["result_ref"] == "s3://b/root-again"
 
 
@@ -1242,3 +1247,46 @@ def test_the_root_handle_reads_every_lineage_head_once(world, monkeypatch):
     op = _view(c, root)
     assert op["graph"]["action_required"] is True and op["graph"]["waiting"] == ["collect"]
     assert len(looked) == len(set(looked)) == 4, looked  # the handle's own read, then the three heads, each once
+
+
+def test_stage_results_survive_kueue_template_restore_and_readmissions(world):
+    """The live defect (2026-10-21, five stages failed on an empty DEPENDENCY_RESULTS): Kueue captures a Job's pod
+    template into its Workload at creation and restores it on every admission, so a value patched into the template
+    by the gate was gone after a requeue. Modelled end to end: a waiting stage is created (template captured), the
+    gate binds, the first admission restores the captured template, an eviction requeues it, the second admission
+    restores it again: the pod's DEPENDENCY_RESULTS still resolves, because it names the stage's own Secret from
+    creation and the gate wrote that Secret in the stage's placement cluster before the queue switch. A continuation
+    of the admitted stage gets its own Secret before its Job exists, from the record on the original."""
+    c, cl, fk, rows, _cancelled, root = world
+    g0 = _submit(c, root, "gpu-0").json()["id"]
+    job = cl.jobs[(NS, g0)]
+    captured = copy.deepcopy(job["spec"]["template"])  # what Kueue's Workload holds from now on
+    assert _main_env(job)["DEPENDENCY_RESULTS"]["valueFrom"]["secretKeyRef"]["name"] == f"{g0}-dependencies"
+    assert (NS, f"{g0}-dependencies") not in cl.secrets  # nothing to read yet: the stage cannot start anyway
+    _succeed(cl, rows, root, "s3://b/root")
+    assert reconciliation.gate_stages() == [f"{g0}:admitted"]
+    assert job["spec"]["template"] == captured  # the gate never touched the pod template
+    bound = cl.secrets[(NS, f"{g0}-dependencies")]["stringData"][stages.RESULTS_KEY]
+    assert json.loads(bound)["root"]["result_ref"] == "s3://b/root"
+    assert json.loads(job["metadata"]["annotations"][stages.RESULTS]) == json.loads(bound)
+    for admission in ("first", "requeued"):
+        job["spec"]["template"] = copy.deepcopy(captured)  # Kueue's restore on admission
+        env = _main_env(job)["DEPENDENCY_RESULTS"]["valueFrom"]["secretKeyRef"]
+        assert env == {"name": f"{g0}-dependencies", "key": stages.RESULTS_KEY}, admission
+        assert cl.secrets[(NS, env["name"])]["stringData"][env["key"]] == bound, admission
+    # the gate is idempotent: a second pass rewrites nothing and the Secret stays
+    assert reconciliation.gate_stages() == []
+    assert cl.secrets[(NS, f"{g0}-dependencies")]["stringData"][stages.RESULTS_KEY] == bound
+    # the stage fails and is resumed: the continuation inherits the record and gets its own Secret at create
+    _fail(cl, rows, g0)
+    r = c.post(f"/v1/operations/{g0}:resume", headers=H, json={})
+    assert r.status_code == 202, r.text
+    succ = r.json()["id"]
+    sj = cl.jobs[(NS, succ)]
+    assert json.loads(sj["metadata"]["annotations"][stages.RESULTS]) == json.loads(bound)
+    assert _main_env(sj)["DEPENDENCY_RESULTS"]["valueFrom"]["secretKeyRef"] == {
+        "name": f"{succ}-dependencies",
+        "key": stages.RESULTS_KEY,
+    }
+    assert cl.secrets[(NS, f"{succ}-dependencies")]["stringData"][stages.RESULTS_KEY] == bound
+    assert stages.RESULTS not in (sj["spec"]["template"]["metadata"].get("annotations") or {})

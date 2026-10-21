@@ -32,6 +32,7 @@ from kubernetes.client.rest import ApiException
 
 import execution
 import kube
+import stages
 from config import (
     ENDPOINT_CONNECT_TO,
     ENDPOINT_START_WAIT_S,
@@ -1717,6 +1718,11 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
             raise HTTPException(500, "the fleet trust bundle is not readable; the caller cannot be created without it")
         for r in placement_regions(job) or [region]:
             ensure_trust(ns, r, pem)
+    if is_manager_job(job) and ann.get(f"{LABEL}/resumed-from") and ann.get(f"{LABEL}/pvc"):
+        _record_claim_user(ns, job, ann[f"{LABEL}/pvc"])
+    if ann.get(stages.RESULTS) and job["metadata"].get("labels", {}).get(f"{LABEL}/stage-waiting") != "true":
+        # a continuation of an admitted stage (stages.inherit): its own results Secret, before its Job exists
+        stages.deliver_results(ns, name, placement_regions(job) or [region], ann[stages.RESULTS])
     if job["metadata"].get("labels", {}).get(f"{LABEL}/stage-waiting") != "true":
         # a waiting stage (docs/JOBS.md "Stage composition") gets its binding from the gate when its dependencies
         # delivered: its request-scoped credentials are not consumed while it waits
@@ -1808,6 +1814,37 @@ def confirmed_absent(ns: str, job: dict, region: str = REGION) -> bool:
         return e.status == 404
     except Exception:
         return False
+
+
+def _record_claim_user(ns: str, job: dict, claim: str) -> None:
+    """A fleet-placed continuation that reuses the original's work claim (a same-volume resume, finalizer or export
+    retry: a manager Job whose claim lives on the worker) is recorded on that claim (`serverless2.nebius/jobs`, the
+    dispatcher's own record) BEFORE its Job exists: the reclaim pass (docs/JOBS.md "Work volume lifecycle") then sees
+    a live reference, and the claim's resourceVersion changes under a concurrent decision. A claim that is gone is
+    the resume's own 409/restart; any other failure is reported, the Job is not created."""
+    name = job["metadata"]["name"]
+    for cluster in placement_regions(job) or []:
+        core = kube.core(kube.cluster_region(cluster))
+        try:
+            cur = core.api_client.sanitize_for_serialization(
+                retry(core.read_namespaced_persistent_volume_claim, claim, ns)
+            )
+        except ApiException as e:
+            if e.status == 404:
+                continue
+            raise HTTPException(502, f"kubernetes ({cluster}): work volume {claim}: {e.reason}")
+        users = [j for j in ((cur["metadata"].get("annotations") or {}).get(f"{LABEL}/jobs") or "").split(",") if j]
+        if name in users:
+            continue
+        try:
+            retry(
+                core.patch_namespaced_persistent_volume_claim,
+                claim,
+                ns,
+                {"metadata": {"annotations": {f"{LABEL}/jobs": ",".join(users + [name])}}},
+            )
+        except ApiException as e:
+            raise HTTPException(502, f"kubernetes ({cluster}): work volume {claim}: {e.reason}")
 
 
 def _create_ignore_exists(fn, ns: str, body: dict, region: str):

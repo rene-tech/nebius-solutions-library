@@ -653,6 +653,12 @@ def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -
         return "release", "delivered"
     if st == "EXPORT_FAILED":
         return "keep", "export pending"
+    if rows and rows[-1].get("export_state") == "failed":
+        # an undelivered capture or output on the volume (the uploader's last record says the export failed): the
+        # transfer-only retry (`:export`, app.py export_again / export_async) delivers it from this volume, whatever
+        # the handle's status (a FAILED endpoint call's exit 2/5 capture, a FAILED run's partial output); kept
+        # whatever the mode and the retention window
+        return "keep", "export pending"
     if st == "SUPERSEDED":
         return "release", "superseded"
     if st not in ("FAILED", "CANCELLED"):
@@ -680,11 +686,14 @@ def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -
     return "keep", "resume" + (" (durable pointer)" if pointer else "") + ("" if window > 0 else ", no deadline")
 
 
-def work_volume_decision(ns: str, claim: dict, mounted: set, find=None, records_of=None) -> tuple[str, str, list]:
+def work_volume_decision(
+    ns: str, claim: dict, mounted: set, find=None, records_of=None, related: list[str] | None = None
+) -> tuple[str, str, list]:
     """What to do with one per-operation work claim: ('keep' | 'release', reason, [(job, cluster) of its Jobs]).
     A mounted or deleting claim and a live referencing Job (the operation, a continuation, a finalizer, anything the
-    dispatcher recorded on it) keep it; otherwise every terminal referencing operation is judged (_work_decision_for)
-    and the claim goes only when all of them agree. Any read that fails means unknown: kept, with the reason."""
+    dispatcher recorded on it, anything the tenant listing shows naming the claim: `related`, a queued same-volume
+    resume the dispatcher has not recorded yet) keep it; otherwise every terminal referencing operation is judged
+    (_work_decision_for) and the claim goes only when all of them agree. Any read that fails means unknown: kept."""
     find = find or jobs.find
     records_of = records_of or attempts.for_operations
     md = claim["metadata"]
@@ -696,6 +705,7 @@ def work_volume_decision(ns: str, claim: dict, mounted: set, find=None, records_
     refs = {(md.get("labels") or {}).get(f"{cfg.LABEL}/operation") or name[: -len("-work")]}
     refs |= {j for j in ((md.get("annotations") or {}).get(f"{cfg.LABEL}/jobs") or "").split(",") if j}
     refs |= {o["name"] for o in md.get("ownerReferences") or [] if o.get("kind") == "Job" and o.get("name")}
+    refs |= set(related or [])
     found: list = []
     for r in sorted(refs):
         try:
@@ -765,15 +775,33 @@ def reclaim_work_volumes(now: float | None = None) -> list[str]:
             except Exception as e:  # noqa: BLE001 - unreadable namespace: nothing is judged there this pass
                 log.warning("work volumes %s/%s: list failed (%s)", region, ns, type(e).__name__)
                 continue
+            # a mount is a pod that can still run (a terminal pod's claim reference only delays the deletion through
+            # pvc-protection; billing.cleanup_released_pods and the dispatcher remove such pods once the claim is deleting)
             mounted = {
                 (v.get("persistentVolumeClaim") or {}).get("claimName")
                 for p in pods
+                if (p.get("status") or {}).get("phase") not in ("Succeeded", "Failed")
                 for v in p["spec"].get("volumes") or []
             }
+            tenant = ns.removeprefix(cfg.TENANT_NS_PREFIX)
+            try:  # every live Job of the tenant that names a claim (annotation or template), every cluster: one listing
+                listing, _skipped = jobs.list_ops_all(ns, tenant, None)
+            except Exception as e:  # noqa: BLE001 - without the listing a queued successor could be missed: nothing is released
+                log.warning("work volumes %s/%s: tenant listing failed (%s)", region, ns, type(e).__name__)
+                continue
+            related: dict[str, list[str]] = {}
+            for j in listing:
+                jn = j["metadata"]["name"]
+                for c in {(j["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/pvc")} | {
+                    (v.get("persistentVolumeClaim") or {}).get("claimName")
+                    for v in (((j.get("spec") or {}).get("template") or {}).get("spec") or {}).get("volumes") or []
+                }:
+                    if c:
+                        related.setdefault(c, []).append(jn)
             for claim in claims:
                 name = claim["metadata"]["name"]
                 try:
-                    action, why, found = work_volume_decision(ns, claim, mounted)
+                    action, why, found = work_volume_decision(ns, claim, mounted, related=related.get(name))
                     if action == "keep":
                         if why not in ("mounted", "active", "releasing"):
                             _stamp_jobs(ns, found, f"retained|{why}|{stamp}")

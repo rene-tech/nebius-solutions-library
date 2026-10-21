@@ -93,9 +93,9 @@ def world(monkeypatch):
     monkeypatch.setattr(jobs, "normalise", lambda j, p=None, r=None: {"status": j["_status"]})
     monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 0)
 
-    def decide(c, mounted=frozenset()):
+    def decide(c, mounted=frozenset(), related=None):
         return rec.work_volume_decision(
-            NS, c, set(mounted), find=find, records_of=lambda ops: {o: rows_by.get(o, []) for o in ops}
+            NS, c, set(mounted), find=find, records_of=lambda ops: {o: rows_by.get(o, []) for o in ops}, related=related
         )
 
     return jobs_by, rows_by, decide
@@ -148,6 +148,28 @@ def test_the_decision_table(world, monkeypatch):
     assert decide(claim("op-r-work", jobs_ann=["op-r", "op-r-r1"]))[:2] == ("keep", "export pending")
     jobs_by["op-r-r1"] = job_("op-r-r1", "SUCCEEDED")
     assert decide(claim("op-r-work", owners=["op-r", "op-r-r1"]))[:2] == ("release", "delivered; superseded")
+
+
+def test_an_undelivered_capture_is_kept_for_the_export_retry_whatever_the_status(world, monkeypatch):
+    """Root's review of 165: a FAILED endpoint call whose exit 2/5 capture was not delivered (the last attempt record
+    says export failed) is retried transfer-only by `:export` from this very volume, and status.normalise does not
+    call that EXPORT_FAILED. The rows decide: kept as export pending, whatever the mode, whatever the window; a
+    delivered or export-less failure of a call is still released."""
+    jobs_by, rows_by, decide = world
+    jobs_by["op-c"] = job_("op-c", "FAILED", mode="async")
+    rows_by["op-c"] = [row("op-c", "failed", export="failed")]
+    assert decide(claim("op-c-work"))[:2] == ("keep", "export pending")
+    rows_by["op-c"] = [row("op-c", "failed", export="failed"), row("op-c", "failed", export="succeeded")]
+    assert decide(claim("op-c-work"))[:2] == ("release", "call ended")  # the newest record is the delivery
+    rows_by["op-c"] = [row("op-c", "interrupted", export=None)]
+    assert decide(claim("op-c-work"))[:2] == ("release", "call ended")
+    # a run whose export failed after a failure: kept past the retention window too
+    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 60)
+    jobs_by["op-w"] = job_("op-w", "FAILED")
+    rows_by["op-w"] = [row("op-w", "failed", ended=datetime.now(timezone.utc) - timedelta(hours=9), export="failed")]
+    assert decide(claim("op-w-work"))[:2] == ("keep", "export pending")
+    rows_by["op-w"] = [row("op-w", "failed", ended=datetime.now(timezone.utc) - timedelta(hours=9), export="succeeded")]
+    assert decide(claim("op-w-work"))[:2] == ("release", "resume window expired")
 
 
 def test_a_gone_job_is_judged_by_its_durable_rows_alone(world, monkeypatch):
@@ -279,3 +301,91 @@ def test_a_resume_after_release_needs_an_explicit_restart_from_inputs(client):
         and view["storage"]["claim"] == f"{oid}-work"
     )
     assert api._fleet_operation_view({**new, "_region": "eu-north1"})["storage"]["state"] is None
+
+
+def test_a_queued_same_volume_successor_known_only_to_the_listing_keeps_the_claim(world):
+    """Root's review of 165: a same-volume fleet resume creates a queued manager Job the dispatcher has not recorded
+    on the worker's claim yet, and the original is marked superseded. The tenant listing names that successor on the
+    claim (`related`): it is live, the claim stays; the record the API now writes at create (jobs._record_claim_user)
+    is the second guard."""
+    jobs_by, rows_by, decide = world
+    jobs_by["op-s"] = job_("op-s", "SUPERSEDED", ann={f"{L}/successor": "op-s-r1"})
+    jobs_by["op-s-r1"] = job_("op-s-r1", "QUEUED", terminal=False)
+    assert decide(claim("op-s-work"))[:2] == ("release", "superseded")  # what 165 would have done
+    assert decide(claim("op-s-work"), related=["op-s-r1"])[:2] == ("keep", "active")
+    assert decide(claim("op-s-work", jobs_ann=["op-s", "op-s-r1"]))[:2] == ("keep", "active")  # the record at create
+
+
+def test_terminal_pods_are_not_mounts_and_the_listing_feeds_the_pass(client, monkeypatch):
+    c, cl = client
+    monkeypatch.setattr(rec, "FLEET_MANAGER", True)
+    monkeypatch.setattr(kube, "regions", lambda: ["eu-north1"])
+    monkeypatch.setattr(kube, "core", lambda r=None: cl)
+    monkeypatch.setattr(kube, "batch", lambda r=None: cl)
+    monkeypatch.setattr(jobs, "tenant_namespaces", lambda: [NS])
+    monkeypatch.setattr(jobs, "normalise", lambda j, p=None, r=None: {"status": j["_status"]})
+    monkeypatch.setattr(db, "enabled", lambda: False)
+    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 0)
+    done, live, succ = "op-00000000000000a1", "op-00000000000000b2", "op-00000000000000c3"
+    rows = {
+        done: [row(done, "succeeded", export="succeeded")],
+        live: [row(live, "succeeded", export="succeeded")],
+        succ: [],
+    }
+    monkeypatch.setattr(attempts, "for_operations", lambda ops: {o: rows.get(o, []) for o in ops})
+    cl.jobs[(NS, done)] = job_(done, "SUCCEEDED")
+    cl.jobs[(NS, live)] = job_(live, "SUCCEEDED")
+    queued = job_(f"{succ}-r1", "QUEUED", terminal=False, ann={f"{L}/pvc": f"{succ}-work", f"{L}/resumed-from": succ})
+    cl.jobs[(NS, succ)] = job_(succ, "SUPERSEDED", ann={f"{L}/successor": f"{succ}-r1"})
+    cl.jobs[(NS, f"{succ}-r1")] = queued
+    monkeypatch.setattr(
+        jobs,
+        "find",
+        lambda ns, n: (cl.jobs[(ns, n)], "eu-north1")
+        if (ns, n) in cl.jobs
+        else (_ for _ in ()).throw(HTTPException(404, "x")),
+    )
+    monkeypatch.setattr(jobs, "list_ops_all", lambda ns, tenant, model: ([queued], []))
+    for n in (done, live, succ):
+        cl.pvcs[(NS, f"{n}-work")] = claim(f"{n}-work", uid=f"u-{n}", rv="1")
+    # a terminal pod still naming the delivered claim is no mount; a running pod naming the other claim is
+    cl.pods += [
+        {
+            "metadata": {"name": "p-done", "namespace": NS, "labels": {}},
+            "spec": {"volumes": [{"name": "work", "persistentVolumeClaim": {"claimName": f"{done}-work"}}]},
+            "status": {"phase": "Failed"},
+        },
+        {
+            "metadata": {"name": "p-live", "namespace": NS, "labels": {}},
+            "spec": {"volumes": [{"name": "work", "persistentVolumeClaim": {"claimName": f"{live}-work"}}]},
+            "status": {"phase": "Running"},
+        },
+    ]
+    rec._reclaim["at"] = 0.0
+    assert rec.reclaim_work_volumes() == [f"eu-north1/{NS}/{done}-work"]
+    assert (NS, f"{live}-work") in cl.pvcs and (
+        NS,
+        f"{succ}-work",
+    ) in cl.pvcs  # mounted; queued successor from the listing
+
+
+def test_a_fleet_resume_records_itself_on_the_workers_claim_before_its_job_exists(client, monkeypatch):
+    c, cl = client
+    monkeypatch.setattr(kube, "core", lambda r=None: cl)
+    monkeypatch.setattr(kube, "cluster_region", lambda c: "eu-north1")
+    cl.pvcs[(NS, "op-1-work")] = claim("op-1-work", uid="u1", rv="5")
+    cl.pvcs[(NS, "op-1-work")]["metadata"]["annotations"][f"{L}/jobs"] = "op-1"
+    j = {
+        "metadata": {"name": "op-1-r1", "annotations": {f"{L}/pvc": "op-1-work", f"{L}/resumed-from": "op-1"}},
+        "spec": {
+            "managedBy": "kueue.x-k8s.io/multikueue",
+            "template": {"metadata": {"annotations": {f"{L}/regions": "north"}}, "spec": {}},
+        },
+    }
+    jobs._record_claim_user(NS, j, "op-1-work")
+    assert cl.pvcs[(NS, "op-1-work")]["metadata"]["annotations"][f"{L}/jobs"] == "op-1,op-1-r1"
+    jobs._record_claim_user(NS, j, "op-1-work")  # idempotent
+    assert cl.pvcs[(NS, "op-1-work")]["metadata"]["annotations"][f"{L}/jobs"] == "op-1,op-1-r1"
+    jobs._record_claim_user(
+        NS, j, "op-gone-work"
+    )  # a released claim: nothing to record, the resume decides (409/restart)

@@ -507,11 +507,19 @@ root closed, is refused (403) and a direct `:invoke` of the class stays refused:
 itself. The owner reads its delegated stage's handle as any of its operations; a key of the same owner without the
 grant sees it through the same rule.
 
-What the gate changes on a waiting Job is limited to what Kubernetes allows on a never-started suspended Job
-(KEP-2926): the queue label (from the waiting queue to the stage's profile, which Kueue allows while the Job is suspended; it recreates the Workload) and the waiting label and the pod template's `serverless2.nebius/dependency-results`
-annotation, which the main container reads through the downward API. The results are the operations' `result_ref`s
-(bucket prefixes for managed I/O, the application's references for application I/O); the stage's own access to
-them is its own (its bucket credentials, its identity or its binding), as for any run.
+What the gate changes on a waiting Job is its labels and annotations only: the queue label (from the waiting queue to
+the stage's profile, which Kueue allows while the Job is suspended), the waiting label, and the Job annotation
+`serverless2.nebius/dependency-results` (the record a continuation inherits). The pod template is never patched:
+Kueue captures it into the Workload at creation and restores it on every admission and requeue, so a value patched
+in later is lost (api 0.11.160 lost its annotation after a requeue: five stages ran with an empty
+`DEPENDENCY_RESULTS`, 2026-10-21). Since api 0.11.166 the main container's `DEPENDENCY_RESULTS` comes from the
+stage's own Secret `<stage>-dependencies` (key `results`), named in the template from creation: the gate writes that
+Secret into every cluster the stage may land in (its placement) before the queue switch, a continuation (resume,
+export retry, finalizer, fallback, recovery) gets its own `<continuation>-dependencies` from the inherited record
+before its Job exists, and the settlement sweep removes it with the private input copies. Owner-scoped results only
+(`result_ref`s and attempt identities), never credentials. The results are the operations' `result_ref`s (bucket
+prefixes for managed I/O, the application's references for application I/O); the stage's own access to them is its
+own (its bucket credentials, its identity or its binding), as for any run.
 
 ## Retries
 
@@ -1013,7 +1021,7 @@ SIGTERM reaches the shell of a string command (shared PID namespace); a long-run
 that shell (`python train.py`) only sees it if the script forwards it (`exec python train.py`,
 or a `trap`), so prefer `exec` for the final command of a script.
 
-## Work volume lifecycle (api 0.11.165, dispatcher 0.2.17)
+## Work volume lifecycle (api 0.11.166, dispatcher 0.2.17)
 
 A per-operation work volume (`<op>-work`, also `-rN`, `-xN`, `-s-<stage>`, `-c-<id>`) is disposable storage: it is
 released on proof, never with the operation's history (finished Jobs stay `JOB_TTL_S`, 90 days, and keep their
@@ -1033,7 +1041,12 @@ namespace and cluster by the same evidence the handle shows:
 | a run that ran and ended `FAILED` or `CANCELLED`                          | kept     | `resume` (+ `(durable pointer)` when an acknowledged checkpoint pointer exists); `, no deadline` unless `WORK_RETENTION_FAILED_S` is set, after which `resume window expired` releases it |
 | the Job is gone and no attempt record exists; any read failed            | kept     | `unknown: …`         |
 
-A claim shared by a chain (root, resumes, finalizers) goes only when every referencing operation agrees. The release
+A claim shared by a chain (root, resumes, finalizers) goes only when every referencing operation agrees; the
+references are the claim's own records (the dispatcher's `jobs` annotation, the owner references), every live Job of
+the tenant listing that names the claim (a queued same-volume resume the dispatcher has not recorded yet), and a
+fleet-placed continuation records itself on the worker's claim before its Job exists. A terminal pod is not a mount
+(its claim reference only delays the deletion until the released-pod cleanup removes it). An attempt record saying
+the export failed keeps the claim whatever the status: the transfer-only retry delivers from it. The release
 deletes the claim with its uid and resourceVersion as preconditions under the operation lock (a resume that takes the
 volume in between changes it: the delete is refused, the next pass judges again) and records the decision on the
 Jobs as `serverless2.nebius/work-volume: released|<reason>|<time>` (kept claims other than active ones get

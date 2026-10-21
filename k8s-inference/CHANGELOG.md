@@ -4,7 +4,18 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.165, dispatcher 0.2.17
+## api 0.11.166, dispatcher 0.2.17
+
+- Stage composition: the dependencies' results reach the stage's pod through its own Secret `<stage>-dependencies`
+  named in the pod template from creation; the gate writes it in the stage's placement clusters before the queue
+  switch, a continuation gets its own before its Job exists, the settlement sweep removes it. Before, the gate patched
+  the pod template annotation, which Kueue restores from its Workload on every admission and requeue: five stages
+  of the 2026-10-21 cohort ran with an empty `DEPENDENCY_RESULTS` after a requeue (BindCraft, BoltzGen, Mosaic,
+  Proteina, RFdiffusion). Nothing on the pod template changes after creation any more.
+- Work volume reclaim (review of the 165 candidate): an attempt record with a failed export keeps the claim whatever
+  the handle's status (an endpoint call's undelivered capture, `:export` delivers from it); every live Job of the
+  tenant listing that names a claim is a reference (a queued same-volume resume), and a fleet-placed continuation
+  records itself on the worker's claim before its Job exists; a terminal pod is not a mount.
 
 - Work volumes are released on proof, never with the history (docs/JOBS.md "Work volume lifecycle"): the control
   API's reclaim pass judges every per-operation claim by the handle's own state and the durable attempt records

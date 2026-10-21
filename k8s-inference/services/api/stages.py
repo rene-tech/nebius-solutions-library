@@ -17,6 +17,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
+from kubernetes.client.rest import ApiException
 
 import attempts
 import config as cfg
@@ -43,8 +44,9 @@ STAGE_ID = f"{LABEL}/stage"  # annotation: the stage's declared id
 DEPENDS_ON = f"{LABEL}/depends-on"  # annotation: the declared dependencies, comma-separated
 WAIT_REASON = f"{LABEL}/stage-waiting-reason"  # annotation: why it still waits (the gate's last finding)
 ADMITTED_AT = f"{LABEL}/stage-admitted-at"  # annotation: when the gate handed it to Kueue
-RESULTS = f"{LABEL}/dependency-results"  # pod template annotation: the dependencies' results (DEPENDENCY_RESULTS)
+RESULTS = f"{LABEL}/dependency-results"  # Job annotation: the dependencies' results as bound (the record continuations inherit)
 RESULTS_ENV = "DEPENDENCY_RESULTS"
+RESULTS_KEY = "results"  # the key of the stage's own Secret `<stage>-dependencies` the env reads (api 0.11.166)
 ROOT = execution.ROOT_STAGE
 TERMINAL_FAILED = ("FAILED", "CANCELLED")
 DEFAULT_DEADLINE_S = 14 * 86400  # the long-run contract; `deadline_s` up to 30 days
@@ -76,10 +78,8 @@ def mark_waiting(job: dict, root: str, stage: str, deps: list[str]) -> None:
     md["annotations"][STAGE_ROOT] = root
     md["annotations"][DEPENDS_ON] = ",".join(deps)
     job["spec"]["suspend"] = True
-    # the env only, NO template annotation yet (api 0.11.160): Kueue captures the pod template into the Workload at
-    # creation and its admission merge keeps the Workload's values, so an annotation stamped "{}" here came back over
-    # the gate's real results (7 stages ran with "{}" and their workers refused the missing root, 2026-10-21). The
-    # gate writes the annotation once, while suspended, before the queue switch; the fieldRef resolves then.
+    # the env names the stage's own results Secret (results_secret): nothing on the pod template changes after
+    # creation, so Kueue's capture/restore of the template cannot lose the hand-off; the gate writes the Secret
     bind_results(job, None)
 
 
@@ -96,23 +96,53 @@ def inherit(job: dict, ann: dict) -> None:
     if ann.get(DEPENDS_ON):
         md["annotations"][DEPENDS_ON] = ann[DEPENDS_ON]
     if ann.get(RESULTS) and ann[RESULTS] != "{}" and job.get("kind") == "Job":
-        md["annotations"][RESULTS] = ann[RESULTS]
-        bind_results(job, ann[RESULTS])
+        bind_results(job, ann[RESULTS])  # the record on the successor; jobs.create delivers its Secret before the Job
+
+
+def results_secret(name: str) -> str:
+    """The Secret that carries a stage's dependency results to its pod (`<stage>-dependencies`, key RESULTS_KEY): named
+    in the pod template from creation and written by the gate (or create(), for a continuation) before the Job is
+    handed to Kueue. Kueue captures a Job's pod template into its Workload at creation and restores it on every
+    (re)admission, so a value patched into the template later is lost (api 0.11.160's annotation came back empty
+    after a requeue: 5 stages failed on an empty DEPENDENCY_RESULTS, 2026-10-21); a reference by name survives."""
+    return f"{name}-dependencies"
 
 
 def bind_results(job: dict, results_json: str | None) -> None:
-    """The dependencies' results into the pod: the template annotation the main container reads (downward API);
-    None binds the env only (a waiting stage before its gate: no annotation for Kueue's Workload to capture)."""
-    tmpl = job["spec"]["template"]
+    """The main container's DEPENDENCY_RESULTS from the stage's own Secret (results_secret); `results_json` (a
+    continuation inheriting them) goes onto the Job's annotation as the record, never onto the pod template."""
     if results_json is not None:
-        tmpl.setdefault("metadata", {}).setdefault("annotations", {})[RESULTS] = results_json
-    for c in tmpl["spec"].get("containers") or []:
+        job["metadata"].setdefault("annotations", {})[RESULTS] = results_json
+    name = job["metadata"]["name"]
+    for c in job["spec"]["template"]["spec"].get("containers") or []:
         if c.get("name") == "main":
             env = [e for e in (c.get("env") or []) if e.get("name") != RESULTS_ENV]
             env.append(
-                {"name": RESULTS_ENV, "valueFrom": {"fieldRef": {"fieldPath": f"metadata.annotations['{RESULTS}']"}}}
+                {"name": RESULTS_ENV, "valueFrom": {"secretKeyRef": {"name": results_secret(name), "key": RESULTS_KEY}}}
             )
             c["env"] = env
+
+
+def deliver_results(ns: str, name: str, regions: list[str], results_json: str) -> None:
+    """Write the stage's results Secret into every cluster its pod may land in (the placement boundary
+    execution.deliver uses), before the Job is queued: created, or replaced when it exists (idempotent)."""
+    body = {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {"name": results_secret(name), "labels": {f"{LABEL}/operation": name}},
+        "stringData": {RESULTS_KEY: results_json},
+    }
+    for r in sorted({kube.cluster_region(x) for x in (regions or [REGION])}):
+        core = kube.core(r)
+        try:
+            retry(core.create_namespaced_secret, ns, body)
+        except ApiException as e:
+            if e.status != 409:
+                raise HTTPException(502, f"kubernetes ({r}): stage results for {name}: {e.reason}")
+            try:
+                retry(core.replace_namespaced_secret, results_secret(name), ns, body)
+            except ApiException as e2:
+                raise HTTPException(502, f"kubernetes ({r}): stage results for {name}: {e2.reason}")
 
 
 def is_waiting(job: dict) -> bool:
@@ -349,17 +379,20 @@ def _admit_stage(ns: str, job: dict, results: dict) -> None:
     profile = md["labels"].get(f"{LABEL}/profile")
     if not profile:
         raise HTTPException(500, f"stage {name}: no profile label: cannot name its Kueue queue")
+    bound = json.dumps(results, sort_keys=True)
+    # the results reach the pod through the stage's own Secret, written in every cluster the pod may land in BEFORE
+    # the queue switch (the pod template is never patched: Kueue restores it on every admission)
+    deliver_results(ns, name, jobs.placement_regions(job) or [REGION], bound)
     body = {
         "metadata": {
             "labels": {QUEUE_LABEL: profile, WAITING: None},
             "annotations": {
                 ADMITTED_AT: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 WAIT_REASON: None,
+                RESULTS: bound,  # the record continuations inherit
             },
         },
-        "spec": {"template": {"metadata": {"annotations": {RESULTS: json.dumps(results, sort_keys=True)}}}},
     }
-    body["metadata"]["annotations"][RESULTS] = json.dumps(results, sort_keys=True)  # continuations inherit it
     retry(kube.batch().patch_namespaced_job, name, ns, body)
     log.info("stage %s/%s admitted: %s", ns, name, sorted(results))
 

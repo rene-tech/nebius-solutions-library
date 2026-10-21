@@ -824,9 +824,11 @@ def deliver(
 
 
 def sweep_copies(ns: str, operation: str) -> None:
-    """Remove only this finished operation's copies, never those of a live successor sharing its root binding."""
+    """Remove only this finished operation's copies (its private input, its stage results), never those of a live
+    successor sharing its root binding."""
     for r in kube.regions():
-        try:
-            retry(kube.core(r).delete_namespaced_secret, f"{operation}-private", ns)
-        except (ApiException, OSError):
-            continue
+        for name in (f"{operation}-private", f"{operation}-dependencies"):
+            try:
+                retry(kube.core(r).delete_namespaced_secret, name, ns)
+            except (ApiException, OSError):
+                continue
