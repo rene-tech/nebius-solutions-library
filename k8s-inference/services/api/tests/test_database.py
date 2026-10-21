@@ -1390,3 +1390,38 @@ def test_the_reservation_of_a_member_resolves_to_its_live_root_and_to_nothing_on
         leases.prepare("op-root-1-c-abcdef0123", "op-root-1-c-abcdef0123-pod2", "eu-north1", "cosmos-nano")
         leases.attach("op-root-1-c-abcdef0123", "op-root-1-c-abcdef0123-pod2", worker, "req-2")
     assert e.value.status_code == 409
+
+
+def test_lease_sweep_closes_a_prepared_row_whose_attempt_is_terminal(database, monkeypatch):
+    """api 0.11.156: a PREPARED execution (the hook prepared it, no worker attached) whose caller attempt is already
+    terminal in the records is closed by the sweep itself; before, only settle_decision on a later read closed it
+    (op-d2140ab9484d1b72 stayed prepared from 00:39:06 to 00:45:18Z on 2026-10-21). Attached rows and prepared rows of
+    a live attempt are untouched."""
+    import leases
+
+    db.migrate()
+    monkeypatch.setattr(leases, "enabled", lambda: True)
+    monkeypatch.setattr(leases, "_worker_gone", lambda e: False)
+    with db.connection() as c:
+        for op, att, state in (
+            ("op-done", "op-done-a", "prepared"),
+            ("op-live", "op-live-a", "prepared"),
+            ("op-att", "op-att-a", "attached"),
+        ):
+            c.execute(
+                "insert into native_executions (operation, attempt, state, region, model) values (%s, %s, %s, 'hub', 'm')",
+                (op, att, state),
+            )
+        for op, att, status in (
+            ("op-done", "op-done-a", "failed"),
+            ("op-live", "op-live-a", "started"),
+            ("op-att", "op-att-a", "failed"),
+        ):
+            c.execute(
+                "insert into attempts (operation, pod, root, tenant, namespace, epoch, region, status) values (%s, %s, %s, 't', 'tenant-t', 1, 'hub', %s)",
+                (op, att, op, status),
+            )
+    assert leases.sweep() == ["op-done:closed"]
+    with db.connection() as c:
+        rows = dict(c.execute("select operation, state from native_executions").fetchall())
+    assert rows == {"op-done": "closed", "op-live": "prepared", "op-att": "attached"}

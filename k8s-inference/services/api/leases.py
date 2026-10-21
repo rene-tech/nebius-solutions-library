@@ -364,6 +364,16 @@ def sweep() -> list[str]:
             ).fetchone()
         if r2:
             out.append(f"{e['operation']}:lost")
+    # a PREPARED row (the hook prepared it, no worker attached) whose attempt is already terminal in the records: the
+    # caller is over; settle_decision would close it on the next read, nobody may read for minutes (Qwen-clone
+    # op-d2140ab9484d1b72 stayed prepared 00:39:06-00:45:18Z, 2026-10-21). Same closure, no fence, no measurement.
+    with db.connection() as c, c.transaction():
+        closed = c.execute(
+            "update native_executions e set state = 'closed', released_at = now(), outcome = 'caller finished' "
+            "from attempts a where a.operation = e.operation and a.pod = e.attempt and e.state = 'prepared' "
+            "and a.status in ('succeeded', 'failed', 'interrupted') returning e.operation",
+        ).fetchall()
+    out.extend(f"{r[0]}:closed" for r in closed)
     return out
 
 

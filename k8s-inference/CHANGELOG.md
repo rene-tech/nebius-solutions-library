@@ -4,6 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.156
+
+- Every rendered pod template (single-node run, async caller, multi-node JobSet workers) carries
+  `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`: the autoscaler's scale-down of an under-used cpu-general
+  node deleted a running caller pod that owned an in-flight inference (Qwen op-6f58bf1bd4a3c980, 2026-10-21 00:26Z).
+  No PodDisruptionBudget, no per-model setting; a node with such a pod is simply not a scale-down candidate.
+- The execution-lease sweep (reconcile, every 15 s) also closes a PREPARED lease (the hook prepared it, no worker
+  attached) whose caller attempt is already terminal in the records: before, only a later read's settle_decision
+  closed it, so a finished caller's lease could linger for minutes (op-d2140ab9484d1b72, 00:39-00:45Z). Attached
+  leases are handled as before (lost only when their pod is gone).
+
 ## api 0.11.155
 
 - Memory under a large cohort (api 0.11.155): the three reconcile scans (fallback, unschedulable, recovery) read the

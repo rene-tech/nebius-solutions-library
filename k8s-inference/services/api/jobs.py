@@ -961,6 +961,9 @@ def _multinode(
         "labels": {**extra.get("labels", {}), **{k: v for k, v in meta["labels"].items() if k.startswith(LABEL)}}
     }
     ann = dict(extra.get("annotations", {}))
+    # never evicted by the cluster autoscaler's scale-down: a run pod holds its attempt, a caller pod its in-flight
+    # inference (the scale-down of an under-used CPU node deleted a waiting caller, 2026-10-21 00:26Z; api 0.11.156)
+    ann["cluster-autoscaler.kubernetes.io/safe-to-evict"] = "false"
     if placement and placement.get("classes"):
         ann[f"{LABEL}/gpu-classes"] = ",".join(placement["classes"])
     if placement and placement.get("regions"):
@@ -1021,7 +1024,10 @@ def _multinode(
             {
                 "name": "workers",
                 "replicas": 1,
-                "template": {"metadata": {"labels": dict(tmpl_meta["labels"])}, "spec": job_spec},
+                "template": {
+                    "metadata": {"labels": dict(tmpl_meta["labels"]), "annotations": dict(tmpl_meta["annotations"])},
+                    "spec": job_spec,
+                },
             }
         ],
     }

@@ -271,6 +271,10 @@ def _job_shell(
         "labels": {**extra.get("labels", {}), **{k: v for k, v in meta["labels"].items() if k.startswith(LABEL)}}
     }
     ann = dict(extra.get("annotations", {}))
+    # never evicted by the cluster autoscaler's scale-down: a run pod holds its attempt, a caller pod its in-flight
+    # inference (the scale-down of an under-used cpu-general node deleted a running caller, 2026-10-21 00:26Z;
+    # api 0.11.156). No PDB: a node with such a pod is simply not a scale-down candidate.
+    ann["cluster-autoscaler.kubernetes.io/safe-to-evict"] = "false"
     if meta["annotations"].get(f"{LABEL}/pvc-size-gi"):
         ann[f"{LABEL}/pvc-size-gi"] = meta["annotations"][f"{LABEL}/pvc-size-gi"]
     if placement and placement.get("classes"):

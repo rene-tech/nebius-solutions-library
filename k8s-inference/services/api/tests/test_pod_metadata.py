@@ -147,3 +147,19 @@ def test_token_setting_is_explicit_and_never_disables_run_helpers(client, admin_
     }
     assert c.post("/v1/models", json=spec, headers=ADMIN).status_code == 400
     assert spec["id"] not in admin_keys.rows
+
+
+def test_every_run_and_caller_pod_template_refuses_autoscaler_eviction(client):
+    """api 0.11.156: cluster-autoscaler.kubernetes.io/safe-to-evict=false on every rendered pod template (single-node
+    run, async caller, multi-node JobSet workers): the scale-down of an under-used cpu-general node deleted a waiting
+    caller pod (Qwen op-6f58bf1bd4a3c980, 2026-10-21 00:26Z). No PDB, no per-model setting."""
+    c, fake = client
+    for model, body in (
+        ("hello-run", {"mode": "run", "input": {}}),
+        ("llm-example", {"mode": "async", "input": {"messages": []}}),
+    ):
+        r = c.post(f"/v1/models/{model}:invoke", headers=H, json=body)
+        assert r.status_code == 202, r.text
+        job = fake.jobs[("tenant-demo", r.json()["id"])]
+        ann = job["spec"]["template"]["metadata"].get("annotations") or {}
+        assert ann.get("cluster-autoscaler.kubernetes.io/safe-to-evict") == "false", body
