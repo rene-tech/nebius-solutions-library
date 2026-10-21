@@ -4,6 +4,30 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.164, dispatcher 0.2.17
+
+- Work volumes are released on proof, never with the history (docs/JOBS.md "Work volume lifecycle"): the control
+  API's reclaim pass judges every per-operation claim by the handle's own state and the durable attempt records
+  (delivered, superseded, ended endpoint call, never-started run: released; export pending, a failed run that ran,
+  unknown: kept with the reason recorded on the Job), deletes with uid/resourceVersion preconditions under the
+  operation lock, and the dispatcher counts a released Job as no reference and never recreates its claim. Before:
+  every FAILED, never-started or failed-call volume was pinned by its terminal Job for the 90-day history TTL (313
+  unattached disks on the north cluster, tenant disk quota exhausted, 2026-10-21). `:resume` of a released volume
+  answers 409 with the reason unless a checkpoint pointer or `restart_from_inputs: true` is given; handles carry
+  `work_volume`, the fleet view `storage`. `WORK_RETENTION_FAILED_S` (default 0: no deadline) bounds the resume
+  retention of failed runs when the operator sets it.
+
+## api 0.11.161 to 0.11.163
+
+- 0.11.161: endpoint callers mount one `fleet-trust` ConfigMap per tenant namespace (hash-annotated, rewritten only
+  when the bundle changes) instead of a 600 KB copy of the trust bundle in every per-call Secret (949 copies filled the
+  Envoy Gateway controller's Secret cache and OOM-killed it); the tenant ClusterRole gained the matching configmaps
+  rules (chart-only 161rbac after the first rollout refused every new call for ten minutes); envoy-gateway controller
+  limit 2Gi. 0.11.162: a failed create leaves nothing behind (trust before delivery, a true-404 absence proof, the
+  private copy swept, the root member and declared graph refunded; never for a replay). 0.11.163: the fleet
+  operations list carries the compute shape (`gpu_class`, `gpus`, `pool`, `instance_type`) for the console's
+  Platform column.
+
 ## api 0.11.160
 
 - Operation views no longer list the whole tenant on a cold relatives lookup (api 0.11.159): jobs.list_related

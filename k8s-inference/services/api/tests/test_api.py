@@ -205,10 +205,27 @@ class FakeCluster:
     def patch_namespaced_persistent_volume_claim(self, name, ns, body):
         self.pvcs[(ns, name)]["metadata"].update(body["metadata"])
 
-    def delete_namespaced_persistent_volume_claim(self, name, ns):
+    def delete_namespaced_persistent_volume_claim(self, name, ns, body=None):
         if (ns, name) not in self.pvcs:
             raise ApiException(status=404, reason="NotFound")
+        pre = getattr(body, "preconditions", None)
+        if pre is not None:  # the reclaim pass deletes with uid + resourceVersion preconditions (reconciliation.py)
+            md = self.pvcs[(ns, name)]["metadata"]
+            if (pre.uid and pre.uid != md.get("uid")) or (
+                pre.resource_version and pre.resource_version != md.get("resourceVersion")
+            ):
+                raise ApiException(status=409, reason="Conflict")
+        self.__dict__.setdefault("pvc_deleted", []).append((ns, name, getattr(pre, "uid", None), getattr(pre, "resource_version", None)))
         del self.pvcs[(ns, name)]
+
+    def list_namespaced_persistent_volume_claim(self, ns, label_selector=""):
+        want = dict(kv.split("=", 1) for kv in label_selector.split(",") if "=" in kv) if label_selector else {}
+        items = [
+            v
+            for (n, _), v in self.pvcs.items()
+            if n == ns and all((v["metadata"].get("labels") or {}).get(k) == val for k, val in want.items())
+        ]
+        return Items(items)
 
     _rv = 0
 

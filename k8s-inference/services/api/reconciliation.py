@@ -9,9 +9,13 @@ import asyncio
 import json
 import logging
 import os
+import re
+import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
+from kubernetes.client.rest import ApiException
 
 import attempts
 import catalog
@@ -24,6 +28,7 @@ import kube
 import models
 import status
 from config import FLEET_MANAGER, REGION
+from resilience import retry
 
 log = logging.getLogger("api")
 RESERVATION_STALE_S = 3600
@@ -530,6 +535,7 @@ async def _reconcile_loop():
             await asyncio.to_thread(sweep_children)
             await asyncio.to_thread(sweep_executions)
             await asyncio.to_thread(keys.retire_mirrors)
+            await asyncio.to_thread(reclaim_work_volumes)
         except Exception:
             log.exception("model reconciliation unavailable")
         await asyncio.sleep(15)
@@ -606,4 +612,195 @@ def release_stale_reservations() -> list[str]:
             unknown = unknown or bool(m["gpu_bound"])
         else:
             out.append(f"{operation}:unknown" if unknown else operation)
+    return out
+
+
+# --- work volumes: released on proof, never with the history (docs/JOBS.md "Work volume lifecycle") ---------------
+
+WORK_VOLUME_ANN = f"{cfg.LABEL}/work-volume"  # on the Job: released|<reason>|<ts> or retained|<reason>|<ts>
+WORK_RE = re.compile(r"^op-[0-9a-f]{16}(?:-s-[a-z0-9-]+|-c-[0-9a-f]+|-x\d+|-r\d+)?-work$")
+_reclaim = {"at": 0.0}
+
+
+def work_volume_mark(job: dict | None) -> dict | None:
+    """The recorded lifecycle of an operation's work volume: {state, reason, at} from WORK_VOLUME_ANN, None when
+    nothing was recorded (the volume is as the uploader left it)."""
+    v = ((job or {}).get("metadata", {}).get("annotations") or {}).get(WORK_VOLUME_ANN) or ""
+    state, _, rest = v.partition("|")
+    if state not in ("released", "retained"):
+        return None
+    reason, _, at = rest.partition("|")
+    return {"state": state, "reason": reason, "at": at or None}
+
+
+def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -> tuple[str, str]:
+    """('keep' | 'release', reason) for one terminal operation of a claim, from the API's own status projection and the
+    operation's durable attempt rows; a gone Job is judged by its rows alone (synthesize), no rows = unknown."""
+    if job is None:
+        if not rows or not tenant:
+            return "keep", "unknown: Job gone, no attempt record"
+        import admissions
+
+        st = (attempts.synthesize(rows[0]["operation"], tenant) or {}).get("status")
+        rec = admissions.get(rows[0]["operation"])
+        mode = ((rec or {}).get("labels") or {}).get(f"{cfg.LABEL}/mode") or "run"
+        if st is None:
+            return "keep", "unknown: Job gone, no attempt record"
+    else:
+        st = jobs.normalise(job, None, rows)["status"]
+        mode = (job["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/mode") or "run"
+    if st == "SUCCEEDED":
+        return "release", "delivered"
+    if st == "EXPORT_FAILED":
+        return "keep", "export pending"
+    if st == "SUPERSEDED":
+        return "release", "superseded"
+    if st not in ("FAILED", "CANCELLED"):
+        return "keep", "active"
+    if mode == "async":
+        return (
+            "release",
+            "call ended",
+        )  # an endpoint call never resumes; its capture went with the delivery or the export retry
+    started = [r for r in rows if r.get("started_at")]
+    if not started:
+        return "release", "never started"
+    pointer = any(r.get("checkpoint_ref") for r in rows)
+    ended = max((r.get("ended_at") or r.get("started_at") for r in started), key=str)
+    window = cfg.WORK_RETENTION_FAILED_S
+    if window > 0:
+        try:
+            ended_at = (
+                ended if isinstance(ended, datetime) else datetime.fromisoformat(str(ended).replace("Z", "+00:00"))
+            )
+            if (datetime.now(timezone.utc) - ended_at).total_seconds() > window:
+                return "release", "resume window expired"
+        except (TypeError, ValueError):
+            pass
+    return "keep", "resume" + (" (durable pointer)" if pointer else "") + ("" if window > 0 else ", no deadline")
+
+
+def work_volume_decision(ns: str, claim: dict, mounted: set, find=None, records_of=None) -> tuple[str, str, list]:
+    """What to do with one per-operation work claim: ('keep' | 'release', reason, [(job, cluster) of its Jobs]).
+    A mounted or deleting claim and a live referencing Job (the operation, a continuation, a finalizer, anything the
+    dispatcher recorded on it) keep it; otherwise every terminal referencing operation is judged (_work_decision_for)
+    and the claim goes only when all of them agree. Any read that fails means unknown: kept, with the reason."""
+    find = find or jobs.find
+    records_of = records_of or attempts.for_operations
+    md = claim["metadata"]
+    name = md["name"]
+    if name in mounted:
+        return "keep", "mounted", []
+    if md.get("deletionTimestamp"):
+        return "keep", "releasing", []
+    refs = {(md.get("labels") or {}).get(f"{cfg.LABEL}/operation") or name[: -len("-work")]}
+    refs |= {j for j in ((md.get("annotations") or {}).get(f"{cfg.LABEL}/jobs") or "").split(",") if j}
+    refs |= {o["name"] for o in md.get("ownerReferences") or [] if o.get("kind") == "Job" and o.get("name")}
+    found: list = []
+    for r in sorted(refs):
+        try:
+            j, _ = find(ns, r)
+        except HTTPException as e:
+            if e.status_code != 404:
+                return "keep", f"unknown: {r} unreadable ({e.status_code})", []
+            found.append((r, None))
+            continue
+        except Exception as e:  # noqa: BLE001 - a cluster that cannot be read is unknown, never absent
+            return "keep", f"unknown: {r} unreadable ({type(e).__name__})", []
+        ann = j["metadata"].get("annotations") or {}
+        if not jobs.job_terminal(j) and not ann.get(f"{cfg.LABEL}/successor"):
+            return "keep", "active", []
+        found.append((r, j))
+    try:
+        rows = records_of({r for r, _ in found})
+    except Exception as e:  # noqa: BLE001 - the ledger unavailable: unknown
+        return "keep", f"unknown: attempt records unavailable ({type(e).__name__})", []
+    tenant = ns.removeprefix(cfg.TENANT_NS_PREFIX)
+    reasons = []
+    for r, j in found:
+        action, why = _work_decision_for(j, [x for x in rows.get(r, []) if x.get("operation") == r], tenant)
+        if action == "keep":
+            return "keep", why, [(r, j) for r, j in found]
+        reasons.append(why)
+    return "release", "; ".join(sorted(set(reasons))) or "no reference", [(r, j) for r, j in found]
+
+
+def _stamp_jobs(ns: str, found: list, value: str) -> None:
+    """Record the volume's lifecycle on every referencing Job that exists (its own cluster), once per value."""
+    for r, j in found:
+        if j is None or (j["metadata"].get("annotations") or {}).get(WORK_VOLUME_ANN) == value:
+            continue
+        for region in kube.regions():
+            try:
+                kube.batch(region).patch_namespaced_job(r, ns, {"metadata": {"annotations": {WORK_VOLUME_ANN: value}}})
+                break
+            except Exception:  # noqa: BLE001 - not on this cluster or unreadable: the next pass records it
+                continue
+
+
+def reclaim_work_volumes(now: float | None = None) -> list[str]:
+    """Every WORK_RECLAIM_EVERY_S on the control API: release the per-operation work claims (`<op>-work`, every
+    tenant namespace, every cluster) whose operations are over and proven not to need them (work_volume_decision),
+    with uid and resourceVersion preconditions under the operation lock; record the decision on the Jobs. Returns
+    `<cluster>/<ns>/<claim>` for each released claim. Shared claims, assets and caches never match the name rule."""
+    if not FLEET_MANAGER:
+        return []
+    now = time.time() if now is None else now
+    if now - _reclaim["at"] < cfg.WORK_RECLAIM_EVERY_S:
+        return []
+    _reclaim["at"] = now
+    out: list[str] = []
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    for region in kube.regions():
+        core = kube.core(region)
+        for ns in jobs.tenant_namespaces():
+            try:
+                claims = jobs._json_items(
+                    core.list_namespaced_persistent_volume_claim, ns, label_selector=f"{cfg.LABEL}/operation"
+                )
+                claims = [c for c in claims if WORK_RE.match(c["metadata"]["name"])]
+                if not claims:
+                    continue
+                pods = jobs._json_items(core.list_namespaced_pod, ns)
+            except Exception as e:  # noqa: BLE001 - unreadable namespace: nothing is judged there this pass
+                log.warning("work volumes %s/%s: list failed (%s)", region, ns, type(e).__name__)
+                continue
+            mounted = {
+                (v.get("persistentVolumeClaim") or {}).get("claimName")
+                for p in pods
+                for v in p["spec"].get("volumes") or []
+            }
+            for claim in claims:
+                name = claim["metadata"]["name"]
+                try:
+                    action, why, found = work_volume_decision(ns, claim, mounted)
+                    if action == "keep":
+                        if why not in ("mounted", "active", "releasing"):
+                            _stamp_jobs(ns, found, f"retained|{why}|{stamp}")
+                        continue
+                    root = (claim["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/operation") or name
+                    with keys.operation_lock(root) if db.enabled() else nullcontext():
+                        from kubernetes.client import V1DeleteOptions, V1Preconditions
+
+                        retry(
+                            core.delete_namespaced_persistent_volume_claim,
+                            name,
+                            ns,
+                            body=V1DeleteOptions(
+                                preconditions=V1Preconditions(
+                                    uid=claim["metadata"]["uid"], resource_version=claim["metadata"]["resourceVersion"]
+                                )
+                            ),
+                        )
+                    _stamp_jobs(ns, found, f"released|{why}|{stamp}")
+                    log.info("work volume %s/%s/%s released (%s)", region, ns, name, why)
+                    out.append(f"{region}/{ns}/{name}")
+                except ApiException as e:
+                    if e.status not in (
+                        404,
+                        409,
+                    ):  # gone or changed under us (a resume took it): the next pass judges again
+                        log.warning("work volume %s/%s/%s: %s %s", region, ns, name, e.status, e.reason)
+                except Exception as e:  # noqa: BLE001 - one claim's failure never stops the pass; kept, judged again
+                    log.warning("work volume %s/%s/%s deferred (%s)", region, ns, name, type(e).__name__)
     return out

@@ -67,7 +67,7 @@ from config import (
     REGION,
     SYNC_TIMEOUT_S,
 )
-from reconciliation import _reconcile_loop, reconcile_models
+from reconciliation import _reconcile_loop, reconcile_models, work_volume_mark
 from reconciliation import fallback_switch as fallback_switch
 from reconciliation import idle_shutdown as idle_shutdown
 from reconciliation import recovery_switch as recovery_switch
@@ -133,7 +133,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.163", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.164", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -3559,6 +3559,24 @@ def _fleet_operation_view(j: dict) -> dict:
         "owner": ann.get(f"{cfg.LABEL}/owner"),
         "requester": instances.requester_of(ann),
         **_fleet_shape(j, labels, ann),
+        "storage": _fleet_storage(ann),
+    }
+
+
+def _fleet_storage(ann: dict) -> dict | None:
+    """The work volume's recorded lifecycle for the fleet operator (docs/JOBS.md "Work volume lifecycle"): the
+    claim's name and size and the last decision of the reclaim pass (released or retained, why, when); None for an
+    operation without a volume of its own (shared scratch, a gang on node-local scratch)."""
+    pvc = ann.get(f"{cfg.LABEL}/pvc")
+    if not pvc or ann.get(f"{cfg.LABEL}/scratch") == "shared":
+        return None
+    mark = work_volume_mark({"metadata": {"annotations": ann}})
+    return {
+        "claim": pvc,
+        "size_gi": int(ann[f"{cfg.LABEL}/pvc-size-gi"])
+        if str(ann.get(f"{cfg.LABEL}/pvc-size-gi") or "").isdigit()
+        else None,
+        **(mark or {"state": None, "reason": None, "at": None}),
     }
 
 

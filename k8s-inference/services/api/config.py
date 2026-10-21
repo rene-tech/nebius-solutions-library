@@ -107,6 +107,11 @@ WEIGHTS_SHARED_PVC = os.environ.get(
 )  # the region's weights, read-only for runs (charts/tenant)
 KUEUE_PRIORITY = os.environ.get("KUEUE_PRIORITY", "customer-batch")
 JOB_TTL_S = int(os.environ.get("JOB_TTL_S", str(90 * 86400)))  # finished Jobs stay this long (operation history)
+# work volumes are released on proof, never with the history (docs/JOBS.md "Work volume lifecycle"): a FAILED or
+# CANCELLED run that ran keeps its volume for `:resume` this long after its last attempt ended; 0 = no deadline
+# (retained until the operator sets one; the fleet view says "resume, no deadline")
+WORK_RETENTION_FAILED_S = int(os.environ.get("WORK_RETENTION_FAILED_S", "0"))
+WORK_RECLAIM_EVERY_S = int(os.environ.get("WORK_RECLAIM_EVERY_S", "300"))  # the reclaim pass's period (control API)
 # the tenant-wide Job/pod listing behind GET /v1/operations is reused this long (a console polling every 8 s and
 # its page flips share one listing; 0 = none): docs/API.md "Pagination"
 OPS_LIST_CACHE_S = float(os.environ.get("OPS_LIST_CACHE_S", "10"))

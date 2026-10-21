@@ -1013,6 +1013,42 @@ SIGTERM reaches the shell of a string command (shared PID namespace); a long-run
 that shell (`python train.py`) only sees it if the script forwards it (`exec python train.py`,
 or a `trap`), so prefer `exec` for the final command of a script.
 
+## Work volume lifecycle (api 0.11.164, dispatcher 0.2.17)
+
+A per-operation work volume (`<op>-work`, also `-rN`, `-xN`, `-s-<stage>`, `-c-<id>`) is disposable storage: it is
+released on proof, never with the operation's history (finished Jobs stay `JOB_TTL_S`, 90 days, and keep their
+attempts, records and handles; the volume does not inherit that TTL). The uploader releases a delivered success (and a
+delivered error answer of an endpoint call) at once; the control API's reclaim pass (`reconciliation.reclaim_work_volumes`,
+every `WORK_RECLAIM_EVERY_S`, 300 s) releases what the uploader could not, judging each claim of every tenant
+namespace and cluster by the same evidence the handle shows:
+
+| the operation's state                                                    | volume   | recorded reason      |
+|--------------------------------------------------------------------------|----------|----------------------|
+| a pod mounts the claim; any Job that references it is live (the operation, a continuation `-rN`, a finalizer `-xN`, a Job the dispatcher recorded on it) | kept | `active` (not recorded) |
+| `SUCCEEDED` (delivery verified and acknowledged)                          | released | `delivered`          |
+| `EXPORT_FAILED`                                                          | kept     | `export pending`     |
+| `SUPERSEDED` (the successor runs on another volume)                      | released | `superseded`         |
+| an endpoint call that ended (`FAILED`, `CANCELLED`; calls never resume)   | released | `call ended`         |
+| a run that ended before any attempt started (empty volume)               | released | `never started`      |
+| a run that ran and ended `FAILED` or `CANCELLED`                          | kept     | `resume` (+ `(durable pointer)` when an acknowledged checkpoint pointer exists); `, no deadline` unless `WORK_RETENTION_FAILED_S` is set, after which `resume window expired` releases it |
+| the Job is gone and no attempt record exists; any read failed            | kept     | `unknown: …`         |
+
+A claim shared by a chain (root, resumes, finalizers) goes only when every referencing operation agrees. The release
+deletes the claim with its uid and resourceVersion as preconditions under the operation lock (a resume that takes the
+volume in between changes it: the delete is refused, the next pass judges again) and records the decision on the
+Jobs as `serverless2.nebius/work-volume: released|<reason>|<time>` (kept claims other than active ones get
+`retained|<reason>|<time>`, rewritten only when the reason changes). The dispatcher never recreates a released volume
+and counts such a Job as no reference. Kubernetes deletes the claim once no pod mounts it; the cloud disk follows the
+PV (`reclaimPolicy: Delete`) and the project's `compute.disk.count` drops when the disk is gone. Assets, caches, the
+tenant's shared scratch claim and anything outside the exact name rule are never touched.
+
+A resume whose volume was released follows the contract of an expired Job: `:resume` answers 409 naming the recorded
+reason unless the chain has an acknowledged checkpoint pointer (then it stands in) or the caller passes
+`restart_from_inputs: true` (a fresh volume, the same lineage); the handle says `work_volume: released`. The fleet
+view carries `storage` (claim, size, state, reason, time) for the operator. The retention window for failed runs is
+the operator's choice (`WORK_RETENTION_FAILED_S`, default 0 = no deadline): nothing of a customer's is discarded by
+default.
+
 ## Scratch storage
 
 A run class may set `job.scratch: network | local-nvme` (`container-run` exposes it as the `scratch`

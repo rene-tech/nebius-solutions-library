@@ -405,8 +405,8 @@ def may_ensure_volume(job, wl: dict) -> bool:
     """Only a live manager Job authorizes its work claim. Workload Finished can lag Job completion, after the
     uploader has already released the claim. Unknown/deleted/replaced owners must not recreate it. This is a
     creation/adoption fence only: terminal failed/export-needed claims remain references for the sweeper."""
-    if job is None or is_superseded(job) or getattr(job.metadata, "deletion_timestamp", None):
-        return False
+    if job is None or is_superseded(job) or getattr(job.metadata, "deletion_timestamp", None) or volume_released(job):
+        return False  # a released work volume (the API's reclaim pass, docs/JOBS.md) is never recreated
     owners = [o for o in wl["metadata"].get("ownerReferences") or [] if o.get("kind") in ("Job", "JobSet")]
     if len(owners) != 1 or owners[0].get("kind") != "Job" or owners[0].get("name") != job.metadata.name:
         return False
@@ -435,8 +435,17 @@ def claim_references(wanted: list, idx: dict, claim: str) -> tuple[set, set]:
     users, superseded = set(), set()
     for name, job in idx.items():
         if name in wanted or job_claim(job) == claim:
+            if volume_released(job):
+                continue  # the API released the claim on proof (docs/JOBS.md "Work volume lifecycle"): no user
             (superseded if is_superseded(job) else users).add(name)
     return users, superseded
+
+
+def volume_released(job) -> bool:
+    """The API's reclaim pass recorded the operation's work volume as released (annotation `work-volume`): the Job
+    is history, never a reference that keeps or recreates a claim."""
+    ann = (getattr(getattr(job, "metadata", None), "annotations", None) or {}) if job is not None else {}
+    return str(ann.get(f"{LABEL}/work-volume") or "").startswith("released|")
 
 
 def load_fleet(core: client.CoreV1Api):

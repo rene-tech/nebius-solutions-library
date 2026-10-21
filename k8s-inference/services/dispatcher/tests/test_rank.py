@@ -639,3 +639,19 @@ def test_free_quota_counts_every_queue_of_the_cohort():
             }
 
     assert d.free_quota({"hub": {"custom": Custom()}}) == {("hub", "h100-spot-1x"): 3}
+
+
+def test_a_job_whose_volume_the_api_released_is_no_reference():
+    """The API's reclaim pass records `work-volume: released:...` on a terminal Job (docs/JOBS.md "Work volume
+    lifecycle"): the sweeper counts it neither as a user nor as superseded, so a claim it still names (a stale
+    record, or one the API could not delete) is an orphan after the grace period, and nothing recreates it."""
+    j = mjob("op-1", "op-1-work", finished=True)
+    j.metadata.annotations[f"{d.LABEL}/work-volume"] = "released|delivered|2026-10-21T08:00:00Z"
+    idx = {"op-1": j, "op-1-x1": mjob("op-1-x1", "op-1-work")}
+    assert d.volume_released(j) and not d.volume_released(idx["op-1-x1"]) and not d.volume_released(None)
+    users, sup = d.claim_references(["op-1"], idx, "op-1-work")
+    assert (users, sup) == ({"op-1-x1"}, set())  # the finalizer still references it
+    del idx["op-1-x1"]
+    assert d.claim_references(["op-1"], idx, "op-1-work") == (set(), set())
+    assert d.volume_action("hub", set(), set(), {}, "t", age_s=d.ORPHAN_AFTER_S + 1) == "orphan"
+    assert not d.may_ensure_volume(j, {"metadata": {"ownerReferences": [{"kind": "Job", "name": "op-1"}]}})

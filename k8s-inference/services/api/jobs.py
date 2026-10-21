@@ -3128,10 +3128,19 @@ def resume(
         try:
             retry(kube.core(worker).read_namespaced_persistent_volume_claim, pvc, ns)
         except ApiException as e:
-            raise HTTPException(
-                409 if e.status == 404 else 502,
-                f"checkpoint volume {pvc} is gone (successful runs release it); submit a new run",
-            )
+            if e.status != 404:
+                raise HTTPException(502, f"kubernetes ({worker}): work volume {pvc}: {e.reason}")
+            # the work volume was released (docs/JOBS.md "Work volume lifecycle": delivered, never started, or past
+            # the resume window) while the Job remains: the same contract as an expired Job, a restart from the
+            # inputs on a fresh volume asked for explicitly, so a checkpoint is never dropped unnoticed
+            if not restart_from_inputs:
+                mark = " ".join((ann.get(f"{LABEL}/work-volume") or "").split("|")[:2])
+                raise HTTPException(
+                    409,
+                    f"operation {name}: its work volume {pvc} is gone ({mark or 'released'}); a resume renders it again "
+                    "from its inputs on a fresh volume: pass restart_from_inputs: true (or a checkpoint_ref)",
+                )
+            pvc, worker = None, (None if is_manager_job(orig) else worker)
     root = ann.get(f"{LABEL}/resumed-from", name)
     if idem:
         # one continuation per (tenant, source operation, intent): the same key replays the same operation (`create`

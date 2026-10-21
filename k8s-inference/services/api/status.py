@@ -529,6 +529,9 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
         "error": error,
         "input": inp,
         "resumed_from": ann.get(f"{LABEL}/resumed-from"),
+        # the work volume's recorded lifecycle (docs/JOBS.md "Work volume lifecycle"): "released" means a resume needs
+        # restart_from_inputs or a checkpoint_ref; absent while the volume is as the uploader left it
+        "work_volume": (ann.get(f"{LABEL}/work-volume") or "").split("|")[0] or None,
         # an endpoint child (docs/JOBS.md "Endpoint children"): the run it belongs to, its unit, the attempt that asked
         "child": (
             {
