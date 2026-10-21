@@ -700,9 +700,20 @@ def _finalizer_pending(
     if last.get("role") == "finalize" or last.get("exit_code") in (None, 0):
         return None
     name = job["metadata"]["name"]
+    ann = job["metadata"].get("annotations") or {}
     model = (job["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/model")
     entry = catalog.get(model) if model else None
-    codes = (((entry or {}).get("job") or {}).get("finalize") or {}).get("onExitCodes") or []
+    if entry is None:
+        return "keep", "unknown: definition missing"  # a failed run of a definition that is gone: never judged "ended"
+    want = ann.get(f"{cfg.LABEL}/model-version")
+    if want:
+        # the codes the OPERATION was rendered with (catalog.pinned, models_history), never a newer definition's:
+        # removing a finalizer later must not turn a delivery-pending run into "ended"; a version that cannot be
+        # found is unknown (fail closed)
+        entry = catalog.pinned(entry, ann)
+        if str(entry.get("version")) != str(want):
+            return "keep", f"unknown: declared version {want} missing"
+    codes = ((entry.get("job") or {}).get("finalize") or {}).get("onExitCodes") or []
     if last.get("exit_code") not in codes:
         return None
     since = last.get("revision") or 0
@@ -710,8 +721,8 @@ def _finalizer_pending(
         if f.get("role") != "finalize" or (f.get("revision") or 0) <= since:
             continue  # not a finalizer, or one that ran before this compute attempt: it delivered a predecessor
         fj = (jobs_by_name or {}).get(f.get("operation"))
-        if fj is not None and (fj["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/export-of") != name:
-            continue  # a readable finalizer Job that names another operation
+        if fj is None or (fj["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/export-of") != name:
+            continue  # positive identity required: a finalizer Job that is unreadable or names another operation
         if f.get("status") == "succeeded" and (
             f.get("export_state") == "succeeded" or (f.get("export_state") == "n/a" and f.get("result_ref"))
         ):

@@ -586,7 +586,13 @@ def test_a_declared_finalizer_keeps_the_scratch_until_it_delivered(world, monkey
 
     jobs_by, rows_by, decide = world
     monkeypatch.setattr(
-        catalog, "get", lambda name: {"job": {"finalize": {"onExitCodes": [75]}}} if name == "md" else None
+        catalog,
+        "get",
+        lambda name: {"job": {"finalize": {"onExitCodes": [75]}}}
+        if name == "md"
+        else {"job": {}}
+        if name == "plain"
+        else None,
     )
     jobs_by["op-p"] = job_("op-p", "FAILED")
     jobs_by["op-p"]["metadata"]["labels"][f"{L}/model"] = "md"
@@ -605,7 +611,9 @@ def test_a_declared_finalizer_keeps_the_scratch_until_it_delivered(world, monkey
             "revision": 20,
         },
     ]
-    assert decide(claim("op-p-work"))[:2] == ("release", "delivered by finalizer")
+    jobs_by["op-p-x1"] = job_("op-p-x1", "SUCCEEDED", ann={f"{L}/export-of": "op-p", f"{L}/pvc": "op-p-work"})
+    action, why, _ = decide(claim("op-p-work", jobs_ann=["op-p", "op-p-x1"]))
+    assert action == "release" and "delivered by finalizer" in why
     rows_by["op-p"] = [row("op-p", "failed", exit_code=1, export="n/a")]  # compute failed: nothing to finalize
     assert decide(claim("op-p-work"))[:2] == ("release", "ended")
     jobs_by["op-q"] = job_("op-q", "FAILED")  # a definition without a finalizer: 75 is just a failure
@@ -653,3 +661,42 @@ def test_only_this_operations_later_finalizer_authorizes_the_release(world, monk
     jobs_by["op-a-x2"]["metadata"]["annotations"][f"{L}/export-of"] = "op-a-r1"
     action, why, _ = decide(claim("op-a-r1-work", op="op-a-r1", jobs_ann=["op-a-r1", "op-a-x2"]))
     assert action == "release" and "delivered by finalizer" in why  # both referencing operations agree
+
+
+def test_absent_identity_is_not_delivery_proof_and_codes_come_from_the_pinned_definition(world, monkeypatch):
+    """Root's 170 follow-up. (1) A later succeeded finalizer whose Job is not among the claim's references (it belongs
+    to another claim, or is unreadable) is no proof: positive `export-of == this operation` is required. (2) The
+    finalizer codes are the operation's declared version's (catalog.pinned, `model-version`), never a newer
+    definition's: removing the finalizer later keeps a delivery-pending run pending; a version that cannot be found,
+    or a definition that is gone, is unknown (kept)."""
+    import catalog
+
+    jobs_by, rows_by, decide = world
+    defs = {"md": {"job": {"finalize": {"onExitCodes": [75]}}, "version": 7, "managed_by": "api"}}
+    monkeypatch.setattr(catalog, "get", lambda name: defs.get(name))
+    jobs_by["op-b-r1"] = job_("op-b-r1", "FAILED", ann={f"{L}/pvc": "op-b-r1-work", f"{L}/resumed-from": "op-b"})
+    jobs_by["op-b-r1"]["metadata"]["labels"][f"{L}/model"] = "md"
+    current = {**row("op-b-r1", "failed", exit_code=75, export="n/a"), "root": "op-b", "revision": 30}
+    later = {
+        **row("op-b-x9", "succeeded", exit_code=0, export="succeeded", role="finalize"),
+        "root": "op-b",
+        "revision": 40,
+    }
+    rows_by["op-b-r1"] = [current, later]
+    # op-b-x9's Job is not a reference of this claim (another claim's finalizer): no identity, no release
+    assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "finalizer pending")
+    # the pinned definition: the operation was rendered from version 7 (finalize 75); the catalog moved to 8 without it
+    jobs_by["op-b-r1"]["metadata"]["annotations"][f"{L}/model-version"] = "7"
+    defs["md"] = {"job": {}, "version": 8, "managed_by": "api"}
+    monkeypatch.setattr(
+        catalog,
+        "pinned",
+        lambda m, ann: {"job": {"finalize": {"onExitCodes": [75]}}, "version": 7}
+        if ann.get(f"{L}/model-version") == "7"
+        else m,
+    )
+    assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "finalizer pending")
+    monkeypatch.setattr(catalog, "pinned", lambda m, ann: m)  # history missing: pinned cannot find version 7
+    assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "unknown: declared version 7 missing")
+    defs.pop("md")  # the definition itself is gone
+    assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "unknown: definition missing")
