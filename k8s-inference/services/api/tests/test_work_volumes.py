@@ -590,16 +590,20 @@ def test_a_declared_finalizer_keeps_the_scratch_until_it_delivered(world, monkey
     )
     jobs_by["op-p"] = job_("op-p", "FAILED")
     jobs_by["op-p"]["metadata"]["labels"][f"{L}/model"] = "md"
-    rows_by["op-p"] = [row("op-p", "failed", exit_code=75, export="n/a")]
+    rows_by["op-p"] = [{**row("op-p", "failed", exit_code=75, export="n/a"), "revision": 10}]
     assert decide(claim("op-p-work"))[:2] == ("keep", "finalizer pending")
     rows_by["op-p"] = [
-        row("op-p", "failed", exit_code=75, export="n/a"),
-        {**row("op-p-x1", "failed", exit_code=1, export="failed", role="finalize"), "root": "op-p"},
+        {**row("op-p", "failed", exit_code=75, export="n/a"), "revision": 10},
+        {**row("op-p-x1", "failed", exit_code=1, export="failed", role="finalize"), "root": "op-p", "revision": 20},
     ]
     assert decide(claim("op-p-work"))[:2] == ("keep", "finalizer pending")  # a failed finalizer: the next :export
     rows_by["op-p"] = [
-        row("op-p", "failed", exit_code=75, export="n/a"),
-        {**row("op-p-x1", "succeeded", exit_code=0, export="succeeded", role="finalize"), "root": "op-p"},
+        {**row("op-p", "failed", exit_code=75, export="n/a"), "revision": 10},
+        {
+            **row("op-p-x1", "succeeded", exit_code=0, export="succeeded", role="finalize"),
+            "root": "op-p",
+            "revision": 20,
+        },
     ]
     assert decide(claim("op-p-work"))[:2] == ("release", "delivered by finalizer")
     rows_by["op-p"] = [row("op-p", "failed", exit_code=1, export="n/a")]  # compute failed: nothing to finalize
@@ -608,3 +612,44 @@ def test_a_declared_finalizer_keeps_the_scratch_until_it_delivered(world, monkey
     jobs_by["op-q"]["metadata"]["labels"][f"{L}/model"] = "plain"
     rows_by["op-q"] = [row("op-q", "failed", exit_code=75, export="n/a")]
     assert decide(claim("op-q-work"))[:2] == ("release", "ended")
+
+
+def test_only_this_operations_later_finalizer_authorizes_the_release(world, monkeypatch):
+    """Root's reproduction on 5498cd990: the current run op-a-r1 (epoch 3) exits its declared 75 with export n/a; the
+    lineage holds an older succeeded finalizer op-a-x1 (epoch 2) that delivered the predecessor. It must not release
+    the current run's undelivered output: only a finalizer LATER than this compute attempt (row order) whose Job
+    names this operation (`export-of`) counts; a later finalizer for another operation does not."""
+    import catalog
+
+    jobs_by, rows_by, decide = world
+    monkeypatch.setattr(
+        catalog, "get", lambda name: {"job": {"finalize": {"onExitCodes": [75]}}} if name == "md" else None
+    )
+    jobs_by["op-a-r1"] = job_("op-a-r1", "FAILED", ann={f"{L}/pvc": "op-a-r1-work", f"{L}/resumed-from": "op-a"})
+    jobs_by["op-a-r1"]["metadata"]["labels"][f"{L}/model"] = "md"
+    older = {
+        **row("op-a-x1", "succeeded", exit_code=0, export="succeeded", role="finalize"),
+        "root": "op-a",
+        "revision": 20,
+        "epoch": 2,
+    }
+    current = {**row("op-a-r1", "failed", exit_code=75, export="n/a"), "root": "op-a", "revision": 30, "epoch": 3}
+    rows_by["op-a-r1"] = [older, current]
+    assert decide(claim("op-a-r1-work", op="op-a-r1"))[:2] == ("keep", "finalizer pending")
+    # a later finalizer whose Job names another operation: still pending
+    jobs_by["op-a-x2"] = job_("op-a-x2", "SUCCEEDED", ann={f"{L}/export-of": "op-a", f"{L}/pvc": "op-a-r1-work"})
+    other = {
+        **row("op-a-x2", "succeeded", exit_code=0, export="succeeded", role="finalize"),
+        "root": "op-a",
+        "revision": 40,
+        "epoch": 4,
+    }
+    rows_by["op-a-r1"] = [older, current, other]
+    assert decide(claim("op-a-r1-work", op="op-a-r1", jobs_ann=["op-a-r1", "op-a-x2"]))[:2] == (
+        "keep",
+        "finalizer pending",
+    )
+    # the finalizer of THIS operation, later than its compute attempt: delivered
+    jobs_by["op-a-x2"]["metadata"]["annotations"][f"{L}/export-of"] = "op-a-r1"
+    action, why, _ = decide(claim("op-a-r1-work", op="op-a-r1", jobs_ann=["op-a-r1", "op-a-x2"]))
+    assert action == "release" and "delivered by finalizer" in why  # both referencing operations agree

@@ -633,7 +633,9 @@ def work_volume_mark(job: dict | None) -> dict | None:
     return {"state": state, "reason": reason, "at": at or None}
 
 
-def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -> tuple[str, str]:
+def _work_decision_for(
+    job: dict | None, rows: list[dict], tenant: str | None, jobs_by_name: dict | None = None
+) -> tuple[str, str]:
     """('keep' | 'release', reason) for one terminal operation of a claim, from the API's own status projection and the
     operation's durable attempt rows; a gone Job is judged by its rows alone (synthesize), no rows = unknown. Kept
     only while an export is unresolved or the state is unknown: the volume is scratch (docs/JOBS.md)."""
@@ -660,7 +662,7 @@ def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -
         # transfer-only retry (`:export`, app.py export_again / export_async) delivers it from this volume, whatever
         # the handle's status (a FAILED endpoint call's exit 2/5 capture, a FAILED run's partial output)
         return "keep", "export pending"
-    pending = _finalizer_pending(job, own, rows)
+    pending = _finalizer_pending(job, own, rows, jobs_by_name)
     if pending:
         return pending
     if st == "SUPERSEDED":
@@ -682,29 +684,38 @@ def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -
     return "release", "ended"
 
 
-def _finalizer_pending(job: dict | None, own: list[dict], lineage: list[dict]) -> tuple[str, str] | None:
+def _finalizer_pending(
+    job: dict | None, own: list[dict], lineage: list[dict], jobs_by_name: dict | None = None
+) -> tuple[str, str] | None:
     """The existing finalizer contract (docs/JOBS.md "Attempts and finalization", catalog `job.finalize`): a run whose
     main exited with a declared `on_exit_codes` value finished its compute and left the delivery to the CPU finalizer
-    (`<root>-x<n>`, attempt role `finalize`) on the SAME scratch. Such a volume is kept until a finalizer delivered
-    (then the finalizer's uploader released it and the lineage says so) ; a failed finalizer keeps it for the next
-    `:export`. Judged from the catalog's declaration and the attempt rows, never an exit-code or model constant."""
+    (`<root>-x<n>`, attempt role `finalize`) on the SAME scratch. Such a volume is kept until THIS operation's
+    finalizer delivered: a finalizer counts only when it is later than the current compute attempt (row revision;
+    the lineage's rows are ordered) and, when its Job is readable, its `export-of` names this operation (an older
+    finalizer delivered a predecessor, never the current run's output). A failed finalizer keeps the volume for the
+    next `:export`. Judged from the catalog's declaration and the attempt rows, never an exit-code or model constant."""
     if not job or not own:
         return None
     last = own[-1]
     if last.get("role") == "finalize" or last.get("exit_code") in (None, 0):
         return None
+    name = job["metadata"]["name"]
     model = (job["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/model")
     entry = catalog.get(model) if model else None
     codes = (((entry or {}).get("job") or {}).get("finalize") or {}).get("onExitCodes") or []
     if last.get("exit_code") not in codes:
         return None
-    fins = [r for r in lineage if r.get("role") == "finalize"]
-    if any(
-        f.get("status") == "succeeded"
-        and (f.get("export_state") == "succeeded" or (f.get("export_state") == "n/a" and f.get("result_ref")))
-        for f in fins
-    ):
-        return "release", "delivered by finalizer"
+    since = last.get("revision") or 0
+    for f in lineage:
+        if f.get("role") != "finalize" or (f.get("revision") or 0) <= since:
+            continue  # not a finalizer, or one that ran before this compute attempt: it delivered a predecessor
+        fj = (jobs_by_name or {}).get(f.get("operation"))
+        if fj is not None and (fj["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/export-of") != name:
+            continue  # a readable finalizer Job that names another operation
+        if f.get("status") == "succeeded" and (
+            f.get("export_state") == "succeeded" or (f.get("export_state") == "n/a" and f.get("result_ref"))
+        ):
+            return "release", "delivered by finalizer"
     return "keep", "finalizer pending"
 
 
@@ -750,7 +761,7 @@ def work_volume_decision(
     tenant = ns.removeprefix(cfg.TENANT_NS_PREFIX)
     reasons = []
     for r, j in found:
-        action, why = _work_decision_for(j, rows.get(r, []), tenant)  # the lineage's rows; own rows picked inside
+        action, why = _work_decision_for(j, rows.get(r, []), tenant, {n: jj for n, jj in found if jj})
         if action == "keep":
             return "keep", why, [(r, j) for r, j in found]
         reasons.append(why)

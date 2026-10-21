@@ -4,7 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.169, dispatcher 0.2.17
+## api 0.11.170, dispatcher 0.2.17
+
+- Finalizer identity (Root's reproduction on 0.11.169): only THIS operation's finalizer authorises the release of its
+  scratch: a finalizer row later than the current compute attempt (row order) whose Job, when readable, names this
+  operation in `export-of`; an older finalizer that delivered a predecessor never releases the current run's
+  undelivered output.
+
+## api 0.11.169, dispatcher 0.2.17 (never applied; folded into 0.11.170)
 
 - Root's review of 0.11.168: (1) a claim the lifecycle is deleting (deletionTimestamp, pvc-protection holding it) is
   absent for every resume decision, the first probe included: the chain's acknowledged checkpoint pointer stands in
