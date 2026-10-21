@@ -424,9 +424,15 @@ for cid in open(f"{tmp}/clusters.txt").read().split():
                                    ("persistentvolumeclaims", {"create", "get", "list", "patch", "delete"})):
             rules = [r for r in role["rules"] if "" in r.get("apiGroups", []) and resource in r.get("resources", [])]
             assert len(rules) == 1 and set(rules[0]["verbs"]) == expected, f"{cid}: unexpected tenant {resource} permissions"
+        # the namespace trust ConfigMap (services/api/jobs.py ensure_trust: read, create, replace of exactly `fleet-trust`):
+        # get/update name-scoped, create unscoped (RBAC cannot name a resource before it exists), nothing wider on configmaps
+        cms = [r for r in role["rules"] if "" in r.get("apiGroups", []) and "configmaps" in r.get("resources", [])]
+        assert sorted((tuple(sorted(r["verbs"])), tuple(r.get("resourceNames", []))) for r in cms) == [
+            (("create",), ()), (("get", "update"), ("fleet-trust",))], f"{cid}: tenant configmaps permissions are not exactly ensure_trust's"
+        assert all(r["resources"] == ["configmaps"] for r in cms), f"{cid}: a tenant configmaps rule reaches other resources"
         assert not any(o["kind"] == "ClusterRoleBinding" and o.get("roleRef", {}).get("name") == role["metadata"]["name"] for o in objs), f"{cid}: tenant API role must not be cluster-bound"
         seen += 1
-        print(f"   ok tenant cleanup RBAC {cid}: exact pods/PVC verbs, no cluster-wide binding")
+        print(f"   ok tenant cleanup RBAC {cid}: exact pods/PVC verbs, fleet-trust configmaps only, no cluster-wide binding")
 assert seen, "no cluster rendered the tenant API role"
 EOF6
 }

@@ -233,7 +233,7 @@
  },
  "rbac.authorization.k8s.io/ClusterRole/_/serverless2-api-tenant": {
   "component": "tenant-clusterrole",
-  "sha256": "89c2a4182901c7940b62c2e8a1dd61f5401099fe41880b09ed0f4f61118eec88"
+  "sha256": "48d4fa0ba758725d97ece924e30f6c40a81cf7f30bc54c7bf395f5bed10fca41"
  },
  "rbac.authorization.k8s.io/ClusterRole/_/serverless2-dispatcher": {
   "component": "dispatcher",

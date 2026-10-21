@@ -26,6 +26,13 @@ rules:
   - apiGroups: [""]                       # per-operation Secrets (an endpoint call's key, a run's private input), the tenant's
     resources: [secrets]                  # bindings (services/api/execution.py) and the tenant-storage credentials
     verbs: [create, get, list, patch, update, delete, deletecollection]
+  - apiGroups: [""]                       # the namespace's one trust ConfigMap `fleet-trust` (services/api/jobs.py ensure_trust,
+    resources: [configmaps]               # api 0.11.161): read and replace by name; nothing else of the namespace's ConfigMaps
+    verbs: [get, update]
+    resourceNames: [fleet-trust]
+  - apiGroups: [""]                       # its creation: RBAC cannot scope `create` by name; the API creates only fleet-trust
+    resources: [configmaps]               # (tools/check.sh: the tenant ClusterRole covers exactly ensure_trust's calls)
+    verbs: [create]
   - apiGroups: [kueue.x-k8s.io]           # fleet placement: the Workload of a manager Job names the worker that admitted it;
     resources: [workloads]                # patch: a cancelled multi-node run is deactivated (spec.active) so Kueue evicts it
     verbs: [get, list, patch]
