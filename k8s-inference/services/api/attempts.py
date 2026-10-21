@@ -151,10 +151,15 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
         if status in TERMINAL and cancelled and cancelled[0] and status == "succeeded":
             raise HTTPException(409, f"operation {operation} was cancelled: finalization refused")
         export = body.get("export") or (
-            # a main that never started delivered nothing (n/a); a started main's record without the field is a record
-            # posted before its delivery was read (jobs <= 0.1.31): pending, never "n/a" (api 0.11.153)
+            # a main that never started delivered nothing (n/a): only a TERMINAL record without started_at says so. A
+            # start record never carries started_at (the attempt-start step posts it before main runs), so it must not
+            # default to n/a: the upsert kept that n/a when the later records came without the field, and the final
+            # main exit read FAILED/export n/a instead of FINALIZING (WAN op-9e7ce7044e439bba 01:22:48Z, api 0.11.157).
+            # A started main's record without the field is pending, never n/a (api 0.11.153).
             "n/a"
-            if body.get("io_mode") == "application" and status != "succeeded" and not body.get("started_at")
+            if body.get("io_mode") == "application"
+            and status in ("failed", "interrupted")
+            and not body.get("started_at")
             else None
         )
         capture = _capture_of(body.get("capture"), operation, root, c)
@@ -183,7 +188,9 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
                         pool = coalesce(excluded.pool, attempts.pool), image = coalesce(excluded.image, attempts.image),
                         image_digest = coalesce(excluded.image_digest, attempts.image_digest),
                         started_at = coalesce(attempts.started_at, excluded.started_at), ended_at = excluded.ended_at,
-                        export_state = coalesce(excluded.export_state, attempts.export_state),
+                        export_state = case
+                            when excluded.status <> 'started' and attempts.status = 'started' then excluded.export_state
+                            else coalesce(excluded.export_state, attempts.export_state) end,
                         result_ref = coalesce(excluded.result_ref, attempts.result_ref),
                         checkpoint_ref = coalesce(excluded.checkpoint_ref, attempts.checkpoint_ref),
                         checkpoint_generation = coalesce(excluded.checkpoint_generation, attempts.checkpoint_generation),

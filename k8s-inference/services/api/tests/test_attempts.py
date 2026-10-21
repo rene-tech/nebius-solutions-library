@@ -2,6 +2,7 @@
 uploader, epoch fencing, export gating of SUCCEEDED, lifecycle fields on the operation, the export retry. The database
 rows are faked here; test_database.py exercises the real transactions when TEST_DATABASE_URL is set."""
 
+import datetime
 import os
 
 import pytest
@@ -800,3 +801,77 @@ def test_a_started_mains_record_without_export_is_pending_a_never_started_one_is
         {"operation": "op-never", "root": "op-never", "status": "failed", "exit_code": 1, "io_mode": "application"},
     )
     assert attempts.for_operation("op-never")[-1]["export_state"] == "n/a"
+
+
+def test_a_pre_main_start_ack_never_defaults_export_to_na_and_the_terminal_record_clears_a_stale_one(database):
+    """api 0.11.157: the attempt-start step posts the start record BEFORE main runs (no started_at); 0.11.153's
+    default turned that into export n/a, the upsert's coalesce kept it when the later records came without the field,
+    and a main that then exited 5 read FAILED/export n/a instead of FINALIZING until the uploader's capture record
+    (WAN op-9e7ce7044e439bba, public FAILED 01:22:48Z, record 01:22:52Z). Now: only a TERMINAL record without
+    started_at (main never started) is n/a; a start record stays pending; and the first terminal record replaces
+    whatever export a start record left (rows written before 0.11.157)."""
+    import db
+
+    db.migrate()
+    rec = lambda pod, body: attempts.record(
+        "eu-north1", "tenant-demo", pod, {"operation": "op-wan", "gpus": 0, "io_mode": "application", **body}
+    )
+    ack = rec("op-wan-a", {"status": "started"})  # the attempt-start step: no started_at yet
+    assert ack["export_state"] is None and ack["status"] == "started"
+    started = rec("op-wan-a", {"status": "started", "started_at": "2026-10-21T01:17:38Z"})
+    assert started["export_state"] is None and str(started["started_at"]).startswith("2026-10-21")
+    # main exited 5, the uploader's capture record is still coming: the live view is FINALIZING, not FAILED/n/a
+    job = _job("op-wan", {"io_mode": "application"}, complete=False)
+    job["status"] = {"conditions": [{"type": "Failed", "status": "True", "lastTransitionTime": "2026-10-21T01:22:45Z"}]}
+    job["_pods"] = [
+        {
+            "metadata": {"name": "op-wan-a", "labels": {}},
+            "spec": {"nodeName": "n1", "nodeSelector": {}, "containers": [{"name": "main"}]},
+            "status": {
+                "phase": "Failed",
+                "containerStatuses": [
+                    {
+                        "name": "main",
+                        "state": {
+                            "terminated": {
+                                "exitCode": 5,
+                                "startedAt": "2026-10-21T01:17:38Z",
+                                "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                "message": "endpoint answered HTTP 502 (delivered)",
+                            }
+                        },
+                    }
+                ],
+            },
+        }
+    ]
+    view = status.normalise(job, None, attempts.for_operation("op-wan"))
+    assert view["status"] == "FINALIZING", view
+    final = rec(
+        "op-wan-a",
+        {
+            "status": "failed",
+            "exit_code": 5,
+            "ended_at": "2026-10-21T01:22:45Z",
+            "export": "succeeded",
+            "result_ref": "r1",
+        },
+    )
+    assert final["export_state"] == "succeeded" and final["result_ref"] == "r1"
+    # a main that never started: the uploader's terminal record carries started_at "" (upload.sh record()): n/a, as before
+    never = rec("op-wan-b", {"status": "failed", "exit_code": 1, "started_at": "", "ended_at": "2026-10-21T01:22:45Z"})
+    assert never["export_state"] == "n/a" and never["started_at"] is None
+    # a row a start record wrote before 0.11.157 (export n/a): the first terminal record (started main, no export field
+    # yet) replaces it with the pending state; a further record without the field keeps it
+    with db.connection() as c:
+        c.execute(
+            "update attempts set export_state = 'n/a', status = 'started' where operation = 'op-wan' and pod = 'op-wan-a'"
+        )
+    term = {
+        "status": "failed",
+        "exit_code": 5,
+        "started_at": "2026-10-21T01:17:38Z",
+        "ended_at": "2026-10-21T01:22:45Z",
+    }
+    assert rec("op-wan-a", term)["export_state"] is None
+    assert rec("op-wan-a", term)["export_state"] is None

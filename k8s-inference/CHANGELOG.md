@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.157
+
+- FINALIZING authority, producer side (api 0.11.157): the attempt-start step posts the start record BEFORE main runs,
+  so that record carries no started_at; 0.11.153 defaulted its export to n/a ("main never started"), the upsert kept
+  that n/a when later records came without the field, and a main that then exited with an endpoint error read
+  FAILED/export n/a until the uploader's capture record (WAN op-9e7ce7044e439bba: public FAILED at 01:22:48Z, record
+  01:22:52Z, 2026-10-21). Now only a TERMINAL record without started_at is n/a; a start record stays pending; and the
+  first terminal record replaces whatever export a start record left, so rows written before 0.11.157 heal at their
+  next record. Explicit n/a and failed exports, the grace, and the success path are unchanged.
+
 ## api 0.11.156
 
 - Every rendered pod template (single-node run, async caller, multi-node JobSet workers) carries
