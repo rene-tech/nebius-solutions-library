@@ -117,6 +117,8 @@ def _lifecycle_fields(r: dict) -> dict:
     export = r.get("export_state") or r.get("export")
     if export is not None:
         out["export_state"] = export
+    if r.get("io_mode"):
+        out["_io_mode"] = r["io_mode"]  # the uploader's own statement (internal, never published)
     return out
 
 
@@ -347,7 +349,12 @@ def _capture_pending(attempts: list, ann: dict) -> bool:
     a = attempts[-1]
     if a.get("status") != "FAILED" or a.get("export_state") is not None or not a.get("started_at"):
         return False
-    if (_json(ann.get(f"{LABEL}/execution")) or {}).get("io_mode") != "application":
+    # application I/O by the Job's execution block or by the attempt's own start record (the uploader states the
+    # io_mode it runs under; an endpoint call whose execution annotation carries no io_mode fell through to FAILED
+    # with export n/a seven seconds before its capture record landed, Boltz2 op-a5ecbdd37c58d42d 2026-10-21 00:13Z)
+    if (_json(ann.get(f"{LABEL}/execution")) or {}).get("io_mode") != "application" and a.get(
+        "_io_mode"
+    ) != "application":
         return False
     ended = a.get("ended_at")
     try:
@@ -361,10 +368,8 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
     md, st, sp = job.get("metadata", {}), job.get("status", {}) or {}, job.get("spec", {})
     labels, ann = md.get("labels", {}), accounting_annotations(job)
     conds = {c.get("type"): c for c in (st.get("conditions") or []) if c.get("status") == "True"}
-    attempts = [
-        {k: v for k, v in a.items() if not k.startswith("_")}
-        for a in _attempts(job.get("_pods", []), records, md.get("name"))
-    ]
+    raw = _attempts(job.get("_pods", []), records, md.get("name"))  # with the internal fields the decisions read
+    attempts = [{k: v for k, v in a.items() if not k.startswith("_")} for a in raw]  # what is published
     error = None
     if ann.get(f"{LABEL}/successor") and not ann.get(f"{LABEL}/cancelled"):
         status = (
@@ -455,14 +460,14 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
                 status = "FINALIZING"
     elif "Failed" in conds or "FailureTarget" in conds:
         status = "CANCELLED" if ann.get(f"{LABEL}/cancelled") else "FAILED"
-        if status == "FAILED" and _capture_pending(attempts, ann):
+        if status == "FAILED" and _capture_pending(raw, ann):
             status = "FINALIZING"  # main ended with an error; the record of its delivered capture is still being posted
     elif ann.get(f"{LABEL}/cancelled"):
         status = "CANCELLED"
     elif attempts and attempts[-1]["status"] == "FAILED" and _fails_job(job, attempts[-1].get("exit_code")):
         # the main container ended with an exit code the Job's failure policy turns into FailJob: the Job fails as soon
         # as the pod ends (the uploader may still be posting the record); the operation is over now, not RUNNING
-        if _capture_pending(attempts, ann):
+        if _capture_pending(raw, ann):
             status = "FINALIZING"
         else:
             status = "FAILED"

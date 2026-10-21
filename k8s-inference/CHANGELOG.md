@@ -4,6 +4,25 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.155
+
+- Memory under a large cohort (api 0.11.155): the three reconcile scans (fallback, unschedulable, recovery) read the
+  tenant's run Jobs through the raw listing (jobs._json_items: no typed V1Job objects, no dict copies, managedFields
+  dropped) instead of a typed list plus sanitize per scan every 15 s (999 Jobs x 3 x 2 copies; the 0.11.154 replicas
+  climbed ~150-400 MiB/min to the 2Gi limit, 2026-10-21 00:06-00:33Z). The per-read stage memo remembers a 404 as
+  (status, detail) and raises a fresh HTTPException: the remembered exception kept its traceback and grew it on every
+  re-raise, holding the callers' payloads until a gc pass.
+- FINALIZING authority (api 0.11.155): a failed main under application I/O is FINALIZING while its capture record is
+  still coming also when the Job's execution block carries no io_mode but the attempt's own start record does (an
+  endpoint call read FAILED/export n/a seven seconds before its delivered capture record, Boltz2 op-a5ecbdd37c58d42d).
+  Internal only, no new field.
+- Billing CronJob (api 0.11.155): billing reads Jobs, pods and claims through the raw listing too, and the CronJob
+  requests 512Mi / limits 1Gi: every run from 00:18:29Z on 2026-10-21 was OOM-killed at 256Mi once the tenant held
+  999 Jobs (no spend recorded meanwhile; the next successful run settles what its window logic covers).
+- Gateway (charts/platform): the authorize route (/internal/authorize, the regions' ext-auth) gets the same 4 s
+  upstream connection-pool idle timeout as the api route; without it a reused idle connection answered 503 UC and
+  the region's gateway turned the ext-auth failure into a 403 for the customer's call (GenMol readiness, 2026-10-21).
+
 ## api 0.11.154, jobs 0.1.33, dispatcher 0.2.16
 
 - Released terminal pods are deleted (dispatcher 0.2.16, jobs 0.1.33): the uploader writes `released work=<claim>`

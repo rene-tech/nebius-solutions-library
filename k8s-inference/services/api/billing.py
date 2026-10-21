@@ -143,15 +143,12 @@ def cleanup_released_pods(region: str, ns: str) -> int:
     deleted = 0
     try:
         core, batch = kube.core(region), kube.batch(region)
-        claims = [
-            core.api_client.sanitize_for_serialization(p)
-            for p in retry(core.list_namespaced_persistent_volume_claim, ns, label_selector=f"{LABEL}/operation").items
-        ]
+        claims = jobs._json_items(core.list_namespaced_persistent_volume_claim, ns, label_selector=f"{LABEL}/operation")
         claims = [p for p in claims if p["metadata"].get("deletionTimestamp")]
         if not claims:
             return 0
         # No operation/mode selector: even an unrelated reader blocks deletion of every consumer of this claim.
-        pods = [core.api_client.sanitize_for_serialization(p) for p in retry(core.list_namespaced_pod, ns).items]
+        pods = jobs._json_items(core.list_namespaced_pod, ns)
         records: dict = {}
         for pvc in claims:
             try:
@@ -266,10 +263,10 @@ async def bill_once() -> int:
         for ns in namespaces:
             try:
                 b = kube.batch(region)
-                items = [
-                    b.api_client.sanitize_for_serialization(j)
+                items = [  # raw items, no typed objects (api 0.11.155: 999 Jobs OOM-killed the 256Mi CronJob)
+                    j
                     for mode in ("run", "async")  # runs are metered; endpoint calls release their key reservation
-                    for j in retry(b.list_namespaced_job, ns, label_selector=f"{LABEL}/mode={mode}").items
+                    for j in jobs._json_items(b.list_namespaced_job, ns, label_selector=f"{LABEL}/mode={mode}")
                 ]
                 items += jobs.list_jobsets(ns, region, f"{LABEL}/mode=run")  # multi-node runs (docs/JOBS.md)
             except ApiException as e:

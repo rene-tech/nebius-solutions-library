@@ -3734,6 +3734,47 @@ def test_a_failed_main_whose_capture_record_is_still_coming_is_finalizing_not_fa
     }
     pending = status.normalise(*job([{**base, "started_at": recent, "ended_at": recent, "export_state": None}]))
     assert pending["status"] == "FINALIZING"
+    # api 0.11.155, the exact retained read of Boltz2 op-a5ecbdd37c58d42d (2026-10-21 00:13:18Z): the worker pod shows
+    # main terminated with exit 5, the only record is the start record (status started, io_mode from the uploader), the
+    # Job's execution block carries no io_mode: FINALIZING for the grace, the uploader's capture record is 2-9 s away
+    j, price, _ = job([])
+    j["metadata"]["annotations"][f"{cfg.LABEL}/execution"] = json.dumps({"identity": {"ref": "x"}})
+    j["_pods"] = [
+        {
+            "metadata": {"name": "op-cap-a", "labels": {}},
+            "spec": {"nodeName": "n1", "nodeSelector": {}, "containers": [{"name": "main"}]},
+            "status": {
+                "phase": "Failed",
+                "startTime": recent,
+                "containerStatuses": [
+                    {
+                        "name": "main",
+                        "state": {
+                            "terminated": {
+                                "exitCode": 5,
+                                "startedAt": recent,
+                                "finishedAt": recent,
+                                "message": "endpoint answered HTTP 500 (delivered)",
+                            }
+                        },
+                    }
+                ],
+            },
+        }
+    ]
+    start_record = {
+        **base,
+        "status": "started",
+        "exit_code": None,
+        "started_at": recent,
+        "ended_at": None,
+        "export_state": None,
+    }
+    retained = status.normalise(j, price, [start_record])
+    assert retained["status"] == "FINALIZING" and "_io_mode" not in json.dumps(retained)
+    assert retained["attempts"][-1]["status"] == "FAILED" and retained["attempts"][-1]["exit_code"] == 5
+    no_mode = status.normalise(j, price, [{**start_record, "io_mode": None}])
+    assert no_mode["status"] == "FAILED"  # neither the Job nor the record says application I/O
     delivered = status.normalise(
         *job(
             [

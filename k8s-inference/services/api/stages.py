@@ -143,9 +143,10 @@ def _find(ns: str, name: str, memo: dict | None) -> tuple[dict, str]:
         except HTTPException as e:
             if e.status_code != 404:
                 raise
-            hit = memo[name] = ("404", e)
+            hit = memo[name] = ("404", (e.status_code, e.detail))  # status and detail only: a remembered exception
+            # keeps its traceback, and every re-raise grows it by the raising frames (api 0.11.155)
     if hit[0] == "404":
-        raise hit[1]
+        raise HTTPException(*hit[1])
     return hit[1]
 
 

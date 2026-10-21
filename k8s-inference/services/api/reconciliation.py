@@ -167,6 +167,13 @@ def settle_deleted(job: dict) -> None:
     _settle_deleted(job)
 
 
+def _run_jobs(ns: str) -> list[dict]:
+    """The tenant's run Jobs as the API server's JSON items (jobs._json_items: raw response, managedFields dropped), the
+    shape sanitize_for_serialization produced before. The three switches each built 999 typed V1Job objects and their
+    dict copies every 15 s (api 0.11.155; the replicas climbed ~400 MiB/min on that, 2026-10-21)."""
+    return jobs._json_items(kube.batch().list_namespaced_job, ns, label_selector=f"{cfg.LABEL}/mode=run")
+
+
 def fallback_switch() -> list[str]:
     """Fleet runs that asked for `placement.fallback_wait_s` and are still unplaced after it: moved to the next class of
     their preference (jobs.switch_class). Returns the new operation ids. Control API only."""
@@ -180,11 +187,7 @@ def fallback_switch() -> list[str]:
         return []
     for ns in namespaces:
         try:
-            b = kube.batch()
-            items = [
-                b.api_client.sanitize_for_serialization(j)
-                for j in b.list_namespaced_job(ns, label_selector=f"{cfg.LABEL}/mode=run").items
-            ]
+            items = _run_jobs(ns)
         except Exception:  # noqa: BLE001
             continue
         clusters = None
@@ -271,11 +274,7 @@ def unschedulable_switch() -> list[str]:
         return []
     for ns in namespaces:
         try:
-            b = kube.batch()
-            items = [
-                b.api_client.sanitize_for_serialization(j)
-                for j in b.list_namespaced_job(ns, label_selector=f"{cfg.LABEL}/mode=run").items
-            ]
+            items = _run_jobs(ns)
         except Exception:  # noqa: BLE001
             continue
         clusters = None
@@ -397,11 +396,7 @@ def recovery_switch() -> list[str]:
         return []
     for ns in namespaces:
         try:
-            b = kube.batch()
-            items = [
-                b.api_client.sanitize_for_serialization(j)
-                for j in b.list_namespaced_job(ns, label_selector=f"{cfg.LABEL}/mode=run").items
-            ]
+            items = _run_jobs(ns)
         except Exception:  # noqa: BLE001
             continue
         for item in items:

@@ -225,6 +225,20 @@ spec:
     - matches: [{ path: { type: PathPrefix, value: /internal/authorize } }]
       backendRefs: [{ name: api, port: 80 }]
 ---
+# The same upstream connection-pool idle timeout as the api route (below): the authorize route had none, so the
+# gateway now and then reused a connection the API pod had just closed and the ext-auth call failed 503 UC, which
+# the region's gateway turned into a 403 for the customer's call (2026-10-21 00:13Z, GenMol readiness). No rate
+# limit here: an ext-auth check is not the customer's request.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata: { name: api-authorize-idle, namespace: api }
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: api-authorize }
+  timeout:
+    http:
+      connectionIdleTimeout: 4s
+---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: HTTPRouteFilter
 metadata: { name: api-not-found, namespace: api }

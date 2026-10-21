@@ -192,7 +192,7 @@ locals {
                   { name = "REGION", value = local.region },
                 ])
                 volumeMounts = concat([{ name = "kubeconfigs", mountPath = "/etc/kubeconfigs", readOnly = true }, { name = "catalog", mountPath = "/etc/catalog", readOnly = true }], local.trust_mounts)
-                resources    = { requests = { cpu = "50m", memory = "128Mi" }, limits = { cpu = "500m", memory = "256Mi" } }
+                resources    = { requests = { cpu = "50m", memory = "512Mi" }, limits = { cpu = "500m", memory = "1Gi" } } # 999 Jobs OOM-killed 256Mi (2026-10-21)
               }]
               volumes = concat([{ name = "kubeconfigs", secret = { secretName = "region-kubeconfigs", optional = true } }, { name = "catalog", configMap = { name = "catalog" } }], local.trust_volumes)
             }
