@@ -646,9 +646,14 @@ def _work_decision_for(
 
         st = (attempts.synthesize(rows[0]["operation"], tenant) or {}).get("status")
         rec = admissions.get(rows[0]["operation"])
-        mode = ((rec or {}).get("labels") or {}).get(f"{cfg.LABEL}/mode") or "run"
         if st is None:
             return "keep", "unknown: Job gone, no attempt record"
+        if rec is None:
+            return "keep", "unknown: Job gone, no admission record"  # the declared contract cannot be read: kept
+        # the expired Job as its admission recorded it (labels, annotations: model, model-version, execution): the
+        # declared finalizer contract outlives the Kubernetes object while the scratch and the records remain
+        job = admissions.as_job(rec, st)
+        mode = (job["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/mode") or "run"
     else:
         st = jobs.normalise(job, None, rows)["status"]
         mode = (job["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/mode") or "run"

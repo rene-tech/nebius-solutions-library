@@ -1021,7 +1021,7 @@ SIGTERM reaches the shell of a string command (shared PID namespace); a long-run
 that shell (`python train.py`) only sees it if the script forwards it (`exec python train.py`,
 or a `trap`), so prefer `exec` for the final command of a script.
 
-## Work volume lifecycle (api 0.11.171, dispatcher 0.2.17)
+## Work volume lifecycle (api 0.11.172, dispatcher 0.2.17)
 
 A per-operation work volume (`<op>-work`, also `-rN`, `-xN`, `-s-<stage>`, `-c-<id>`) is disposable storage: it is
 released on proof, never with the operation's history (finished Jobs stay `JOB_TTL_S`, 90 days, and keep their
@@ -1040,7 +1040,7 @@ namespace and cluster by the same evidence the handle shows:
 | a run that ended before any attempt started (empty volume)               | released | `never started`      |
 | a run whose main exited with a code the catalog declares in `job.finalize.on_exit_codes` (compute done, delivery left to the CPU finalizer on the same scratch) | kept until THIS operation's finalizer delivered (a readable finalizer Job later than the compute attempt whose `export-of` names it; the codes are the operation's declared definition version's, unknown when that version or the definition is gone) | `finalizer pending`, then `delivered by finalizer` |
 | a run that ran and ended `FAILED` or `CANCELLED` (records acknowledged, no export or finalizer pending) | released | `ended` (the disk is scratch: what a resume needs is in the customer's storage) |
-| the Job is gone and no attempt record exists; any read failed            | kept     | `unknown: …`         |
+| the Job is gone: judged with its admission record standing in (the declared contract outlives the Job); no attempt or admission record, or any read failed | kept | `unknown: …` |
 
 A claim shared by a chain (root, resumes, finalizers) goes only when every referencing operation agrees; the
 references are the claim's own records (the dispatcher's `jobs` annotation, the owner references), every live Job of

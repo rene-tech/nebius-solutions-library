@@ -4,7 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.171, dispatcher 0.2.17
+## api 0.11.172, dispatcher 0.2.17
+
+- Gone Job, same contract (Root's last 171 branch): a run whose Kubernetes Job expired while its scratch and
+  records remain is judged with its admission record standing in for the Job (admissions.as_job), so a declared
+  delivery-pending exit code keeps the volume "finalizer pending" instead of becoming "ended"; a gone Job without
+  an admission record is unknown (kept).
+
+## api 0.11.171, dispatcher 0.2.17 (never applied; folded into 0.11.172)
 
 - Finalizer proof, fail closed (Root's 170 follow-up): a finalizer counts only with positive identity, a readable
   finalizer Job whose `export-of` names this operation (an unreadable one, or one of another claim, is no proof);

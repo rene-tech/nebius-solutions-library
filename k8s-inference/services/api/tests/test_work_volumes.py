@@ -177,10 +177,30 @@ def test_a_gone_job_is_judged_by_its_durable_rows_alone(world, monkeypatch):
     import admissions
 
     monkeypatch.setattr(attempts, "synthesize", lambda op, tenant: {"status": "FAILED"})
-    monkeypatch.setattr(admissions, "get", lambda op: {"labels": {f"{L}/mode": "async"}})
+    monkeypatch.setattr(
+        admissions,
+        "get",
+        lambda op: {
+            "operation": op,
+            "labels": {f"{L}/mode": "async", f"{L}/tenant": "demo"},
+            "annotations": {},
+            "timeout_s": None,
+            "managed_by": None,
+        },
+    )
     rows_by["op-g"] = [row("op-g", "failed")]
     assert decide(claim("op-g-work"))[:2] == ("release", "call ended")  # a call's claim whose Job expired
-    monkeypatch.setattr(admissions, "get", lambda op: {"labels": {f"{L}/mode": "run"}})
+    monkeypatch.setattr(
+        admissions,
+        "get",
+        lambda op: {
+            "operation": op,
+            "labels": {f"{L}/mode": "run", f"{L}/tenant": "demo"},
+            "annotations": {},
+            "timeout_s": None,
+            "managed_by": None,
+        },
+    )
     assert decide(claim("op-g-work"))[:2] == ("release", "ended")
     rows_by["op-g"] = []
     assert decide(claim("op-g-work"))[:2] == ("keep", "unknown: Job gone, no attempt record")
@@ -700,3 +720,36 @@ def test_absent_identity_is_not_delivery_proof_and_codes_come_from_the_pinned_de
     assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "unknown: declared version 7 missing")
     defs.pop("md")  # the definition itself is gone
     assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "unknown: definition missing")
+
+
+def test_a_gone_job_keeps_the_declared_finalizer_contract_through_its_admission_record(world, monkeypatch):
+    """Root's last 171 branch: the Job expired (TTL) but the scratch and the records remain; a failed run with a
+    declared delivery-pending exit code (export n/a) must not become "ended" because the Kubernetes object is gone.
+    The admission record (admissions.as_job) stands in for the Job in that decision; without it the volume is unknown."""
+    import admissions
+    import catalog
+
+    jobs_by, rows_by, decide = world
+    monkeypatch.setattr(attempts, "synthesize", lambda op, tenant: {"status": "FAILED"})
+    monkeypatch.setattr(
+        catalog,
+        "get",
+        lambda name: {"job": {"finalize": {"onExitCodes": [75]}}, "version": 3, "managed_by": "api"}
+        if name == "md"
+        else None,
+    )
+    rec = {
+        "operation": "op-g2",
+        "labels": {f"{L}/mode": "run", f"{L}/model": "md", f"{L}/tenant": "demo"},
+        "annotations": {f"{L}/model-version": "3", f"{L}/pvc": "op-g2-work"},
+        "timeout_s": 3600,
+        "managed_by": None,
+    }
+    monkeypatch.setattr(admissions, "get", lambda op: rec if op == "op-g2" else None)
+    rows_by["op-g2"] = [{**row("op-g2", "failed", exit_code=75, export="n/a"), "revision": 10}]
+    assert decide(claim("op-g2-work"))[:2] == ("keep", "finalizer pending")  # the contract outlives the Job
+    rows_by["op-g2"] = [{**row("op-g2", "failed", exit_code=1, export="n/a"), "revision": 10}]
+    assert decide(claim("op-g2-work"))[:2] == ("release", "ended")  # an undeclared failure of a gone Job
+    monkeypatch.setattr(admissions, "get", lambda op: None)
+    rows_by["op-g2"] = [{**row("op-g2", "failed", exit_code=75, export="n/a"), "revision": 10}]
+    assert decide(claim("op-g2-work"))[:2] == ("keep", "unknown: Job gone, no admission record")
