@@ -1718,7 +1718,12 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
             raise HTTPException(500, "the fleet trust bundle is not readable; the caller cannot be created without it")
         for r in placement_regions(job) or [region]:
             ensure_trust(ns, r, pem)
-    if is_manager_job(job) and ann.get(f"{LABEL}/resumed-from") and ann.get(f"{LABEL}/pvc"):
+    if (
+        is_manager_job(job)
+        and ann.get(f"{LABEL}/resumed-from")
+        and ann.get(f"{LABEL}/pvc")
+        and ann[f"{LABEL}/pvc"] != f"{name}-work"  # a reused claim only: a fresh successor volume (a portable
+    ):  # checkpoint restore, a restart from inputs) is `<name>-work`, created by the dispatcher once placed
         _record_claim_user(ns, job, ann[f"{LABEL}/pvc"])
     if ann.get(stages.RESULTS) and job["metadata"].get("labels", {}).get(f"{LABEL}/stage-waiting") != "true":
         # a continuation of an admitted stage (stages.inherit): its own results Secret, before its Job exists
@@ -1790,6 +1795,8 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
             refs = [r for r in (cur["metadata"].get("ownerReferences") or []) if r.get("uid") != owner["uid"]] + [owner]
             retry(core.patch_namespaced_persistent_volume_claim, pvc, ns, {"metadata": {"ownerReferences": refs}})
         except ApiException as e:
+            if e.status == 404:  # released between the builder's check and here: the handle says so, nothing to attach
+                raise HTTPException(409, f"operation {name}: work volume {pvc} is gone; pass restart_from_inputs: true")
             raise HTTPException(502, f"kubernetes ({region}): work volume {pvc}: {e.reason}")
     if secret:
         secret["metadata"]["ownerReferences"] = [owner]
@@ -1819,9 +1826,11 @@ def confirmed_absent(ns: str, job: dict, region: str = REGION) -> bool:
 def _record_claim_user(ns: str, job: dict, claim: str) -> None:
     """A fleet-placed continuation that reuses the original's work claim (a same-volume resume, finalizer or export
     retry: a manager Job whose claim lives on the worker) is recorded on that claim (`serverless2.nebius/jobs`, the
-    dispatcher's own record) BEFORE its Job exists: the reclaim pass (docs/JOBS.md "Work volume lifecycle") then sees
-    a live reference, and the claim's resourceVersion changes under a concurrent decision. A claim that is gone is
-    the resume's own 409/restart; any other failure is reported, the Job is not created."""
+    dispatcher's own record) BEFORE its Job exists, under the lineage's operation lock (app.continue_run): the reclaim
+    pass (docs/JOBS.md "Work volume lifecycle") then sees a live reference, and the claim's resourceVersion changes
+    under a concurrent decision. A claim that is gone or deleting is refused here (409: the volume was released; the
+    resume contract is restart_from_inputs or a checkpoint_ref), never created against; any other failure is
+    reported. The Job is not created in either case."""
     name = job["metadata"]["name"]
     for cluster in placement_regions(job) or []:
         core = kube.core(kube.cluster_region(cluster))
@@ -1831,8 +1840,18 @@ def _record_claim_user(ns: str, job: dict, claim: str) -> None:
             )
         except ApiException as e:
             if e.status == 404:
-                continue
+                raise HTTPException(
+                    409,
+                    f"operation {name}: work volume {claim} is gone ({cluster}); a resume renders the run again from its "
+                    "inputs on a fresh volume: pass restart_from_inputs: true (or a checkpoint_ref)",
+                )
             raise HTTPException(502, f"kubernetes ({cluster}): work volume {claim}: {e.reason}")
+        if cur["metadata"].get("deletionTimestamp"):
+            raise HTTPException(
+                409,
+                f"operation {name}: work volume {claim} is being released ({cluster}); pass restart_from_inputs: true "
+                "(or a checkpoint_ref) once it is gone",
+            )
         users = [j for j in ((cur["metadata"].get("annotations") or {}).get(f"{LABEL}/jobs") or "").split(",") if j]
         if name in users:
             continue
@@ -3163,7 +3182,11 @@ def resume(
         pvc = None  # the shared claim is mounted by name, under checkpoints/<root>
     else:
         try:
-            retry(kube.core(worker).read_namespaced_persistent_volume_claim, pvc, ns)
+            cur = retry(kube.core(worker).read_namespaced_persistent_volume_claim, pvc, ns)
+            if getattr(getattr(cur, "metadata", None), "deletion_timestamp", None) or (
+                isinstance(cur, dict) and cur.get("metadata", {}).get("deletionTimestamp")
+            ):
+                raise ApiException(status=404, reason="Releasing")  # deleting = gone for a resume: never attach to it
         except ApiException as e:
             if e.status != 404:
                 raise HTTPException(502, f"kubernetes ({worker}): work volume {pvc}: {e.reason}")

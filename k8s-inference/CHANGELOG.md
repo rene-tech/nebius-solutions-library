@@ -4,7 +4,18 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.166, dispatcher 0.2.17
+## api 0.11.167, dispatcher 0.2.17
+
+- Work volume reclaim, race review (Root, 322ebd9): one serialization boundary. Every continuation builder
+  (resume, export retry, finalizer, fallback, recovery) runs under keys.operation_lock of its lineage root
+  (app.continue_run), the lock the reclaim pass takes before it re-reads the claim and decides again; a claim that
+  is gone or deleting is refused (409, the restart_from_inputs contract) before any continuation Job is created,
+  for a reused claim only (a portable restore's or a restart's fresh `<successor>-work` is never looked up). The
+  reference proof is a fresh per-cluster Job listing (never a cached generation), taken for the pass and again
+  under the lock before each delete; any unreadable cluster releases nothing in that namespace; at most
+  WORK_RECLAIM_MAX_PER_PASS (25) releases per pass.
+
+## api 0.11.166, dispatcher 0.2.17 (never applied; folded into 0.11.167)
 
 - Stage composition: the dependencies' results reach the stage's pod through its own Secret `<stage>-dependencies`
   named in the pod template from creation; the gate writes it in the stage's placement clusters before the queue

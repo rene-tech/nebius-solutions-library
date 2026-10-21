@@ -735,6 +735,34 @@ def work_volume_decision(
     return "release", "; ".join(sorted(set(reasons))) or "no reference", [(r, j) for r, j in found]
 
 
+def claim_users(ns: str, tenant: str) -> dict[str, list[str]] | None:
+    """Every live Job of the tenant namespace in EVERY cluster that names a work claim (its `pvc` annotation or its pod
+    template's claim), fresh from the API servers, never a cached listing (a cached generation can be stale or miss a
+    region: a queued same-volume successor absent from it would let its predecessor's release go through). None when
+    any cluster could not be read: partial knowledge releases nothing (fail closed)."""
+    out: dict[str, list[str]] = {}
+    for r in kube.regions():
+        try:
+            items = jobs._json_items(
+                kube.batch(r).list_namespaced_job, ns, label_selector=f"{cfg.LABEL}/tenant={tenant}"
+            )
+        except Exception as e:  # noqa: BLE001 - unreadable: unknown, never absent
+            log.warning("work volumes %s/%s: Jobs of %s unreadable (%s)", r, ns, tenant, type(e).__name__)
+            return None
+        for j in items:
+            if jobs.is_mirror(j):
+                continue  # the worker's copy of a manager Job: the manager is the reference
+            jn = j["metadata"]["name"]
+            names = {(j["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/pvc")} | {
+                (v.get("persistentVolumeClaim") or {}).get("claimName")
+                for v in (((j.get("spec") or {}).get("template") or {}).get("spec") or {}).get("volumes") or []
+            }
+            for c in names:
+                if c:
+                    out.setdefault(c, []).append(jn)
+    return out
+
+
 def _stamp_jobs(ns: str, found: list, value: str) -> None:
     """Record the volume's lifecycle on every referencing Job that exists (its own cluster), once per value."""
     for r, j in found:
@@ -784,30 +812,44 @@ def reclaim_work_volumes(now: float | None = None) -> list[str]:
                 for v in p["spec"].get("volumes") or []
             }
             tenant = ns.removeprefix(cfg.TENANT_NS_PREFIX)
-            try:  # every live Job of the tenant that names a claim (annotation or template), every cluster: one listing
-                listing, _skipped = jobs.list_ops_all(ns, tenant, None)
-            except Exception as e:  # noqa: BLE001 - without the listing a queued successor could be missed: nothing is released
-                log.warning("work volumes %s/%s: tenant listing failed (%s)", region, ns, type(e).__name__)
+            related = claim_users(ns, tenant)  # fresh and complete, or None: then nothing in this namespace is released
+            if related is None:
                 continue
-            related: dict[str, list[str]] = {}
-            for j in listing:
-                jn = j["metadata"]["name"]
-                for c in {(j["metadata"].get("annotations") or {}).get(f"{cfg.LABEL}/pvc")} | {
-                    (v.get("persistentVolumeClaim") or {}).get("claimName")
-                    for v in (((j.get("spec") or {}).get("template") or {}).get("spec") or {}).get("volumes") or []
-                }:
-                    if c:
-                        related.setdefault(c, []).append(jn)
+            released_here = 0
             for claim in claims:
                 name = claim["metadata"]["name"]
+                if released_here >= cfg.WORK_RECLAIM_MAX_PER_PASS:
+                    break  # the rest next pass: every release re-lists the tenant's Jobs under the lock
                 try:
                     action, why, found = work_volume_decision(ns, claim, mounted, related=related.get(name))
                     if action == "keep":
                         if why not in ("mounted", "active", "releasing"):
                             _stamp_jobs(ns, found, f"retained|{why}|{stamp}")
                         continue
+                    # the release is decided AGAIN under the claim's operation lock, the boundary every continuation
+                    # (app.continue_run) holds while it checks, records itself on and creates against the claim: the
+                    # claim is re-read (gone or deleting: nothing to do; a new reference recorded on it: kept), then
+                    # deleted with the fresh uid and resourceVersion as preconditions
                     root = (claim["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/operation") or name
                     with keys.operation_lock(root) if db.enabled() else nullcontext():
+                        try:
+                            fresh = core.api_client.sanitize_for_serialization(
+                                retry(core.read_namespaced_persistent_volume_claim, name, ns)
+                            )
+                        except ApiException as e:
+                            if e.status == 404:
+                                continue
+                            raise
+                        if fresh["metadata"].get("deletionTimestamp"):
+                            continue
+                        now_users = claim_users(
+                            ns, tenant
+                        )  # fresh again, under the lock: the proof the delete rests on
+                        if now_users is None:
+                            continue
+                        action, why, found = work_volume_decision(ns, fresh, mounted, related=now_users.get(name))
+                        if action == "keep":
+                            continue  # a continuation took it under the lock: judged again next pass
                         from kubernetes.client import V1DeleteOptions, V1Preconditions
 
                         retry(
@@ -816,13 +858,14 @@ def reclaim_work_volumes(now: float | None = None) -> list[str]:
                             ns,
                             body=V1DeleteOptions(
                                 preconditions=V1Preconditions(
-                                    uid=claim["metadata"]["uid"], resource_version=claim["metadata"]["resourceVersion"]
+                                    uid=fresh["metadata"]["uid"], resource_version=fresh["metadata"]["resourceVersion"]
                                 )
                             ),
                         )
                     _stamp_jobs(ns, found, f"released|{why}|{stamp}")
                     log.info("work volume %s/%s/%s released (%s)", region, ns, name, why)
                     out.append(f"{region}/{ns}/{name}")
+                    released_here += 1
                 except ApiException as e:
                     if e.status not in (
                         404,

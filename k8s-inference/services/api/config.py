@@ -112,6 +112,7 @@ JOB_TTL_S = int(os.environ.get("JOB_TTL_S", str(90 * 86400)))  # finished Jobs s
 # (retained until the operator sets one; the fleet view says "resume, no deadline")
 WORK_RETENTION_FAILED_S = int(os.environ.get("WORK_RETENTION_FAILED_S", "0"))
 WORK_RECLAIM_EVERY_S = int(os.environ.get("WORK_RECLAIM_EVERY_S", "300"))  # the reclaim pass's period (control API)
+WORK_RECLAIM_MAX_PER_PASS = int(os.environ.get("WORK_RECLAIM_MAX_PER_PASS", "25"))  # releases per pass (each re-lists)
 # the tenant-wide Job/pod listing behind GET /v1/operations is reused this long (a console polling every 8 s and
 # its page flips share one listing; 0 = none): docs/API.md "Pagination"
 OPS_LIST_CACHE_S = float(os.environ.get("OPS_LIST_CACHE_S", "10"))

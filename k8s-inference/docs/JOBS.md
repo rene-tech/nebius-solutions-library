@@ -1021,7 +1021,7 @@ SIGTERM reaches the shell of a string command (shared PID namespace); a long-run
 that shell (`python train.py`) only sees it if the script forwards it (`exec python train.py`,
 or a `trap`), so prefer `exec` for the final command of a script.
 
-## Work volume lifecycle (api 0.11.166, dispatcher 0.2.17)
+## Work volume lifecycle (api 0.11.167, dispatcher 0.2.17)
 
 A per-operation work volume (`<op>-work`, also `-rN`, `-xN`, `-s-<stage>`, `-c-<id>`) is disposable storage: it is
 released on proof, never with the operation's history (finished Jobs stay `JOB_TTL_S`, 90 days, and keep their
@@ -1044,7 +1044,13 @@ namespace and cluster by the same evidence the handle shows:
 A claim shared by a chain (root, resumes, finalizers) goes only when every referencing operation agrees; the
 references are the claim's own records (the dispatcher's `jobs` annotation, the owner references), every live Job of
 the tenant listing that names the claim (a queued same-volume resume the dispatcher has not recorded yet), and a
-fleet-placed continuation records itself on the worker's claim before its Job exists. A terminal pod is not a mount
+fleet-placed continuation records itself on the worker's claim before its Job exists (a reused claim only; a fresh
+successor volume is the dispatcher's to create), all of it under the lineage's operation lock that every
+continuation builder holds and the reclaim pass takes before its re-read, re-decision and delete: a gone or deleting
+claim is refused to a continuation (409, restart_from_inputs) and a continuation that got the lock first keeps the
+claim. The reference proof is a fresh per-cluster listing of the tenant's Jobs, for the pass and again under the lock;
+a cluster that cannot be listed releases nothing in that namespace; at most `WORK_RECLAIM_MAX_PER_PASS` (25)
+releases per pass. A terminal pod is not a mount
 (its claim reference only delays the deletion until the released-pod cleanup removes it). An attempt record saying
 the export failed keeps the claim whatever the status: the transfer-only retry delivers from it. The release
 deletes the claim with its uid and resourceVersion as preconditions under the operation lock (a resume that takes the

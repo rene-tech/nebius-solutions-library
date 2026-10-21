@@ -133,7 +133,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.166", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.167", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -257,6 +257,15 @@ def continue_run(root: str, build, transfer_only: bool = False, ns: str | None =
     back. `ns` (the tenant namespace) enables the pending-head judgement; without it the head is taken as is."""
     if not db.enabled():
         return build(None)
+    # one serialization boundary with the work-volume reclaim pass (reconciliation.reclaim_work_volumes locks the
+    # claim's operation, the lineage root, before it re-reads and deletes): a continuation that reuses the root's
+    # volume checks, records itself on and creates against the claim under the same lock, so a release never
+    # interleaves between its existence check and its create (docs/JOBS.md "Work volume lifecycle")
+    with keys.operation_lock(root):
+        return _continue_run_locked(root, build, transfer_only, ns)
+
+
+def _continue_run_locked(root: str, build, transfer_only: bool, ns: str | None):
     member = keys.member_of(root)
     kind = "stage"
     if member and member["kind"] == "stage":

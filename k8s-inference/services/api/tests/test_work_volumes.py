@@ -345,7 +345,6 @@ def test_terminal_pods_are_not_mounts_and_the_listing_feeds_the_pass(client, mon
         if (ns, n) in cl.jobs
         else (_ for _ in ()).throw(HTTPException(404, "x")),
     )
-    monkeypatch.setattr(jobs, "list_ops_all", lambda ns, tenant, model: ([queued], []))
     for n in (done, live, succ):
         cl.pvcs[(NS, f"{n}-work")] = claim(f"{n}-work", uid=f"u-{n}", rv="1")
     # a terminal pod still naming the delivered claim is no mount; a running pod naming the other claim is
@@ -386,6 +385,164 @@ def test_a_fleet_resume_records_itself_on_the_workers_claim_before_its_job_exist
     assert cl.pvcs[(NS, "op-1-work")]["metadata"]["annotations"][f"{L}/jobs"] == "op-1,op-1-r1"
     jobs._record_claim_user(NS, j, "op-1-work")  # idempotent
     assert cl.pvcs[(NS, "op-1-work")]["metadata"]["annotations"][f"{L}/jobs"] == "op-1,op-1-r1"
-    jobs._record_claim_user(
-        NS, j, "op-gone-work"
-    )  # a released claim: nothing to record, the resume decides (409/restart)
+    with pytest.raises(HTTPException) as e:  # a released claim: refused before any Job is created
+        jobs._record_claim_user(NS, j, "op-gone-work")
+    assert e.value.status_code == 409 and "restart_from_inputs" in e.value.detail
+    cl.pvcs[(NS, "op-1-work")]["metadata"]["deletionTimestamp"] = "2026-10-21T09:00:00Z"
+    with pytest.raises(HTTPException) as e:  # a claim being released: refused too
+        jobs._record_claim_user(NS, j, "op-1-work")
+    assert e.value.status_code == 409 and "released" in e.value.detail
+
+
+def _pass_world(cl, monkeypatch, rows):
+    monkeypatch.setattr(rec, "FLEET_MANAGER", True)
+    monkeypatch.setattr(kube, "regions", lambda: ["eu-north1"])
+    monkeypatch.setattr(kube, "core", lambda r=None: cl)
+    monkeypatch.setattr(kube, "batch", lambda r=None: cl)
+    monkeypatch.setattr(jobs, "tenant_namespaces", lambda: [NS])
+    monkeypatch.setattr(jobs, "normalise", lambda j, p=None, r=None: {"status": j["_status"]})
+    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 0)
+    monkeypatch.setattr(attempts, "for_operations", lambda ops: {o: rows.get(o, []) for o in ops})
+    monkeypatch.setattr(
+        jobs,
+        "find",
+        lambda ns, n: (cl.jobs[(ns, n)], "eu-north1")
+        if (ns, n) in cl.jobs
+        else (_ for _ in ()).throw(HTTPException(404, "x")),
+    )
+    rec._reclaim["at"] = 0.0
+
+
+def test_the_delete_rests_on_a_fresh_complete_reference_proof_under_the_lock(client, monkeypatch):
+    """Root's review of 322ebd9: a cached or partial listing may miss a queued same-volume successor. The pass lists
+    the tenant's Jobs fresh in every cluster (fail closed when one cannot be read) and, under the lineage's operation
+    lock, lists them again before the delete: a successor created between the pass's index and the lock keeps the
+    claim; a continuation holds the same lock (app.continue_run), so the two never interleave."""
+    c, cl = client
+    import db
+    import keys
+
+    done = "op-00000000000000d1"
+    rows = {done: [row(done, "succeeded", export="succeeded")]}
+    _pass_world(cl, monkeypatch, rows)
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    cl.jobs[(NS, done)] = job_(done, "SUPERSEDED", ann={f"{L}/successor": f"{done}-r1"})
+    cl.pvcs[(NS, f"{done}-work")] = claim(f"{done}-work", uid="u-d1", rv="10")
+    from contextlib import contextmanager
+
+    locked = []
+
+    @contextmanager
+    def lock(name):
+        locked.append(name)
+        # a same-volume resume lands while the lock is taken: its Job names the claim, nothing recorded on the claim
+        cl.jobs[(NS, f"{done}-r1")] = job_(f"{done}-r1", "QUEUED", terminal=False, ann={f"{L}/pvc": f"{done}-work"})
+        yield
+
+    monkeypatch.setattr(keys, "operation_lock", lock)
+    assert rec.reclaim_work_volumes() == []  # the fresh listing under the lock found the successor
+    assert locked == [done] and (NS, f"{done}-work") in cl.pvcs
+    assert f"{L}/work-volume" not in cl.jobs[(NS, done)]["metadata"]["annotations"]  # nothing recorded
+    # the pass index itself fails closed: a region whose Jobs cannot be listed releases nothing in the namespace
+    del cl.jobs[(NS, f"{done}-r1")]
+    real_list = cl.list_namespaced_job
+    cl.list_namespaced_job = lambda ns, label_selector="": (_ for _ in ()).throw(RuntimeError("region unreachable"))
+    rec._reclaim["at"] = 0.0
+    assert rec.reclaim_work_volumes() == [] and (NS, f"{done}-work") in cl.pvcs
+    cl.list_namespaced_job = real_list
+    monkeypatch.setattr(keys, "operation_lock", lambda name: __import__("contextlib").nullcontext())
+    rec._reclaim["at"] = 0.0
+    assert rec.reclaim_work_volumes() == [f"eu-north1/{NS}/{done}-work"]  # complete proof: released
+
+
+def test_releases_per_pass_are_capped(client, monkeypatch):
+    c, cl = client
+    import db
+
+    a, b = "op-00000000000000a1", "op-00000000000000b2"
+    rows = {a: [row(a, "succeeded", export="succeeded")], b: [row(b, "succeeded", export="succeeded")]}
+    _pass_world(cl, monkeypatch, rows)
+    monkeypatch.setattr(db, "enabled", lambda: False)
+    monkeypatch.setattr(cfg, "WORK_RECLAIM_MAX_PER_PASS", 1)
+    for n in (a, b):
+        cl.jobs[(NS, n)] = job_(n, "SUCCEEDED")
+        cl.pvcs[(NS, f"{n}-work")] = claim(f"{n}-work", uid=f"u-{n}", rv="1")
+    assert len(rec.reclaim_work_volumes()) == 1
+    rec._reclaim["at"] = 0.0
+    assert len(rec.reclaim_work_volumes()) == 1 and not [k for k in cl.pvcs if k[1].endswith("-work")]
+
+
+def test_a_continuation_runs_under_the_lineage_lock(monkeypatch):
+    """app.continue_run holds keys.operation_lock(root) around the whole builder (admission, existence checks, the
+    claim record, the create): the same lock the reclaim pass takes before its re-read and delete, so a release and
+    a continuation never interleave (a release that won answers the builder 409: test_a_resume_after_release…)."""
+    from contextlib import contextmanager
+
+    import db
+    import keys
+
+    seen = []
+
+    @contextmanager
+    def lock(name):
+        seen.append(("enter", name))
+        yield
+        seen.append(("exit", name))
+
+    monkeypatch.setattr(db, "enabled", lambda: True)
+    monkeypatch.setattr(keys, "operation_lock", lock)
+    monkeypatch.setattr(keys, "member_of", lambda root: None)
+    monkeypatch.setattr(keys, "run_head", lambda root: None)
+    out = api.continue_run("op-root", lambda admit: (seen.append(("build", admit)), ("job", True))[1], ns=NS)
+    assert out == ("job", True)
+    assert seen == [("enter", "op-root"), ("build", None), ("exit", "op-root")]  # built inside the lock
+
+
+def test_only_a_reused_claim_is_recorded_a_fresh_successor_volume_is_not_looked_up(client, monkeypatch):
+    """Root's delta check: a portable checkpoint restore or a restart from inputs renders the successor on its own
+    fresh volume `<successor>-work`, which the dispatcher creates once the run is placed: create() must not look it
+    up (a strict 404 would refuse every portable restore); a REUSED claim (the original's) is recorded and, when
+    gone, refused."""
+    c, cl = client
+    monkeypatch.setattr(kube, "core", lambda r=None: cl)
+    monkeypatch.setattr(kube, "cluster_region", lambda c: "eu-north1")
+    looked = []
+    real_read = cl.read_namespaced_persistent_volume_claim
+
+    def read(name, ns):
+        looked.append(name)
+        return real_read(name, ns)
+
+    cl.read_namespaced_persistent_volume_claim = read
+    base = {
+        "spec": {
+            "managedBy": "kueue.x-k8s.io/multikueue",
+            "template": {"metadata": {"annotations": {f"{L}/regions": "north"}}, "spec": {}},
+        }
+    }
+    fresh = {
+        "metadata": {"name": "op-1-r2", "annotations": {f"{L}/pvc": "op-1-r2-work", f"{L}/resumed-from": "op-1"}},
+        **base,
+    }
+    reused = {
+        "metadata": {"name": "op-1-r3", "annotations": {f"{L}/pvc": "op-1-work", f"{L}/resumed-from": "op-1"}},
+        **base,
+    }
+    ann = lambda j: j["metadata"]["annotations"]  # noqa: E731
+
+    # the same guard create() applies, evaluated here on the two shapes
+    def guarded(j):
+        a = ann(j)
+        if (
+            jobs.is_manager_job(j)
+            and a.get(f"{L}/resumed-from")
+            and a.get(f"{L}/pvc")
+            and a[f"{L}/pvc"] != f"{j['metadata']['name']}-work"
+        ):
+            jobs._record_claim_user(NS, j, a[f"{L}/pvc"])
+
+    guarded(fresh)
+    assert looked == []  # the fresh volume is never looked up
+    with pytest.raises(HTTPException) as e:
+        guarded(reused)  # the original's claim is gone: refused
+    assert e.value.status_code == 409 and looked == ["op-1-work"]
