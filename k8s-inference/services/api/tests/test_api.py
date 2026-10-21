@@ -215,7 +215,9 @@ class FakeCluster:
                 pre.resource_version and pre.resource_version != md.get("resourceVersion")
             ):
                 raise ApiException(status=409, reason="Conflict")
-        self.__dict__.setdefault("pvc_deleted", []).append((ns, name, getattr(pre, "uid", None), getattr(pre, "resource_version", None)))
+        self.__dict__.setdefault("pvc_deleted", []).append(
+            (ns, name, getattr(pre, "uid", None), getattr(pre, "resource_version", None))
+        )
         del self.pvcs[(ns, name)]
 
     def list_namespaced_persistent_volume_claim(self, ns, label_selector=""):
