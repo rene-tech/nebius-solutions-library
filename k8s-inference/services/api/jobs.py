@@ -3123,6 +3123,7 @@ def resume(
         if (durable or {}).get("status") == "SUCCEEDED":
             raise HTTPException(409, f"operation {name} SUCCEEDED; its result stands, nothing to restart")
     expired = bool(orig.get("_expired"))
+    restarted = False  # a fresh volume after the lifecycle released the original's (annotated like an expired Job's)
     op = normalise(orig)
     md = orig["metadata"]
     labels, ann = md.get("labels", {}), md.get("annotations", {})
@@ -3190,16 +3191,19 @@ def resume(
         except ApiException as e:
             if e.status != 404:
                 raise HTTPException(502, f"kubernetes ({worker}): work volume {pvc}: {e.reason}")
-            # the work volume was released (docs/JOBS.md "Work volume lifecycle": delivered, never started, or past
-            # the resume window) while the Job remains: the same contract as an expired Job, a restart from the
-            # inputs on a fresh volume asked for explicitly, so a checkpoint is never dropped unnoticed
-            if not restart_from_inputs:
-                mark = " ".join((ann.get(f"{LABEL}/work-volume") or "").split("|")[:2])
+            # the work volume is gone while the Job remains. Released by the lifecycle (docs/JOBS.md "Work volume
+            # lifecycle": the disk is scratch, what a resume needs is in the customer's storage): the run renders
+            # again on a fresh volume by itself, from the newest acknowledged checkpoint pointer when the chain has
+            # one (handled above) else from its inputs. Gone without the lifecycle's mark (an unexpected loss): the
+            # restart is asked for explicitly, as for an expired Job, so nothing is dropped unnoticed.
+            mark = (ann.get(f"{LABEL}/work-volume") or "").split("|")
+            if not restart_from_inputs and mark[0] != "released":
                 raise HTTPException(
                     409,
-                    f"operation {name}: its work volume {pvc} is gone ({mark or 'released'}); a resume renders it again "
-                    "from its inputs on a fresh volume: pass restart_from_inputs: true (or a checkpoint_ref)",
+                    f"operation {name}: its work volume {pvc} is gone (not released by the platform); a resume renders "
+                    "it again from its inputs on a fresh volume: pass restart_from_inputs: true (or a checkpoint_ref)",
                 )
+            restart_from_inputs = restarted = True
             pvc, worker = None, (None if is_manager_job(orig) else worker)
     root = ann.get(f"{LABEL}/resumed-from", name)
     if idem:
@@ -3246,7 +3250,7 @@ def resume(
         job["metadata"]["annotations"].update(superseding)
     if pvc and not checkpoint_ref and not is_jobset(orig):
         _pin_to_worker(job, orig)  # the same volume: the same cluster, by id
-    if expired:
+    if expired or restarted:
         job["metadata"]["annotations"][f"{LABEL}/restarted-from-inputs"] = name
     if is_jobset(job):  # the shared checkpoint directory is keyed by the root operation
         # every container of the rank pod, the provisioning init included (it must provision the ROOT's leaf, the one

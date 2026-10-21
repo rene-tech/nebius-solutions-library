@@ -413,9 +413,9 @@ secret inputs (`secrets.*_env`, sensitive but not ephemeral: they are part of th
 Disposable per-operation storage is reclaimed by the control API on proof (docs/JOBS.md "Work volume lifecycle"), so
 disk count follows active and resumable work, not history. `GET /v1/fleet/operations` shows each operation's
 `storage` (`claim`, `size_gi`, `state` released | retained | null, `reason`, `at`); kept volumes say why (`export
-pending`, `resume, no deadline`, `unknown: …`). `WORK_RETENTION_FAILED_S` (API environment, charts/platform) bounds how
-long a failed run that ran keeps its volume for `:resume`; unset, such volumes stay until the run is resumed, exported
-or its Job expires. Cloud disks are counted in `compute.disk.count` until the PV is gone (PVC deletion completes when
+pending`, `unknown: …`). A run that ended releases its disk once its records are acknowledged: the disk is scratch,
+never a copy of customer data kept on the platform; a resume restarts on a fresh volume from the customer's storage
+(docs/JOBS.md "Work volume lifecycle"). Cloud disks are counted in `compute.disk.count` until the PV is gone (PVC deletion completes when
 no pod mounts it; the CSI deletes the disk after the PV). Never delete asset, cache or shared-scratch claims by hand;
 the reclaim pass never matches them.
 

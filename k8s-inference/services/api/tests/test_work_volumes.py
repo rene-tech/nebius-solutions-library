@@ -91,7 +91,6 @@ def world(monkeypatch):
         return j, "eu-north1"
 
     monkeypatch.setattr(jobs, "normalise", lambda j, p=None, r=None: {"status": j["_status"]})
-    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 0)
 
     def decide(c, mounted=frozenset(), related=None):
         return rec.work_volume_decision(
@@ -130,16 +129,15 @@ def test_the_decision_table(world, monkeypatch):
     # kept on proof
     jobs_by["op-e"] = job_("op-e", "EXPORT_FAILED")
     assert decide(claim("op-e-work"))[:2] == ("keep", "export pending")
+    # a run that ran and ended: scratch, released (what a resume needs is in the customer's storage); only an
+    # unresolved export keeps it
     jobs_by["op-f"] = job_("op-f", "FAILED")
     rows_by["op-f"] = [row("op-f", "failed")]
-    assert decide(claim("op-f-work"))[:2] == ("keep", "resume, no deadline")
+    assert decide(claim("op-f-work"))[:2] == ("release", "ended")
     rows_by["op-f"] = [row("op-f", "failed", ckpt=True)]
-    assert decide(claim("op-f-work"))[:2] == ("keep", "resume (durable pointer), no deadline")
-    # the window: only when the operator set one, measured from the last attempt's end
-    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 3600)
-    assert decide(claim("op-f-work"))[:2] == ("keep", "resume (durable pointer)")
-    rows_by["op-f"] = [row("op-f", "failed", ended=datetime.now(timezone.utc) - timedelta(hours=2))]
-    assert decide(claim("op-f-work"))[:2] == ("release", "resume window expired")
+    assert decide(claim("op-f-work"))[:2] == ("release", "ended")
+    rows_by["op-f"] = [row("op-f", "failed", export="failed")]
+    assert decide(claim("op-f-work"))[:2] == ("keep", "export pending")
     # a chain shares one claim: the root is delivered but a continuation still needs it -> kept
     jobs_by["op-r"], jobs_by["op-r-r1"] = (
         job_("op-r", "SUPERSEDED", ann={f"{L}/successor": "op-r-r1"}),
@@ -163,13 +161,12 @@ def test_an_undelivered_capture_is_kept_for_the_export_retry_whatever_the_status
     assert decide(claim("op-c-work"))[:2] == ("release", "call ended")  # the newest record is the delivery
     rows_by["op-c"] = [row("op-c", "interrupted", export=None)]
     assert decide(claim("op-c-work"))[:2] == ("release", "call ended")
-    # a run whose export failed after a failure: kept past the retention window too
-    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 60)
+    # a run whose export failed after a failure is kept; delivered, it is scratch and goes
     jobs_by["op-w"] = job_("op-w", "FAILED")
     rows_by["op-w"] = [row("op-w", "failed", ended=datetime.now(timezone.utc) - timedelta(hours=9), export="failed")]
     assert decide(claim("op-w-work"))[:2] == ("keep", "export pending")
     rows_by["op-w"] = [row("op-w", "failed", ended=datetime.now(timezone.utc) - timedelta(hours=9), export="succeeded")]
-    assert decide(claim("op-w-work"))[:2] == ("release", "resume window expired")
+    assert decide(claim("op-w-work"))[:2] == ("release", "ended")
 
 
 def test_a_gone_job_is_judged_by_its_durable_rows_alone(world, monkeypatch):
@@ -181,7 +178,7 @@ def test_a_gone_job_is_judged_by_its_durable_rows_alone(world, monkeypatch):
     rows_by["op-g"] = [row("op-g", "failed")]
     assert decide(claim("op-g-work"))[:2] == ("release", "call ended")  # a call's claim whose Job expired
     monkeypatch.setattr(admissions, "get", lambda op: {"labels": {f"{L}/mode": "run"}})
-    assert decide(claim("op-g-work"))[:2] == ("keep", "resume, no deadline")
+    assert decide(claim("op-g-work"))[:2] == ("release", "ended")
     rows_by["op-g"] = []
     assert decide(claim("op-g-work"))[:2] == ("keep", "unknown: Job gone, no attempt record")
 
@@ -195,10 +192,9 @@ def test_the_pass_releases_with_preconditions_records_once_and_never_touches_oth
     monkeypatch.setattr(jobs, "tenant_namespaces", lambda: [NS])
     monkeypatch.setattr(jobs, "normalise", lambda j, p=None, r=None: {"status": j["_status"]})
     monkeypatch.setattr(db, "enabled", lambda: False)
-    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 0)
     rows = {
         "op-00000000000000d1": [row("op-00000000000000d1", "succeeded", export="succeeded")],
-        "op-00000000000000e2": [row("op-00000000000000e2", "failed")],
+        "op-00000000000000e2": [row("op-00000000000000e2", "failed", export="failed")],
         "op-00000000000000f3": [row("op-00000000000000f3", "failed")],
     }
     monkeypatch.setattr(attempts, "for_operations", lambda ops: {o: rows.get(o, []) for o in ops})
@@ -254,7 +250,7 @@ def test_the_pass_releases_with_preconditions_records_once_and_never_touches_oth
     }
     assert (
         marks["op-00000000000000d1"].startswith("released|delivered|")
-        and marks["op-00000000000000e2"].startswith("retained|resume, no deadline|")
+        and marks["op-00000000000000e2"].startswith("retained|export pending|")
         and marks["op-00000000000000f3"] == ""
     )
     # the period gate: nothing happens again before WORK_RECLAIM_EVERY_S; after it the kept mark is not rewritten
@@ -271,33 +267,33 @@ def test_the_pass_releases_with_preconditions_records_once_and_never_touches_oth
     }
 
 
-def test_a_resume_after_release_needs_an_explicit_restart_from_inputs(client):
-    """The documented contract of an expired Job applies to a released volume while the Job remains: 409 with the
-    reason and the way out; `restart_from_inputs: true` renders the run again on a fresh volume (same owner, key,
-    lineage), `work_volume` on the handle says released, the fleet view carries the record."""
+def test_a_resume_after_a_lifecycle_release_restarts_on_a_fresh_volume_by_itself(client):
+    """The disk was scratch (released|ended): `:resume` renders the run again on a fresh volume from its inputs (or the
+    chain's acknowledged checkpoint pointer) without any flag, same owner, key and lineage; `work_volume` on the
+    handle says released and the fleet view carries the record. A volume gone WITHOUT the lifecycle's mark (an
+    unexpected loss) still needs the explicit restart_from_inputs, so nothing is dropped unnoticed."""
     c, fake = client
     r = c.post("/v1/models/batch-example:invoke", json={"input": {"input_prefix": "s3://b/in", "nsteps": 7}}, headers=H)
     oid = r.json()["id"]
     job = fake.jobs[(NS, oid)]
     job["status"] = {"startTime": "2026-10-05T20:00:30Z", "conditions": [{"type": "Failed", "status": "True"}]}
-    job["metadata"]["annotations"][f"{L}/work-volume"] = "released|never started|2026-10-21T08:00:00Z"
     del fake.pvcs[(NS, f"{oid}-work")]
     r = c.post(f"/v1/operations/{oid}:resume", headers=H, json={})
-    assert (
-        r.status_code == 409 and "restart_from_inputs" in r.json()["detail"] and "never started" in r.json()["detail"]
-    ), r.text
+    assert r.status_code == 409 and "restart_from_inputs" in r.json()["detail"], r.text  # gone, not released
+    job["metadata"]["annotations"][f"{L}/work-volume"] = "released|ended|2026-10-21T10:00:00Z"
     assert c.get(f"/v1/operations/{oid}", headers=H).json()["work_volume"] == "released"
-    r = c.post(f"/v1/operations/{oid}:resume", headers=H, json={"restart_from_inputs": True})
+    r = c.post(f"/v1/operations/{oid}:resume", headers=H, json={})
     assert r.status_code == 202, r.text
     new = fake.jobs[(NS, f"{oid}-r1")]
     assert (
         new["spec"]["template"]["spec"]["volumes"][0]["persistentVolumeClaim"]["claimName"] == f"{oid}-r1-work"
     )  # fresh
     assert new["metadata"]["annotations"][f"{L}/resumed-from"] == oid and (NS, f"{oid}-r1-work") in fake.pvcs
+    assert new["metadata"]["annotations"][f"{L}/restarted-from-inputs"] == oid
     view = api._fleet_operation_view({**job, "_region": "eu-north1"})
     assert (
         view["storage"]["state"] == "released"
-        and view["storage"]["reason"] == "never started"
+        and view["storage"]["reason"] == "ended"
         and view["storage"]["claim"] == f"{oid}-work"
     )
     assert api._fleet_operation_view({**new, "_region": "eu-north1"})["storage"]["state"] is None
@@ -325,7 +321,6 @@ def test_terminal_pods_are_not_mounts_and_the_listing_feeds_the_pass(client, mon
     monkeypatch.setattr(jobs, "tenant_namespaces", lambda: [NS])
     monkeypatch.setattr(jobs, "normalise", lambda j, p=None, r=None: {"status": j["_status"]})
     monkeypatch.setattr(db, "enabled", lambda: False)
-    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 0)
     done, live, succ = "op-00000000000000a1", "op-00000000000000b2", "op-00000000000000c3"
     rows = {
         done: [row(done, "succeeded", export="succeeded")],
@@ -401,7 +396,6 @@ def _pass_world(cl, monkeypatch, rows):
     monkeypatch.setattr(kube, "batch", lambda r=None: cl)
     monkeypatch.setattr(jobs, "tenant_namespaces", lambda: [NS])
     monkeypatch.setattr(jobs, "normalise", lambda j, p=None, r=None: {"status": j["_status"]})
-    monkeypatch.setattr(cfg, "WORK_RETENTION_FAILED_S", 0)
     monkeypatch.setattr(attempts, "for_operations", lambda ops: {o: rows.get(o, []) for o in ops})
     monkeypatch.setattr(
         jobs,

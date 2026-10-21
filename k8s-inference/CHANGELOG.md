@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.168, dispatcher 0.2.17
+
+- Scratch is scratch (Rene, 2026-10-21): a run that ran and ended releases its work volume once its attempt records
+  are acknowledged (only an unresolved export or an unknown state keeps a disk); everything a resume needs lives in
+  the customer's storage, so `:resume` of a run whose volume the lifecycle released renders it again on a fresh
+  volume by itself (the chain's acknowledged checkpoint pointer, else the inputs). A volume gone without the
+  lifecycle's mark still needs an explicit `restart_from_inputs`. The 0.11.164 retention window
+  (`WORK_RETENTION_FAILED_S`) is gone with it: 221 failed QA runs' disks (13.4 TiB of copied inputs and partial
+  outputs on platform disks, kept indefinitely) were the reason.
+
 ## api 0.11.167, dispatcher 0.2.17
 
 - Work volume reclaim, race review (Root, 322ebd9): one serialization boundary. Every continuation builder
@@ -36,8 +46,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
   every FAILED, never-started or failed-call volume was pinned by its terminal Job for the 90-day history TTL (313
   unattached disks on the north cluster, tenant disk quota exhausted, 2026-10-21). `:resume` of a released volume
   answers 409 with the reason unless a checkpoint pointer or `restart_from_inputs: true` is given; handles carry
-  `work_volume`, the fleet view `storage`. `WORK_RETENTION_FAILED_S` (default 0: no deadline) bounds the resume
-  retention of failed runs when the operator sets it.
+  `work_volume`, the fleet view `storage`. (A `WORK_RETENTION_FAILED_S` window shipped here and was removed in 0.11.168.)
 
 ## api 0.11.161 to 0.11.163
 

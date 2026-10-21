@@ -635,7 +635,8 @@ def work_volume_mark(job: dict | None) -> dict | None:
 
 def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -> tuple[str, str]:
     """('keep' | 'release', reason) for one terminal operation of a claim, from the API's own status projection and the
-    operation's durable attempt rows; a gone Job is judged by its rows alone (synthesize), no rows = unknown."""
+    operation's durable attempt rows; a gone Job is judged by its rows alone (synthesize), no rows = unknown. Kept
+    only while an export is unresolved or the state is unknown: the volume is scratch (docs/JOBS.md)."""
     if job is None:
         if not rows or not tenant:
             return "keep", "unknown: Job gone, no attempt record"
@@ -668,22 +669,14 @@ def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -
             "release",
             "call ended",
         )  # an endpoint call never resumes; its capture went with the delivery or the export retry
-    started = [r for r in rows if r.get("started_at")]
-    if not started:
+    if not any(r.get("started_at") for r in rows):
         return "release", "never started"
-    pointer = any(r.get("checkpoint_ref") for r in rows)
-    ended = max((r.get("ended_at") or r.get("started_at") for r in started), key=str)
-    window = cfg.WORK_RETENTION_FAILED_S
-    if window > 0:
-        try:
-            ended_at = (
-                ended if isinstance(ended, datetime) else datetime.fromisoformat(str(ended).replace("Z", "+00:00"))
-            )
-            if (datetime.now(timezone.utc) - ended_at).total_seconds() > window:
-                return "release", "resume window expired"
-        except (TypeError, ValueError):
-            pass
-    return "keep", "resume" + (" (durable pointer)" if pointer else "") + ("" if window > 0 else ", no deadline")
+    # a run that ran and ended: its records are durable (acknowledged by the API), its outputs are in the customer's
+    # storage (managed I/O: the uploader's verified sync, else "export pending" above; application I/O: the
+    # application's own delivery and checkpoints). The disk is scratch, never the only copy of anything a resume
+    # needs: a resume renders the run again on a fresh volume from the application's checkpoint pointer or from the
+    # inputs (jobs.resume). Keeping it would retain customer data on platform disks indefinitely (decision 2026-10-21).
+    return "release", "ended"
 
 
 def work_volume_decision(
