@@ -212,8 +212,19 @@ def test_fleet_operations_lists_every_tenants_in_flight_work_for_the_fleet_opera
             },
         }
 
+    run = job("op-run", "rene", "2026-10-17T05:55:00Z", active=1, start="2026-10-17T05:55:30Z")
+    run["metadata"]["labels"][f"{L}/gpu-class"] = "h200"
+    run["metadata"]["annotations"][f"{L}/nodes"] = "2"
+    run["spec"] = {
+        "template": {
+            "spec": {
+                "nodeSelector": {f"{L}/pool": "h200"},
+                "containers": [{"name": "main", "resources": {"limits": {"nvidia.com/gpu": "8"}}}],
+            }
+        }
+    }
     listed = [
-        job("op-run", "rene", "2026-10-17T05:55:00Z", active=1, start="2026-10-17T05:55:30Z"),
+        run,
         job("op-queued", "lynx", "2026-10-17T06:00:00Z", active=1),
         job("op-old", "system", "2026-10-16T00:00:00Z", active=0, successor="op-old-r1"),
         job("op-cancel", "system", "2026-10-17T06:30:00Z", active=1, cancelled=True),
@@ -232,6 +243,7 @@ def test_fleet_operations_lists_every_tenants_in_flight_work_for_the_fleet_opera
     )
     doc = dict(kube.fleet())
     doc["tenants"] = {"rene": {}, "lynx": {}, "system": {}, "empty": {}}
+    doc["pools"] = {**(doc.get("pools") or {}), "h200": {"platform": "gpu-h200-sxm", "preset": "8gpu-128vcpu-1600gb"}}
     monkeypatch.setattr(kube, "fleet", lambda: doc)
     monkeypatch.setattr(
         jobs,
@@ -259,6 +271,20 @@ def test_fleet_operations_lists_every_tenants_in_flight_work_for_the_fleet_opera
     )
     assert by["op-queued"]["status"] == "QUEUED" and by["op-cancel"]["status"] == "CANCELLED"
     assert by["op-run"]["owner"] == "owner-1" and "input" not in by["op-run"] and "result_ref" not in by["op-run"]
+    # the compute shape (console Platform column): class and GPUs from the pod template, the pinned pool's instance type
+    # from the fleet document; a Job without a pin or GPUs carries nulls, never a guess
+    assert {k: by["op-run"][k] for k in ("gpu_class", "gpus", "pool", "instance_type")} == {
+        "gpu_class": "h200",
+        "gpus": 16,
+        "pool": "h200",
+        "instance_type": "gpu-h200-sxm/8gpu-128vcpu-1600gb",
+    }
+    assert {k: by["op-queued"][k] for k in ("gpu_class", "gpus", "pool", "instance_type")} == {
+        "gpu_class": None,
+        "gpus": None,
+        "pool": None,
+        "instance_type": None,
+    }
     # every operation Job, terminal ones included, the same field set; newest first
     all_ = c.get("/v1/fleet/operations?active=false", headers={"Authorization": "Bearer sk-fleet"})
     assert all_.status_code == 200 and all_.headers["X-Total-Count"] == "7"

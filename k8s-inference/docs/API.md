@@ -382,7 +382,9 @@ tenant and reachable cluster (`RUNNING`: a pod is active; `QUEUED`: admitted or 
 requested, the Job still ending, as the tenant view reports it) and with `active=false` (api 0.11.126) every operation Job the clusters still hold,
 terminal ones included (`SUCCEEDED`, `FAILED`, `CANCELLED`, `SUPERSEDED`: an original a continuation took over, 90
 days by the Job TTL): `id`, `tenant`, `model`, `mode`, `status`, `created_at`, `started_at`, `cluster`, `region`,
-`successor`, `key_alias`, `owner` (the opaque owner hash) and `requester`. Identity and state only, the same field
+`successor`, `key_alias`, `owner` (the opaque owner hash), `requester` and the compute shape (api 0.11.163: `gpu_class`,
+`gpus` = per pod times nodes, `pool` when pinned, `instance_type` = the pool's `<platform>/<preset>` from the fleet
+document, null until placement). Identity and state only, the same field
 set in both modes: never an input, a result, a reference, a log or a key value; an operation's detail
 (`GET /v1/operations/{id}`) stays its owner's and answers 404 to the fleet role. From one Job
 listing per tenant namespace and cluster (the fleet document's tenants and the tenants on record), cached ten

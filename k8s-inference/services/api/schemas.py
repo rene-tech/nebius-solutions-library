@@ -1150,6 +1150,11 @@ class FleetOperation(BaseModel):
     key_alias: str | None = None
     owner: str | None = None  # the opaque owner hash (the tenant's own API resolves it to a principal)
     requester: dict[str, str] | None = None
+    # the compute shape (api 0.11.163): what the Job asks for and, when pinned, where it runs
+    gpu_class: str | None = None
+    gpus: int | None = None  # GPUs of the run (per pod times nodes); null for GPU-free work
+    pool: str | None = None  # the fleet pool the Job is pinned to; null until placement
+    instance_type: str | None = None  # the pool's `<platform>/<preset>` from the fleet document
 
 
 class FleetTenantRecord(BaseModel):

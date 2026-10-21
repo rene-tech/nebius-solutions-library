@@ -133,7 +133,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.162", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.163", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -3558,6 +3558,39 @@ def _fleet_operation_view(j: dict) -> dict:
         "key_alias": _key_alias(ann.get(f"{cfg.LABEL}/key")),
         "owner": ann.get(f"{cfg.LABEL}/owner"),
         "requester": instances.requester_of(ann),
+        **_fleet_shape(j, labels, ann),
+    }
+
+
+def _fleet_shape(j: dict, labels: dict, ann: dict) -> dict:
+    """The compute shape of a fleet-listed operation (the console's Platform column, api 0.11.163): the GPU class and
+    the GPUs its pod template asks for (times the nodes of a multi-node run), the pool it is pinned to and that pool's
+    instance type `<platform>/<preset>` from the fleet document (GPU pools, then the clusters' CPU pools); null when
+    the Job carries no pin (placement at admission) or the pool is not in the document."""
+    spec = j.get("spec") or {}
+    tmpl = (spec.get("template") or {}).get("spec") or {}
+    if not tmpl and spec.get("replicatedJobs"):  # a JobSet: its replicated Job's pod template
+        rj = spec["replicatedJobs"][0].get("template") or {}
+        tmpl = ((rj.get("spec") or {}).get("template") or {}).get("spec") or {}
+    gpus = 0
+    for ctr in tmpl.get("containers") or []:
+        if ctr.get("name") == "main":
+            gpus = int(((ctr.get("resources") or {}).get("limits") or {}).get("nvidia.com/gpu", 0) or 0)
+    gpus *= int(ann.get(f"{cfg.LABEL}/nodes") or 1)
+    pool = (tmpl.get("nodeSelector") or {}).get(f"{cfg.LABEL}/pool")
+    entry = None
+    if pool:
+        doc = kube.fleet()
+        entry = (doc.get("pools") or {}).get(pool)
+        if entry is None:
+            cluster = j.get("_cluster") or kube.cluster_id_or_none(j.get("_region"))
+            entry = ((doc.get("cpu_pools") or {}).get(cluster or "") or {}).get(pool)
+    kind = (entry or {}).get("platform"), (entry or {}).get("preset")
+    return {
+        "gpu_class": labels.get(f"{cfg.LABEL}/gpu-class"),
+        "gpus": gpus or None,
+        "pool": pool,
+        "instance_type": f"{kind[0]}/{kind[1]}" if kind[0] and kind[1] else None,
     }
 
 
