@@ -813,9 +813,12 @@ def test_a_pre_main_start_ack_never_defaults_export_to_na_and_the_terminal_recor
     import db
 
     db.migrate()
-    rec = lambda pod, body: attempts.record(
-        "eu-north1", "tenant-demo", pod, {"operation": "op-wan", "gpus": 0, "io_mode": "application", **body}
-    )
+
+    def rec(pod, body):
+        return attempts.record(
+            "eu-north1", "tenant-demo", pod, {"operation": "op-wan", "gpus": 0, "io_mode": "application", **body}
+        )
+
     ack = rec("op-wan-a", {"status": "started"})  # the attempt-start step: no started_at yet
     assert ack["export_state"] is None and ack["status"] == "started"
     started = rec("op-wan-a", {"status": "started", "started_at": "2026-10-21T01:17:38Z"})
