@@ -455,9 +455,21 @@ def test_relatives_come_from_the_warm_listing_without_a_new_read(client, monkeyp
     monkeypatch.setattr(fake, "list_namespaced_job", counting)
     monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 60.0)
     jobs._ops_list_cache.clear()
+    jobs._ops_list_wanted.clear()
     cold = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
-    assert [j["metadata"]["name"] for j in cold] == [op] and calls  # cold: the regions were listed
+    assert [j["metadata"]["name"] for j in cold] == [op] and calls  # cold: the regions were listed ONCE, through
+    # list_ops_all (api 0.11.159): the listing is now cached and wanted, so the warmer keeps it and the next view
+    # lists nothing; before, every cold view listed the tenant itself and cached nothing
+    assert ("tenant-demo", "demo", None) in jobs._ops_list_cache and (
+        "tenant-demo",
+        "demo",
+        None,
+    ) in jobs._ops_list_wanted
+    first_cold = list(calls)
     calls.clear()
+    again = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
+    assert [j["metadata"]["name"] for j in again] == [op] and calls == []  # the second cold view: nothing listed
+    assert len(first_cold) == len(jobs.kube.regions())  # one listing per region, not one per call of list_related
     jobs.list_ops_all("tenant-demo", "demo", None)  # the warmer's listing
     calls.clear()
     warm = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)

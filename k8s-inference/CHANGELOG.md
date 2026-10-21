@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.159
+
+- Operation views no longer list the whole tenant on a cold relatives lookup (api 0.11.159): jobs.list_related
+  (twice per view) served relatives from the warm tenant listing only when a lister had asked for it within 90 s; a
+  fleet watched through single-operation reads alone never lists, so every view listed every Job of every region
+  itself (~100 MB of dicts and ~8 s per view at 1,100 Jobs, 2026-10-21). A view's miss now takes the listing through
+  list_ops_all, which caches it for OPS_LIST_CACHE_S and marks it wanted, so the existing warmer keeps it fresh while
+  views keep asking. Counts (complete=False: export/continuation ordinals) still list fresh; an active relative's pods
+  are still re-read live; cache TTL, warmer window and owner checks unchanged. No new cache, label or scheduler.
+
 ## api 0.11.158
 
 - Memory (charts/platform, api Deployment env `MALLOC_ARENA_MAX=2`): the replicas climbed to the 2Gi limit under every

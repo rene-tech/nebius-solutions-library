@@ -2062,6 +2062,14 @@ def list_related(ns: str, tenant: str, keep, complete: bool = True) -> list[dict
     pods, the worker's placement and reason: a handle needs them); a count of names does not. A region that cannot be
     read is skipped (as `list_ops_all`): its relatives are absent, never a failure of the lookup."""
     hit = _ops_list_cache.get((ns, tenant, None)) if OPS_LIST_CACHE_S > 0 and complete else None
+    if complete and OPS_LIST_CACHE_S > 0 and not (hit and hit[0] > time.time()):
+        # a VIEW with no warm listing (pollers that only read single operations never list, so the warmer had nothing
+        # to keep fresh): take the tenant listing through list_ops_all, which caches it for OPS_LIST_CACHE_S and marks
+        # the key wanted, so the warmer refreshes it every OPS_LIST_WARM_S while views keep asking. Before, every such
+        # view listed the tenant's every Job in every region itself (~100 MB of dicts per view, ~8 s, api 0.11.159).
+        # A COUNT (complete=False) never comes here: it lists fresh below for its ordinal.
+        list_ops_all(ns, tenant, None)
+        hit = _ops_list_cache.get((ns, tenant, None))
     if hit and hit[0] > time.time():
         # only a VIEW of relatives (complete=True) is served from the listing; a COUNT (complete=False: the next
         # retry ordinal and the retry bound, export_retries/continuations) always lists fresh, since a relative
