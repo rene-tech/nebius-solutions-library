@@ -4,6 +4,9 @@ caller (fleet-CA-signed regional gateways, verification kept), the readiness pat
 child as PREEMPTED), and an explicit read-only weights payload (no prepare step, readOnly mount)."""
 
 import copy
+import hashlib
+
+import pytest
 
 import app as api
 import attempts
@@ -20,7 +23,10 @@ NS = "tenant-demo"
 PEM = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
 
 
-def test_caller_gets_the_fleet_trust_bundle_when_the_fleet_has_one(client, monkeypatch):
+def test_caller_mounts_the_namespace_trust_configmap_written_once_per_bundle(client, monkeypatch):
+    """api 0.11.161: the caller's /etc/ssl/fleet/ca-bundle.pem comes from the tenant namespace's one `fleet-trust`
+    ConfigMap (created before the Job, hash-annotated, not rewritten for the same bundle, replaced for another one);
+    the per-call Secret carries the key and the admission token only."""
     c, cl = client
     _tenant(monkeypatch)
     _bind(c)
@@ -38,16 +44,100 @@ def test_caller_gets_the_fleet_trust_bundle_when_the_fleet_has_one(client, monke
     }
     assert {"name": "trust", "mountPath": "/etc/ssl/fleet", "readOnly": True} in main["volumeMounts"]
     vol = next(v for v in spec["volumes"] if v["name"] == "trust")
-    assert vol["secret"] == {"secretName": f"{oid}-auth", "items": [{"key": "ca-bundle.pem", "path": "ca-bundle.pem"}]}
-    assert cl.secrets[(NS, f"{oid}-auth")]["stringData"]["ca-bundle.pem"] == PEM
+    assert vol == {
+        "name": "trust",
+        "configMap": {"name": "fleet-trust", "items": [{"key": "ca-bundle.pem", "path": "ca-bundle.pem"}]},
+    }
+    assert set(cl.secrets[(NS, f"{oid}-auth")]["stringData"]) == {"authorization", "admitted"}  # never the bundle
+    cm = cl.configmaps[(NS, "fleet-trust")]
+    assert cm["data"] == {"ca-bundle.pem": PEM} and cm["metadata"]["namespace"] == NS
+    sha = hashlib.sha256(PEM.encode()).hexdigest()
+    assert cm["metadata"]["annotations"] == {"serverless2.nebius/bundle-sha256": sha}
+    assert cl.configmap_writes == [("create", NS, "fleet-trust")]
     uploader = next(x for x in spec["containers"] if x["name"] == "uploader")
     assert not any(m["name"] == "trust" for m in uploader.get("volumeMounts") or [])  # the caller only
+    # the same bundle again: read, not rewritten
+    r = c.post("/v1/models/llm-example:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
+    assert r.status_code == 202, r.text
+    assert cl.configmap_writes == [("create", NS, "fleet-trust")]
+    # another bundle (an API rollout with other CAs): replaced once, then stable again
+    monkeypatch.setattr(jobs, "trust_bundle", lambda: PEM + PEM)
+    for _ in range(2):
+        r = c.post("/v1/models/llm-example:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
+        assert r.status_code == 202, r.text
+    assert cl.configmap_writes == [("create", NS, "fleet-trust"), ("replace", NS, "fleet-trust")]
+    assert cl.configmaps[(NS, "fleet-trust")]["data"] == {"ca-bundle.pem": PEM + PEM}
     # a fleet with public certificates everywhere: nothing projected, the runner's roots stand
     monkeypatch.setattr(jobs, "trust_bundle", lambda: None)
     r = c.post("/v1/models/llm-example:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
     spec = cl.jobs[(NS, r.json()["id"])]["spec"]["template"]["spec"]
     assert not any(v["name"] == "trust" for v in spec["volumes"])
     assert "CURL_CA_BUNDLE" not in {e["name"] for e in spec["containers"][0]["env"]}
+    assert len(cl.configmap_writes) == 2
+
+
+def test_namespace_trust_configmaps_are_per_namespace_and_bounded(client):
+    """Each tenant namespace gets its own ConfigMap in the Job's region (nothing shared across tenants); a bundle over
+    the ConfigMap bound is refused, not truncated; a read error other than 404 is a 502, never a write."""
+    from fastapi import HTTPException
+    from kubernetes.client.rest import ApiException
+
+    c, cl = client
+    jobs.ensure_trust("tenant-a", "eu-north1", PEM)
+    jobs.ensure_trust("tenant-b", "eu-north1", PEM + PEM)
+    assert cl.configmaps[("tenant-a", "fleet-trust")]["data"] == {"ca-bundle.pem": PEM}
+    assert cl.configmaps[("tenant-b", "fleet-trust")]["data"] == {"ca-bundle.pem": PEM + PEM}
+    jobs.ensure_trust("tenant-a", "eu-north1", PEM)
+    assert cl.configmap_writes == [("create", "tenant-a", "fleet-trust"), ("create", "tenant-b", "fleet-trust")]
+    with pytest.raises(HTTPException) as e:
+        jobs.ensure_trust("tenant-a", "eu-north1", "x" * (jobs.TRUST_MAX_BYTES + 1))
+    assert e.value.status_code == 500 and len(cl.configmap_writes) == 2
+
+    def broken(name, ns):
+        raise ApiException(status=403, reason="Forbidden")
+
+    cl.read_namespaced_config_map = broken
+    with pytest.raises(HTTPException) as e:
+        jobs.ensure_trust("tenant-a", "eu-north1", PEM + PEM)
+    assert e.value.status_code == 502 and len(cl.configmap_writes) == 2
+
+
+def test_export_retry_of_an_old_shape_caller_mounts_the_configmap_and_carries_no_bundle(client, monkeypatch):
+    """A caller created by api <= 0.11.160 kept the bundle under ca-bundle.pem in its own Secret and mounted that
+    Secret: it is left as it is, and its transfer-only export retry is rendered the new way (the namespace ConfigMap,
+    a Secret with the original's key and admission token only)."""
+    c, cl = client
+    _tenant(monkeypatch)
+    _bind(c)
+    monkeypatch.setattr(api.cfg, "ROUTER_KEY", "synthetic-router")
+    monkeypatch.setattr(jobs, "trust_bundle", lambda: PEM)
+    body = {"mode": "async", "input": {}, "execution": {"io_mode": "application", "private_input_ref": "call-1"}}
+    r = c.post("/v1/models/llm-example:invoke", json=body, headers=H)
+    assert r.status_code == 202, r.text
+    oid = r.json()["id"]
+    old = cl.jobs[(NS, oid)]
+    old_vol = {
+        "name": "trust",
+        "secret": {"secretName": f"{oid}-auth", "items": [{"key": "ca-bundle.pem", "path": "ca-bundle.pem"}]},
+    }
+    old["spec"]["template"]["spec"]["volumes"] = [
+        old_vol if v["name"] == "trust" else v for v in old["spec"]["template"]["spec"]["volumes"]
+    ]
+    cl.secrets[(NS, f"{oid}-auth")]["data"]["ca-bundle.pem"] = PEM
+    cl.secrets[(NS, f"{oid}-auth")]["stringData"]["ca-bundle.pem"] = PEM
+    old["status"] = {"conditions": [{"type": "Failed", "status": "True"}]}
+    retry_job, created = jobs.export_async(NS, oid, "eu-north1", catalog.get("llm-example"))
+    assert created and retry_job["metadata"]["name"] == f"{oid}-x1"
+    spec = retry_job["spec"]["template"]["spec"]
+    assert next(v for v in spec["volumes"] if v["name"] == "trust")["configMap"]["name"] == "fleet-trust"
+    assert set(cl.secrets[(NS, f"{oid}-x1-auth")]["stringData"]) == {"authorization", "admitted"}
+    assert (
+        cl.secrets[(NS, f"{oid}-x1-auth")]["stringData"]["authorization"]
+        == cl.secrets[(NS, f"{oid}-auth")]["stringData"]["authorization"]
+    )
+    # the original and its Secret are untouched
+    assert next(v for v in old["spec"]["template"]["spec"]["volumes"] if v["name"] == "trust") == old_vol
+    assert cl.secrets[(NS, f"{oid}-auth")]["data"]["ca-bundle.pem"] == PEM
 
 
 def test_trust_bundle_is_the_api_s_own_merged_file(monkeypatch, tmp_path):

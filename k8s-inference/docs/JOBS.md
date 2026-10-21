@@ -771,6 +771,10 @@ response is an unknown outcome (exit 4, never re-posted), a 5xx with a body is t
 `FailJob` rule turns 2/4/5 into a FAILED operation without pod retries. The uploader puts `out/response.json` and `out/call.json` in the
 bucket; `GET /v1/operations/{id}/result` returns the response inline from there. The request body
 names the served model as the endpoint expects it (`served_model`, injected when the caller omits `model`).
+On a fleet with a CA bundle (fleet-CA-signed regional gateways) the caller reads `/etc/ssl/fleet/ca-bundle.pem` from
+the tenant namespace's one `fleet-trust` ConfigMap (api 0.11.161: created by the API in the Job's region, rewritten
+only when its `serverless2.nebius/bundle-sha256` annotation is not the API's current bundle); the per-operation Secret
+holds the key and the admission token only. Callers created by api 0.11.160 and earlier keep the copy in their Secret.
 
 ### Endpoint calls with private input and application-owned output
 

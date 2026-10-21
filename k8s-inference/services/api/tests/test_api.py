@@ -119,6 +119,28 @@ class FakeCluster:
             raise ApiException(status=404, reason="NotFound")
         del cms[(ns, name)]
 
+    def read_namespaced_config_map(self, name, ns):
+        cms = self.__dict__.setdefault("configmaps", {})
+        if (ns, name) not in cms:
+            raise ApiException(status=404, reason="NotFound")
+        return cms[(ns, name)]
+
+    def create_namespaced_config_map(self, ns, body):
+        cms = self.__dict__.setdefault("configmaps", {})
+        if (ns, body["metadata"]["name"]) in cms:
+            raise ApiException(status=409, reason="AlreadyExists")
+        cms[(ns, body["metadata"]["name"])] = copy.deepcopy(body)
+        self.__dict__.setdefault("configmap_writes", []).append(("create", ns, body["metadata"]["name"]))
+        return body
+
+    def replace_namespaced_config_map(self, name, ns, body):
+        cms = self.__dict__.setdefault("configmaps", {})
+        if (ns, name) not in cms:
+            raise ApiException(status=404, reason="NotFound")
+        cms[(ns, name)] = copy.deepcopy(body)
+        self.__dict__.setdefault("configmap_writes", []).append(("replace", ns, name))
+        return body
+
     # batch
     def create_namespaced_job(self, ns, body):
         name = body["metadata"]["name"]

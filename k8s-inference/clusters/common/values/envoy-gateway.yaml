@@ -26,6 +26,12 @@ config:
           url: ratelimit-redis.envoy-gateway-system.svc.cluster.local:6379
 deployment:
   replicas: 2
+  envoyGateway:
+    resources:
+      limits:
+        # the controller caches every Secret of the cluster: 949 per-call auth Secrets of 600 KB each (api <= 0.11.160)
+        # OOM-killed it at the chart's 1Gi on 2026-10-21; api 0.11.161 mounts one trust ConfigMap per namespace instead
+        memory: 2Gi
   pod:
     topologySpreadConstraints:
       - maxSkew: 1

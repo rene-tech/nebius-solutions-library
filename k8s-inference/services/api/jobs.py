@@ -1259,7 +1259,9 @@ def build_async(
             [
                 {
                     "name": "trust",
-                    "secret": {"secretName": secret_name, "items": [{"key": TRUST_KEY, "path": TRUST_KEY}]},
+                    # the tenant namespace's one bundle (ensure_trust, written by create()), never a copy per call: the
+                    # per-call Secret copies of api <= 0.11.160 (600 KB each) filled the gateway controller's cache
+                    "configMap": {"name": TRUST_CONFIGMAP, "items": [{"key": TRUST_KEY, "path": TRUST_KEY}]},
                 }
             ]
             if trust
@@ -1304,7 +1306,6 @@ def build_async(
         "stringData": {
             "authorization": auth,
             **({"admitted": admitted} if admitted else {}),
-            **({TRUST_KEY: trust} if trust else {}),
         },
     }
     return job, secret
@@ -1394,6 +1395,9 @@ def _and_required(pod: dict, expr: dict) -> None:
 TRUST_DIR = "/etc/ssl/fleet"
 TRUST_KEY = "ca-bundle.pem"
 TRUST_FILE = f"{TRUST_DIR}/{TRUST_KEY}"
+TRUST_CONFIGMAP = "fleet-trust"  # one per tenant namespace and region: the file every endpoint caller mounts
+TRUST_SHA = f"{LABEL}/bundle-sha256"  # its annotation: the bundle it holds, so an unchanged bundle is never rewritten
+TRUST_MAX_BYTES = 1_000_000  # a ConfigMap holds 1 MiB; the bundle goes whole or the call is refused, never cut
 
 
 def trust_bundle() -> str | None:
@@ -1411,6 +1415,52 @@ def trust_bundle() -> str | None:
     except OSError:
         return None
     return pem if "BEGIN CERTIFICATE" in pem else None
+
+
+def ensure_trust(ns: str, region: str, pem: str) -> None:
+    """The tenant namespace's trust ConfigMap (TRUST_CONFIGMAP, the bundle under TRUST_KEY) in the Job's region:
+    created when absent, replaced only when its TRUST_SHA annotation is not this bundle's hash (an API rollout with other
+    CAs), untouched otherwise. Public CA material only. Retained Jobs of api <= 0.11.160 keep their own Secret copy."""
+    import hashlib
+
+    if len(pem.encode()) > TRUST_MAX_BYTES:
+        raise HTTPException(500, f"the fleet trust bundle ({len(pem.encode())} bytes) exceeds the projected bound")
+    sha = hashlib.sha256(pem.encode()).hexdigest()
+    core = kube.core(region)
+    body = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": TRUST_CONFIGMAP,
+            "namespace": ns,
+            "labels": {"app.kubernetes.io/part-of": "serverless2"},
+            "annotations": {TRUST_SHA: sha},
+        },
+        "data": {TRUST_KEY: pem},
+    }
+    try:
+        cur = core.api_client.sanitize_for_serialization(retry(core.read_namespaced_config_map, TRUST_CONFIGMAP, ns))
+    except ApiException as e:
+        if e.status != 404:
+            raise HTTPException(
+                502, f"kubernetes ({region}): trust ConfigMap {ns}/{TRUST_CONFIGMAP}: {e.status} {e.reason}"
+            )
+        _create_ignore_exists(core.create_namespaced_config_map, ns, body, region)  # 409: a concurrent call made it
+        return
+    if ((cur.get("metadata") or {}).get("annotations") or {}).get(TRUST_SHA) == sha:
+        return
+    try:
+        retry(core.replace_namespaced_config_map, TRUST_CONFIGMAP, ns, body)
+    except ApiException as e:
+        raise HTTPException(
+            502, f"kubernetes ({region}): trust ConfigMap {ns}/{TRUST_CONFIGMAP}: {e.status} {e.reason}"
+        )
+
+
+def mounts_trust(job: dict) -> bool:
+    """True when the Job's pod mounts the namespace trust ConfigMap (an endpoint caller rendered by this API)."""
+    vols = ((job.get("spec") or {}).get("template") or {}).get("spec", {}).get("volumes") or []
+    return any((v.get("configMap") or {}).get("name") == TRUST_CONFIGMAP for v in vols)
 
 
 ASYNC_PVC_SIZE_GI = 2
@@ -1546,7 +1596,9 @@ def export_async(ns: str, name: str, region: str, model: dict, admit=None) -> tu
         scratch_leaf_of=leaf,
         priority=labels.get(f"{LABEL}/priority"),  # the original's: an export retry keeps its call's priority
     )
-    secret["stringData"] = auth_secret  # the original's key and admission token, never a new one
+    # the original's key and admission token, never a new one; an original of api <= 0.11.160 also carried the trust
+    # bundle in its Secret (TRUST_KEY): the retry mounts the namespace ConfigMap instead, so that copy is not carried
+    secret["stringData"] = {k: v for k, v in auth_secret.items() if k != TRUST_KEY}
     job["metadata"]["annotations"][f"{LABEL}/resumed-from"] = root
     job["metadata"]["annotations"][f"{LABEL}/export-of"] = name
     _inherit_owner(job, ann)
@@ -1648,6 +1700,11 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
             region=REGION,  # bindings live on the API's own cluster, whatever region the Job is created in
             owner=operation_owner(ann, root),
         )
+    if mounts_trust(job):
+        pem = trust_bundle()
+        if not pem:
+            raise HTTPException(500, "the fleet trust bundle is not readable; the caller cannot be created without it")
+        ensure_trust(ns, region, pem)  # before the Job: its pod mounts the ConfigMap
     was_created = True
     try:
         if is_jobset(job):
