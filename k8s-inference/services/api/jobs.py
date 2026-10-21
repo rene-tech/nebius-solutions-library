@@ -1707,6 +1707,16 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
     ann = job["metadata"]["annotations"]
     ex = json.loads(ann.get(f"{LABEL}/execution") or "null")
     root = ann.get(f"{LABEL}/resumed-from") or name
+    if mounts_trust(job):
+        # before anything is written for this operation (the private input's delivery below, the Job): a refused or
+        # missing trust leaves no Secret behind (api 0.11.161 left `<op>-private` when the regional RBAC refused it);
+        # in every cluster the pod may land in, the placement boundary execution.deliver uses (an endpoint caller is
+        # created in its endpoint's cluster and carries no placement, so that one cluster)
+        pem = trust_bundle()
+        if not pem:
+            raise HTTPException(500, "the fleet trust bundle is not readable; the caller cannot be created without it")
+        for r in placement_regions(job) or [region]:
+            ensure_trust(ns, r, pem)
     if job["metadata"].get("labels", {}).get(f"{LABEL}/stage-waiting") != "true":
         # a waiting stage (docs/JOBS.md "Stage composition") gets its binding from the gate when its dependencies
         # delivered: its request-scoped credentials are not consumed while it waits
@@ -1720,14 +1730,6 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
             region=REGION,  # bindings live on the API's own cluster, whatever region the Job is created in
             owner=operation_owner(ann, root),
         )
-    if mounts_trust(job):
-        pem = trust_bundle()
-        if not pem:
-            raise HTTPException(500, "the fleet trust bundle is not readable; the caller cannot be created without it")
-        # before the Job, in every cluster its pod may land in: the placement boundary execution.deliver uses (an
-        # endpoint caller is created in its endpoint's cluster and carries no placement, so that one cluster)
-        for r in placement_regions(job) or [region]:
-            ensure_trust(ns, r, pem)
     was_created = True
     try:
         if is_jobset(job):
@@ -1787,6 +1789,25 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
         secret["metadata"]["ownerReferences"] = [owner]
         _create_ignore_exists(core.create_namespaced_secret, ns, secret, region)
     return created, was_created
+
+
+def confirmed_absent(ns: str, job: dict, region: str = REGION) -> bool:
+    """True only when a read of the exact object create() attempted (Job or JobSet, by kind) answers a true 404: the
+    proof a failed create may refund on. A 403, a timeout or any other answer is an unknown outcome (jobs.get maps a
+    403 to 404 for callers, which is why the refund path does not use it): nothing is released then."""
+    name = job["metadata"]["name"]
+    try:
+        if is_jobset(job):
+            retry(
+                _jobset_api(region).get_namespaced_custom_object, JOBSET_GROUP, JOBSET_VERSION, ns, JOBSET_PLURAL, name
+            )
+        else:
+            retry(kube.batch(region).read_namespaced_job, name, ns)
+        return False
+    except ApiException as e:
+        return e.status == 404
+    except Exception:
+        return False
 
 
 def _create_ignore_exists(fn, ns: str, body: dict, region: str):

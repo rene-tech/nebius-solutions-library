@@ -154,6 +154,105 @@ def test_a_concurrent_writer_never_wins_with_another_bundle(client):
     assert cl.configmaps[(ns, "fleet-trust")]["data"] == {"ca-bundle.pem": "OTHER"}  # never silently accepted
 
 
+def test_a_refused_trust_configmap_leaves_nothing_behind(client, fake_keys, monkeypatch):  # noqa: F811
+    """api 0.11.161 on a cluster whose tenant RBAC refused the ConfigMap read: the 502 came after the private input
+    had been delivered (`<op>-private` Secret) and the root run member stayed active. Now the trust check runs first
+    and the confirmed-absent Job refunds through keys.abandon: no Job, no Secret of any kind, no member/reservation."""
+    from kubernetes.client.rest import ApiException
+
+    c, cl = client
+    _tenant(monkeypatch)
+    _bind(c)
+    monkeypatch.setattr(api.cfg, "ROUTER_KEY", "synthetic-router")
+    monkeypatch.setattr(jobs, "trust_bundle", lambda: PEM)
+
+    def forbidden(name, ns):
+        raise ApiException(status=403, reason="Forbidden")
+
+    cl.read_namespaced_config_map = forbidden
+    before = {k for k in cl.secrets}
+    body = {"mode": "async", "input": {}, "execution": {"io_mode": "application", "private_input_ref": "call-1"}}
+    r = c.post("/v1/models/llm-example:invoke", json=body, headers=H)
+    assert r.status_code == 502 and "fleet-trust" in r.json()["detail"], r.text
+    assert not [k for k in cl.jobs if k[0] == NS], "a Job was created despite the refused trust"
+    assert {k for k in cl.secrets} == before, "a Secret (auth or private) was left behind"
+    assert not getattr(cl, "configmap_writes", []), "nothing may be written when the read is refused"
+    abandoned = [x for x in fake_keys.calls if x[0] == "abandon"]
+    assert len(abandoned) == 1 and abandoned[0][1].startswith("op-"), fake_keys.calls
+
+
+def test_a_denied_job_create_sweeps_the_private_copy_only_on_a_true_404(client, fake_keys, monkeypatch):  # noqa: F811
+    """The private input is delivered before the Job (execution.deliver): when the Job create itself is denied, the
+    confirmed absence (a true 404 of the Job) sweeps `<op>-private` and refunds; a 403 or any other read answer is an
+    unknown outcome that keeps the copy, the member and the reservation (nothing is guessed)."""
+    from kubernetes.client.rest import ApiException
+
+    c, cl = client
+    _tenant(monkeypatch)
+    _bind(c)
+    monkeypatch.setattr(api.cfg, "ROUTER_KEY", "synthetic-router")
+    monkeypatch.setattr(jobs, "trust_bundle", lambda: PEM)
+    body = {"mode": "async", "input": {}, "execution": {"io_mode": "application", "private_input_ref": "call-1"}}
+
+    def denied(ns, job):
+        raise ApiException(status=500, reason="synthetic create denial")
+
+    cl.create_namespaced_job = denied
+    before = {k for k in cl.secrets}
+    r = c.post("/v1/models/llm-example:invoke", json=body, headers=H)
+    assert r.status_code == 502, r.text
+    assert {k for k in cl.secrets} == before  # the delivered `<op>-private` copy was swept on the proven absence
+    assert len([x for x in fake_keys.calls if x[0] == "abandon"]) == 1
+    # the same denial, but the absence cannot be proven (the read answers 403): everything stays
+    reads = cl.read_namespaced_job
+
+    def forbidden(name, ns):
+        raise ApiException(status=403, reason="Forbidden")
+
+    cl.read_namespaced_job = forbidden
+    _bind(c, "call-2")  # a binding serves one operation: the never-created one consumed call-1 (documented boundary)
+    before = {k for k in cl.secrets}
+    body2 = {**body, "execution": {**body["execution"], "private_input_ref": "call-2"}}
+    r = c.post("/v1/models/llm-example:invoke", json=body2, headers=H)
+    assert r.status_code == 502, r.text
+    kept = [k for k in cl.secrets if k not in before]
+    assert len(kept) == 1 and kept[0][1].endswith("-private"), kept  # the private copy is retained (unknown outcome)
+    assert len([x for x in fake_keys.calls if x[0] == "abandon"]) == 1  # no second refund
+    cl.read_namespaced_job = reads
+    assert jobs.confirmed_absent(NS, {"metadata": {"name": "op-none"}, "spec": {}}, "eu-north1")
+    cl.jobs[(NS, "op-here")] = {"metadata": {"name": "op-here"}}
+    assert not jobs.confirmed_absent(NS, {"metadata": {"name": "op-here"}, "spec": {}}, "eu-north1")
+
+
+def test_a_replay_whose_create_fails_keeps_every_retained_input(client, fake_keys, monkeypatch):  # noqa: F811
+    """A replay (the same idempotency key again) reuses an existing reservation: when its create fails and the Job is
+    absent, nothing is swept or refunded, because the earlier submission's retained inputs and ledger belong to an
+    operation whose Job may be legitimately gone; all state is preserved as it was."""
+    from kubernetes.client.rest import ApiException
+
+    c, cl = client
+    _tenant(monkeypatch)
+    _bind(c)
+    monkeypatch.setattr(api.cfg, "ROUTER_KEY", "synthetic-router")
+    monkeypatch.setattr(jobs, "trust_bundle", lambda: PEM)
+    import keys as keys_mod
+
+    real_admit = keys_mod.admit  # the fixture bound the fake per function: patch the module the API calls
+    monkeypatch.setattr(keys_mod, "admit", lambda *a, **k: {**real_admit(*a, **k), "replay": True})
+
+    def denied(ns, job):
+        raise ApiException(status=500, reason="synthetic create denial")
+
+    cl.create_namespaced_job = denied
+    before = {k for k in cl.secrets}
+    body = {"mode": "async", "input": {}, "execution": {"io_mode": "application", "private_input_ref": "call-1"}}
+    r = c.post("/v1/models/llm-example:invoke", json=body, headers=H)
+    assert r.status_code == 502, r.text
+    kept = [k for k in cl.secrets if k not in before]
+    assert len(kept) == 1 and kept[0][1].endswith("-private"), kept  # retained, not swept
+    assert not [x for x in fake_keys.calls if x[0] in ("abandon", "rollback_run_member")]
+
+
 def test_export_retry_of_an_old_shape_caller_mounts_the_configmap_and_carries_no_bundle(client, monkeypatch):
     """A caller created by api <= 0.11.160 kept the bundle under ca-bundle.pem in its own Secret and mounted that
     Secret: it is left as it is, and its transfer-only export retry is rendered the new way (the namespace ConfigMap,

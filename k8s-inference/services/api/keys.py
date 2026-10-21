@@ -751,13 +751,24 @@ def abandon(operation: str, h: str) -> bool:
     spend is invented. The matching key prevents a failed replay releasing another key.
     """
     with _connection() as c, c.transaction():
-        return (
+        gone = (
             c.execute(
                 "delete from key_reservations where operation = %s and key_hash = %s returning operation",
                 (operation, h),
             ).fetchone()
             is not None
         )
+        if gone:  # the root member admit() opened with the reservation (run_member): never created, so never a run
+            c.execute(
+                "delete from key_run_members where operation = %s and root = %s and key_hash = %s and state = 'active'",
+                (operation, operation, h),
+            )
+            # the graph invoke declared before the create (declare_graph): never admitted a stage, so it is not open
+            c.execute(
+                "delete from run_graphs where root = %s and closed_at is null and not exists (select 1 from key_run_members where root = %s)",
+                (operation, operation),
+            )
+        return gone
 
 
 @contextmanager

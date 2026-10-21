@@ -219,6 +219,26 @@ def test_durable_owner_survives_key_revocation_and_refund_does_not_charge(databa
     assert keys.operation_owner("op-owned") == ("demo", "opaque-owner", "hello-run")
 
 
+def test_abandon_rolls_back_the_root_run_member_it_admitted(database):
+    """A root admitted as a run member (an endpoint call or a run) whose Job was proven never created: abandon with the
+    matching key removes the reservation AND the member in one transaction (api 0.11.161 left the member active); a
+    foreign key removes neither; a member whose Job may exist is never touched (abandon is only called after a 404)."""
+    db.migrate()
+    value, _ = keys.create("demo", "member-proof")
+    h = keys.key_hash(value)
+    keys.admit(h, "op-root", "demo", run_member=True)
+    assert [m["operation"] for m in keys.run_members("op-root")] == ["op-root"]
+    assert not keys.abandon("op-root", "0" * 64)
+    assert [m["operation"] for m in keys.run_members("op-root")] == ["op-root"]
+    keys.declare_graph("op-root", "demo", "owner", {"a": {}})
+    assert keys.graph_of("op-root") is not None
+    assert keys.abandon("op-root", h)
+    assert keys.run_members("op-root") == []
+    assert keys.graph_of("op-root") is None  # the graph declared before the create goes with the never-created root
+    assert not keys.abandon("op-root", h)  # nothing left to refund
+    assert keys.info(h)["spent_requests"] == 0
+
+
 def test_admission_cannot_replay_another_keys_reservation(database):
     db.migrate()
     a, _ = keys.create("demo", "a")

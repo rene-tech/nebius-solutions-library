@@ -133,7 +133,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.161", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.162", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1383,19 +1383,21 @@ def _create_admitted(p, name, job, region, secret, req, mode, stage: dict | None
     try:
         created_job, created = jobs.create(p.namespace, job, region, secret)
     except Exception:
-        if db.enabled() and not reservation.get("replay"):
-            # A timeout can mean the create succeeded. Only a confirmed absence
-            # permits a refund; ambiguous failures retain the reservation.
+        # A timeout can mean the create succeeded. Only a confirmed absence (a true 404 of the exact kind attempted,
+        # jobs.confirmed_absent; a 403 or a timeout is unknown) permits any cleanup: the private input delivered for
+        # the Job (execution.sweep_copies), then the reservation with its root member and declared graph (abandon) or
+        # the continuation's member (rollback_run_member). Ambiguous failures retain everything.
+        if not reservation.get("replay") and jobs.confirmed_absent(p.namespace, job, region):
+            # never for a replay: its earlier submission may hold retained inputs whose Job is legitimately gone
             try:
-                jobs.get(p.namespace, name, region)
-            except HTTPException as missing:
-                if missing.status_code == 404:
-                    if stage:
-                        keys.rollback_run_member(name)
-                    else:
-                        keys.abandon(name, keys.key_hash(p.key))
+                execution.sweep_copies(p.namespace, name)
             except Exception:
                 pass
+            if db.enabled():
+                if stage:
+                    keys.rollback_run_member(name)
+                else:
+                    keys.abandon(name, keys.key_hash(p.key))
         raise
     _check_operation_owner(p, created_job)
     return created_job, created
