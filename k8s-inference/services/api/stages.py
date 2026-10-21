@@ -76,7 +76,11 @@ def mark_waiting(job: dict, root: str, stage: str, deps: list[str]) -> None:
     md["annotations"][STAGE_ROOT] = root
     md["annotations"][DEPENDS_ON] = ",".join(deps)
     job["spec"]["suspend"] = True
-    bind_results(job, "{}")
+    # the env only, NO template annotation yet (api 0.11.160): Kueue captures the pod template into the Workload at
+    # creation and its admission merge keeps the Workload's values, so an annotation stamped "{}" here came back over
+    # the gate's real results (7 stages ran with "{}" and their workers refused the missing root, 2026-10-21). The
+    # gate writes the annotation once, while suspended, before the queue switch; the fieldRef resolves then.
+    bind_results(job, None)
 
 
 def inherit(job: dict, ann: dict) -> None:
@@ -91,15 +95,17 @@ def inherit(job: dict, ann: dict) -> None:
     md["annotations"][STAGE_ROOT] = ann[STAGE_ROOT]  # the next continuation inherits from this one's annotations
     if ann.get(DEPENDS_ON):
         md["annotations"][DEPENDS_ON] = ann[DEPENDS_ON]
-    if ann.get(RESULTS) and job.get("kind") == "Job":
+    if ann.get(RESULTS) and ann[RESULTS] != "{}" and job.get("kind") == "Job":
         md["annotations"][RESULTS] = ann[RESULTS]
         bind_results(job, ann[RESULTS])
 
 
-def bind_results(job: dict, results_json: str) -> None:
-    """The dependencies' results into the pod: the template annotation the main container reads (downward API)."""
+def bind_results(job: dict, results_json: str | None) -> None:
+    """The dependencies' results into the pod: the template annotation the main container reads (downward API);
+    None binds the env only (a waiting stage before its gate: no annotation for Kueue's Workload to capture)."""
     tmpl = job["spec"]["template"]
-    tmpl.setdefault("metadata", {}).setdefault("annotations", {})[RESULTS] = results_json
+    if results_json is not None:
+        tmpl.setdefault("metadata", {}).setdefault("annotations", {})[RESULTS] = results_json
     for c in tmpl["spec"].get("containers") or []:
         if c.get("name") == "main":
             env = [e for e in (c.get("env") or []) if e.get("name") != RESULTS_ENV]

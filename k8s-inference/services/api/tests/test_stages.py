@@ -127,6 +127,11 @@ def test_stage_waits_without_queue_and_runs_after_its_dependencies(world):
         assert _main_env(job)["DEPENDENCY_RESULTS"]["valueFrom"]["fieldRef"]["fieldPath"].endswith(
             f"['{stages.RESULTS}']"
         )
+        # api 0.11.160: no dependency-results annotation on the pod template before the gate (Kueue captures the
+        # template into the Workload at creation and its admission write keeps the Workload's values: a "{}" here
+        # came back over the gate's real results on 7 stages, 2026-10-21); the env fieldRef alone until the gate
+        assert stages.RESULTS not in (job["spec"]["template"]["metadata"].get("annotations") or {})
+        assert stages.RESULTS not in (job["metadata"].get("annotations") or {})
         assert r.json()["status"] == "QUEUED" and r.json()["phase"] == "waiting_for_dependencies"
     prepared = [x for x in fk.calls if x[0] == "prepare"]
     assert [(x[1], x[2], x[3], x[7], x[8]) for x in prepared] == [

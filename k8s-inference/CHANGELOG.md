@@ -4,7 +4,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.159
+## api 0.11.160
 
 - Operation views no longer list the whole tenant on a cold relatives lookup (api 0.11.159): jobs.list_related
   (twice per view) served relatives from the warm tenant listing only when a lister had asked for it within 90 s; a
@@ -13,6 +13,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
   list_ops_all, which caches it for OPS_LIST_CACHE_S and marks it wanted, so the existing warmer keeps it fresh while
   views keep asking. Counts (complete=False: export/continuation ordinals) still list fresh; an active relative's pods
   are still re-read live; cache TTL, warmer window and owner checks unchanged. No new cache, label or scheduler.
+- Stage dependency results survive Kueue's admission (api 0.11.160): a waiting stage no longer carries a
+  `dependency-results: "{}"` pod-template annotation from creation; it binds the DEPENDENCY_RESULTS env only and the
+  gate writes the annotation once while the stage is suspended. Kueue captures the pod template into the Workload at
+  creation and its admission write keeps the Workload's values, so the creation-time "{}" came back over the gate's
+  real results on 7 stages (their workers refused the missing root; Protenix clone op-70e79e1760337371, ESM MCP
+  op-458ce781456165ed, BoltzGen collect op-c9201563175a3094, 2026-10-21). Continuations inherit only non-empty results.
+- Launch failures of main keep their stderr (api 0.11.160): the run's and the endpoint caller's main container set
+  `terminationMessagePolicy: FallbackToLogsOnError`, so a container that never wrote /dev/termination-log (an exec
+  "input/output error" of the runtime's python, ESMFold2 REST op-91610f63e5568ae1) reports its last log lines as
+  the attempt's reason instead of a bare "Error". call.sh and the uploader keep writing their own messages.
 
 ## api 0.11.158
 

@@ -566,6 +566,9 @@ def build_run(
         "image": r["image"],
         "command": cmd,
         "resources": res,
+        # a launch failure's stderr becomes the attempt's reason when main never wrote /dev/termination-log (an exec
+        # "input/output error" read as a bare "Error" before, 2026-10-21; api 0.11.160)
+        "terminationMessagePolicy": "FallbackToLogsOnError",
         "workingDir": r.get("workDir", "/work"),
         "volumeMounts": [{"name": "work", "mountPath": "/work"}, {"name": "shm", "mountPath": "/dev/shm"}],
         "securityContext": {**CONTAINER_HARDENING, **({"runAsNonRoot": True} if r.get("runAsNonRoot") else {})},
@@ -1204,6 +1207,7 @@ def build_async(
         "image": RUNNER_IMAGE,
         "command": ["/usr/local/bin/call.sh"],
         "env": env,
+        "terminationMessagePolicy": "FallbackToLogsOnError",  # call.sh writes its own message; a launch failure's stderr else
         "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}, "limits": {"cpu": "1", "memory": "512Mi"}},
         "volumeMounts": [{"name": "work", "mountPath": "/work"}]
         + ([{"name": "trust", "mountPath": TRUST_DIR, "readOnly": True}] if trust else []),
