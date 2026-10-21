@@ -758,6 +758,9 @@ class Operation(BaseModel):
     resume_source_epoch: int | None = None
     resume_source: Literal["committed", "explicit"] | None = None
     resumable: bool | None = None
+    # the work volume's recorded lifecycle (docs/JOBS.md "Work volume lifecycle"): "released" = a resume needs
+    # restart_from_inputs or a checkpoint_ref; "retained" = kept with a reason; absent = as the uploader left it
+    work_volume: Literal["released", "retained"] | None = None
     gpu_class: str | None = None
     image: str | None = None
     nodes: int | None = None
@@ -1133,6 +1136,16 @@ class SubmissionPause(BaseModel):
     expired: dict[str, Any] | None = None
 
 
+class FleetStorage(BaseModel):
+    """An operation's work volume as the reclaim pass recorded it (docs/JOBS.md "Work volume lifecycle")."""
+
+    claim: str
+    size_gi: int | None = None
+    state: Literal["released", "retained"] | None = None
+    reason: str | None = None
+    at: str | None = None
+
+
 class FleetOperation(BaseModel):
     """One in-flight operation of the fleet as the fleet operator sees it (GET /v1/fleet/operations): identity and
     state only, never an input, a result or a key value."""
@@ -1155,6 +1168,7 @@ class FleetOperation(BaseModel):
     gpus: int | None = None  # GPUs of the run (per pod times nodes); null for GPU-free work
     pool: str | None = None  # the fleet pool the Job is pinned to; null until placement
     instance_type: str | None = None  # the pool's `<platform>/<preset>` from the fleet document
+    storage: FleetStorage | None = None  # the work volume's recorded lifecycle (api 0.11.165)
 
 
 class FleetTenantRecord(BaseModel):

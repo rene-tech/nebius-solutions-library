@@ -4,7 +4,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.164, dispatcher 0.2.17
+## api 0.11.165, dispatcher 0.2.17
 
 - Work volumes are released on proof, never with the history (docs/JOBS.md "Work volume lifecycle"): the control
   API's reclaim pass judges every per-operation claim by the handle's own state and the durable attempt records

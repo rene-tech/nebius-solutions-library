@@ -1013,7 +1013,7 @@ SIGTERM reaches the shell of a string command (shared PID namespace); a long-run
 that shell (`python train.py`) only sees it if the script forwards it (`exec python train.py`,
 or a `trap`), so prefer `exec` for the final command of a script.
 
-## Work volume lifecycle (api 0.11.164, dispatcher 0.2.17)
+## Work volume lifecycle (api 0.11.165, dispatcher 0.2.17)
 
 A per-operation work volume (`<op>-work`, also `-rN`, `-xN`, `-s-<stage>`, `-c-<id>`) is disposable storage: it is
 released on proof, never with the operation's history (finished Jobs stay `JOB_TTL_S`, 90 days, and keep their
