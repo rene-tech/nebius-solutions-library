@@ -654,12 +654,15 @@ def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -
         return "release", "delivered"
     if st == "EXPORT_FAILED":
         return "keep", "export pending"
-    if rows and rows[-1].get("export_state") == "failed":
+    own = [r for r in rows if not job or r.get("operation") == job["metadata"]["name"]] or rows
+    if own and own[-1].get("export_state") == "failed":
         # an undelivered capture or output on the volume (the uploader's last record says the export failed): the
         # transfer-only retry (`:export`, app.py export_again / export_async) delivers it from this volume, whatever
-        # the handle's status (a FAILED endpoint call's exit 2/5 capture, a FAILED run's partial output); kept
-        # whatever the mode and the retention window
+        # the handle's status (a FAILED endpoint call's exit 2/5 capture, a FAILED run's partial output)
         return "keep", "export pending"
+    pending = _finalizer_pending(job, own, rows)
+    if pending:
+        return pending
     if st == "SUPERSEDED":
         return "release", "superseded"
     if st not in ("FAILED", "CANCELLED"):
@@ -677,6 +680,32 @@ def _work_decision_for(job: dict | None, rows: list[dict], tenant: str | None) -
     # needs: a resume renders the run again on a fresh volume from the application's checkpoint pointer or from the
     # inputs (jobs.resume). Keeping it would retain customer data on platform disks indefinitely (decision 2026-10-21).
     return "release", "ended"
+
+
+def _finalizer_pending(job: dict | None, own: list[dict], lineage: list[dict]) -> tuple[str, str] | None:
+    """The existing finalizer contract (docs/JOBS.md "Attempts and finalization", catalog `job.finalize`): a run whose
+    main exited with a declared `on_exit_codes` value finished its compute and left the delivery to the CPU finalizer
+    (`<root>-x<n>`, attempt role `finalize`) on the SAME scratch. Such a volume is kept until a finalizer delivered
+    (then the finalizer's uploader released it and the lineage says so) ; a failed finalizer keeps it for the next
+    `:export`. Judged from the catalog's declaration and the attempt rows, never an exit-code or model constant."""
+    if not job or not own:
+        return None
+    last = own[-1]
+    if last.get("role") == "finalize" or last.get("exit_code") in (None, 0):
+        return None
+    model = (job["metadata"].get("labels") or {}).get(f"{cfg.LABEL}/model")
+    entry = catalog.get(model) if model else None
+    codes = (((entry or {}).get("job") or {}).get("finalize") or {}).get("onExitCodes") or []
+    if last.get("exit_code") not in codes:
+        return None
+    fins = [r for r in lineage if r.get("role") == "finalize"]
+    if any(
+        f.get("status") == "succeeded"
+        and (f.get("export_state") == "succeeded" or (f.get("export_state") == "n/a" and f.get("result_ref")))
+        for f in fins
+    ):
+        return "release", "delivered by finalizer"
+    return "keep", "finalizer pending"
 
 
 def work_volume_decision(
@@ -721,7 +750,7 @@ def work_volume_decision(
     tenant = ns.removeprefix(cfg.TENANT_NS_PREFIX)
     reasons = []
     for r, j in found:
-        action, why = _work_decision_for(j, [x for x in rows.get(r, []) if x.get("operation") == r], tenant)
+        action, why = _work_decision_for(j, rows.get(r, []), tenant)  # the lineage's rows; own rows picked inside
         if action == "keep":
             return "keep", why, [(r, j) for r, j in found]
         reasons.append(why)

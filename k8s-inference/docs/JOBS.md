@@ -1021,7 +1021,7 @@ SIGTERM reaches the shell of a string command (shared PID namespace); a long-run
 that shell (`python train.py`) only sees it if the script forwards it (`exec python train.py`,
 or a `trap`), so prefer `exec` for the final command of a script.
 
-## Work volume lifecycle (api 0.11.168, dispatcher 0.2.17)
+## Work volume lifecycle (api 0.11.169, dispatcher 0.2.17)
 
 A per-operation work volume (`<op>-work`, also `-rN`, `-xN`, `-s-<stage>`, `-c-<id>`) is disposable storage: it is
 released on proof, never with the operation's history (finished Jobs stay `JOB_TTL_S`, 90 days, and keep their
@@ -1038,7 +1038,8 @@ namespace and cluster by the same evidence the handle shows:
 | `SUPERSEDED` (the successor runs on another volume)                      | released | `superseded`         |
 | an endpoint call that ended (`FAILED`, `CANCELLED`; calls never resume)   | released | `call ended`         |
 | a run that ended before any attempt started (empty volume)               | released | `never started`      |
-| a run that ran and ended `FAILED` or `CANCELLED` (records acknowledged, no export pending) | released | `ended` (the disk is scratch: what a resume needs is in the customer's storage) |
+| a run whose main exited with a code the catalog declares in `job.finalize.on_exit_codes` (compute done, delivery left to the CPU finalizer on the same scratch) | kept until a finalizer delivered | `finalizer pending`, then `delivered by finalizer` |
+| a run that ran and ended `FAILED` or `CANCELLED` (records acknowledged, no export or finalizer pending) | released | `ended` (the disk is scratch: what a resume needs is in the customer's storage) |
 | the Job is gone and no attempt record exists; any read failed            | kept     | `unknown: …`         |
 
 A claim shared by a chain (root, resumes, finalizers) goes only when every referencing operation agrees; the
@@ -1065,8 +1066,9 @@ The disk is never a retention medium (decision 2026-10-21): everything a resume 
 storage, the inputs the run was admitted with and the checkpoints the application saves there (`checkpoint_ref`,
 docs/JOBS.md "Attempts and finalization"); a managed-I/O run's outputs reach the tenant bucket by the uploader's
 verified sync before the disk goes. A resume of a run whose volume the lifecycle released renders the run again on a
-fresh volume by itself: from the chain's newest acknowledged checkpoint pointer when there is one, else from its
-inputs (`restarted-from-inputs`), same owner, key and lineage; the handle says `work_volume: released`. A volume gone
+fresh volume by itself: from the chain's newest acknowledged checkpoint pointer when there is one (a claim still
+terminating counts as gone for that choice too), else from its inputs (`restarted-from-inputs`), same owner, key and
+lineage; the handle says `work_volume: released`. A volume gone
 WITHOUT the lifecycle's mark (an unexpected loss) still needs `restart_from_inputs: true` (or a `checkpoint_ref`), as
 an expired Job does, so nothing is dropped unnoticed. The fleet view carries `storage` (claim, size, state, reason,
 time) for the operator.

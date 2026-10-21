@@ -4,7 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.168, dispatcher 0.2.17
+## api 0.11.169, dispatcher 0.2.17
+
+- Root's review of 0.11.168: (1) a claim the lifecycle is deleting (deletionTimestamp, pvc-protection holding it) is
+  absent for every resume decision, the first probe included: the chain's acknowledged checkpoint pointer stands in
+  on the fresh volume (CHECKPOINT_REF) instead of a later restart from inputs; (2) the existing finalizer contract is
+  honoured by the reclaim pass: a run whose main exited with a code the catalog declares in `job.finalize.on_exit_codes`
+  keeps its scratch as "finalizer pending" until a finalizer delivered (then "delivered by finalizer"); a failed
+  finalizer keeps it for the next `:export`; an undeclared failure code is an ended run. Judged from the catalog
+  declaration and the lineage's attempt rows, never a constant.
+
+## api 0.11.168, dispatcher 0.2.17 (never applied; folded into 0.11.169)
 
 - Scratch is scratch (Rene, 2026-10-21): a run that ran and ended releases its work volume once its attempt records
   are acknowledged (only an unresolved export or an unknown state keeps a disk); everything a resume needs lives in

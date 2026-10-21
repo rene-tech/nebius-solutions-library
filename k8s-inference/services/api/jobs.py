@@ -1823,6 +1823,18 @@ def confirmed_absent(ns: str, job: dict, region: str = REGION) -> bool:
         return False
 
 
+def work_claim_present(core, claim: str, ns: str) -> bool:
+    """True when the claim exists and is not being deleted; False on 404 or a deletionTimestamp (a released claim
+    pvc-protection still holds: absent for every resume decision). Other errors propagate."""
+    try:
+        cur = core.api_client.sanitize_for_serialization(retry(core.read_namespaced_persistent_volume_claim, claim, ns))
+    except ApiException as e:
+        if e.status == 404:
+            return False
+        raise
+    return not (cur.get("metadata") or {}).get("deletionTimestamp")
+
+
 def _record_claim_user(ns: str, job: dict, claim: str) -> None:
     """A fleet-placed continuation that reuses the original's work claim (a same-volume resume, finalizer or export
     retry: a manager Job whose claim lives on the worker) is recorded on that claim (`serverless2.nebius/jobs`, the
@@ -3143,13 +3155,10 @@ def resume(
     if not checkpoint_ref and pointer and not is_jobset(orig):
         # no explicit checkpoint: the newest acknowledged pointer of the chain stands in when the volume is gone or the
         # caller wants another class (docs/JOBS.md "Attempts and finalization")
-        volume_ok = False
-        if pvc and worker:
-            try:
-                retry(kube.core(worker).read_namespaced_persistent_volume_claim, pvc, ns)
-                volume_ok = True
-            except ApiException:
-                volume_ok = False
+        # a claim the lifecycle is deleting (deletionTimestamp, pvc-protection still holding it) is absent here as
+        # well: a resume must never attach to it, and the acknowledged pointer stands in rather than a later restart
+        # from inputs (Root's review of 0.11.168)
+        volume_ok = bool(pvc and worker and work_claim_present(kube.core(worker), pvc, ns))
         if gpu_class or not volume_ok:
             checkpoint_ref = pointer
     if checkpoint_ref:
@@ -3183,11 +3192,8 @@ def resume(
         pvc = None  # the shared claim is mounted by name, under checkpoints/<root>
     else:
         try:
-            cur = retry(kube.core(worker).read_namespaced_persistent_volume_claim, pvc, ns)
-            if getattr(getattr(cur, "metadata", None), "deletion_timestamp", None) or (
-                isinstance(cur, dict) and cur.get("metadata", {}).get("deletionTimestamp")
-            ):
-                raise ApiException(status=404, reason="Releasing")  # deleting = gone for a resume: never attach to it
+            if not work_claim_present(kube.core(worker), pvc, ns):
+                raise ApiException(status=404, reason="Releasing")  # gone or deleting: never attach to it
         except ApiException as e:
             if e.status != 404:
                 raise HTTPException(502, f"kubernetes ({worker}): work volume {pvc}: {e.reason}")

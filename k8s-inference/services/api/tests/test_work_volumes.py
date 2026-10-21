@@ -2,6 +2,7 @@
 table of the reclaim pass, its preconditions and records, the resume contract for a released volume, and the operator
 diagnostics. Nothing here deletes an asset, a cache, a shared claim or anything a live Job references."""
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -53,9 +54,11 @@ def claim(name, op=None, uid="u1", rv="1", jobs_ann=None, owners=None, deleting=
     return {"metadata": md, "spec": {"resources": {"requests": {"storage": "8Gi"}}}, "status": {"phase": "Bound"}}
 
 
-def row(op, status="failed", started=True, ended=None, export=None, ckpt=False):
+def row(op, status="failed", started=True, ended=None, export=None, ckpt=False, exit_code=None, role="run"):
     t = datetime.now(timezone.utc) - timedelta(hours=1)
     return {
+        "exit_code": exit_code,
+        "role": role,
         "operation": op,
         "root": op,
         "status": status,
@@ -540,3 +543,68 @@ def test_only_a_reused_claim_is_recorded_a_fresh_successor_volume_is_not_looked_
     with pytest.raises(HTTPException) as e:
         guarded(reused)  # the original's claim is gone: refused
     assert e.value.status_code == 409 and looked == ["op-1-work"]
+
+
+def test_a_deleting_claim_is_absent_for_the_pointer_probe_so_the_checkpoint_pointer_survives(client, monkeypatch):
+    """Root's review of 0.11.168: the first probe in jobs.resume took a claim with a deletionTimestamp as present, so a
+    released-but-terminating volume skipped the acknowledged checkpoint pointer and the run later restarted from its
+    inputs. Deleting is absent for that probe too: the pointer stands in, CHECKPOINT_REF reaches the fresh volume."""
+    import catalog
+
+    c, fake = client
+    r = c.post("/v1/models/batch-example:invoke", json={"input": {"input_prefix": "s3://b/in", "nsteps": 7}}, headers=H)
+    oid = r.json()["id"]
+    job = fake.jobs[(NS, oid)]
+    job["status"] = {"startTime": "2026-10-05T20:00:30Z", "conditions": [{"type": "Failed", "status": "True"}]}
+    job["metadata"]["annotations"][f"{L}/work-volume"] = "released|ended|2026-10-21T10:00:00Z"
+    fake.pvcs[(NS, f"{oid}-work")]["metadata"]["deletionTimestamp"] = "2026-10-21T10:00:01Z"  # pvc-protection holds it
+    m = catalog.get("batch-example")
+    new, created = jobs.resume(
+        NS, oid, "eu-north1", m, catalog.region_params(m, "eu-north1"), pointer="s3://b/ckpt/gen-3"
+    )
+    assert created and new["metadata"]["name"] == f"{oid}-r1"
+    ex = json.loads(new["metadata"]["annotations"][f"{L}/execution"])
+    assert ex["recovery"]["checkpoint_ref"] == "s3://b/ckpt/gen-3"  # the pointer stood in, not a restart from inputs
+    assert f"{L}/restarted-from-inputs" not in new["metadata"]["annotations"]
+    main = next(x for x in new["spec"]["template"]["spec"]["containers"] if x["name"] == "main")
+    assert {e["name"]: e.get("value") for e in main["env"]}["CHECKPOINT_REF"] == "s3://b/ckpt/gen-3"
+    assert (
+        new["spec"]["template"]["spec"]["volumes"][0]["persistentVolumeClaim"]["claimName"] == f"{oid}-r1-work"
+    )  # fresh
+    assert not jobs.work_claim_present(fake, f"{oid}-work", NS) and not jobs.work_claim_present(
+        fake, "op-none-work", NS
+    )
+
+
+def test_a_declared_finalizer_keeps_the_scratch_until_it_delivered(world, monkeypatch):
+    """Root's App review of 168: a run whose main exits with a code the catalog declares in `job.finalize.on_exit_codes`
+    finished its compute and left the delivery to the CPU finalizer on the SAME scratch (RESULT.json says nothing,
+    the uploader records export n/a). Judged from the catalog contract and the lineage's rows, never a constant: kept
+    as "finalizer pending" after the initial delivery failure and after a failed finalizer; released once a finalizer
+    delivered; an undeclared failure code is an ended run (scratch released)."""
+    import catalog
+
+    jobs_by, rows_by, decide = world
+    monkeypatch.setattr(
+        catalog, "get", lambda name: {"job": {"finalize": {"onExitCodes": [75]}}} if name == "md" else None
+    )
+    jobs_by["op-p"] = job_("op-p", "FAILED")
+    jobs_by["op-p"]["metadata"]["labels"][f"{L}/model"] = "md"
+    rows_by["op-p"] = [row("op-p", "failed", exit_code=75, export="n/a")]
+    assert decide(claim("op-p-work"))[:2] == ("keep", "finalizer pending")
+    rows_by["op-p"] = [
+        row("op-p", "failed", exit_code=75, export="n/a"),
+        {**row("op-p-x1", "failed", exit_code=1, export="failed", role="finalize"), "root": "op-p"},
+    ]
+    assert decide(claim("op-p-work"))[:2] == ("keep", "finalizer pending")  # a failed finalizer: the next :export
+    rows_by["op-p"] = [
+        row("op-p", "failed", exit_code=75, export="n/a"),
+        {**row("op-p-x1", "succeeded", exit_code=0, export="succeeded", role="finalize"), "root": "op-p"},
+    ]
+    assert decide(claim("op-p-work"))[:2] == ("release", "delivered by finalizer")
+    rows_by["op-p"] = [row("op-p", "failed", exit_code=1, export="n/a")]  # compute failed: nothing to finalize
+    assert decide(claim("op-p-work"))[:2] == ("release", "ended")
+    jobs_by["op-q"] = job_("op-q", "FAILED")  # a definition without a finalizer: 75 is just a failure
+    jobs_by["op-q"]["metadata"]["labels"][f"{L}/model"] = "plain"
+    rows_by["op-q"] = [row("op-q", "failed", exit_code=75, export="n/a")]
+    assert decide(claim("op-q-work"))[:2] == ("release", "ended")
