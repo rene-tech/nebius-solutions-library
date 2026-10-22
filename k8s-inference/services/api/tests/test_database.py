@@ -1162,7 +1162,9 @@ def test_a_deleted_old_coordinator_cannot_acquire_the_new_gangs_authority(databa
     )  # promotes nothing
     assert closed["checkpoint_ref"] == "c" * 64  # its earlier pointer stays its own history
     rows = attempts.for_operation(op)
-    assert attempts.authority(rows)["pod"] == new_peer  # no rank 0 of incarnation 2 yet: nothing of epoch 1 speaks
+    assert (
+        attempts.authority(rows) is None
+    )  # no rank 0 of incarnation 2 yet: nothing of epoch 1 speaks, no peer substitute (192)
     assert attempts.gang_status(rows) == "started"
     # an unreadable, never-recorded pod claiming rank 0: refused, not attributed to incarnation 2
     facts[f"{op}-workers-0-0-zzzzz"] = {"uid": None, "rank": 0, "restart": None}
