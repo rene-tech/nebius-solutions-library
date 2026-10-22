@@ -140,7 +140,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.188", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.189", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1428,19 +1428,23 @@ def _invoke_job(
         # is left out of the walk (an old runtime image never serves by falling to it), the first that passes is
         # the call's target; none passing = the first's refusal (409, nothing created). Until 0.11.187 only the
         # resolved first target was fenced, so its rollout blocked a converged alternative (Root, 20:49Z).
-        rollouts: dict[str, dict | None] = {}
+        rollouts: dict[
+            tuple[str, str], dict | None
+        ] = {}  # keyed (cluster, object): the same object name exists per deployment
         refusal: RolloutPending | None = None
         for cc, c in candidates:
             try:
-                rollouts[c["object"]] = _rollout_fence(m, kube.cluster_region(_cluster_id_of(cc)), ex, obj=c["object"])
+                rollouts[(cc, c["object"])] = _rollout_fence(
+                    m, kube.cluster_region(_cluster_id_of(cc)), ex, obj=c["object"]
+                )
             except RolloutPending as e:
                 refusal = refusal or e
-        candidates = [(cc, c) for cc, c in candidates if c["object"] in rollouts]
+        candidates = [(cc, c) for cc, c in candidates if (cc, c["object"]) in rollouts]
         if not candidates:
             raise refusal  # type: ignore[misc]  # every candidate refused: the first's reason
         cluster, target_v = candidates[0]  # readiness, the one request, the recorded rollout
         region = kube.cluster_region(_cluster_id_of(cluster))  # with fallback.regions the first may be elsewhere
-        rollout = rollouts[target_v["object"]]
+        rollout = rollouts[(cluster, target_v["object"])]
         application = bool(ex and ex.get("io_mode") == "application")
         output_prefix = (
             "" if application else f"s3://{artifacts.storage(p.namespace, region)['bucket']}/operations/{name}"

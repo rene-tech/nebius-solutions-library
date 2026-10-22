@@ -212,7 +212,11 @@ def fallback_switch() -> list[str]:
                 or stages.is_waiting(job)
             ):
                 continue
-            created = datetime.fromisoformat(str(job["metadata"]["creationTimestamp"]).replace("Z", "+00:00"))
+            # the wait counts from the moment the run could be placed: a stage the gate released counts from the gate's
+            # admission (stages.ADMITTED_AT), so a newly released stage gets its full preferred-class wait; any other
+            # run from its creation (api 0.11.189)
+            since = ann.get(stages.ADMITTED_AT) or job["metadata"]["creationTimestamp"]
+            created = datetime.fromisoformat(str(since).replace("Z", "+00:00"))
             if (now - created).total_seconds() < int(wait):
                 continue
             if clusters is None:

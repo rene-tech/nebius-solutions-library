@@ -927,6 +927,13 @@ def test_fallback_never_moves_a_stage_parked_by_the_gate_and_a_released_stage_ke
     job["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] = "prefer-rtx-pro-6000"
     stages.bind_results(job, json.dumps({"root": {"result_ref": "s3://b/root", "attempt": "op-root-abc"}}))
     job["spec"]["suspend"] = False
+    # api 0.11.189: the wait counts from the gate's admission, not from the Job's creation: a stage released just now
+    # gets its full preferred-class wait however long it waited for its dependencies
+    from datetime import datetime, timezone
+
+    job["metadata"]["annotations"][stages.ADMITTED_AT] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert appmod.fallback_switch() == [] and ("tenant-demo", f"{op}-r1") not in fake.jobs
+    job["metadata"]["annotations"][stages.ADMITTED_AT] = "2026-10-05T20:30:00Z"  # admitted long ago: the wait passed
     moved = appmod.fallback_switch()
     assert moved == [f"{op}-r1"]
     new = fake.jobs[("tenant-demo", f"{op}-r1")]

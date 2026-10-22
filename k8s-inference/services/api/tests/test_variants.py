@@ -816,6 +816,47 @@ def test_require_converged_fences_every_candidate_and_takes_the_first_converged(
     assert rec["id"] == "chat-spot"  # the first CONVERGED candidate, not the resolved first
     assert [t["id"] for t in _json.loads(env["TARGETS"])] == ["chat-spot", "chat-cheap"]  # the unconverged one is out
     assert job["metadata"]["annotations"]["serverless2.nebius/endpoint-revision"] == "r-2"
+    # the same object name in two deployments (a deployment's first variant keeps the model's id): the fence is per
+    # (cluster, object), never per object name (api 0.11.189): `chat` diverged on the hub, converged on south -> south
+    e2 = {
+        **catalog.get("chat"),
+        "regions": ["hub", "south"],
+        "gpu_classes": ["rtx-pro-6000", "h100", "l40s"],
+        "deployments": {
+            **catalog.get("chat")["deployments"],
+            "eu-south1": {"variants": [{"name": "rtx", "pool": "rtx6000-ondemand-1x", "min": 0, "max": 2}]},
+        },
+        "routing": {
+            **catalog.get("chat")["routing"],
+            "fallback": {"max_switches": 3, "cold_wait_s": 5, "regions": True},
+        },
+    }
+    south_pool = {"region": "south", "pool": "rtx6000-ondemand-1x", "gpu_class": "rtx-pro-6000", "gpus_per_node": 1}
+    monkeypatch.setattr(
+        kube, "fleet", lambda: {**VARIANT_FLEET, "pools": {**VARIANT_FLEET["pools"], "south-rtx": south_pool}}
+    )
+    monkeypatch.setattr(catalog, "get", lambda name: e2 if name == "chat" else None)
+    monkeypatch.setattr(kube, "regions", lambda: ["eu-north1", "eu-south1"])
+    monkeypatch.setattr(kube, "cluster_region", lambda x: {"hub": "eu-north1", "south": "eu-south1"}.get(x, x))
+    monkeypatch.setattr(models, "endpoint_domain", lambda region: f"{region}.example")
+
+    def by_region(n, ns, region="eu-north1", nodes=1):
+        return (
+            status(n, ns, region, nodes) if region != "eu-south1" else {**status("south-chat", ns), "status": "ready"}
+        )
+
+    converged.update({"chat": False, "chat-spot": False, "chat-cheap": False})  # the hub's three diverged
+    monkeypatch.setattr(kube, "endpoint_status", by_region)  # south's `chat` converged
+    r = c.post("/v1/models/chat:invoke", json=body, headers=H)
+    assert r.status_code == 202, r.text
+    rec = _json.loads(
+        fake.jobs[("tenant-demo", r.json()["id"])]["metadata"]["annotations"]["serverless2.nebius/target"]
+    )
+    assert (rec["cluster"], rec["id"]) == ("south", "chat")
+    monkeypatch.setattr(kube, "endpoint_status", status)
+    monkeypatch.setattr(kube, "regions", lambda: ["eu-north1"])
+    e1 = {**e2, "regions": ["hub"], "deployments": {k: v for k, v in e2["deployments"].items() if k != "eu-south1"}}
+    monkeypatch.setattr(catalog, "get", lambda name: e1 if name == "chat" else None)
     # every candidate diverged: the first's refusal, nothing created
     converged.update({"chat-spot": False, "chat-cheap": False})
     before = len(fake.jobs)

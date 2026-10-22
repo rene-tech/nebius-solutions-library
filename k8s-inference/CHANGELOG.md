@@ -4,7 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.188, jobs 0.1.36, dispatcher 0.2.17
+## api 0.11.189, jobs 0.1.36, dispatcher 0.2.17 (0.11.188 = the same cut before Root's review; built, never applied)
+
+- The candidate fence is keyed by (cluster, object): a deployment's first variant keeps the model's id in every region,
+  so a per-object key let one region's diverged rollout stand for another's converged one. Regression: `chat` diverged
+  on the hub, converged on south -> south.
+- The fallback wait of a stage the gate released counts from the gate's admission (`stage-admitted-at`), not from the
+  Job's creation: a newly released stage gets its full preferred-class wait however long it waited for its
+  dependencies. Regression: released now -> not moved; admitted long ago -> moved.
 
 - URGENT (Root, 2026-10-22 20:52Z, op-10a0f269ad65cb4b): the capacity fallback never moves a stage parked by the
   dependency gate. A waiting stage (label `stage-waiting`, the queue that never exists, suspended) is QUEUED by design,
