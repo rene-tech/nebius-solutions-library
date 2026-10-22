@@ -4,6 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.196, jobs 0.1.36, dispatcher 0.2.17 (0.11.195 = the same cut; its frozen gate failed on the contract below; built, never applied)
+
+- `Model.parameters[].options` is declared as the definition's own scalars (`str | int | float | bool`), no longer
+  `list[str]`: the gromacs-mpi class offers node counts 1/2/4/8 as numbers and the served catalog carried them as
+  such (the route never validated the response; the OpenAPI contract and `test_model_shapes_are_declared` rejected
+  them once the frozen tree carried the live overlay). Wire values unchanged. Regression: numeric, string and mixed
+  scalar options accepted, a non-scalar choice refused.
+
 ## api 0.11.195, jobs 0.1.36, dispatcher 0.2.17 (0.11.194 = a cut with a blanket terminal exit rule; built, never applied)
 
 - A multi-node run's retry policy (docs/JOBS.md "Retries"): the SAME declaration as a single-node run's (`job.retry:

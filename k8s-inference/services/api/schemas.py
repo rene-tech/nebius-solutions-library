@@ -526,7 +526,9 @@ class ModelParameter(BaseModel):
     type: Literal["string", "number", "boolean", "select", "text", "file"]
     label: str | None = None
     default: Any = None
-    options: list[str] | None = None
+    # the choices of a `select` as the definition wrote them: strings, or the numbers a scientific enumeration uses
+    # (node counts 1/2/4/8, GPU counts); never stringified on the wire (api 0.11.196)
+    options: list[str | int | float | bool] | None = None
     required: bool | None = None
     help: str | None = None
 

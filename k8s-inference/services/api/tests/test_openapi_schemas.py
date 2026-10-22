@@ -667,3 +667,24 @@ def test_binding_shapes_are_declared(client):
     for b in listed.json():
         covered(b, "Binding", "Binding (listed)")
     assert c.delete("/v1/bindings/b1", headers=H).status_code == 204
+
+
+def test_model_parameter_options_keep_numeric_choices():
+    """api 0.11.196: a `select` parameter's options are the definition's own scalars (the MPI class offers node counts
+    1/2/4/8 as numbers); the contract never stringifies them and never accepts a non-scalar choice."""
+    import pytest
+
+    p = schemas.ModelParameter.model_validate(
+        {"name": "nodes", "type": "select", "default": 2, "options": [1, 2, 4, 8]}
+    )
+    assert p.options == [1, 2, 4, 8] and p.model_dump()["options"] == [1, 2, 4, 8]
+    assert schemas.ModelParameter.model_validate({"name": "m", "type": "select", "options": ["a", "b"]}).options == [
+        "a",
+        "b",
+    ]
+    assert schemas.ModelParameter.model_validate({"name": "t", "type": "select", "options": [0.5, True]}).options == [
+        0.5,
+        True,
+    ]
+    with pytest.raises(Exception):
+        schemas.ModelParameter.model_validate({"name": "x", "type": "select", "options": [{"v": 1}]})
