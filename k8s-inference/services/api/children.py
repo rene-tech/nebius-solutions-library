@@ -797,13 +797,23 @@ def complete(
             # holds a live reservation. No customer or admin key is stored or forwarded; the call goes through the
             # model's gateway (never LiteLLM's pass-through, which would need a key). Application I/O: the request
             # from the binding, one durable POST, the capture delivered to the platform-owned destination
-            # the same target resolution as an ordinary call (api._call_target, 0.11.194): the variant the model's
-            # routing selects within the child's region (fixed at admission: its binding copy and result_ref live
-            # there), the convergence fence on every candidate, the identities recorded on the Job, the bounded
-            # pre-send fallback for the caller. A fence refusal keeps the intent pending (the sweep asks again)
+            # the same target resolution as an ordinary call (api._call_target, 0.11.195): the variant the model's
+            # routing selects (`routing.field` read from the unit's INLINE input; a referenced input is never fetched
+            # here, so it resolves like an ordinary application-I/O call: the routing default) within the child's
+            # region (fixed at admission: its binding copy and result_ref live there), the convergence fence on EVERY
+            # candidate as if the call said `require_converged` (a child cannot say it: the parent is a run, which
+            # refuses the option; the row's image check sees the base image only, never a variant's): a candidate
+            # whose rollout is not converged is left out, the first converged one is the target, none converged
+            # keeps the intent pending until one is (the sweep asks again; synchronously a 503 replay). The Job's
+            # recorded execution stays the child's own (`ex`): the fence is the immutable-image contract, no option
             try:
                 _cluster, _v, _rollout, target = api._call_target(
-                    {**cm, "litellm_route": None}, api._deployment_cluster(cm, row["region"]), {}, True, ex, child
+                    {**cm, "litellm_route": None},
+                    api._deployment_cluster(cm, row["region"]),
+                    (row.get("request") or {}).get("input") or {},
+                    True,
+                    {**ex, "require_converged": True},
+                    child,
                 )
             except api.RolloutPending as e:
                 return _ambiguous(row, f"target: {e.detail}", synchronous)
@@ -825,6 +835,11 @@ def complete(
                 target=target,
             )
             a = cjob["metadata"]["annotations"]
+            if _rollout:  # what the one request could reach at admission (as app.invoke records it)
+                if _rollout.get("latest_ready"):
+                    a[f"{LABEL}/endpoint-revision"] = str(_rollout["latest_ready"])
+                if _rollout.get("serving_images"):
+                    a[f"{LABEL}/endpoint-image"] = str(_rollout["serving_images"][0])[:1000]
             a[f"{LABEL}/child-of"] = row["parent"]
             a[f"{LABEL}/child-root"] = root
             a[f"{LABEL}/child-unit"] = unit_id

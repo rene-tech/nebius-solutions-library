@@ -103,6 +103,18 @@ def rig(database, client, monkeypatch):
     monkeypatch.setattr(kube, "regions", lambda: ["eu-north1"])
     monkeypatch.setattr(kube, "stamp_last_request", lambda *a, **k: None)
     monkeypatch.setattr(attempts, "enabled", lambda: False)
+    # the child endpoint's rollout state (api 0.11.195: a child is fenced on convergence as an ordinary call with
+    # require_converged; the fake cluster has no InferenceService to read it from): converged, nothing ready
+    rollout = {"latest_created": "r-1", "latest_ready": "r-1", "latest_rolled_out": "r-1", "serving_images": []}
+    monkeypatch.setattr(
+        kube,
+        "endpoint_status",
+        lambda name, ns, region="eu-north1", nodes=1: {
+            "status": "scaled-to-zero",
+            "replicas_ready": 0,
+            "rollout": {**rollout, "converged": True, "reason": None},
+        },
+    )
     # the tenant bucket as a dict: the capture manifest the caller delivers, presigned URLs as plain names
     bucket: dict = {}
     monkeypatch.setattr(
@@ -1043,6 +1055,16 @@ def test_the_owner_reads_a_unit_back_without_signed_urls_and_a_foreign_owner_get
 def _external_rig(database, client, monkeypatch, delivery="application"):
     """A tenant whose storage is external (no tenant-storage Secret: artifacts.storage answers 404) and a run class
     whose children deliver through the application (or `platform`, to see the preflight refuse it)."""
+    rollout = {"latest_created": "r-1", "latest_ready": "r-1", "latest_rolled_out": "r-1", "serving_images": []}
+    monkeypatch.setattr(  # the child endpoint's rollout state: converged (api 0.11.195 fences a child on it)
+        kube,
+        "endpoint_status",
+        lambda name, ns, region="eu-north1", nodes=1: {
+            "status": "scaled-to-zero",
+            "replicas_ready": 0,
+            "rollout": {**rollout, "converged": True, "reason": None},
+        },
+    )
     c, fake = client
     db.migrate()
     keys.import_records(
@@ -1681,12 +1703,7 @@ def test_a_child_resolves_its_target_exactly_as_an_ordinary_call(rig, monkeypatc
     }
     fake.entries["cosmos-nano"] = _entry(spec)
     monkeypatch.setattr(models_mod, "endpoint_domain", lambda region: "203.0.113.10.sslip.io")
-    monkeypatch.setattr(
-        kube,
-        "endpoint_status",
-        lambda name, ns, region="eu-north1", nodes=1: {"status": "scaled-to-zero", "replicas_ready": 0},
-    )
-    # the ordinary asynchronous call of the same model by the same key
+    # the ordinary asynchronous call of the same model by the same key (the rig's rollout state: converged)
     r = c.post("/v1/models/cosmos-nano:invoke", json={"mode": "async", "input": {}}, headers=H)
     assert r.status_code == 202, r.text
     ordinary = fake.jobs[(NS, r.json()["id"])]
@@ -1717,3 +1734,103 @@ def test_a_child_resolves_its_target_exactly_as_an_ordinary_call(rig, monkeypatc
     got = c.get(f"/v1/operations/{child}", headers=H).json()
     assert got["target"]["id"] == orec["id"] and got["target"]["observed"] is False
     assert got["target"]["candidates"] == [x["id"] for x in orec["candidates"]]
+
+
+def test_a_child_is_fenced_on_every_candidate_and_routes_from_its_inline_input(rig, monkeypatch):
+    """api 0.11.195 (Root): a child is judged by the convergence fence on EVERY candidate as if the call said
+    `require_converged` (a child cannot say it: the parent is a run, and the row's image check sees the base image
+    only, never a variant's): a chosen variant whose rollout is stale is skipped for the converged fallback; none
+    converged keeps the intent pending (503 replay synchronously, no Job) until one converges; the recorded execution
+    stays the child's own. `routing.field` is read from the unit's INLINE input; a referenced input (never fetched
+    here) takes the routing default, as an ordinary application-I/O call does."""
+    c, fake, op, identity = rig
+    spec = {
+        **ENDPOINT,
+        "gpu": {"count": 1, "classes": ["h100", "l40s"]},
+        "images": {"l40s": "example.org/cosmos:1-l40s"},
+        "deployments": {
+            "eu-north1": {
+                "variants": [
+                    {"name": "fast", "pool": "h100-spot-1x", "min": 0, "max": 2},
+                    {"name": "cheap", "pool": "l40s-ondemand-1x", "min": 0, "max": 2},
+                ]
+            }
+        },
+        "routing": {
+            "field": "tier",
+            "map": {"budget": "cheap"},
+            "default": "priority",
+            "fallback": {"max_switches": 1, "cold_wait_s": 5},
+        },
+    }
+    fake.entries["cosmos-nano"] = _entry(spec)
+    monkeypatch.setattr(models_mod, "endpoint_domain", lambda region: "203.0.113.10.sslip.io")
+    converged = {"cosmos-nano": True, "cosmos-nano-cheap": True}
+
+    def status(n, ns, region="eu-north1", nodes=1):
+        ok = converged.get(n, True)
+        return {
+            "status": "ready" if ok else "deploying",
+            "replicas_ready": 0,
+            "rollout": {
+                "latest_created": "r-2",
+                "latest_ready": "r-2" if ok else "r-1",
+                "latest_rolled_out": "r-2" if ok else "r-1",
+                "serving_images": [],
+                "converged": ok,
+                "reason": None if ok else "revisions differ",
+            },
+        }
+
+    monkeypatch.setattr(kube, "endpoint_status", status)
+
+    def record(unit):
+        cjob = fake.jobs[(NS, children.child_id(op, unit))]
+        env, _ = _env(cjob)
+        return json.loads(cjob["metadata"]["annotations"][f"{LABEL}/target"]), env, cjob["metadata"]["annotations"]
+
+    def settle(unit):
+        child = children.child_id(op, unit)
+        children._end(op, unit, "cancelled: test")
+        keys.release(child, 0.0)
+
+    # inline input: routing.field selects the mapped variant (cheap), both converged
+    assert _post(c, op, "u1", {"prompt": "x", "tier": "budget"}).status_code == 201
+    rec, env, ann = record("u1")
+    assert rec["id"] == "cosmos-nano-cheap" and [x["id"] for x in rec["candidates"]] == [
+        "cosmos-nano-cheap",
+        "cosmos-nano",
+    ]
+    assert [t["id"] for t in json.loads(env["TARGETS"])] == ["cosmos-nano-cheap", "cosmos-nano"]
+    settle("u1")
+    # a referenced input: never fetched here, the routing default (priority: the first declared target)
+    sha = hashlib.sha256(b'{"tier":"budget"}').hexdigest()
+    r = _post(
+        c,
+        op,
+        "u2",
+        input_ref={"sha256": sha, "size_bytes": 17},
+        transport={"input_url": "https://app.example/in/2?s=a"},
+    )
+    assert r.status_code == 201, r.text
+    rec, env, ann = record("u2")
+    assert rec["id"] == "cosmos-nano" and [t["id"] for t in json.loads(env["TARGETS"])] == [
+        "cosmos-nano",
+        "cosmos-nano-cheap",
+    ]
+    settle("u2")
+    # none converged: the intent stays pending, nothing created (503: replay the same request)
+    converged["cosmos-nano"] = converged["cosmos-nano-cheap"] = False
+    r = _post(c, op, "u3", {"prompt": "x"})
+    child3 = children.child_id(op, "u3")
+    assert r.status_code == 503 and "not converged" in r.text and (NS, child3) not in fake.jobs, r.text
+    assert children.readback(NS, op, "u3")["state"] == "pending"
+    assert children.sweep() == [f"{child3}:pending"]  # still fenced: the sweep leaves it pending
+    # the chosen variant's rollout stays stale, the fallback converged: the replay completes on the converged one only
+    converged["cosmos-nano-cheap"] = True
+    r = _post(c, op, "u3", {"prompt": "x"})
+    assert r.status_code == 200 and (NS, child3) in fake.jobs and children.readback(NS, op, "u3")["state"] == "active"
+    rec, env, ann = record("u3")
+    assert rec["id"] == "cosmos-nano-cheap" and "candidates" not in rec and "TARGETS" not in env
+    assert ann[f"{LABEL}/endpoint-revision"] == "r-2"
+    assert json.loads(ann[f"{LABEL}/execution"]) == {"io_mode": "application", "private_input_ref": child3}

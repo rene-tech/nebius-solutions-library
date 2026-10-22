@@ -322,7 +322,7 @@ The platform images are tagged `<registry>/serverless2/<component>:<tag>` with t
 
 | Component | Current version |
 |---|---|
-| `services/api` image | 0.11.194 |
+| `services/api` image | 0.11.195 |
 | `services/dispatcher` image | 0.2.17 |
 | `services/jobs` image | 0.1.36 |
 | `services/ops` image | 0.1.12 |

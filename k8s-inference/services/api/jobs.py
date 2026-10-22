@@ -723,13 +723,23 @@ def build_run(
             }
         }
     if nodes > 1:
-        if (ex or {}).get("retry") or _class_retry(r):
-            raise HTTPException(400, "retry applies to single-node runs (a multi-node run restarts as a whole)")
         if work_aliases(r):
             raise HTTPException(400, "workMountAliases apply to single-node runs (/work is node-local per pod there)")
         if r.get("assets"):
             raise HTTPException(400, "assets apply to single-node runs")
-        return _multinode(name, model, r, values, pod, nodes, gpus, meta, timeout_s, placement)
+        return _multinode(
+            name,
+            model,
+            r,
+            values,
+            pod,
+            nodes,
+            gpus,
+            meta,
+            timeout_s,
+            placement,
+            (ex or {}).get("retry") or _class_retry(r),
+        )
     pod["_tenant"] = tenant
     _mount_data(r, pod, [main])
     _mount_weights(r, pod, [main])
@@ -825,6 +835,7 @@ def _multinode(
     meta: dict,
     timeout_s: int | None,
     placement: dict | None,
+    retry: dict | None = None,
 ) -> dict:
     if nodes > MULTINODE_MAX_NODES:
         raise HTTPException(400, f"nodes must be <= {MULTINODE_MAX_NODES}")
@@ -996,15 +1007,18 @@ def _multinode(
     }
     if timeout_s:
         job_spec["activeDeadlineSeconds"] = timeout_s
-    # the indexed Job's pod failure rules, in order (api 0.11.194, docs/JOBS.md "Multi-node runs"): first the
-    # finalizer's "compute done, delivery pending" exit (docs/JOBS.md "Finalization by the application"), then a
-    # disruption (DisruptionTarget: drain, preemption, node loss) COUNTED (with backoffLimit 0 the indexed Job fails
-    # and the JobSet recreates the gang; Ignore would replace one index while the other ranks idle), then any exit of
-    # main other than 0, 137 and 143 is TERMINAL. A terminal exit fails the Job with reason PodFailurePolicy and the
-    # JobSet's `terminal` rule ends the gang (FailJobSet) instead of its Recreate restart: a finished or spent
-    # computation is never replayed (op-5ea6831076e6fa0a: three restarts of an exhausted budget, 2026-10-22). 137 and
-    # 143 (a kill, a SIGTERM: infrastructure) and a pod lost without an exit of main fail the Job by its backoffLimit
-    # (reason BackoffLimitExceeded) and the gang restarts from its last checkpoint, at most maxRestarts times.
+    # the indexed Job's pod failure rules, in order (api 0.11.195, docs/JOBS.md "Retries"): first the finalizer's
+    # "compute done, delivery pending" exit (docs/JOBS.md "Finalization by the application"), then a disruption
+    # (DisruptionTarget: drain, preemption, node loss) COUNTED (with backoffLimit 0 the indexed Job fails and the
+    # JobSet recreates the gang; Ignore would replace one index while the other ranks idle), then, with a retry policy
+    # (the class's `retry: {maxAttempts, onExitCodes}`, or the request's `execution.retry`: the same declaration as a
+    # single-node run's, applied to the whole gang), an exit of main in `onExitCodes` restarts the gang and any OTHER
+    # non-zero exit is the application's verdict: the Job fails with reason PodFailurePolicy and the JobSet's
+    # `terminal` rule ends the gang (FailJobSet) instead of a Recreate that replays a finished or spent computation
+    # (op-5ea6831076e6fa0a: three restarts of an exhausted budget, 2026-10-22). The declared codes keep the exits a
+    # rank cannot tell from a peer's loss retryable (a coordinator's mpirun exits 1 when a peer is preempted before
+    # the JobSet sees it; Root + placement, 22:5xZ): an application marks its own verdict with an exit outside them.
+    # Without a policy every loss restarts the gang, at most JOB_BACKOFF_LIMIT times, as before.
     rules = []
     if (fz := r.get("finalize")) and fz.get("onExitCodes"):
         rules.append(
@@ -1013,31 +1027,46 @@ def _multinode(
                 "onExitCodes": {"containerName": "main", "operator": "In", "values": list(fz["onExitCodes"])},
             }
         )
-    rules += [
-        {"action": "Count", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]},
-        {"action": "FailJob", "onExitCodes": {"containerName": "main", "operator": "NotIn", "values": [0, 137, 143]}},
-    ]
+    rules.append({"action": "Count", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]})
+    if retry:
+        codes = sorted({int(c) for c in retry["on_exit_codes"]})
+        rules += [
+            {"action": "Count", "onExitCodes": {"containerName": "main", "operator": "In", "values": codes}},
+            {
+                "action": "FailJob",
+                "onExitCodes": {"containerName": "main", "operator": "NotIn", "values": sorted({0, *codes})},
+            },
+        ]
     job_spec["podFailurePolicy"] = {"rules": rules}
+    terminal = any(rule["action"] == "FailJob" for rule in rules)
+    max_restarts = max(0, int(retry["max_attempts"]) - 1) if retry else JOB_BACKOFF_LIMIT
     meta["annotations"][f"{LABEL}/nodes"] = str(nodes)
     meta["annotations"][f"{LABEL}/interconnect"] = interconnect
     meta["annotations"][f"{LABEL}/checkpoints"] = checkpoints
     spec = {
         "network": {"enableDNSHostnames": True, "subdomain": name, "publishNotReadyAddresses": True},
         "successPolicy": {"operator": "All", "targetReplicatedJobs": ["workers"]},
-        # an infrastructure loss (preemption, node loss, a killed rank) fails the indexed Job (backoffLimit 0) and the
-        # JobSet recreates every pod: ranks restart together from the last checkpoint; a terminal exit (the pod
-        # failure rules above, reason PodFailurePolicy) ends the gang instead
+        # a counted pod loss (preemption, node loss, a declared retryable exit) fails the indexed Job (backoffLimit 0)
+        # and the JobSet recreates every pod: ranks restart together from the last checkpoint, at most maxRestarts
+        # (= the retry policy's maxAttempts - 1) times; a terminal exit (a FailJob rule above, reason
+        # PodFailurePolicy) ends the gang instead
         "failurePolicy": {
-            "maxRestarts": JOB_BACKOFF_LIMIT,
+            "maxRestarts": max_restarts,
             "restartStrategy": "Recreate",
-            "rules": [
+            **(
                 {
-                    "name": "terminal",  # JobSet rule names: [A-Za-z0-9_:]+ only (webhook)
-                    "action": "FailJobSet",
-                    "onJobFailureReasons": ["PodFailurePolicy"],
-                    "targetReplicatedJobs": ["workers"],
+                    "rules": [
+                        {
+                            "name": "terminal",  # JobSet rule names: [A-Za-z0-9_:]+ only (webhook)
+                            "action": "FailJobSet",
+                            "onJobFailureReasons": ["PodFailurePolicy"],
+                            "targetReplicatedJobs": ["workers"],
+                        }
+                    ]
                 }
-            ],
+                if terminal
+                else {}
+            ),
         },
         "ttlSecondsAfterFinished": JOB_TTL_S,
         "replicatedJobs": [

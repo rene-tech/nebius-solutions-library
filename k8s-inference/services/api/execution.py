@@ -453,7 +453,9 @@ def apply_retry(job: dict, retry: dict) -> None:
     attempt, unless recovery `fail` made it fatal). Rules the run class put first (the finalizer's FailJob codes) stay
     first. The same Job, member, reservation and GPU bound: nothing is admitted or reserved again."""
     if job.get("kind") != "Job":
-        raise HTTPException(400, "execution.retry applies to single-node runs (a multi-node run restarts as a whole)")
+        raise HTTPException(
+            400, "apply_retry renders a single-node Job (a gang's policy is rendered by jobs.build_jobset)"
+        )
     codes = list(retry["on_exit_codes"])
     rules = job["spec"].setdefault("podFailurePolicy", {}).get("rules") or []
     leading = [r for r in rules if r.get("action") == "FailJob" and "onExitCodes" in r]  # the finalizer's codes

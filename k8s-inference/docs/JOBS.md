@@ -265,16 +265,16 @@ whole node (`gpu` = the preset's GPU count, so the pod takes the node), the same
   `local` (default) keeps them under `/work`, gone with the pod. Rank 0 uploads `/work`
   (minus `in/` and `checkpoint/`) and `STATUS.json`; every rank uploads its attempt record
   (`UPLOAD_SCOPE=rank0`).
-- **Failure, preemption, resume.** The indexed Job has `backoffLimit: 0` and classifies a pod
-  failure once (api 0.11.194): an exit of `main` other than 0, 137 and 143 is the application's
-  verdict (a spent budget, a wrong input, the finalizer's delivery-pending exit): the Job fails with
-  reason `PodFailurePolicy` and the JobSet's `terminal` rule ends the run (`FailJobSet`), never a
-  restart that replays a finished or spent computation. An infrastructure loss (spot preemption,
-  node drain, node loss: `DisruptionTarget`, counted; a kill or SIGTERM of `main`: 137/143; a pod
-  gone without an exit) fails the Job by its backoffLimit and the JobSet's
+- **Failure, preemption, resume.** The indexed Job has `backoffLimit: 0`; any pod loss (spot
+  preemption, node loss, an application exit) fails it and the JobSet's
   `failurePolicy: {maxRestarts: 3, restartStrategy: Recreate}` recreates every pod, so the ranks
   restart together from the last checkpoint (restart-all; a partial rank set cannot continue an
-  NCCL job). After `maxRestarts` the run is FAILED. `:cancel` suspends the JobSet (pods get
+  NCCL job). After `maxRestarts` the run is FAILED. With a retry policy (the class's `retry`, or
+  the request's `execution.retry`, api 0.11.195, "Retries") only an exit of `main` in `onExitCodes`
+  restarts the gang (at most `maxAttempts - 1` times); any other non-zero exit is the application's
+  verdict and ends the run (`podFailurePolicy` FailJob, the JobSet's `terminal` rule `FailJobSet`),
+  never a restart that replays a finished or spent computation. A disruption (`DisruptionTarget`)
+  is counted, never ignored, so no rank is left waiting for one replaced index. `:cancel` suspends the JobSet (pods get
   SIGTERM, uploaders record the attempts) and annotates it CANCELLED; `:resume` renders
   `<id>-r<n>` again on the same shared checkpoint directory (409 with `checkpoints: local`).
   Status, attempts (one per pod per restart) and billing (pod-seconds x GPUs, summed over ranks and
@@ -354,7 +354,7 @@ docs.nebius.com/kubernetes/gpu/clusters, docs.nebius.com/kubernetes/node-groups/
 | **NIC claims are ExactCount: 8 per node (4 on GB300).** | Kueue's DRA accounting (0.20) supports ExactCount claims only; the tenant's `ib-8` / `ib-4` templates hand the pod every NIC of its node (the pod has the whole node anyway). |
 | **Size of one run**: `nodes <= MULTINODE_MAX_NODES` (64 by default), a node group holds at most 100 nodes, and a fabric has limited GPU capacity. | Nebius publishes no fixed maximum per GPU cluster; "each fabric has limited GPU capacity" and a GPU cluster is bounded by the quota of its project and the free capacity of its fabric. A 16-node run needs 16 nodes in ONE pool (one node group, one GPU cluster): size `max_nodes` (and the reservation) accordingly; the Kueue quota of the pool is NICs per node x `max_nodes`. |
 | **Spot preemption = restart-all** from the last checkpoint; after `maxRestarts` (3) the run is FAILED. | A partial rank set cannot continue an NCCL job. Use `checkpoints: shared` so the restart (and a `:resume`) continues from the shared filesystem; `local` checkpoints die with the pod. Reserved or on-demand pools avoid the restarts. |
-| **"Delivery pending" never restarts the gang.** A class with `finalize.on_exit_codes` installs that exit as the FIRST `podFailurePolicy` FailJob rule on the indexed Job; the JobSet's `terminal` rule (`FailJobSet` on reason `PodFailurePolicy`) ends the gang for it as for any other terminal exit (api 0.11.194): the completed science is never recomputed; `:export` runs the model's finalizer as ONE CPU pod on the shared checkpoint claim ("Finalization by the application"). Needs `checkpoints: shared`; a gang without it retains nothing to deliver (409). A managed-I/O gang has no re-export (rank 0's `/work` is node-local). | JobSet ≥ v0.6 (`failurePolicy.rules`). |
+| **"Delivery pending" never restarts the gang.** A class with `finalize.on_exit_codes` installs that exit as the FIRST `podFailurePolicy` FailJob rule on the indexed Job; the JobSet's `terminal` rule (`FailJobSet` on reason `PodFailurePolicy`) ends the gang for it, as for a retry policy's terminal exits (api 0.11.195, "Retries"): the completed science is never recomputed; `:export` runs the model's finalizer as ONE CPU pod on the shared checkpoint claim ("Finalization by the application"). Needs `checkpoints: shared`; a gang without it retains nothing to deliver (409). A managed-I/O gang has no re-export (rank 0's `/work` is node-local). | JobSet ≥ v0.6 (`failurePolicy.rules`). |
 | **One run per node at a time.** | A pod requests the preset's GPU count, CPU and memory; nothing else fits on the node while it runs. |
 | **Which platforms and regions have fabrics** | H100 (`gpu-h100-sxm`): eu-north1 `fabric-2/3/4/6`. H200 (`gpu-h200-sxm`): eu-north1 `fabric-7`, eu-west1 `fabric-5`, eu-north2 `eu-north2-a`. B200 (`gpu-b200-sxm`, `8gpu-160vcpu-1792gb`): us-central1, me-west1. B300 (`gpu-b300-sxm`, `8gpu-192vcpu-2768gb`): uk-south1, eu-west2, us-north1. GB300 (`gpu-gb300`): 4 NICs per node. No fabric: L40S, RTX PRO 6000, every 1-GPU preset. The fabric names change as Nebius adds capacity: `infiniband_fabric` in `terraform.tfvars` is the one place to update (docs.nebius.com/compute/clusters/gpu). |
 
@@ -440,7 +440,7 @@ identity or profile does not exist for a caller.
 | `workload_identity_ref` | an identity of the tenant: the pod runs as the ServiceAccount `identity-<ref>` (same Role as the runner, nothing more) and the main container gets a projected token with the identity's audience at `/var/run/secrets/workload-identity/token` (`AWS_WEB_IDENTITY_TOKEN_FILE` set, plus the identity's `env`, e.g. `AWS_ROLE_ARN`). The kubelet mints it per pod and renews it; a storage provider trusts the cluster's OIDC issuer (`GET /v1/fleet` `execution.oidc_issuers`, Nebius Managed Kubernetes publishes `https://oidc.mk8s.api.nebius.cloud/<cluster id>`) and its own role/trust policy enforces the permitted bucket, paths and actions. The token's subject is the ServiceAccount, so two runs with the same identity are the same principal to the provider; a narrower grant is the provider's (or the application's) to enforce |
 | `private_input_ref` | a binding of the tenant (`PUT /v1/bindings/<ref>` with string data: credentials where no federation exists, a sensitive manifest): copied into a per-operation Secret and mounted read-only into the main container only, under `/var/run/serverless2/private/<key>` (`PRIVATE_INPUT_DIR`). A binding serves one operation and that operation's resumes (another operation gets 409: a new job needs a new grant); a new `PUT` refreshes the files of a running attempt within the kubelet's sync period (no restart); `DELETE` empties them first, then removes everything. Nothing of it enters the Job, the operation's response or the logs |
 | `placement` | `gpu_preference` narrows and orders the model's GPU classes (a class the model does not list is an error), `allowed_clusters` narrows its regions; `fallback_wait_s` bounds how long the run waits for its first choice before the next class is tried (docs/SCHEDULING.md) |
-| `retry` | bounded application retries of this run, within the same Job (one member, one reservation, one GPU bound): `{"max_attempts": 2, "on_exit_codes": [137, 143]}` renders at most two pods, a replacement only after an exit in `on_exit_codes` (the retained scientific policy's SIGKILL/SIGTERM exits by default), any other non-zero exit fails the run at once; infrastructure disruptions stay the platform's (ignored, never an attempt). Overrides the run class's own `retry` policy (docs/JOBS.md "Retries"); single-node runs only |
+| `retry` | bounded application retries of this run, within the same Job (one member, one reservation, one GPU bound): `{"max_attempts": 2, "on_exit_codes": [137, 143]}` renders at most two pods, a replacement only after an exit in `on_exit_codes` (the retained scientific policy's SIGKILL/SIGTERM exits by default), any other non-zero exit fails the run at once; infrastructure disruptions stay the platform's (ignored, never an attempt). Overrides the run class's own `retry` policy (docs/JOBS.md "Retries"); on a multi-node run the same policy bounds the gang's restarts (api 0.11.195) |
 | `recovery` | `on_infrastructure_loss: retry` (default: a replacement attempt on the same volume, as above) `fail` (the operation fails on a disruption; resume it with a checkpoint reference) or `recover` (opt-in: after a confirmed infrastructure loss the control API continues the run from its newest acknowledged checkpoint pointer on the next class of its preference, docs/SCHEDULING.md "Automatic recovery after infrastructure loss"; `max_recoveries` 1..3 default 1, `wait_s` default 300, `deadline_s`: the successor inherits the root's remaining deadline). `checkpoint_ref` reaches the run as `CHECKPOINT_REF`; `POST /v1/operations/<id>:resume` with `{"checkpoint_ref": ..., "gpu_class": ...}` resumes a run from a portable checkpoint the application restores itself: no previous volume, any permitted cluster, optionally another class and therefore that class's image |
 
 Every run pod, with or without the block, mounts the runner's Kubernetes token into the uploader only
@@ -539,8 +539,18 @@ attempt is a pod of the same Job: the same operation, member, reservation and GP
 of them), the same attempt records and epochs; nothing is admitted, reserved or recomputed again, a successful sibling
 stage is untouched. `max_attempts` counts pods that ended with an exit in `on_exit_codes` only: a disruption is never an attempt, so a
 run may be preempted any number of times and still have its `max_attempts` application attempts (it is not a cap on
-total pods). `max_attempts` 1..10; single-node runs only (a multi-node run restarts as a whole). The retained
-scientific policy is `{"max_attempts": 2, "on_exit_codes": [137, 143]}` with `graceSeconds: 60`.
+total pods). `max_attempts` 1..10. The retained scientific policy is `{"max_attempts": 2, "on_exit_codes": [137, 143]}`
+with `graceSeconds: 60`.
+
+On a multi-node run (api 0.11.195) the same declaration governs the whole gang: `maxAttempts` incarnations at most
+(JobSet `maxRestarts = maxAttempts - 1`), a restart of every rank from the last checkpoint only after an exit of
+`main` in `onExitCodes` (counted: the indexed Job's `backoffLimit: 0` fails it, the JobSet recreates the gang), any
+other non-zero exit terminal (FailJob, reason `PodFailurePolicy`, the JobSet's `terminal` rule: `FailJobSet`). A
+disruption is counted (restart), never ignored: an ignored disruption replaces one index while the other ranks wait.
+A rank cannot tell its own failure from a peer's loss (a coordinator's `mpirun` exits 1 when a peer is preempted
+before the JobSet sees it), so a gang class keeps such exits in `onExitCodes` and the application marks its own
+verdict (an exhausted budget, a rejected input) with an exit outside them. Without a policy every loss restarts the
+gang, at most `JOB_BACKOFF_LIMIT` times. The finalizer's `finalize.onExitCodes` stays the first rule.
 
 ## Deadlines (api 0.11.149, jobs 0.1.31)
 

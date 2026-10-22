@@ -4,24 +4,34 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.194, jobs 0.1.36, dispatcher 0.2.17
+## api 0.11.195, jobs 0.1.36, dispatcher 0.2.17 (0.11.194 = a cut with a blanket terminal exit rule; built, never applied)
 
-- A multi-node run's indexed Job classifies a pod failure once (docs/JOBS.md "Multi-node runs"): an exit of `main`
-  other than 0, 137 and 143 is terminal (`podFailurePolicy` FailJob, the JobSet's `terminal` rule `FailJobSet`), never
-  a Recreate that replays a finished or spent computation (gromacs-mpi op-5ea6831076e6fa0a: three gang restarts of
-  an exhausted 300 s budget, each exit 1 within 36 s); a disruption (`DisruptionTarget`) is counted, not ignored (an
-  ignored one replaced one index while the other ranks waited); 137/143 and a pod lost without an exit restart the
-  gang as before, at most `maxRestarts` times. The finalizer's `finalize.on_exit_codes` rule stays first and is not
-  widened. The JobSet rule is rendered on every gang now (it was `delivery_pending`, on gangs with a finalizer only).
-  Single-node runs are unchanged (`backoffLimit: 3`, docs/JOBS.md "Retries"). Regression: exits 1/2/75/3/255 terminal,
-  137/143/disruption/no-exit restart, no Ignore rule, with and without a finalizer.
+- A multi-node run's retry policy (docs/JOBS.md "Retries"): the SAME declaration as a single-node run's (`job.retry:
+  {maxAttempts, onExitCodes}` on the class, `execution.retry` on the request; until now refused for `nodes > 1`)
+  governs the whole gang: `maxRestarts = maxAttempts - 1`, a Recreate of every rank only after an exit of main in
+  `onExitCodes`, any other non-zero exit terminal (`podFailurePolicy` FailJob, the JobSet's `terminal` rule
+  `FailJobSet`), never a restart that replays a finished or spent computation (gromacs-mpi op-5ea6831076e6fa0a: three
+  gang restarts of an exhausted 300 s budget, each exit 1 within 36 s). A blanket "any exit but 0/137/143 is terminal"
+  rule (0.11.194) was withdrawn: a coordinator's mpirun exits 1 when a peer is preempted before the JobSet sees the
+  loss (fs2 worker.py 579; Root + placement), so an ambiguous exit must stay in the declared retryable set and the
+  application marks its own verdict with an exit outside it. A disruption (`DisruptionTarget`) is counted, not
+  ignored. Without a policy the gang behaves as before (every loss restarts it, at most `JOB_BACKOFF_LIMIT` times).
+  The finalizer's `finalize.onExitCodes` rule stays first. Single-node runs are unchanged. Regression: with
+  `{maxAttempts: 3, onExitCodes: [1, 137, 143]}` exits 1/137/143/disruption/no-exit restart and 65/2/255 end the
+  gang, maxRestarts 2, request override, with and without a finalizer; the plain gang's prior shape.
 - An endpoint child (`children.complete`) resolves its target through the same resolver as an ordinary asynchronous
-  call (`app._call_target`): the variant the model's routing selects within the child's region (fixed at admission),
-  the convergence fence on every candidate, the resolved identities recorded on the Job (`Operation.target`, its
-  `candidates`) and the ordered pre-send fallback list for the caller (`TARGETS`). Until now a child went to the base
-  deployment with no record (`target: null`, public-final-r1 lerobot-children-r1) and no fallback walk. The child's
-  owner, admission token, durable id and bound request are unchanged. Regression: parity of the child's record,
-  `TARGETS`, cold wait and URLs with the ordinary call of the same model under the same key.
+  call (`app._call_target`): the variant the model's routing selects within the child's region (fixed at admission;
+  `routing.field` read from the unit's inline input, a referenced input is never fetched and takes the routing
+  default), the convergence fence on EVERY candidate as if the call said `require_converged` (a child cannot say it:
+  the parent is a run; the row's image check sees the base image only, never a variant's), so a candidate whose
+  rollout is not converged is left out, the first converged one is the target and none converged keeps the intent
+  pending (sweep) or answers 503 replay (synchronous); the resolved identities recorded on the Job
+  (`Operation.target`, its `candidates`) and the ordered pre-send fallback list for the caller (`TARGETS`). Until now
+  a child went to the base deployment with no record (`target: null`, public-final-r1 lerobot-children-r1), no fence
+  and no fallback walk. The child's owner, admission token, durable id, bound request and recorded execution are
+  unchanged. Regression: parity of the child's record, `TARGETS`, cold wait and URLs with the ordinary call of the
+  same model under the same key; a stale chosen variant skipped for the converged fallback; none converged = pending
+  then completed on replay; inline input routes by `routing.field`, a referenced input takes the default.
 
 ## api 0.11.193, jobs 0.1.36, dispatcher 0.2.17 (0.11.191/192 = the same cut before review corrections; built, never applied)
 
