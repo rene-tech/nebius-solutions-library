@@ -123,6 +123,14 @@ def feasible_classes(model: dict, classes: list[str], gpus: int, clusters: list[
         if not mine:
             feasible.append(cls)
             continue
+        here = {
+            p["pool"]
+            for p in pools.values()
+            if p.get("gpu_class") == cls and (clusters is None or p.get("region") in clusters)
+        }
+        if not here:
+            skipped.append(f"{cls}: no pool on the allowed clusters {sorted(clusters or [])}")
+            continue
         res = resource_block(class_resources(job, cls), max(int(gpus), 0))
         # the pod as rendered: main plus the uploader sidecar (an init step's own request never exceeds them)
         req = fit.pod_requests(

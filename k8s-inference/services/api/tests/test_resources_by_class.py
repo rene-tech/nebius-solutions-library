@@ -197,7 +197,7 @@ def test_a_preferred_class_absent_from_the_allowed_clusters_is_skipped_at_submis
     with caplog.at_level(logging.INFO, logger="api"):
         cls = appmod._class_for(m, req, None, "demo", ex, ["north"])
     assert cls == "l40s"
-    assert any("rtx-pro-6000: no node of its pools" in r.getMessage() for r in caplog.records)  # the reason, logged
+    assert any("rtx-pro-6000: no pool on the allowed clusters ['north']" in r.getMessage() for r in caplog.records)
     assert any("GPU class l40s chosen by fleet (eu-north1/l40s-ondemand-1x" in r.getMessage() for r in caplog.records)
     pl = {"regions": ["north"], "classes": ["rtx-pro-6000", "l40s"], "profile": "prefer-rtx-pro-6000"}
     j = jobs.build_run("op-proof", m, P, "demo", None, None, None, None, None, {}, "h", placement=pl, gpu_class=cls)

@@ -4,15 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.180, dispatcher 0.2.17 (0.11.179 = the same with readiness-only availability; built, never applied)
+## api 0.11.181, dispatcher 0.2.17 (0.11.179 and 0.11.180 = earlier cuts; built, never applied)
 
 - Target state is measured, never guessed (Root's 19:08Z review): `admitting` = a ready target whose in-flight
   requests (Knative's stable concurrency of the revision, the series GET /v1/endpoints/{id}/metrics shows) are below
   its capacity (ready replicas x the deployment's `container_concurrency`); `startable` = a cold deployment that is
   not failed and whose pool has free GPUs for one replica or room for a node under `max_nodes` (kube.pool_usage);
   anything not measured is null, and `routing.default: capacity` takes only a target KNOWN to admit or start, else
-  the first variant and the ordinary queue. `Model.targets` carries `in_flight` and `capacity`. Cross-region selection
-  (`_deployment_of`) is unchanged and explicitly held for the pre-send fallback release.
+  the first variant and the ordinary queue. `Model.targets` carries `in_flight` and `capacity`; the measured state is
+  read on `GET /v1/models/{id}` only, the list carries the targets' identity with null state (0.11.180 measured every
+  target of every listed model: red gate). Cross-region selection (`_deployment_of`) is unchanged and explicitly held
+  for the pre-send fallback release. A preferred class with no pool on the allowed clusters is skipped with that reason.
 
 - One endpoint target per call (docs/API.md "Variants"): the variant a call resolves to is used for the readiness
   probes AND the single inference request, synchronous and asynchronous (before: the sync probe resolved again with

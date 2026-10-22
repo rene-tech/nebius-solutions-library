@@ -134,7 +134,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.180", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.181", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -577,8 +577,13 @@ def _target_state(m: dict, v: dict, cluster: str) -> dict:
     or room for a node under `max_nodes` (kube.pool_usage; None when the pool cannot be read or has no bound)."""
     cluster = _cluster_id_of(cluster)
     region = kube.cluster_region(cluster)
+    nodes = int(m.get("nodes") or 1)
     try:
-        st = kube.endpoint_status(v["object"], m["namespace"], region, nodes=int(m.get("nodes") or 1))
+        st = (
+            kube.endpoint_status(v["object"], m["namespace"], region, nodes=nodes)
+            if nodes > 1
+            else kube.endpoint_status(v["object"], m["namespace"], region)
+        )
     except (HTTPException, ApiException):
         st = {"status": "unavailable", "replicas_ready": None}
     ready = st.get("replicas_ready")
@@ -658,14 +663,26 @@ def _cluster_id_of(key: str) -> str:
     return next((cid for cid in sorted(ids) if kube.cluster_region(cid) == key), key)
 
 
-def _target_public(m: dict, cluster: str, v: dict) -> dict:
+def _target_public(m: dict, cluster: str, v: dict, live: bool) -> dict:
     """One endpoint target as GET /v1/models shows it (docs/API.md "Variants"): the exact image that deployment runs
-    and its live admission state; no private spec or environment."""
+    and, on the detail only (`live`), its measured admission state (the list carries the identity with null state:
+    one model's targets are a handful of reads, a page of models is not); no private spec or environment."""
     cluster = _cluster_id_of(cluster)
     region = kube.cluster_region(cluster)
     gpu_class = kube.pool_entry(cluster, v.get("pool")).get("gpu_class")
     image = v.get("image") or (m.get("images") or {}).get(gpu_class or "") or m.get("image")
-    st = _target_state(m, v, cluster)
+    st = (
+        _target_state(m, v, cluster)
+        if live
+        else {
+            "status": None,
+            "replicas_ready": None,
+            "admitting": None,
+            "startable": None,
+            "in_flight": None,
+            "capacity": None,
+        }
+    )
     return {
         "cluster": cluster,
         "region": region,
@@ -684,9 +701,9 @@ def _target_public(m: dict, cluster: str, v: dict) -> dict:
     }
 
 
-def _targets_public(m: dict) -> list[dict]:
+def _targets_public(m: dict, live: bool = False) -> list[dict]:
     """Every target of an endpoint, deployments in declared order, variants in priority order."""
-    return [_target_public(m, cid, v) for cid in (m.get("regions") or []) for v in models.variants(m, cid)]
+    return [_target_public(m, cid, v, live) for cid in (m.get("regions") or []) for v in models.variants(m, cid)]
 
 
 def _target_record(m: dict, cluster: str, v: dict) -> dict:
@@ -754,7 +771,7 @@ def _deployment_of(m: dict, requested: str | None) -> tuple[str, str]:
     return cid, region
 
 
-def _public(m: dict, p: Principal | None = None) -> dict:
+def _public(m: dict, p: Principal | None = None, live: bool = False) -> dict:
     if p is not None and (p.info.get("metadata") or {}).get("role") != "admin":
         m = {**m, "spec": None}  # container configuration belongs to fleet administrators
     if m["mode"] == "run":
@@ -769,7 +786,7 @@ def _public(m: dict, p: Principal | None = None) -> dict:
         except (HTTPException, ApiException):
             st = {"status": "unavailable", "replicas_ready": None}
         statuses.append({"region": region, "cluster": cid, **st})
-    return {**catalog.to_public(m, statuses), "targets": _targets_public(m)}
+    return {**catalog.to_public(m, statuses), "targets": _targets_public(m, live)}
 
 
 @app.get("/livez", include_in_schema=False)
@@ -994,7 +1011,7 @@ def model_history(model: str, p: Principal = Depends(admin)):
 @app.get("/v1/models/{model}", responses={200: {"model": schemas.Model}})
 def get_model(model: str, p: Principal = Depends(scoped("read:catalog"))):
     check_model(p, model)
-    return _public(_model(model), p)
+    return _public(_model(model), p, live=True)  # the detail measures its targets (docs/API.md "Variants")
 
 
 @app.api_route(
@@ -1690,6 +1707,7 @@ async def _sync(
                 f"PATCH /v1/endpoints/{m['k8s_name']} {{\"scaling\": {{\"min\": 1}}}} (or the console's Start button) and takes "
                 f"minutes to load; it stops again after scaling.idle_s without a request",
             )
+    v = None  # the resolved target (a LiteLLM-routed call has none: LiteLLM picks among its deployments)
     if m.get("litellm_route"):
         url, headers = LITELLM_URL + m["litellm_route"], {"Authorization": f"Bearer {p.key}"}
     elif region == REGION:
@@ -1766,7 +1784,9 @@ async def _sync(
         "error": None if ok else str(body)[:500],
         "requester": req.requester,
         "key_alias": _key_alias(keys.key_hash(p.key)),
-        "target": _target_record(m, models.cluster_id() if region == REGION else _deployment_cluster(m, region), v),
+        "target": _target_record(m, models.cluster_id() if region == REGION else _deployment_cluster(m, region), v)
+        if v
+        else None,
     }
     return JSONResponse(
         {"result": body, "operation": op},
