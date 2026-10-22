@@ -4,6 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.190, jobs 0.1.36, dispatcher 0.2.17
+
+- URGENT (public MPI 1x1/2x1 submissions answered 500 with no operation, 2026-10-22): the class choice judged the
+  per-node fit on the job block's TEMPLATE (`{{cpu}}`, `{{memory}}`, `{{gpus_per_node}}` are parameters), and
+  `fit.quantity` raised on the placeholder. The run's parameters are now resolved exactly as build_run resolves them
+  (the request's input over the region's or the fleet's defaults over the declared ones; `jobs.resolve_values`,
+  shared) and rendered into the job block (`jobs.resolved_job`) BEFORE feasibility and the class choice, per-class
+  overrides included; an unknown or missing parameter is build_run's 400, raised there, nothing created. No model
+  special case, no invented default. Regression: a templated envelope at the default fits L40S, at 96Gi it moves to
+  H100; unknown/missing parameters are 400; the template text reaching the fit still raises (the callers' contract).
+
 ## platform chart + fleet values: node-config owns containerd's mirror files (Spegel's writer off)
 
 - Incident 2026-10-22 21:11-21:35Z: `service.registry.hostPort: 30021` made Spegel 0.7.4 write the same `[host]` table

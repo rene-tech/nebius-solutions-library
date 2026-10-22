@@ -275,3 +275,36 @@ def test_a_multi_node_run_keeps_the_chosen_class_for_every_rank(monkeypatch):
             gpu_class="l40s",
         )
     assert e.value.status_code == 400 and "no InfiniBand pool" in e.value.detail and "['l40s']" in e.value.detail
+
+
+def test_a_templated_envelope_is_rendered_before_the_fit_and_the_class_choice(monkeypatch):
+    """api 0.11.190 (public MPI 1x1/2x1 submissions answered 500, 2026-10-22): a run class whose job block carries
+    parameters (`{{cpu}}`, `{{memory}}`, `{{gpus_per_node}}`) is judged for feasibility on the RENDERED envelope (the
+    request's parameters over the defaults), never on the template text; a bad parameter is the same 400 build_run gives."""
+    from types import SimpleNamespace as NS
+
+    import app as appmod
+
+    monkeypatch.setattr(kube, "fleet", lambda: DOC)
+    m = model(cpu="{{cpu}}", memory="{{memory}}", gpu="{{gpus_per_node}}")
+    m["parameters"] = list(m.get("parameters") or []) + [
+        {"name": "cpu", "type": "string", "default": "8"},
+        {"name": "memory", "type": "string", "default": "48Gi"},
+        {"name": "gpus_per_node", "type": "select", "options": [1, 2], "default": 1},
+    ]
+    # 48Gi (the default) fits the L40S node: the preferred class stands
+    assert appmod._class_for(m, NS(input=dict(P)), None, "demo", None, ["north"]) == "l40s"
+    # the request asks 96Gi: L40S (57Gi nodes) is infeasible, H100 chosen; before 0.11.190 this raised
+    # ValueError("not a quantity: '{{memory}}'") and the submission answered 500
+    assert appmod._class_for(m, NS(input={**P, "memory": "96Gi"}), None, "demo", None, ["north"]) == "h100"
+    # an unknown parameter is the 400 build_run gives, not a 500
+    with pytest.raises(HTTPException) as e:
+        appmod._class_for(m, NS(input={**P, "ram": "1Gi"}), None, "demo", None, ["north"])
+    assert e.value.status_code == 400 and "unknown parameters" in e.value.detail
+    # a missing required parameter is build_run's 400 too, raised at the class choice (nothing created)
+    with pytest.raises(HTTPException) as e:
+        appmod._class_for(m, NS(input={}), None, "demo", None, ["north"])
+    assert e.value.status_code == 400 and "missing required parameters" in e.value.detail
+    # feasible_classes itself still refuses a template reaching it (the contract: callers render first)
+    with pytest.raises(ValueError):
+        placement.feasible_classes(m, ["l40s", "h100"], 1, ["north"])

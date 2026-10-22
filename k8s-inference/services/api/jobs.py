@@ -452,6 +452,36 @@ def check_gpu_bound(job: dict, rendered: dict, model_name: str) -> None:
         )
 
 
+def resolve_values(model: dict, params: dict, defaults: dict | None) -> dict:
+    """The run's parameter values exactly as build_run resolves them (the caller's input over the region's defaults
+    over the entry's declared defaults; unknown parameters, missing required ones and declared bounds are 400 here):
+    shared with the class choice, which must judge the per-node fit on the RENDERED envelope (`{{cpu}}`,
+    `{{memory}}`, `{{gpus_per_node}}` are parameters, not quantities; api 0.11.190, before: a 500 on every templated
+    run class with per-class images)."""
+    declared = {p["name"]: p.get("default") for p in model.get("parameters", [])}
+    declared.update({k: None for k in (defaults or {})})
+    declared.update({"input_prefix": None, "output_prefix": None})
+    unknown = [k for k in params if k not in declared]
+    if unknown:
+        raise HTTPException(400, f"unknown parameters {unknown}; model accepts {sorted(declared)}")
+    values = {k: v for k, v in declared.items() if v is not None}
+    values.update({k: v for k, v in (defaults or {}).items() if v is not None})
+    values.update(params)
+    missing = [
+        p["name"] for p in model.get("parameters", []) if p.get("required") and values.get(p["name"]) in (None, "")
+    ]
+    if missing:
+        raise HTTPException(400, f"missing required parameters {missing}")
+    check_parameter_bounds(model.get("parameters", []), values)  # the operator's declared bounds, before anything else
+    return values
+
+
+def resolved_job(model: dict, params: dict, defaults: dict | None) -> dict:
+    """The entry's job block with the parameters rendered into it (resolve_values + the same substitution build_run
+    applies): the envelope the per-node fit and the class choice must judge."""
+    return _render(dict(model.get("job") or {}), {**resolve_values(model, params, defaults), "operation": "fit"})
+
+
 def build_run(
     name: str,
     model: dict,
@@ -496,21 +526,7 @@ def build_run(
     from models import normalise_image  # a caller-supplied image (container-run) goes through the region's cache too
 
     job["image"] = normalise_image(str(job["image"]))
-    declared = {p["name"]: p.get("default") for p in model.get("parameters", [])}
-    declared.update({k: None for k in (defaults or {})})
-    declared.update({"input_prefix": None, "output_prefix": None})
-    unknown = [k for k in params if k not in declared]
-    if unknown:
-        raise HTTPException(400, f"unknown parameters {unknown}; model accepts {sorted(declared)}")
-    values = {k: v for k, v in declared.items() if v is not None}
-    values.update({k: v for k, v in (defaults or {}).items() if v is not None})
-    values.update(params)
-    missing = [
-        p["name"] for p in model.get("parameters", []) if p.get("required") and values.get(p["name"]) in (None, "")
-    ]
-    if missing:
-        raise HTTPException(400, f"missing required parameters {missing}")
-    check_parameter_bounds(model.get("parameters", []), values)  # the operator's declared bounds, before anything else
+    values = resolve_values(model, params, defaults)
     values["operation"] = name
     r = _render(job, values)
     check_gpu_bound(job, r, model["name"])  # job.maxGpus: nodes x GPUs per node, on the rendered shape

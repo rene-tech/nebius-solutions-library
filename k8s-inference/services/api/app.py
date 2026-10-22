@@ -140,7 +140,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.189", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.190", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1798,15 +1798,16 @@ def _class_for(
     given, services/api/placement.py). None for a class with one image: Kueue may then switch class at queue time as before."""
     if not jobs.class_images(m):
         return None
+    # the envelope as the run will be rendered: the request's parameters over the region's (or the fleet's) defaults
+    # over the declared ones, substituted into the job block (api 0.11.190; before, a templated `{{cpu}}` reached the
+    # fit as a quantity and the submission answered 500). The same checks build_run applies answer 400 here.
+    defaults = catalog.region_params(m, region) if region else catalog.fleet_params(m)
+    m = {**m, "job": jobs.resolved_job(m, req.input or {}, defaults)}
     gpus = (m.get("job") or {}).get("gpu", 1)
     try:
         gpus = int(gpus)
-    except (TypeError, ValueError):  # a parameter placeholder: one GPU for the ranking
-        gpus = (
-            int(req.input.get("gpus", 1) or 1)
-            if isinstance(req.input.get("gpus", 1), (int, str)) and str(req.input.get("gpus", 1)).isdigit()
-            else 1
-        )
+    except (TypeError, ValueError):  # not a number even after rendering: one GPU for the ranking
+        gpus = 1
     available = (
         (ex.get("placement") or {}).get("gpu_preference") if ex else None
     )  # the caller's order narrows the model's
