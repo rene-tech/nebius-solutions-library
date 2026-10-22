@@ -14,9 +14,9 @@ rules:
   - apiGroups: [jobset.x-k8s.io]          # multi-node runs are JobSets (docs/JOBS.md "Multi-node runs")
     resources: [jobsets]
     verbs: [create, get, list, watch, patch, delete]
-  - apiGroups: [""]                       # attempts; delete only terminal, receipted Pods protecting an already-released PVC
-    resources: [pods]
-    verbs: [get, list, delete]
+  - apiGroups: [""]                       # attempts (the list-watch store, services/api/store.py, watches them); delete only
+    resources: [pods]                     # terminal, receipted Pods protecting an already-released PVC
+    verbs: [get, list, watch, delete]
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]
@@ -33,7 +33,7 @@ rules:
   - apiGroups: [""]                       # its creation: RBAC cannot scope `create` by name; the API creates only fleet-trust
     resources: [configmaps]               # (tools/check.sh: the tenant ClusterRole covers exactly ensure_trust's calls)
     verbs: [create]
-  - apiGroups: [kueue.x-k8s.io]           # fleet placement: the Workload of a manager Job names the worker that admitted it;
-    resources: [workloads]                # patch: a cancelled multi-node run is deactivated (spec.active) so Kueue evicts it
-    verbs: [get, list, patch]
+  - apiGroups: [kueue.x-k8s.io]           # fleet placement: the Workload of a manager Job names the worker that admitted it
+    resources: [workloads]                # (the store watches them); patch: a cancelled multi-node run is deactivated
+    verbs: [get, list, watch, patch]      # (spec.active) so Kueue evicts it
 {{- end }}

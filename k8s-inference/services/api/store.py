@@ -180,13 +180,25 @@ class _Gone(Exception):
     """410: the watch's version is older than the server keeps; relist."""
 
 
+class _Absent(Exception):
+    """403/404 on the LIST: the namespace is not onboarded in this region (ready and empty, as a direct listing
+    treats it). A 403 on the WATCH is NOT this: the LIST worked, the identity lacks `watch` (api 0.11.173 emptied the
+    key on it; 0.11.174 degrades it: served from the last LIST, listed directly after STORE_STALE_S)."""
+
+
 def sync(k: Key, lister, selector: str | None) -> None:
     """One LIST, then one WATCH session from its version until the server ends it (STORE_WATCH_TIMEOUT_S) or
-    STORE_RESYNC_S passed since the LIST; raises on 410 (_Gone) and on any failure (the caller backs off and relists).
-    `lister(region, ns, **kw)` is the Kubernetes client's list function (raw JSON, `_preload_content=False`)."""
+    STORE_RESYNC_S passed since the LIST; raises on 410 (_Gone), on a LIST refused as not onboarded (_Absent) and on
+    any other failure (the caller backs off and relists). `lister(region, ns, **kw)` is the Kubernetes client's list
+    function (raw JSON, `_preload_content=False`)."""
     region, ns, _kind = k
     sel = {"label_selector": selector} if selector else {}
-    resp = lister(region, ns, _preload_content=False, **sel)
+    try:
+        resp = lister(region, ns, _preload_content=False, **sel)
+    except ApiException as e:
+        if e.status in (403, 404):
+            raise _Absent(f"{e.status} {e.reason}") from e
+        raise
     data = json.loads(resp.data)
     rv = (data.get("metadata") or {}).get("resourceVersion")
     replace(k, data.get("items") or [], rv)
@@ -226,15 +238,19 @@ def _run(k: Key) -> None:
             backoff = 1.0
         except _Gone:
             continue
+        except _Absent:  # the namespace is not (yet, any more) onboarded in this region: ready and empty, as a
+            replace(k, [], None)  # direct listing treats it; looked at again after a while
+            with _lock:
+                _absent[k] = time.time() + STORE_NS_REFRESH_S * 5
+            return
         except ApiException as e:
-            if e.status in (403, 404):  # the namespace is not (yet, any more) onboarded in this region: ready and
-                replace(k, [], None)  # empty, as a direct listing treats it; looked at again after a while
-                with _lock:
-                    _absent[k] = time.time() + STORE_NS_REFRESH_S * 5
-                return
             degrade(k, f"{e.status} {e.reason}")
+            log.warning(
+                "store %s: %s %s; serving the last list, retry in %.0f s", "/".join(k), e.status, e.reason, backoff
+            )
         except Exception as e:  # noqa: BLE001 - the reflector never dies; the store serves what it holds meanwhile
             degrade(k, f"{type(e).__name__}: {str(e)[:120]}")
+            log.warning("store %s: %s; serving the last list, retry in %.0f s", "/".join(k), str(e)[:160], backoff)
         if _stop.wait(backoff):
             return
         backoff = min(backoff * 2, 30.0)

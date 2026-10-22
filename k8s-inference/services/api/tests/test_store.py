@@ -116,6 +116,37 @@ def test_a_namespace_not_onboarded_is_ready_and_empty(monkeypatch):
     assert store.ready(*K) and store.items(*K) == []
 
 
+def test_a_refused_watch_keeps_the_list_and_degrades(monkeypatch):
+    """api 0.11.173 emptied the key when the WATCH answered 403 (the identity could list pods and Workloads but not
+    watch them): the store served nothing for them, ready. 0.11.174: the LIST's objects stand, the key is degraded
+    (listed directly by readers after STORE_STALE_S) and the reflector retries; only a refused LIST means absent."""
+    listing = {"metadata": {"resourceVersion": "30"}, "items": [job("a"), job("b")]}
+
+    def lister(region, ns, **kw):
+        if kw.get("watch"):
+            raise ApiException(status=403, reason="Forbidden")
+        return Resp(body=listing)
+
+    with pytest.raises(ApiException):
+        store.sync(K, lister, None)
+    assert store.ready(*K) and len(store.items(*K)) == 2  # what was listed stands
+    monkeypatch.setitem(store.KINDS, "jobs", (lister, None, None, store._plain))
+    monkeypatch.setattr(store, "STORE_STALE_S", 0.0)
+    store._stop.clear()
+    import threading
+
+    t = threading.Thread(target=store._run, args=(K,), daemon=True)
+    t.start()
+    for _ in range(50):
+        if store._state.get(K, {}).get("error"):
+            break
+        time.sleep(0.02)
+    store._stop.set()
+    t.join(timeout=5)
+    assert len(store.items(*K)) == 2 and store._state[K]["error"] == "403 Forbidden"
+    assert not store.ready(*K)  # degraded past STORE_STALE_S: readers list directly, nothing is served empty
+
+
 def test_own_writes_show_at_once_and_never_regress_the_store():
     store.replace(K, [job("a", rv="5")], "5")
     store.observe(*K, {**job("a", rv="7"), "_pods": [], "_region": "eu-north1"})  # a mutation's response

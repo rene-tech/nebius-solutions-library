@@ -420,10 +420,16 @@ for cid in open(f"{tmp}/clusters.txt").read().split():
     objs = [o for o in yaml.safe_load_all(open(f"{tmp}/platform-{cid}.rendered.yaml")) if o]
     roles = [o for o in objs if o["kind"] == "ClusterRole" and o["metadata"]["name"] == "serverless2-api-tenant"]
     for role in roles:
-        for resource, expected in (("pods", {"get", "list", "delete"}),
+        for resource, expected in (("pods", {"get", "list", "watch", "delete"}),
                                    ("persistentvolumeclaims", {"create", "get", "list", "patch", "delete"})):
             rules = [r for r in role["rules"] if "" in r.get("apiGroups", []) and resource in r.get("resources", [])]
             assert len(rules) == 1 and set(rules[0]["verbs"]) == expected, f"{cid}: unexpected tenant {resource} permissions"
+        # the list-watch store (services/api/store.py, api 0.11.173/174) LISTs and WATCHes Jobs, pods, JobSets and Workloads
+        # in every tenant namespace through this role: a missing `watch` empties nothing (0.11.174 degrades the key)
+        # but loses the store, so every watched kind must grant list AND watch (0.11.173 shipped without pods/workloads watch)
+        for group, resource in (("batch", "jobs"), ("", "pods"), ("jobset.x-k8s.io", "jobsets"), ("kueue.x-k8s.io", "workloads")):
+            rules = [r for r in role["rules"] if group in r.get("apiGroups", []) and resource in r.get("resources", [])]
+            assert rules and {"list", "watch"} <= set(rules[0]["verbs"]), f"{cid}: tenant role lacks list+watch on {group}/{resource} (the list-watch store needs both)"
         # the namespace trust ConfigMap (services/api/jobs.py ensure_trust: read, create, replace of exactly `fleet-trust`):
         # get/update name-scoped, create unscoped (RBAC cannot name a resource before it exists), nothing wider on configmaps
         cms = [r for r in role["rules"] if "" in r.get("apiGroups", []) and "configmaps" in r.get("resources", [])]
@@ -432,7 +438,7 @@ for cid in open(f"{tmp}/clusters.txt").read().split():
         assert all(r["resources"] == ["configmaps"] for r in cms), f"{cid}: a tenant configmaps rule reaches other resources"
         assert not any(o["kind"] == "ClusterRoleBinding" and o.get("roleRef", {}).get("name") == role["metadata"]["name"] for o in objs), f"{cid}: tenant API role must not be cluster-bound"
         seen += 1
-        print(f"   ok tenant cleanup RBAC {cid}: exact pods/PVC verbs, fleet-trust configmaps only, no cluster-wide binding")
+        print(f"   ok tenant cleanup RBAC {cid}: exact pods/PVC verbs, list+watch on every store kind, fleet-trust configmaps only, no cluster-wide binding")
 assert seen, "no cluster rendered the tenant API role"
 EOF6
 }

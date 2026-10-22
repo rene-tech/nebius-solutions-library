@@ -4,7 +4,19 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.173, dispatcher 0.2.17
+## api 0.11.174, dispatcher 0.2.17 (charts/platform: the tenant ClusterRole grants `watch` on pods and Workloads)
+
+- 0.11.173 was applied 2026-10-22 15:16Z and rolled back to 0.11.172 at 15:22Z: the API identities could LIST pods
+  and Kueue Workloads in the tenant namespaces but not WATCH them, and the store took the 403 on the WATCH for a
+  namespace that is not onboarded, leaving the pods and Workloads keys ready and empty (listings without pods,
+  Workload placement reads blind). No mutation went through in that window. Fixed in both places: the tenant
+  ClusterRole (`serverless2-api-tenant`, bound per tenant namespace to the control API's and the regional agent's
+  identity) grants `watch` on pods and `workloads.kueue.x-k8s.io`, the render check asserts list+watch on every
+  kind the store holds; and only a refused LIST means absent (ready, empty), a refused WATCH degrades the key
+  (the LIST's objects stand, readers list directly after `STORE_STALE_S`, the reflector retries with backoff) and
+  is logged.
+
+## api 0.11.173, dispatcher 0.2.17 (applied 2026-10-22 15:16Z, rolled back 15:22Z; see 0.11.174)
 
 - The list-watch store (`services/api/store.py`): every listing this API serves (GET /v1/operations, the fleet's
   operations, an operation's relatives, the Workload placement reads) comes from one in-memory copy of the fleet's
