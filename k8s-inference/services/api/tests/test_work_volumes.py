@@ -74,9 +74,11 @@ def row(op, status="failed", started=True, ended=None, export=None, ckpt=False, 
 def _fresh_listing_caches():
     """The tenant listing caches are module state: a test here must not hand a warm (empty) listing to a later
     listing test in the same process."""
-    jobs.ops_cache_invalidate(None)
+    import store
+
+    store.reset()
     yield
-    jobs.ops_cache_invalidate(None)
+    store.reset()
     jobs._fleet_ops_cache["until"] = 0.0
 
 

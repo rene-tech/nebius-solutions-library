@@ -33,10 +33,11 @@ def test_list_related_selects_and_completes_only_the_relatives(client, admin_key
     names = jobs.list_related(NS, "demo", lambda j: j["metadata"]["name"] == b, complete=False)
     assert [j["metadata"]["name"] for j in names] == [b] and pods_listed == []  # selected, not completed
     full = jobs.list_related(NS, "demo", lambda j: j["metadata"]["name"] == b)
-    # api 0.11.160: a cold view takes the tenant listing (one pod list for the tenant, cached and kept warm) and
-    # re-reads the ACTIVE relative's pods live (one list by the relative's selector): two listings, neither per Job
-    assert [j["metadata"]["name"] for j in full] == [b] and full[0]["_pods"] == [] and len(pods_listed) == 2
-    assert pods_listed[-1] != pods_listed[0]  # the live re-read is the relative's own selector, not the tenant's
+    # api 0.11.173: with the store not synced (no lifespan here), a view lists the Jobs once and completes the kept
+    # relative only (one pod list by the relative's own selector, never the tenant's, never per Job); with the store
+    # synced it lists nothing (test_pagination)
+    assert [j["metadata"]["name"] for j in full] == [b] and full[0]["_pods"] == [] and len(pods_listed) == 1
+    assert pods_listed[0] == f"job-name={b}"  # the relative's own selector, not the tenant's
     pods_listed.clear()
     again = jobs.list_related(NS, "demo", lambda j: j["metadata"]["name"] == b)
     assert [j["metadata"]["name"] for j in again] == [b] and len(pods_listed) == 1  # warm: the live re-read only
@@ -50,10 +51,7 @@ def test_list_related_selects_and_completes_only_the_relatives(client, admin_key
         "metadata": {**cl.jobs[(NS, b)]["metadata"], "name": f"{a}-x1", "annotations": {}},
     }
     assert jobs.export_retries(NS, "demo", a) == 1 and jobs.continuations(NS, "demo", a) == 1
-    # the tenant's listing of operations is untouched (it still completes everything it lists); the view above cached
-    # the tenant listing for OPS_LIST_CACHE_S and the Job was injected behind the API's back (no invalidation), so
-    # the listing is taken fresh here
-    jobs._ops_list_cache.clear()
+    # the tenant's listing of operations is untouched (it still completes everything it lists)
     assert {j["metadata"]["name"] for j in jobs.list_ops(NS, "demo", None, None)} == {a, b, f"{a}-x1"}
 
 

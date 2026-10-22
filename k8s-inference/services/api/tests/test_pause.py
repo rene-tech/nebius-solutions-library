@@ -7,7 +7,6 @@ import copy
 
 import auth
 import db
-import jobs
 import pause
 from test_api import KEY_INFO, H, client, cluster  # noqa: F401 - pytest fixture registration
 from test_database import database  # noqa: F401
@@ -134,4 +133,3 @@ def test_an_unreadable_setting_pauses_nobody(monkeypatch):
     monkeypatch.setattr(pause, "_read", boom)
     assert pause.state() == {"paused": False} and pause.paused_for("demo") is None
     pause.check("demo")  # no exception
-    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 0.0)

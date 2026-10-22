@@ -17,13 +17,10 @@ dispatcher creates the work volume where the run is admitted, and the manager Jo
 back; pods, logs and billing come from the worker. Image references are fleet-wide (the logical registry
 host of fleet.yaml `images`, docs/IMAGES.md): nothing in a Job depends on the region it lands in."""
 
-import copy
-import itertools
 import json
 import logging
 import os
 import re
-import threading
 import time
 
 import urllib3
@@ -33,6 +30,7 @@ from kubernetes.client.rest import ApiException
 import execution
 import kube
 import stages
+import store
 from config import (
     ENDPOINT_CONNECT_TO,
     ENDPOINT_START_WAIT_S,
@@ -50,8 +48,6 @@ from config import (
     LITELLM_URL,
     MULTIKUEUE_MANAGED_BY,
     MULTINODE_MAX_NODES,
-    OPS_LIST_CACHE_S,
-    OPS_LIST_WARM_WINDOW_S,
     PUBLIC_API_URL,
     REGION,
     RUNNER_IMAGE,
@@ -1697,7 +1693,6 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
     """Returns (job, created). AlreadyExists -> the existing one (idempotent replay). The per-operation
     PVC and Secret are owned by the Job (garbage-collected with it). A manager Job gets no PVC here: the
     dispatcher creates it on the worker it picks (docs/JOBS.md)."""
-    ops_cache_invalidate(None)  # the listing behind GET /v1/operations must show this mutation at once
     name = job["metadata"]["name"]
     import hashlib
 
@@ -1765,6 +1760,7 @@ def create(ns: str, job: dict, region: str = REGION, secret: dict | None = None)
         else:
             raise HTTPException(502, f"kubernetes ({region}): {e.status} {e.reason}: {(e.body or '')[:300]}")
     created = get(ns, name, region)
+    store.observe(region, ns, "jobsets" if is_jobset(job) else "jobs", created)  # this replica's next listing shows it
     if not was_created:
         if created["metadata"].get("annotations", {}).get(f"{LABEL}/request-hash", request_hash) != request_hash:
             raise HTTPException(409, "idempotency key was already used with different input")
@@ -1968,11 +1964,6 @@ def list_ops(ns: str, tenant: str, model: str | None, limit: int | None) -> list
     return items[:limit] if limit else items
 
 
-_ops_list_cache: dict = {}  # (ns, tenant, model) -> (until, items, skipped)
-_ops_list_wanted: dict = {}  # (ns, tenant, model) -> when a caller last asked: what the warmer keeps fresh
-_ops_list_lock = threading.Lock()  # one refresh of a listing at a time (the warmer and a cold request never both read)
-
-
 def _json_items(fn, *args, **kw) -> list[dict]:
     """A Kubernetes list as the API server's JSON items (dicts), skipping the client's model objects and the
     sanitize pass back to dicts (half the time of listing 600 Jobs, api 0.11.124). `_preload_content=False` hands
@@ -2000,106 +1991,77 @@ def _json_items(fn, *args, **kw) -> list[dict]:
     return items
 
 
+class Listing(list):
+    """An operations listing served from the store: a list with a `generation` (the sum of the store versions it was
+    read from: monotonic, so a reader's per-listing cache fences on it: app.list_operations); a listing with any
+    region read directly has none."""
+
+    generation: int | None = None
+
+
 def list_ops_all(ns: str, tenant: str, model: str | None) -> tuple[list[dict], list[str]]:
     """Every live operation of the tenant, newest first, and the regions that could not be read (unreachable: their
-    operations are absent from the list, which says so instead of failing every other region's). The listing is
-    reused for OPS_LIST_CACHE_S (a console polling every few seconds and its page flips share one read of the
-    tenant's Jobs and pods in every region: docs/API.md "Pagination"); a mutation never waits on it, it reads its
-    own Job."""
-    key = (ns, tenant, model)
-    _ops_list_wanted[key] = time.time()
-    hit = _ops_list_cache.get(key)
-    if hit:
-        # the cached list itself, READ-ONLY by contract (a copy of 600 Jobs cost 1.4 s per request, api 0.11.129):
-        # a caller copies the entries it changes (app.list_operations copies its page). An expired copy is served
-        # too while the warmer refreshes it (stale-while-revalidate): a request never waits behind a refresh
-        return hit[1], list(hit[2])
-    with _ops_list_lock:
-        hit = _ops_list_cache.get(key)  # a refresh that finished while this caller waited for the lock
-        if hit:
-            return hit[1], list(hit[2])
-        return _refresh_ops_listing(key)
-
-
-class Listing(list):
-    """A cached operations listing: a list with a monotonic `generation` (every refresh is a new one, never reused:
-    api 0.11.153), the token readers fence their per-listing caches with instead of the list's identity (an object id
-    is reused once the list is gone)."""
-
-    generation: int = 0
-
-
-_ops_list_generation = itertools.count(1)
-
-
-def _refresh_ops_listing(key: tuple) -> tuple[list[dict], list[str]]:
-    """Read the listing and cache it (OPS_LIST_CACHE_S); a listing with a region missing is never reused, so its
-    return shows at once."""
-    ns, tenant, model = key
+    operations are absent from the list, which says so instead of failing every other region's). Served from the
+    list-watch store (store.py: one copy of the tenant's Jobs, pods and JobSets per region, kept current by the
+    Kubernetes watch) in O(1) per object; a region whose store is not synced yet is listed directly."""
     items, skipped = _list_ops_all(ns, tenant, model)
-    if OPS_LIST_CACHE_S > 0 and not skipped:
-        items = Listing(items)
-        items.generation = next(_ops_list_generation)
-        _ops_list_cache[key] = (time.time() + OPS_LIST_CACHE_S, items, skipped)
     return items, skipped
 
 
-def warm_ops_listings(now: float | None = None) -> list[tuple]:
-    """The warmer's one pass (app._warm_loop every OPS_LIST_WARM_S): every listing a caller asked for within
-    OPS_LIST_WARM_WINDOW_S whose cached copy is older than half its life is read again, so a polling console and
-    its page flips are served from memory, cold or not (a page of 50 took 6-8 s when it paid the listing itself,
-    api 0.11.128). Returns the keys refreshed. Listings nobody asked for lately are forgotten."""
-    now = now or time.time()
-    refreshed = []
-    for key, asked in list(_ops_list_wanted.items()):
-        if asked + OPS_LIST_WARM_WINDOW_S < now:
-            _ops_list_wanted.pop(key, None)
-            _ops_list_cache.pop(key, None)
-            continue
-        hit = _ops_list_cache.get(key)
-        if hit and hit[0] - OPS_LIST_CACHE_S / 2 > now:
-            continue  # young enough
-        if _ops_list_lock.locked():
-            continue  # a request is reading it cold right now; the next pass sees the fresh copy
-        with _ops_list_lock:
-            try:
-                _refresh_ops_listing(key)
-                refreshed.append(key)
-            except Exception as e:  # noqa: BLE001 - the next request reads for itself; the warmer never dies
-                log.warning("listing warmer: %s not refreshed: %s", key, str(e)[:160])
-    return refreshed
+STORE_KINDS = ("jobs", "pods", "jobsets")  # what a tenant listing of one region takes from the store
 
 
-def ops_cache_invalidate(ns: str | None = None) -> None:
-    """Forget the cached listing of a namespace (every namespace: None): called by every Job creation, patch and
-    deletion this API makes, so a submission, a cancellation or a resume shows on the next list at once."""
-    for key in list(_ops_list_cache):
-        if ns is None or key[0] == ns:
-            _ops_list_cache.pop(key, None)
+def _store_listing(r: str, ns: str, tenant: str, model: str | None) -> tuple[list[dict], list[dict], int] | None:
+    """The tenant's Jobs (JobSets as Jobs) and pods of region `r` from the store, with the store version they came
+    from; None when the store is not synced for all of them."""
+    if not all(store.ready(r, ns, k) for k in STORE_KINDS):
+        return None
+
+    def mine(o: dict) -> bool:
+        labels = o["metadata"].get("labels") or {}
+        return labels.get(f"{LABEL}/tenant") == tenant and (not model or labels.get(f"{LABEL}/model") == model)
+
+    jobs = [j for j in store.items(r, ns, "jobs") if mine(j)]
+    jobs += [_jobset_as_job(j) for j in store.items(r, ns, "jobsets") if mine(j)]
+    pods = [
+        p for p in store.items(r, ns, "pods") if (p["metadata"].get("labels") or {}).get(f"{LABEL}/tenant") == tenant
+    ]
+    return jobs, pods, sum(store.version(r, ns, k) for k in STORE_KINDS)
 
 
 def _list_ops_all(ns: str, tenant: str, model: str | None) -> tuple[list[dict], list[str]]:
     sel = f"{LABEL}/tenant={tenant}" + (f",{LABEL}/model={model}" if model else "")
-    items, by_job, managers, skipped = [], {}, [], []
+    items, by_job, managers, skipped = Listing(), {}, [], []
+    items.generation = 0
     for r in kube.regions():
-        try:
-            # resource_version="0": the API server answers from its watch cache (no etcd quorum read): the listing
-            # is at most milliseconds behind, which a 10 s cache tolerates, and a large list comes back much faster
-            jobs = _json_items(kube.batch(r).list_namespaced_job, ns, label_selector=sel, resource_version="0")
-            pods = _json_items(
-                kube.core(r).list_namespaced_pod, ns, label_selector=f"{LABEL}/tenant={tenant}", resource_version="0"
-            )
-            jobs += list_jobsets(ns, r, sel)
-        except ApiException as e:
-            if e.status in (403, 404):  # tenant not onboarded in that region
+        held = _store_listing(r, ns, tenant, model)
+        if held is not None:
+            # the store's objects are shared: a listing entry is a shallow copy that carries its own `_` fields
+            jobs, pods = [dict(j) for j in held[0]], held[1]
+            items.generation = None if items.generation is None else items.generation + held[2]
+        else:
+            items.generation = None  # a direct read: no store version to fence on
+            try:
+                # resource_version="0": the API server answers from its watch cache (no etcd quorum read): the
+                # listing is at most milliseconds behind, and a large list comes back much faster
+                jobs = _json_items(kube.batch(r).list_namespaced_job, ns, label_selector=sel, resource_version="0")
+                pods = _json_items(
+                    kube.core(r).list_namespaced_pod,
+                    ns,
+                    label_selector=f"{LABEL}/tenant={tenant}",
+                    resource_version="0",
+                )
+                jobs += list_jobsets(ns, r, sel)
+            except ApiException as e:
+                if e.status in (403, 404):  # tenant not onboarded in that region
+                    continue
+                raise HTTPException(502, f"kubernetes ({r}): {e.reason}")
+            except (urllib3.exceptions.HTTPError, OSError) as e:
+                # a region that cannot be reached (gone, or its endpoint down) must not hide every other region's
+                # operations (the console showed 500 for every tenant while a region was being replaced)
+                log.warning("operations: region %s unreachable, skipped: %s", r, str(e)[:160])
+                skipped.append(r)
                 continue
-            raise HTTPException(502, f"kubernetes ({r}): {e.reason}")
-        except (urllib3.exceptions.HTTPError, OSError) as e:
-            # a region that cannot be reached (gone, or its endpoint down) must not hide every other region's
-            # operations (the console showed 500 for every tenant while a region was being replaced)
-            log.warning("operations: region %s unreachable, skipped: %s", r, str(e)[:160])
-            skipped.append(r)
-            continue
         for p in pods:
             labels = p["metadata"].get("labels", {})
             by_job.setdefault((r, labels.get(JOBSET_NAME_LABEL) or labels.get("job-name", "")), []).append(p)
@@ -2195,6 +2157,9 @@ def list_fleet_operations() -> tuple[list[dict], list[str]]:
             # one listing per tenant namespace: the API's identity is granted in the tenant namespaces, never
             # cluster-wide (a cluster-wide listing answered Forbidden on the fleet, api 0.11.125)
             for ns in namespaces:
+                if store.ready(r, ns, "jobs"):  # copies: the store's objects are shared, the entries below are marked
+                    jobs += [dict(j) for j in store.items(r, ns, "jobs")]
+                    continue
                 try:
                     jobs += _json_items(
                         kube.batch(r).list_namespaced_job, ns, label_selector=f"{LABEL}/tenant", resource_version="0"
@@ -2234,43 +2199,14 @@ def list_related(ns: str, tenant: str, keep, complete: bool = True) -> list[dict
     and the OOM-killed API pods of 2026-10-14, api 0.11.110). `complete` fills the selected Jobs in like `get` (their
     pods, the worker's placement and reason: a handle needs them); a count of names does not. A region that cannot be
     read is skipped (as `list_ops_all`): its relatives are absent, never a failure of the lookup."""
-    hit = _ops_list_cache.get((ns, tenant, None)) if OPS_LIST_CACHE_S > 0 and complete else None
-    if complete and OPS_LIST_CACHE_S > 0 and not (hit and hit[0] > time.time()):
-        # a VIEW with no warm listing (pollers that only read single operations never list, so the warmer had nothing
-        # to keep fresh): take the tenant listing through list_ops_all, which caches it for OPS_LIST_CACHE_S and marks
-        # the key wanted, so the warmer refreshes it every OPS_LIST_WARM_S while views keep asking. Before, every such
-        # view listed the tenant's every Job in every region itself (~100 MB of dicts per view, ~8 s, api 0.11.159).
-        # A COUNT (complete=False) never comes here: it lists fresh below for its ordinal.
-        list_ops_all(ns, tenant, None)
-        hit = _ops_list_cache.get((ns, tenant, None))
-    if hit and hit[0] > time.time():
-        # only a VIEW of relatives (complete=True) is served from the listing; a COUNT (complete=False: the next
-        # retry ordinal and the retry bound, export_retries/continuations) always lists fresh, since a relative
-        # created within the listing's age, here or on the other replica, would be missed and its ordinal reused
-        # (create() returns the existing Job for AlreadyExists: the second export would silently be the first).
-        # the listing the warmer keeps for the tenant (docs/API.md "Pagination"): the same Jobs, already complete
-        # (pods, placement, reason), at most OPS_LIST_CACHE_S old, exactly what GET /v1/operations shows. Listing the
-        # tenant's every Job in every region through the typed client twice per view made an operation view of a
-        # tenant with 550 Jobs take 13-18 s (2026-10-20, api 0.11.146). Copies: the cached listing is read-only.
-        out = [copy.deepcopy(j) for j in hit[1] if not is_mirror(j) and keep(j)]
-        if complete:
-            # the SET of relatives and their immutable metadata come from the listing; the live state of an ACTIVE
-            # relative (its pods: the current attempt's identity, its placement, its reason) is re-read now, so a
-            # handle never names a finalizer attempt that ended within the listing's age
-            for j in out:
-                if normalise(j)["status"] in ("QUEUED", "RUNNING"):
-                    j.pop("_pods", None)
-                    if is_manager_job(j):
-                        uid = j["metadata"].get("uid", "")
-                        cluster = kube.workload_cluster_of(ns, uid) if uid else None
-                        _with_worker(
-                            j, ns, {uid: cluster} if cluster else {}, reason_of=lambda u: kube.workload_reason_of(ns, u)
-                        )
-                    else:
-                        _with_pods(j, ns, j.get("_region") or REGION)
-        out.sort(key=lambda j: j["metadata"]["name"])
-        out.sort(key=lambda j: j["metadata"].get("creationTimestamp", ""), reverse=True)
-        return out
+    if complete and all(store.ready(r, ns, k) for r in kube.regions() for k in STORE_KINDS):
+        # a VIEW of relatives (complete=True) comes from the store, as GET /v1/operations does: complete (pods,
+        # placement, reason) and current to the last watch event, nothing listed. A COUNT (complete=False: the next
+        # retry ordinal and the retry bound, export_retries/continuations) always lists fresh, since a relative created
+        # a moment ago on the other replica would be missed and its ordinal reused (create() returns the existing Job
+        # for AlreadyExists: the second export would silently be the first). Before the store, every such view listed
+        # the tenant's every Job in every region itself (~100 MB of dicts per view, ~8 s, api 0.11.159).
+        return [j for j in _list_ops_all(ns, tenant, None)[0] if keep(j)]
     out = []
     for r in kube.regions():
         try:
@@ -2342,7 +2278,6 @@ def cancel(ns: str, name: str, region: str = REGION) -> dict:
     (status CANCELLED through the annotation), pods terminate within the grace period. For a manager
     Job the deadline goes onto the worker's copy (MultiKueue mirrors spec only at creation) and the
     annotation onto the manager's; deleting the manager Job removes the worker's copy."""
-    ops_cache_invalidate(None)  # the listing behind GET /v1/operations must show this mutation at once
     job = get(ns, name, region)
     op = normalise(job)
     if op["status"] not in ("QUEUED", "RUNNING"):
@@ -2359,6 +2294,7 @@ def cancel(ns: str, name: str, region: str = REGION) -> dict:
         except ApiException as e:
             raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
         job["metadata"].setdefault("annotations", {})[f"{LABEL}/cancelled"] = "deleted"
+        store.drop(region, ns, "jobs", name)
         return job
     try:
         if is_manager_job(job):
@@ -2370,6 +2306,7 @@ def cancel(ns: str, name: str, region: str = REGION) -> dict:
                 # nominated but not copied to the worker yet: nothing has run, delete on the manager
                 retry(b.delete_namespaced_job, name, ns, propagation_policy="Background")
                 job["metadata"].setdefault("annotations", {})[f"{LABEL}/cancelled"] = "deleted"
+                store.drop(region, ns, "jobs", name)
                 return job
             patched = retry(
                 b.patch_namespaced_job, name, ns, {"metadata": {"annotations": {f"{LABEL}/cancelled": "true"}}}
@@ -2385,6 +2322,7 @@ def cancel(ns: str, name: str, region: str = REGION) -> dict:
         raise HTTPException(502, f"kubernetes ({region}): {e.reason}")
     out = _with_pods(b.api_client.sanitize_for_serialization(patched), ns, job["_region"], job["_pods"])
     out["_cluster"] = job.get("_cluster")
+    store.observe(region, ns, "jobs", out)  # this replica's next listing shows the cancellation
     return out
 
 
@@ -2399,6 +2337,7 @@ def _cancel_jobset(ns: str, name: str, region: str, job: dict) -> dict:
         if not started:
             delete_jobset(ns, name, region)
             job["metadata"].setdefault("annotations", {})[f"{LABEL}/cancelled"] = "deleted"
+            store.drop(region, ns, "jobsets", name)
             return job
         if is_manager_job(job):
             kube.deactivate_workload(ns, job["metadata"].get("uid", ""), region)
@@ -2686,7 +2625,6 @@ def switch_class(
     """Fallback placement (docs/SCHEDULING.md "Fallback to the next class"): a QUEUED fleet run that waited longer than
     its `fallback_wait_s` for its class is deleted on the manager (nothing ran) and created again as `<root>-rN` for
     `next_class` (that class's image), keeping only the remaining preference; the new Job says why."""
-    ops_cache_invalidate(None)  # the listing behind GET /v1/operations must show this mutation at once
     orig = get(ns, name, region)
     op = normalise(orig)
     md = orig["metadata"]
@@ -2827,7 +2765,6 @@ def switch_unschedulable(
     Workload deactivated so the worker's copy and its pod go and Kueue never admits it again), then the successor is
     admitted on the run's ledger and created; a failed admission or create restores the original. The owner, the root
     operation id and the durable handle stay the run's (lineage: resumed-from, recovered-from, the successor mark)."""
-    ops_cache_invalidate(None)  # the listing behind GET /v1/operations must show this mutation at once
     orig = get(ns, name, region)
     op = normalise(orig)
     md = orig["metadata"]
@@ -3005,7 +2942,6 @@ def recover(
     `<root>-r-<sha8>` is created from the acknowledged checkpoint pointer on `next_class` with that class's image and a
     fresh volume. The name is a function of (original, lost epoch): competing API replicas and repeated ticks
     converge on one Job (create is ignore-exists). Returns (successor, created)."""
-    ops_cache_invalidate(None)  # the listing behind GET /v1/operations must show this mutation at once
     import hashlib
 
     import attempts
@@ -3280,7 +3216,6 @@ def _link_successor(ns: str, name: str, new: str, region: str, jobset: bool = Fa
     0.11.63 only fallback and recovery linked their successor: a manual `:resume` left the original handle on its own
     terminal state (FAILED, epoch 1) for ever once its Job expired, and a graph child waiting on that root kept seeing
     the FAILED original. Idempotent: a replayed resume marks the same successor again."""
-    ops_cache_invalidate(None)  # the listing behind GET /v1/operations must show this mutation at once
     import attempts
 
     try:

@@ -13,7 +13,8 @@ import catalog
 import config as cfg
 import jobs
 import kube
-from test_api import ADMIN, H, admin_keys, client, cluster, pod  # noqa: F401 - pytest fixture registration
+import store
+from test_api import ADMIN, H, admin_keys, client, cluster, pod, store_sync  # noqa: F401 - pytest fixture registration
 
 
 def test_page_helper_orders_cuts_and_issues_cursors():
@@ -87,52 +88,44 @@ def test_models_and_endpoints_are_paged_and_only_the_page_is_read_live(client, m
     assert len(c.get("/v1/models", headers=H).json()) == 7
 
 
-def test_operations_listing_reports_the_total_and_reuses_the_tenant_listing(client, monkeypatch):
+def test_operations_listing_reports_the_total_and_is_served_from_the_store(client, monkeypatch):
     c, fake = client
     body = {"input": {"nsteps": "1000", "input_prefix": "s3://serverless2-demo-eu-north1/inputs/x"}}
     ids = [
         c.post("/v1/models/batch-example:invoke", json=body, headers={**H, "Idempotency-Key": f"pg-{i}"}).json()["id"]
         for i in range(3)
     ]
-    jobs._ops_list_cache.clear()
-    calls = []
-    real = jobs._list_ops_all
-
-    def counted(ns, tenant, model):
-        calls.append((ns, tenant, model))
-        return real(ns, tenant, model)
-
-    monkeypatch.setattr(jobs, "_list_ops_all", counted)
-    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 5.0)
+    listed = []
+    original = fake.list_namespaced_job
+    monkeypatch.setattr(fake, "list_namespaced_job", lambda *a, **k: listed.append(k) or original(*a, **k))
     r = c.get("/v1/operations?limit=2", headers=H)
     assert r.status_code == 200 and len(r.json()) == 2 and r.headers["X-Total-Count"] == "3"
     assert r.headers.get("X-Next-Cursor")
     r2 = c.get(f"/v1/operations?limit=2&cursor={r.headers['X-Next-Cursor']}", headers=H)
     assert len(r2.json()) == 1 and r2.headers["X-Total-Count"] == "3" and "X-Next-Cursor" not in r2.headers
     assert {o["id"] for o in r.json()} | {o["id"] for o in r2.json()} == set(ids)
-    assert len(calls) == 1  # the second page reused the listing
-    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 0.0)
-    jobs._ops_list_cache.clear()
-    c.get("/v1/operations?limit=2", headers=H)
-    c.get("/v1/operations?limit=2", headers=H)
-    assert len(calls) == 3  # no reuse when the cache is off
-    # the cached listing is shared read-only (no copy per request) and an expired copy is served while it refreshes
-    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 5.0)
-    jobs._ops_list_cache.clear()
+    assert listed  # the store is not synced (no lifespan here): every page lists directly, as before
+    store_sync(fake)
+    listed.clear()
+    r = c.get("/v1/operations?limit=2", headers=H)
+    r2 = c.get(f"/v1/operations?limit=2&cursor={r.headers['X-Next-Cursor']}", headers=H)
+    assert {o["id"] for o in r.json()} | {o["id"] for o in r2.json()} == set(ids) and listed == []  # from memory
+    # the store's objects are shared: a listing entry is a shallow copy carrying its own `_` fields, the object
+    # itself is never changed by a request
     first, _ = jobs.list_ops_all("tenant-demo", "demo", None)
-    again, _ = jobs.list_ops_all("tenant-demo", "demo", None)
-    assert again is first
-    key = ("tenant-demo", "demo", None)
-    until, items, skipped = jobs._ops_list_cache[key]
-    jobs._ops_list_cache[key] = (until - 100, items, skipped)  # expired
-    n = len(calls)
-    stale, _ = jobs.list_ops_all("tenant-demo", "demo", None)
-    assert stale is items and len(calls) == n  # served stale, no synchronous re-read
-    assert jobs.warm_ops_listings() == [key] and jobs._ops_list_cache[key][1] is not items  # the warmer refreshed it
-    # the page handed to the per-operation work is a copy: the listing's entries are never changed by a request
-    r = c.get("/v1/operations?limit=1", headers=H)
-    assert r.status_code == 200 and jobs._ops_list_cache[key][1][0].get("_pods") is not None or True
-    jobs._ops_list_cache.clear()
+    held = store.get("eu-north1", "tenant-demo", "jobs", first[0]["metadata"]["name"])
+    assert first[0] is not held and first[0]["metadata"] is held["metadata"] and "_pods" not in held
+    assert first[0]["_pods"] == [] and isinstance(first, jobs.Listing) and first.generation > 0
+    # a Job this replica creates shows on its next listing at once (store.observe), before any watch event
+    created = c.post("/v1/models/batch-example:invoke", json=body, headers={**H, "Idempotency-Key": "pg-9"})
+    assert created.status_code == 202 and created.json()["id"] in {
+        j["metadata"]["name"] for j in store.items("eu-north1", "tenant-demo", "jobs")
+    }
+    r = c.get("/v1/operations?limit=10", headers=H)
+    assert r.headers["X-Total-Count"] == "4" and listed == []
+    # a cancellation too: deleted on the manager (never started) -> gone from the store now
+    assert c.post(f"/v1/operations/{created.json()['id']}:cancel", headers=H).status_code == 200
+    assert created.json()["id"] not in {j["metadata"]["name"] for j in store.items("eu-north1", "tenant-demo", "jobs")}
 
 
 def test_json_items_reads_raw_json_or_preloaded_items(monkeypatch):
@@ -400,61 +393,45 @@ def test_node_placement_uses_one_node_listing_per_region(monkeypatch):
     kube._node_cache.clear()
 
 
-def test_the_listing_warmer_keeps_wanted_listings_fresh_and_forgets_the_rest(client, monkeypatch):
+def test_a_stale_store_key_is_listed_directly_until_it_recovers(client, monkeypatch):
+    """A region whose watch has been broken for STORE_STALE_S is read from the API server as before the store; once
+    the reflector relists, the store serves again. A region the store never synced is read directly too."""
     c, fake = client
     body = {"input": {"nsteps": "1000", "input_prefix": "s3://serverless2-demo-eu-north1/inputs/x"}}
-    c.post("/v1/models/batch-example:invoke", json=body, headers={**H, "Idempotency-Key": "warm-1"})
-    calls = []
-    real = jobs._list_ops_all
-    monkeypatch.setattr(jobs, "_list_ops_all", lambda ns, t, m: calls.append((ns, t, m)) or real(ns, t, m))
-    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 10.0)
-    monkeypatch.setattr(jobs, "OPS_LIST_WARM_WINDOW_S", 90.0)
-    jobs._ops_list_cache.clear()
-    jobs._ops_list_wanted.clear()
-    assert c.get("/v1/operations?limit=5", headers=H).status_code == 200
-    assert len(calls) == 1 and ("tenant-demo", "demo", None) in jobs._ops_list_wanted
-    # a fresh copy is not re-read; one older than half its life is; an unwanted listing is dropped
-    assert jobs.warm_ops_listings() == []
-    key = ("tenant-demo", "demo", None)
-    until, items, skipped = jobs._ops_list_cache[key]
-    jobs._ops_list_cache[key] = (until - 6, items, skipped)
-    assert jobs.warm_ops_listings() == [key] and len(calls) == 2
-    jobs._ops_list_wanted[key] = time.time() - 1000
-    assert jobs.warm_ops_listings() == [] and key not in jobs._ops_list_cache and key not in jobs._ops_list_wanted
-    # a request after a mutation never sees the stale copy (invalidation unchanged), and the warmer survives a failure
-    c.get("/v1/operations?limit=5", headers=H)
-    c.post("/v1/models/batch-example:invoke", json=body, headers={**H, "Idempotency-Key": "warm-2"})
-    assert key not in jobs._ops_list_cache
-    before = len(calls)
+    c.post("/v1/models/batch-example:invoke", json=body, headers={**H, "Idempotency-Key": "stale-1"})
+    listed = []
+    original = fake.list_namespaced_job
+    monkeypatch.setattr(fake, "list_namespaced_job", lambda *a, **k: listed.append(k) or original(*a, **k))
+    store_sync(fake)
+    assert c.get("/v1/operations?limit=5", headers=H).headers["X-Total-Count"] == "1" and listed == []
+    store.degrade(("eu-north1", "tenant-demo", "pods"), "watch error")
+    assert c.get("/v1/operations?limit=5", headers=H).status_code == 200 and listed == []  # fresh fault: served
+    monkeypatch.setattr(store, "STORE_STALE_S", 0.0)
     r = c.get("/v1/operations?limit=5", headers=H)
-    assert r.status_code == 200 and len(calls) == before + 1 and r.headers["X-Total-Count"] == "2"
-
-    def boom(ns, t, m):
-        raise RuntimeError("region down")
-
-    monkeypatch.setattr(jobs, "_list_ops_all", boom)
-    jobs._ops_list_cache.clear()
-    assert jobs.warm_ops_listings() == []  # logged, not raised
-    jobs._ops_list_cache.clear()
-    jobs._ops_list_wanted.clear()
+    assert r.status_code == 200 and r.headers["X-Total-Count"] == "1" and listed  # listed directly
+    before = len(listed)
+    store_sync(fake)  # the reflector's relist
+    r = c.get("/v1/operations?limit=5", headers=H)
+    assert r.headers["X-Total-Count"] == "1" and len(listed) == before  # served again, nothing more listed
 
 
 def test_the_listing_auth_cache_keeps_no_expired_generation(client, monkeypatch):
     """api 0.11.142: the authorization cache of GET /v1/operations holds one entry per principal and drops expired
-    entries on every write, so a listing generation never outlives OPS_LIST_CACHE_S there. Keyed by the listing's
-    id before, every warmer refresh left a whole generation (~100 MB of Jobs) behind until 256 had piled up."""
+    entries on every write, so a listing generation never outlives OPS_AUTH_CACHE_S there. Keyed by the listing's
+    id before, every warmer refresh left a whole generation (~100 MB of Jobs) behind until 256 had piled up. Since
+    0.11.173 the generation is the store's version (jobs.Listing.generation)."""
     import jobs
 
     c, _ = client
     generations = []
 
     def fresh(ns, tenant, model):
-        generations.append(jobs.Listing())  # a new listing generation per refresh, as the warmer produces
-        generations[-1].generation = next(jobs._ops_list_generation)
+        generations.append(jobs.Listing())  # a new store version per listing, as a busy tenant produces
+        generations[-1].generation = len(generations)
         return generations[-1], []
 
     monkeypatch.setattr(jobs, "list_ops_all", fresh)
-    monkeypatch.setattr(appmod.cfg, "OPS_LIST_CACHE_S", 0.0)  # every entry is expired by the next write
+    monkeypatch.setattr(appmod.cfg, "OPS_AUTH_CACHE_S", 0.0)  # every entry is expired by the next write
     appmod._ops_auth_cache.clear()
     for _ in range(12):
         assert c.get("/v1/operations", headers=H).status_code == 200
@@ -464,9 +441,9 @@ def test_the_listing_auth_cache_keeps_no_expired_generation(client, monkeypatch)
     assert entry[0] == generations[-1].generation  # the token of the newest generation, never the list
 
 
-def test_relatives_come_from_the_warm_listing_without_a_new_read(client, monkeypatch):
-    """api 0.11.146: with the tenant's listing fresh in the cache, list_related answers from it (copies) and lists
-    nothing; cold, it reads the Jobs as raw JSON once per region."""
+def test_relatives_come_from_the_store_without_a_new_read(client, monkeypatch):
+    """api 0.11.146/173: with the store synced, list_related answers from it (shallow copies) and lists nothing;
+    before the store is synced, it reads the Jobs as raw JSON once per region and completes the kept ones only."""
     c, fake = client
     r = c.post("/v1/models/hello-run:invoke", headers=H, json={"mode": "run", "input": {}})
     assert r.status_code == 202, r.text
@@ -479,29 +456,15 @@ def test_relatives_come_from_the_warm_listing_without_a_new_read(client, monkeyp
         return original(*a, **k)
 
     monkeypatch.setattr(fake, "list_namespaced_job", counting)
-    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 60.0)
-    jobs._ops_list_cache.clear()
-    jobs._ops_list_wanted.clear()
     cold = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
-    assert [j["metadata"]["name"] for j in cold] == [op] and calls  # cold: the regions were listed ONCE, through
-    # list_ops_all (api 0.11.159): the listing is now cached and wanted, so the warmer keeps it and the next view
-    # lists nothing; before, every cold view listed the tenant itself and cached nothing
-    assert ("tenant-demo", "demo", None) in jobs._ops_list_cache and (
-        "tenant-demo",
-        "demo",
-        None,
-    ) in jobs._ops_list_wanted
-    first_cold = list(calls)
-    calls.clear()
-    again = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
-    assert [j["metadata"]["name"] for j in again] == [op] and calls == []  # the second cold view: nothing listed
-    assert first_cold  # the one cold listing (per region) is list_ops_all's own; the view added none of its own
-    jobs.list_ops_all("tenant-demo", "demo", None)  # the warmer's listing
+    assert [j["metadata"]["name"] for j in cold] == [op] and calls  # not synced: the region was listed
+    store_sync(fake)
     calls.clear()
     warm = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
-    assert [j["metadata"]["name"] for j in warm] == [op] and calls == []  # served from the listing, nothing listed
-    assert warm[0] is not jobs._ops_list_cache[("tenant-demo", "demo", None)][1][0]  # a copy, the listing untouched
-    # an ACTIVE relative's pods are re-read live, never taken from the listing: the current attempt's identity is fresh
+    assert [j["metadata"]["name"] for j in warm] == [op] and calls == []  # served from the store, nothing listed
+    held = store.get("eu-north1", "tenant-demo", "jobs", op)
+    assert warm[0] is not held and "_pods" not in held  # a copy carries the view's fields, the store's object none
+    # an ACTIVE relative's pods are the store's current pods: a pod the watch delivers shows on the next view
     pods_calls = []
     original_pods = fake.list_namespaced_pod
 
@@ -511,9 +474,9 @@ def test_relatives_come_from_the_warm_listing_without_a_new_read(client, monkeyp
 
     monkeypatch.setattr(fake, "list_namespaced_pod", counting_pods)
     running = pod(op, "Running")
-    fake.pods.append(running)
+    store.apply(("eu-north1", "tenant-demo", "pods"), "ADDED", running)
     live = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"] == op)
-    assert pods_calls and running["metadata"]["name"] in [p["metadata"]["name"] for p in live[0]["_pods"]]  # live
+    assert pods_calls == [] and running["metadata"]["name"] in [p["metadata"]["name"] for p in live[0]["_pods"]]
 
 
 def test_counts_of_relatives_never_come_from_the_listing(client, monkeypatch):
@@ -524,10 +487,8 @@ def test_counts_of_relatives_never_come_from_the_listing(client, monkeypatch):
     r = c.post("/v1/models/hello-run:invoke", headers=H, json={"mode": "run", "input": {}})
     assert r.status_code == 202, r.text
     op = r.json()["id"]
-    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 60.0)
-    jobs._ops_list_cache.clear()
-    jobs.list_ops_all("tenant-demo", "demo", None)  # the warm listing: one Job
-    # a retry created after the listing was taken (another replica's export, or this one's a moment ago)
+    store_sync(fake)  # the store: one Job
+    # a retry created after the store's last event (another replica's export, or this one's a moment ago)
     late = copy.deepcopy(fake.jobs[("tenant-demo", op)])
     late["metadata"] = {
         **late["metadata"],
@@ -538,7 +499,7 @@ def test_counts_of_relatives_never_come_from_the_listing(client, monkeypatch):
     assert jobs.export_retries("tenant-demo", "demo", op) == 1  # counted fresh
     assert jobs.continuations("tenant-demo", "demo", op) == 0
     view = jobs.list_related("tenant-demo", "demo", lambda j: j["metadata"]["name"].startswith(op))
-    assert [j["metadata"]["name"] for j in view] == [op]  # the view is the listing's copy (<= OPS_LIST_CACHE_S old)
+    assert [j["metadata"]["name"] for j in view] == [op]  # the view is the store's: current to the last watch event
 
 
 def test_listings_drop_managed_fields_and_auth_entries_pin_one_generation(client, monkeypatch):
@@ -559,18 +520,17 @@ def test_listings_drop_managed_fields_and_auth_entries_pin_one_generation(client
     fake.jobs[("tenant-demo", op)]["metadata"]["managedFields"] = [
         {"manager": "kube-controller-manager", "operation": "Update"}
     ]
-    monkeypatch.setattr(jobs, "OPS_LIST_CACHE_S", 60.0)
-    jobs._ops_list_cache.clear()
     items, _ = jobs.list_ops_all("tenant-demo", "demo", None)
-    assert items and all("managedFields" not in j["metadata"] for j in items)
+    assert items and all("managedFields" not in j["metadata"] for j in items)  # the direct read drops the ledger
+    store_sync(fake)
+    assert all("managedFields" not in j["metadata"] for j in store.items("eu-north1", "tenant-demo", "jobs"))  # held
     appmod._ops_auth_cache.clear()
     assert c.get("/v1/operations", headers=H).status_code == 200  # the user's entry, generation A
-    gen_a = jobs._ops_list_cache[("tenant-demo", "demo", None)][1]
-    jobs._ops_list_cache.clear()
-    jobs.list_ops_all("tenant-demo", "demo", None)  # generation B (the warmer's refresh)
-    gen_b = jobs._ops_list_cache[("tenant-demo", "demo", None)][1]
-    assert gen_a is not gen_b
+    gen_a = jobs.list_ops_all("tenant-demo", "demo", None)[0].generation
+    store.apply(("eu-north1", "tenant-demo", "jobs"), "MODIFIED", fake.jobs[("tenant-demo", op)])  # a watch event
+    gen_b = jobs.list_ops_all("tenant-demo", "demo", None)[0].generation
+    assert gen_a != gen_b
     assert (
         c.get("/v1/operations", headers={"Authorization": f"Bearer {ADMIN}"}).status_code == 200
     )  # another principal lists
-    assert {v[0] for v in appmod._ops_auth_cache.values()} == {gen_b.generation}  # the older generation is unpinned
+    assert {v[0] for v in appmod._ops_auth_cache.values()} == {gen_b}  # the older generation is unpinned

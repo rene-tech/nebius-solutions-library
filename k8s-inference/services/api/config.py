@@ -111,13 +111,17 @@ JOB_TTL_S = int(os.environ.get("JOB_TTL_S", str(90 * 86400)))  # finished Jobs s
 # what a resume needs lives in the customer's storage (inputs, the application's checkpoints), never on a kept disk
 WORK_RECLAIM_EVERY_S = int(os.environ.get("WORK_RECLAIM_EVERY_S", "300"))  # the reclaim pass's period (control API)
 WORK_RECLAIM_MAX_PER_PASS = int(os.environ.get("WORK_RECLAIM_MAX_PER_PASS", "25"))  # releases per pass (each re-lists)
-# the tenant-wide Job/pod listing behind GET /v1/operations is reused this long (a console polling every 8 s and
-# its page flips share one listing; 0 = none): docs/API.md "Pagination"
-OPS_LIST_CACHE_S = float(os.environ.get("OPS_LIST_CACHE_S", "10"))
-# the warmer re-reads the listings asked for within OPS_LIST_WARM_WINDOW_S every OPS_LIST_WARM_S, so a console that
-# polls is served from memory (api 0.11.128); 0 = no warmer
-OPS_LIST_WARM_S = float(os.environ.get("OPS_LIST_WARM_S", "4"))
-OPS_LIST_WARM_WINDOW_S = float(os.environ.get("OPS_LIST_WARM_WINDOW_S", "90"))
+# the list-watch store behind every listing (services/api/store.py, docs/API.md "Pagination"): a watch session is
+# reopened from its last version every STORE_WATCH_TIMEOUT_S (the server's timeout), the collection relisted as a
+# safety net every STORE_RESYNC_S, a key whose watch has been broken for STORE_STALE_S is read directly meanwhile,
+# and new tenant namespaces are picked up every STORE_NS_REFRESH_S
+STORE_WATCH_TIMEOUT_S = float(os.environ.get("STORE_WATCH_TIMEOUT_S", "300"))
+STORE_RESYNC_S = float(os.environ.get("STORE_RESYNC_S", "3600"))
+STORE_STALE_S = float(os.environ.get("STORE_STALE_S", "60"))
+STORE_NS_REFRESH_S = float(os.environ.get("STORE_NS_REFRESH_S", "60"))
+# GET /v1/operations remembers what a principal may read of the store's current version this long (the owner check
+# reads the run ledger per Job); the entry is dropped by the store's next change anyway
+OPS_AUTH_CACHE_S = float(os.environ.get("OPS_AUTH_CACHE_S", "10"))
 JOB_BACKOFF_LIMIT = int(
     os.environ.get("JOB_BACKOFF_LIMIT", "3")
 )  # application failures before a Job is FAILED (disruptions do not count)

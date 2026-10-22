@@ -4,6 +4,21 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.173, dispatcher 0.2.17
+
+- The list-watch store (`services/api/store.py`): every listing this API serves (GET /v1/operations, the fleet's
+  operations, an operation's relatives, the Workload placement reads) comes from one in-memory copy of the fleet's
+  Jobs, pods, JobSets and Workloads per region and tenant namespace, listed once and kept current by the Kubernetes
+  watch API (bookmarks, 410 Gone relist, a safety relist every `STORE_RESYNC_S`, reopened watches, new tenant
+  namespaces picked up every `STORE_NS_REFRESH_S`): the informer pattern of client-go. Replaces the per-request
+  listing with its 10 s cache, the 4 s warmer and the listing generations (`OPS_LIST_CACHE_S`, `OPS_LIST_WARM_S`,
+  `OPS_LIST_WARM_WINDOW_S` are gone; the owner-check cache of GET /v1/operations fences on the store's version,
+  `OPS_AUTH_CACHE_S`). Before, one operation view parsed the tenant's whole Job listing (~100 MB of objects for
+  tenant-system) and the warmer made a new copy every 4 s: the memory behind the 2026-10-20 OOM rounds. A key whose
+  store is not synced yet (startup, a region outage longer than `STORE_STALE_S`, the tests) is listed directly as
+  before; a mutation this API makes (create, cancel) is applied to its own store at once. `/healthz` reports the
+  store (`store`: objects, version, age of the last list, error per key).
+
 ## api 0.11.172, dispatcher 0.2.17
 
 - Gone Job, same contract (Root's last 171 branch): a run whose Kubernetes Job expired while its scratch and

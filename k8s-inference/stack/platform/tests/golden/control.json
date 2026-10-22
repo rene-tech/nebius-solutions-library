@@ -69,7 +69,7 @@
  },
  "apps/Deployment/api/api": {
   "component": "api",
-  "sha256": "06170b8a7b415386113b9e81cdae6bc2e31e83b194e2187c9b36c40102153d3b"
+  "sha256": "b6a9704205a616439dc768fdcb606e831cf41e0e0adb5874126ac159e439e4fd"
  },
  "apps/Deployment/envoy-gateway-system/ratelimit-redis": {
   "component": "gateway",

@@ -444,10 +444,14 @@ _workloads_lock = threading.Lock()  # one refresh at a time: concurrent misses s
 
 
 def _workloads(ns: str) -> list:
-    """The namespace's Workloads, one list per WORKLOADS_CACHE_S. A cache miss is single-flight: 12 concurrent
-    operation views on a miss used to parse 12 copies of the list (570 Workloads, 8.6 MB of JSON, ~42 MB of
-    objects each), which is what the request thread pool's worth of concurrent reads did to the 2 GiB limit
-    (2026-10-20, api 0.11.143)."""
+    """The namespace's Workloads: the list-watch store's compact copies when it is synced (store.py), else one list
+    per WORKLOADS_CACHE_S. A cache miss is single-flight: 12 concurrent operation views on a miss used to parse 12
+    copies of the list (570 Workloads, 8.6 MB of JSON, ~42 MB of objects each), which is what the request thread
+    pool's worth of concurrent reads did to the 2 GiB limit (2026-10-20, api 0.11.143)."""
+    import store
+
+    if store.ready(REGION, ns, "workloads"):
+        return store.items(REGION, ns, "workloads")
     hit = _workloads_cache.get(ns) if WORKLOADS_CACHE_S > 0 else None
     now = time.time()
     if hit and hit[0] > now:

@@ -20,6 +20,7 @@ import kube
 import models
 import render
 import status
+import store
 from config import RUNNER_IMAGE
 
 KEY_INFO = {
@@ -69,6 +70,20 @@ def _merge(into: dict, patch: dict) -> dict:
         else:
             into[k] = v
     return into
+
+
+def store_sync(fake, region="eu-north1", rv="1"):
+    """The list-watch store as the reflectors would leave it after their LIST of this fake cluster: every tenant
+    namespace's Jobs, pods, JobSets and Workloads, synced (store.py). A test that wants the listings served from the
+    store calls this after it changed the fake; a change made behind the store's back is invisible to the store, as
+    it is on the fleet until the watch delivers it (store.apply / store.observe)."""
+    for ns in fake.namespaces:
+        store.replace((region, ns, "jobs"), [copy.deepcopy(j) for (n, _), j in fake.jobs.items() if n == ns], rv)
+        pods = [copy.deepcopy(p) for p in fake.pods if p["metadata"].get("namespace", "tenant-demo") == ns]
+        store.replace((region, ns, "pods"), pods, rv)
+        for plural, kind in (("jobsets", "jobsets"), ("workloads", "workloads")):
+            held = [copy.deepcopy(o) for (n, pl, _), o in fake.custom.items() if n == ns and pl == plural]
+            store.replace((region, ns, kind), held, rv)
 
 
 class FakeCluster:
@@ -3840,21 +3855,27 @@ def test_a_failed_main_whose_capture_record_is_still_coming_is_finalizing_not_fa
 
 def test_the_operations_auth_cache_holds_no_jobs_and_the_workload_cache_is_compact(client, monkeypatch):
     """api 0.11.153: an auth-cache entry names what a principal may read of one listing generation (id + size) and
-    holds no Job dict; a cached Workload keeps only the fields the readers use (no pod template, no managedFields)."""
+    holds no Job dict; a cached Workload keeps only the fields the readers use (no pod template, no managedFields).
+    api 0.11.173: the generation is the store's version; a listing with a region read directly has none and is
+    never remembered."""
     c, cl = client
     appmod._ops_auth_cache.clear()
     assert c.get("/v1/operations", headers=H).status_code == 200
-    assert appmod._ops_auth_cache, "a listing populates the auth cache"
+    assert not appmod._ops_auth_cache, "a direct listing (store not synced) is not remembered"
+    store_sync(cl)
+    assert c.get("/v1/operations", headers=H).status_code == 200
+    assert appmod._ops_auth_cache, "a listing from the store populates the auth cache"
     for v in appmod._ops_auth_cache.values():
         assert isinstance(v[0], int) and isinstance(v[2], set)  # (generation, expiry, names)
         assert not any(isinstance(x, (dict, list)) for x in v)
         assert all(isinstance(n, str) for n in v[2])
-    # the fence is the listing's monotonic generation, never the list object's id: a later listing that happens to
-    # reuse the same id and size (forced here by handing the cache the same object with a new generation) is a miss
+    # the fence is the store's monotonic version: any change to the tenant's objects (here a watch event) is a miss
     gen_before = max(v[0] for v in appmod._ops_auth_cache.values())
     live, _ = jobs.list_ops_all("tenant-demo", "demo", None)
     assert isinstance(live, jobs.Listing) and live.generation == gen_before
-    live.generation = gen_before + 1  # the same object, a newer generation: the entry must not be trusted
+    store.apply(("eu-north1", "tenant-demo", "pods"), "BOOKMARK", {"metadata": {"resourceVersion": "2"}})
+    assert jobs.list_ops_all("tenant-demo", "demo", None)[0].generation == gen_before  # a bookmark changes nothing
+    store.apply(("eu-north1", "tenant-demo", "pods"), "ADDED", pod("op-none", "Running"))
     hits_before = dict(appmod._ops_auth_cache)
     assert c.get("/v1/operations", headers=H).status_code == 200
     assert all(v[0] == gen_before + 1 for v in appmod._ops_auth_cache.values()) and hits_before != dict(

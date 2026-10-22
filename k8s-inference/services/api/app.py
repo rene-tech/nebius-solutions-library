@@ -42,6 +42,7 @@ import schemas
 import sessions
 import stages
 import status
+import store
 from auth import (
     FLEET_ROLE,
     Principal,
@@ -120,11 +121,11 @@ async def _lifespan(_app: FastAPI):
         else:
             log.warning("ROUTER_KEY is not set: LiteLLM model groups are not registered")
         tasks = [asyncio.create_task(_reconcile_loop())]
-    if cfg.OPS_LIST_WARM_S > 0:
-        tasks.append(asyncio.create_task(_warm_loop()))  # the listing warmer (docs/API.md "Pagination")
+    store.start(jobs.tenant_namespaces)  # the list-watch store behind every listing (docs/API.md "Pagination")
     try:
         yield
     finally:
+        store.stop()
         for task in tasks:
             task.cancel()
             try:
@@ -133,23 +134,13 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.172", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.173", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
 
 
 ADMITTED_HEADER = "x-serverless2-admitted"  # the API's own proxied call to a gateway: the hook must not count it again
-
-
-async def _warm_loop():
-    """Every OPS_LIST_WARM_S: re-read the operation listings callers asked for lately (jobs.warm_ops_listings)."""
-    while True:
-        try:
-            await asyncio.to_thread(jobs.warm_ops_listings)
-        except Exception as e:  # noqa: BLE001 - never ends the loop
-            log.warning("listing warmer pass failed: %s", str(e)[:160])
-        await asyncio.sleep(cfg.OPS_LIST_WARM_S)
 
 
 def _admit(
@@ -652,6 +643,7 @@ def _health_body() -> dict:
         "regions": kube.regions(),
         "fleet_manager": FLEET_MANAGER,
         "gpu_classes": sorted({p["gpu_class"] for p in kube.fleet()["pools"].values() if p.get("gpu_class")}),
+        "store": store.health(),  # the list-watch store per region, namespace and kind (docs/API.md "Pagination")
     }
 
 
@@ -1792,7 +1784,7 @@ def list_operations(
         if len(_ops_auth_cache) > 256:
             _ops_auth_cache.clear()
         if generation is not None:
-            _ops_auth_cache[auth_key] = (generation, now + cfg.OPS_LIST_CACHE_S, set(live_names))
+            _ops_auth_cache[auth_key] = (generation, now + cfg.OPS_AUTH_CACHE_S, set(live_names))
     durable: list[dict] = []
     if attempts.enabled():
         try:
