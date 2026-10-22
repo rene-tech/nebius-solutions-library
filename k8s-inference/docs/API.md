@@ -486,14 +486,16 @@ The operation records it as `target` ({cluster, variant, id, image, gpu_class}).
 | value | the variant taken when the field selects none |
 |---|---|
 | `priority` (default) | the first with a ready replica, else the first (its cold start is the call's) |
-| `capacity` | the first with a ready replica (`admitting`), else the first that can start one now (`startable`: its deployment is not failed and its pool has a node, or room for one under the pool's `max_nodes`), else the first |
+| `capacity` | the first target KNOWN to admit now (`admitting`: a ready replica whose in-flight requests, Knative's stable concurrency, are below ready replicas x its `container_concurrency`), else the first KNOWN to be startable (`startable`: a cold deployment that is not failed and whose pool has free GPUs for one replica or room for a node under `max_nodes`), else the first; an unknown state (no concurrency limit, no measurement, an unreadable pool) is null and never counts |
 | `<variant>` | that variant |
 
 Declared order, nothing ranked. `GET /v1/models/{id}` (and the list) of an endpoint carries `targets`: one entry per
 deployment the call may resolve to, deployments in declared order and variants in priority order, with `cluster`,
 `region`, `variant`, `id` (the object), `pool`, `gpu_class`, `image` (the exact reference that deployment runs:
 the variant's, else the class image, else the model's), `nodes`, `replicas` {min, max, ready}, `status`,
-`admitting` and `startable`; never the private spec or environment.
+`in_flight`, `capacity`, `admitting` and `startable` (null when not measured); never the private spec or environment.
+The deployment a call goes to is still the caller's region or this API's (`_deployment_of`); declared cross-region
+alternatives with pre-send fallback are a later release.
 
 ## Fleet operators
 

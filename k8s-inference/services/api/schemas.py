@@ -569,8 +569,11 @@ class ModelTarget(BaseModel):
     nodes: int | None = None
     replicas: dict[str, int | None] | None = None
     status: str | None = None
-    admitting: bool | None = None
-    startable: bool | None = None
+    in_flight: float | None = None  # Knative's stable concurrency of the revision; None = not measured
+    capacity: int | None = None  # ready replicas x the replica's concurrency limit; None = no limit or unknown
+    admitting: bool | None = None  # in_flight < capacity; None = unknown
+    startable: bool | None = None  # cold target: free GPUs on its pool or room for a node; None = unknown
+    """One deployment of an endpoint: unknown is null, never a guess."""
 
 
 class EndpointTarget(BaseModel):

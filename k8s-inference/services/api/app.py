@@ -134,7 +134,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.179", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.180", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -552,49 +552,98 @@ def _variant_for(m: dict, inp, cluster: str) -> dict:
         target = routing["default"]
     if target:
         return next((v for v in vs if v["name"] == target), vs[0])
-    states = [(v, _target_state(m, v, cluster)) for v in vs]
-    for v, st in states:
-        if st["admitting"]:
-            return v
-    if routing.get("default") == "capacity":
-        for v, st in states:
-            if st["startable"]:
+    if routing.get("default") != "capacity":
+        for v in vs:  # `priority`: the first variant with a ready replica, else the first (unchanged since 0.11.122)
+            if (kube.endpoint_status(v["object"], m["namespace"]).get("replicas_ready") or 0) > 0:
                 return v
-    return vs[0]
+        return vs[0]
+    states = [(v, _target_state(m, v, cluster)) for v in vs]
+    for v, st in states:  # a target KNOWN to admit now (in-flight below its capacity); unknown never counts
+        if st["admitting"] is True:
+            return v
+    for v, st in states:  # else a cold target KNOWN to be startable now
+        if st["startable"] is True:
+            return v
+    return vs[0]  # nothing known: the first variant and the ordinary queue (its cold start is the call's)
 
 
 def _target_state(m: dict, v: dict, cluster: str) -> dict:
-    """The live state of one endpoint target (a variant on a cluster): `admitting` = a ready replica (it takes the
-    request now), `startable` = no ready replica but a replica can start (the deployment is not failed and its pool
-    has a node, or room for one under the pool's `max_nodes`); `status`, `replicas_ready` as endpoint_status reports."""
+    """The live admission state of one endpoint target (a variant on a cluster), from existing state only, unknown
+    published as None (never a guess): `replicas_ready` (endpoint_status); for a target with a ready replica,
+    `capacity` = ready replicas x the replica's concurrency limit (`container_concurrency` of the deployment; None
+    without a limit), `in_flight` = Knative's stable concurrency of the revision (Prometheus `kn_revision_concurrency_stable`,
+    the same series GET /v1/endpoints/{id}/metrics shows), `admitting` = in_flight < capacity (None when either is
+    unknown); for a cold target, `startable` = its deployment is not failed and its pool has free GPUs for one replica
+    or room for a node under `max_nodes` (kube.pool_usage; None when the pool cannot be read or has no bound)."""
     cluster = _cluster_id_of(cluster)
     region = kube.cluster_region(cluster)
     try:
         st = kube.endpoint_status(v["object"], m["namespace"], region, nodes=int(m.get("nodes") or 1))
     except (HTTPException, ApiException):
         st = {"status": "unavailable", "replicas_ready": None}
-    ready = int(st.get("replicas_ready") or 0)
-    startable = (
-        ready == 0 and st.get("status") not in ("error", "unavailable") and _pool_headroom(cluster, v.get("pool"))
+    ready = st.get("replicas_ready")
+    out = {
+        "status": st.get("status"),
+        "replicas_ready": ready,
+        "admitting": None,
+        "startable": None,
+        "in_flight": None,
+        "capacity": None,
+    }
+    if ready is None or st.get("status") == "unavailable":
+        return out
+    if int(ready) > 0:
+        limit = _replica_concurrency(m, v, region)
+        in_flight = monitoring.instant(
+            "sum(kn_revision_concurrency_stable{"
+            f'k8s_namespace_name="{m["namespace"]}",kn_service_name="{v["object"]}-predictor"'
+            "})",
+            region,
+        )
+        out["in_flight"] = in_flight
+        out["capacity"] = int(ready) * limit if limit else None
+        out["admitting"] = (
+            (in_flight < out["capacity"]) if (out["capacity"] is not None and in_flight is not None) else None
+        )
+        return out
+    if st.get("status") == "error":
+        out["startable"] = False
+        return out
+    out["startable"] = _pool_can_start(
+        cluster, v.get("pool"), int((m.get("runtime") or {}).get("gpu") or 1) * int(m.get("nodes") or 1)
     )
-    return {"status": st.get("status"), "replicas_ready": ready, "admitting": ready > 0, "startable": bool(startable)}
+    return out
 
 
-def _pool_headroom(cluster: str, pool: str | None) -> bool:
-    """Whether a pool can hold one more replica right now: a node of the pool exists, or the pool may add one
-    (`max_nodes` of the fleet document above its current node count). Unknown pool or unreadable region: True (the
-    queue decides, as before)."""
+def _replica_concurrency(m: dict, v: dict, region: str) -> int | None:
+    """The per-replica request limit of a deployment (`container_concurrency` as GET /v1/endpoints reports it);
+    None when the deployment is unreadable or scales on requests per second (no concurrency limit)."""
+    try:
+        i = kube.isvc(v["object"], m["namespace"], region) if int(m.get("nodes") or 1) == 1 else None
+        if not i:
+            return None
+        cc = ep.to_public(m, i, region).get("container_concurrency")
+        return int(cc) if cc else None
+    except (HTTPException, ApiException, TypeError, ValueError, KeyError):
+        return None
+
+
+def _pool_can_start(cluster: str, pool: str | None, gpus: int) -> bool | None:
+    """Whether a pool can hold one more replica of `gpus` GPUs right now: free GPUs on its ready nodes
+    (kube.pool_usage: allocatable minus the running pods' requests), or room for one more node under the fleet
+    document's `max_nodes`. None when the pool is unknown, its region unreadable, or neither bound is known."""
     if not pool:
+        return None
+    usage = kube.pool_usage(cluster, pool)
+    if usage.get("nodes_ready") is None:
+        return None
+    free = (usage["gpus_total"] - usage["gpus_used"]) if usage.get("gpus_used") is not None else None
+    if free is not None and free >= max(gpus, 1):
         return True
-    entry = kube.pool_entry(cluster, pool)
-    limit = entry.get("max_nodes")
-    if not limit:
-        return True
-    index = kube._node_index(kube.cluster_region(cluster), kube.NODE_CACHE_S)
-    if index is None:
-        return True
-    nodes = sum(1 for n in index.values() if (n or {}).get("pool") == pool)
-    return nodes < int(limit) or nodes > 0
+    limit = kube.pool_entry(cluster, pool).get("max_nodes")
+    if limit:
+        return int(usage["nodes_ready"]) < int(limit)
+    return None if free is None else False
 
 
 def _cluster_id_of(key: str) -> str:
@@ -628,6 +677,8 @@ def _target_public(m: dict, cluster: str, v: dict) -> dict:
         "nodes": int(m.get("nodes") or 1),
         "replicas": {"min": v.get("min"), "max": v.get("max"), "ready": st["replicas_ready"]},
         "status": st["status"],
+        "in_flight": st["in_flight"],
+        "capacity": st["capacity"],
         "admitting": st["admitting"],
         "startable": st["startable"],
     }

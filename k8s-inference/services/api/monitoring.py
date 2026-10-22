@@ -231,6 +231,24 @@ def _startups(
     return rows[:50]
 
 
+def instant(query: str, region: str, timeout: float = 4.0) -> float | None:
+    """One instant PromQL query, synchronous (the endpoint target resolver runs in request threads): the first
+    sample's value, None when the region's Prometheus cannot be reached, answers an error or has no sample. Never a
+    guess: a reader treats None as unknown."""
+    try:
+        base, headers, verify = target(PROMETHEUS_URL, region)
+        with httpx.Client(timeout=timeout, verify=verify) as client:
+            r = client.get(base + "/api/v1/query", params={"query": query}, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+            if data.get("status") != "success":
+                return None
+            result = (data.get("data") or {}).get("result") or []
+            return float(result[0]["value"][1]) if result else None
+    except (HTTPException, httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
 async def metrics(
     kind: str,
     namespace: str,

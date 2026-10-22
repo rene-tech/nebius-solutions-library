@@ -349,19 +349,59 @@ def test_the_probe_and_the_request_go_to_the_same_variant(client, monkeypatch):
     }
 
 
-def test_capacity_routing_prefers_admitting_then_startable(monkeypatch):
-    e = _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 1})
+def _measurements(monkeypatch, in_flight: dict, limit: int | None, pools: dict):
+    """api 0.11.180: the target state is measured, never guessed: Knative's stable concurrency per revision
+    (monitoring.instant), the replica's concurrency limit (the deployment), the pool's free GPUs and node room."""
+    import monitoring
+
+    monkeypatch.setattr(
+        monitoring, "instant", lambda q, region, timeout=4.0: next((v for k, v in in_flight.items() if k in q), None)
+    )
+    monkeypatch.setattr(appmod, "_replica_concurrency", lambda m, v, region: limit)
+    monkeypatch.setattr(kube, "pool_usage", lambda cluster, pool: pools.get(pool, {"nodes_ready": None}))
+
+
+def test_capacity_routing_takes_only_known_admitting_or_startable_targets(monkeypatch):
+    e = _world(monkeypatch, {"chat": 2, "chat-spot": 0, "chat-cheap": 1})
     e = {**e, "routing": {**e["routing"], "default": "capacity"}}
-    monkeypatch.setattr(kube, "_node_index", lambda region, max_age: {"n1": {"pool": "h100-spot-1x"}})
-    assert appmod._variant_for(e, {}, "hub")["name"] == "cheap"  # the only admitting variant, whatever its rank
-    e2 = _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0, "chat:status": "error"})
+    pools = {
+        "h100-res-1x": {"nodes_ready": 2, "gpus_total": 2, "gpus_used": 2},
+        "h100-spot-1x": {"nodes_ready": 0, "gpus_total": 0, "gpus_used": 0},
+        "l40s-spot-1x": {"nodes_ready": 1, "gpus_total": 1, "gpus_used": 1},
+    }
+    # reserved: 2 ready x limit 4 = 8, 8 in flight -> full; cheap: 1 x 4 = 4, 1 in flight -> admitting
+    _measurements(monkeypatch, {"chat-predictor": 8.0, "chat-cheap-predictor": 1.0}, 4, pools)
+    assert appmod._variant_for(e, {}, "hub")["name"] == "cheap"
+    st = appmod._target_state(e, models.variants(e, "hub")[0], "hub")
+    assert st == {
+        "status": "ready",
+        "replicas_ready": 2,
+        "admitting": False,
+        "startable": None,
+        "in_flight": 8.0,
+        "capacity": 8,
+    }
+    # no concurrency limit (rps scaling) or no measurement: admitting is UNKNOWN (None), never true
+    _measurements(monkeypatch, {"chat-predictor": 8.0, "chat-cheap-predictor": 1.0}, None, pools)
+    assert appmod._target_state(e, models.variants(e, "hub")[0], "hub")["admitting"] is None
+    _measurements(monkeypatch, {}, 4, pools)
+    assert appmod._target_state(e, models.variants(e, "hub")[0], "hub")["admitting"] is None
+    # everything full or unknown: no known admitting target; the cold spot variant is startable only with room
+    e2 = _world(monkeypatch, {"chat": 2, "chat-spot": 0, "chat-cheap": 0})
     e2 = {**e2, "routing": {**e2["routing"], "default": "capacity"}}
-    monkeypatch.setattr(kube, "_node_index", lambda region, max_age: {"n1": {"pool": "h100-spot-1x"}})
-    assert appmod._variant_for(e2, {}, "hub")["name"] == "spot"  # reserved failed; spot has a node: startable
-    monkeypatch.setattr(kube, "_node_index", lambda region, max_age: {})
-    assert appmod._pool_headroom("hub", "h100-spot-1x") is True  # no node yet but max_nodes unknown here: room
-    # `priority` keeps its behaviour: nothing ready -> the first variant
-    e3 = _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0})
+    _measurements(monkeypatch, {"chat-predictor": 8.0}, 4, pools)
+    monkeypatch.setattr(
+        kube, "pool_entry", lambda cluster, pool: {"max_nodes": 4} if pool == "h100-spot-1x" else {"max_nodes": 1}
+    )
+    assert appmod._variant_for(e2, {}, "hub")["name"] == "spot"  # 0 nodes of 4: room for one
+    st = appmod._target_state(e2, models.variants(e2, "hub")[2], "hub")
+    assert st["startable"] is False  # cheap: its only node's GPU is taken and the pool is at max_nodes
+    monkeypatch.setattr(kube, "pool_usage", lambda cluster, pool: {"nodes_ready": None})
+    assert appmod._target_state(e2, models.variants(e2, "hub")[1], "hub")["startable"] is None  # unreadable: unknown
+    assert appmod._variant_for(e2, {}, "hub")["name"] == "reserved"  # nothing known: the first, the queue decides
+    # a failed cold deployment is never startable; `priority` keeps the readiness-only choice
+    e3 = _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0, "chat:status": "error"})
+    assert appmod._target_state(e3, models.variants(e3, "hub")[0], "hub")["startable"] is False
     assert appmod._variant_for(e3, {}, "hub")["name"] == "reserved"
 
 
@@ -391,16 +431,32 @@ def test_an_async_call_targets_the_resolved_variant_and_records_it(client, monke
 def test_the_model_readback_lists_every_target(client, monkeypatch):
     c, _ = client
     e = _world(monkeypatch, {"chat": 1, "chat-spot": 0, "chat-cheap": 0})
-    monkeypatch.setattr(kube, "_node_index", lambda region, max_age: {"n1": {"pool": "h100-res-1x"}})
+    _measurements(
+        monkeypatch,
+        {"chat-predictor": 1.0},
+        4,
+        {
+            "h100-res-1x": {"nodes_ready": 1, "gpus_total": 1, "gpus_used": 1},
+            "h100-spot-1x": {"nodes_ready": 0, "gpus_total": 0, "gpus_used": 0},
+            "l40s-spot-1x": {"nodes_ready": None},
+        },
+    )
+    monkeypatch.setattr(
+        kube, "pool_entry", lambda cluster, pool: {"gpu_class": "l40s" if "l40s" in pool else "h100", "max_nodes": 4}
+    )
     monkeypatch.setattr(catalog, "all_models", lambda: {"chat": e})
     r = c.get("/v1/models/chat", headers=H)
     assert r.status_code == 200, r.text
     ts = r.json()["targets"]
     assert [t["variant"] for t in ts] == ["reserved", "spot", "cheap"] and all(t["cluster"] == "hub" for t in ts)
     by = {t["variant"]: t for t in ts}
-    assert by["reserved"]["admitting"] and not by["reserved"]["startable"] and by["reserved"]["replicas"]["ready"] == 1
+    assert (
+        by["reserved"]["admitting"] is True and by["reserved"]["in_flight"] == 1.0 and by["reserved"]["capacity"] == 4
+    )
+    assert by["reserved"]["startable"] is None and by["reserved"]["replicas"]["ready"] == 1
     assert by["cheap"]["image"].endswith("vllm-openai:v0.31.0-l40s") and by["cheap"]["gpu_class"] == "l40s"
-    assert by["spot"]["startable"] and not by["spot"]["admitting"] and by["spot"]["pool"] == "h100-spot-1x"
+    assert by["cheap"]["startable"] is None and by["cheap"]["admitting"] is None  # its pool is unreadable: unknown
+    assert by["spot"]["startable"] is True and by["spot"]["admitting"] is None and by["spot"]["pool"] == "h100-spot-1x"
     assert "spec" not in by["spot"] and "env" not in by["spot"]
     # validation: `capacity` is a routing default
     ok = models.to_entry(models.validate({**SPEC, "routing": {**SPEC["routing"], "default": "capacity"}}))
