@@ -96,3 +96,31 @@ def choose_class(
         best = ranked[0]
         return best["gpu_class"], f"fleet ({best['region']}/{best['pool']}, {best['capacity']}, ${best['price']}/GPU-h)"
     return allowed[0], "preferred (no pool)"
+
+
+def feasible_classes(model: dict, classes: list[str], gpus: int, clusters: list[str] | None) -> tuple[list, list]:
+    """(feasible, skipped): the GPU classes, in the given order, for which at least one pool of the class on
+    `clusters` (every cluster when None) has a node that holds the run's envelope for that class
+    (`job.resourcesByClass` overlaid on the job block, services/api/fit.py, docs/SCHEDULING.md "Per-node fit"), and
+    the ones skipped with the reason. Node shape only, never free capacity: a feasible class may still queue. Without
+    fit.yaml every class is feasible (nothing changes); a class without any pool is left to `choose_class`
+    ("preferred (no pool)")."""
+    import fit
+    from render import class_resources, resource_block
+
+    if not fit.table():
+        return list(classes), []
+    pools = kube.fleet().get("pools") or {}
+    feasible, skipped = [], []
+    for cls in classes:
+        mine = {p["pool"] for p in pools.values() if p.get("gpu_class") == cls}
+        if not mine:
+            feasible.append(cls)
+            continue
+        res = resource_block(class_resources(model.get("job") or {}, cls), max(int(gpus), 0))
+        req = fit.pod_requests({"containers": [{"name": "main", "resources": res}]})
+        if fit.fitting(req, clusters, mine):
+            feasible.append(cls)
+        else:
+            skipped.append(f"{cls}: no node of its pools holds {fit.describe(req)}")
+    return feasible, skipped

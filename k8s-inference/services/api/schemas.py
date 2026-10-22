@@ -448,6 +448,9 @@ class ModelSpec(BaseModel):
     memory_limit: SkipValidation[str | None] = None  # a limit above the request is not guaranteed memory
     ephemeral_storage: SkipValidation[str | None] = None  # node-local scratch request (the kubelet's ephemeral storage)
     ephemeral_storage_limit: SkipValidation[str | None] = None  # = the request unless given
+    resources_by_class: SkipValidation[dict[str, dict[str, str]] | None] = (
+        None  # {"<gpu class>": {cpu, memory, cpu_limit, memory_limit, ephemeral_storage, ephemeral_storage_limit}}: the envelope the run is rendered with for that class (docs/SCHEDULING.md "Per-node fit")
+    )
     delegates: SkipValidation[list[str] | None] = (
         None  # run classes a graph of this root may bind stages to (operator-owned)
     )

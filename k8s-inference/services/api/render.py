@@ -296,3 +296,38 @@ def _job_shell(
     if placement and placement.get("manager"):
         spec["managedBy"] = MULTIKUEUE_MANAGED_BY  # the manager's Job controller leaves it to Kueue MultiKueue
     return {"apiVersion": "batch/v1", "kind": "Job", "metadata": meta, "spec": spec}
+
+
+RESOURCE_KEYS = ("cpu", "memory", "cpuLimit", "memoryLimit", "ephemeralStorage", "ephemeralStorageLimit")
+
+
+def class_resources(job: dict, gpu_class: str | None) -> dict:
+    """The job block with the envelope of `gpu_class` overlaid (`job.resourcesByClass`, public `resources_by_class`,
+    docs/SCHEDULING.md "Per-node fit"): the App declares the scientifically justified CPU/memory/ephemeral envelope per
+    GPU class (a 96Gi pipeline on H100 nodes, 48Gi on L40S nodes); the run is rendered with the chosen class's, and
+    a fallback re-render with the next class's. Only RESOURCE_KEYS are taken; the map itself never reaches the Job."""
+    out = {k: v for k, v in job.items() if k != "resourcesByClass"}
+    per = (job.get("resourcesByClass") or {}).get(gpu_class or "") or {}
+    out.update({k: str(v) for k, v in per.items() if k in RESOURCE_KEYS and v not in (None, "")})
+    return out
+
+
+def resource_block(r: dict, gpus: int) -> dict:
+    """The main container's resources from a (rendered) job block: requests cpu/memory (defaults 1 / 2Gi), the memory
+    limit (= request unless memoryLimit), an optional CPU limit, ephemeral storage (request = limit unless both) and
+    the GPUs."""
+    res = {
+        "requests": {"cpu": str(r.get("cpu", "1")), "memory": str(r.get("memory", "2Gi"))},
+        "limits": {"memory": str(r.get("memoryLimit", r.get("memory", "2Gi")))},
+    }
+    if r.get("cpuLimit"):
+        res["limits"]["cpu"] = str(r["cpuLimit"])
+    if r.get("ephemeralStorage") or r.get("ephemeralStorageLimit"):
+        # the kubelet's ephemeral storage (/work on local-nvme scratch, the container's writable layer, emptyDirs):
+        # request = limit unless both are given
+        req = r.get("ephemeralStorage") or r.get("ephemeralStorageLimit")
+        res["requests"]["ephemeral-storage"] = str(req)
+        res["limits"]["ephemeral-storage"] = str(r.get("ephemeralStorageLimit") or req)
+    if gpus:
+        res["requests"]["nvidia.com/gpu"] = res["limits"]["nvidia.com/gpu"] = str(gpus)
+    return res

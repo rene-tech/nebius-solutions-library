@@ -4,6 +4,18 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.175, dispatcher 0.2.17
+
+- Per-class envelopes and a feasibility-aware class choice (docs/SCHEDULING.md "Per-node fit"): a run class may
+  declare `resources_by_class: {"<gpu class>": {cpu, memory, cpu_limit, memory_limit, ephemeral_storage,
+  ephemeral_storage_limit}}` (catalog `job.resourcesByClass`), overlaid on the job block for the class the run is
+  rendered for, on a fallback re-render with the next class's, validated against `gpu.classes` at registration.
+  The class chosen at submission is the best pool among the classes FEASIBLE for the run's envelope (a class is
+  feasible when a pool of it on the allowed clusters has a node that holds the envelope, `fit.yaml`; node shape,
+  never free capacity): an impossible preferred class is skipped and logged instead of failing the run with
+  `impossible shape` although a later class fits; no feasible class keeps the 400 with the largest candidate node.
+  Nothing is shrunk or widened by the platform; the App declares the justified envelope per class.
+
 ## api 0.11.174, dispatcher 0.2.17 (charts/platform: the tenant ClusterRole grants `watch` on pods and Workloads)
 
 - 0.11.173 was applied 2026-10-22 15:16Z and rolled back to 0.11.172 at 15:22Z: the API identities could LIST pods

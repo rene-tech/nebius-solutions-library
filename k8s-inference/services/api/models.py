@@ -27,6 +27,7 @@ A model definition ("spec") is the shape of the console form:
      "example": {"messages": [{"role": "user", "content": "Say hello."}], "max_tokens": 64},
      # jobs only
      "cpu": "4", "memory": "16Gi", "disk_gi": 50, "grace_seconds": 300, "scratch": "network" | "local-nvme",
+     "resources_by_class": {"l40s": {"memory": "48Gi"}},   # the envelope per GPU class (docs/SCHEDULING.md "Per-node fit")
      "finalize": {"command": "...", "on_exit_codes": [75], "timeout_s": 1800, "cpu": "1", "memory": "2Gi"},   # application finalizer
      # a directory of the tenant's area on the region's shared filesystem, mounted into the run (read-only unless
      # readonly is false: reference databases, model parameters, anything too big to sync per run; docs/JOBS.md "Shared data")
@@ -393,6 +394,21 @@ def validate(spec: dict) -> dict:
         or not all(isinstance(k, str) and isinstance(v, str) and v for k, v in images.items())
     ):
         raise HTTPException(400, 'images: {"default": <image>, "<gpu class>": <image>, ...}')
+    per = s.get("resources_by_class")
+    if per is not None:  # the envelope per GPU class (docs/SCHEDULING.md "Per-node fit"): classes of gpu.classes only
+        allowed = ("cpu", "memory", "cpu_limit", "memory_limit", "ephemeral_storage", "ephemeral_storage_limit")
+        if (
+            not isinstance(per, dict)
+            or not per
+            or not all(isinstance(c, str) and isinstance(v, dict) and v for c, v in per.items())
+            or not all(
+                k in allowed and isinstance(x, (str, int)) and str(x) for v in per.values() for k, x in v.items()
+            )
+        ):
+            raise HTTPException(400, f'resources_by_class: {{"<gpu class>": {{{", ".join(allowed)}}}}}')
+        unknown = [c for c in per if c not in classes]
+        if unknown:
+            raise HTTPException(400, f"resources_by_class: {unknown} not in gpu.classes {classes}")
     _validate_variants(s, kind)
     s["kind"] = kind
     return s
@@ -508,6 +524,16 @@ def _retry_policy(r) -> dict:
     if not isinstance(codes, list) or not codes or any(not isinstance(c, int) or not 1 <= c <= 255 for c in codes):
         raise HTTPException(400, "retry.on_exit_codes: a non-empty list of exit codes 1..255")
     return {"maxAttempts": n, "onExitCodes": sorted(set(codes))}
+
+
+_CAMEL = {
+    "cpu": "cpu",
+    "memory": "memory",
+    "cpu_limit": "cpuLimit",
+    "memory_limit": "memoryLimit",
+    "ephemeral_storage": "ephemeralStorage",
+    "ephemeral_storage_limit": "ephemeralStorageLimit",
+}  # public resource field -> job block key (render.RESOURCE_KEYS)
 
 
 def to_entry(spec: dict, managed_by: str = "api") -> dict:
@@ -750,6 +776,16 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
             # restricted assets (docs/JOBS.md "Restricted assets"): operator-owned aliases of the fleet registry
             **({"assets": _assets_spec(s["assets"])} if s.get("assets") else {}),
             "env": dict(s.get("env") or {}),
+            # the envelope per GPU class (docs/SCHEDULING.md "Per-node fit"): overlaid on the block for the class chosen
+            **(
+                {
+                    "resourcesByClass": {
+                        c: {_CAMEL[k]: str(x) for k, x in v.items()} for c, v in s["resources_by_class"].items()
+                    }
+                }
+                if s.get("resources_by_class")
+                else {}
+            ),
             "envFrom": [{"secretRef": {"name": name}} for name in s.get("env_secrets", [])],
             # per-GPU-class images (docs/SCHEDULING.md "Per-GPU images for runs"): the class chosen at submission picks one
             **(

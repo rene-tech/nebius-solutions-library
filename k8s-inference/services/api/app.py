@@ -134,7 +134,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.174", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.175", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1495,8 +1495,15 @@ def _class_for(
     available = (
         (ex.get("placement") or {}).get("gpu_preference") if ex else None
     )  # the caller's order narrows the model's
+    # only classes whose pools have a node that holds this run's envelope for that class (api 0.11.175): an
+    # impossible preferred class is skipped here instead of failing the run at the fit check (docs/SCHEDULING.md
+    # "Per-node fit"); none feasible: the ranking proceeds as before and the fit check names the largest node
+    ordered = [c for c in (available or render.gpu_classes(m)) if c in render.gpu_classes(m)] or render.gpu_classes(m)
+    feasible, skipped = placing.feasible_classes(m, ordered, gpus, regions)
+    if skipped:
+        log.info("%s: GPU classes skipped as infeasible: %s", m["name"], "; ".join(skipped))
     cls, how = placing.choose_class(
-        m, region, gpus, available, tenant, regions
+        m, region, gpus, feasible or available, tenant, regions
     )  # `regions`: the run's allowed clusters
     log.info("%s: GPU class %s chosen by %s", m["name"], cls, how)
     return cls

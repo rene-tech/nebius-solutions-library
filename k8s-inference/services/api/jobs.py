@@ -68,9 +68,11 @@ from render import (
     _start_record,
     _uploader,
     class_images,
+    class_resources,
     gpu_classes,
     image_for_class,
     profile_of,
+    resource_block,
 )
 from resilience import retry
 from status import is_jobset, is_manager_job, is_mirror, normalise
@@ -488,6 +490,7 @@ def build_run(
         job.pop("images", None)
     else:
         gpu_class = None
+    job = class_resources(job, gpu_class)  # the chosen class's envelope (docs/SCHEDULING.md "Per-node fit")
     if not job.get("image") or not job.get("command"):
         raise HTTPException(500, f"model {model['name']} has no job.image/job.command")
     from models import normalise_image  # a caller-supplied image (container-run) goes through the region's cache too
@@ -536,20 +539,7 @@ def build_run(
         # Shell strings still receive typed arguments as literal argv values, not shell syntax.
         cmd = ["/bin/sh", "-c", cmd + ' "$@"', "--"] if r.get("args") else ["/bin/sh", "-c", cmd]
     gpus = int(r.get("gpu", 0) or 0)
-    res = {
-        "requests": {"cpu": str(r.get("cpu", "1")), "memory": str(r.get("memory", "2Gi"))},
-        "limits": {"memory": str(r.get("memoryLimit", r.get("memory", "2Gi")))},
-    }
-    if r.get("cpuLimit"):
-        res["limits"]["cpu"] = str(r["cpuLimit"])
-    if r.get("ephemeralStorage") or r.get("ephemeralStorageLimit"):
-        # the kubelet's ephemeral storage (/work on local-nvme scratch, the container's writable layer, emptyDirs):
-        # request = limit unless both are given
-        req = r.get("ephemeralStorage") or r.get("ephemeralStorageLimit")
-        res["requests"]["ephemeral-storage"] = str(req)
-        res["limits"]["ephemeral-storage"] = str(r.get("ephemeralStorageLimit") or req)
-    if gpus:
-        res["requests"]["nvidia.com/gpu"] = res["limits"]["nvidia.com/gpu"] = str(gpus)
+    res = resource_block(r, gpus)
     pvc = pvc or f"{name}-work"
     # scratch: network (default) = the per-operation PVC, re-attached to the replacement pod after a preemption
     # (automatic resume); local-nvme = an emptyDir on the node's host NVMe (pools with local_nvme), fastest I/O,
