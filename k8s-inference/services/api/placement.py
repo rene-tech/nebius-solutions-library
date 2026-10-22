@@ -106,7 +106,7 @@ def feasible_classes(model: dict, classes: list[str], gpus: int, clusters: list[
     fit.yaml every class is feasible (nothing changes); a class without any pool is left to `choose_class`
     ("preferred (no pool)")."""
     import fit
-    from render import class_resources, resource_block
+    from render import UPLOADER_RESOURCES, class_resources, resource_block
 
     if not fit.table():
         return list(classes), []
@@ -118,7 +118,10 @@ def feasible_classes(model: dict, classes: list[str], gpus: int, clusters: list[
             feasible.append(cls)
             continue
         res = resource_block(class_resources(model.get("job") or {}, cls), max(int(gpus), 0))
-        req = fit.pod_requests({"containers": [{"name": "main", "resources": res}]})
+        # the pod as rendered: main plus the uploader sidecar (an init step's own request never exceeds them)
+        req = fit.pod_requests(
+            {"containers": [{"name": "main", "resources": res}, {"name": "uploader", "resources": UPLOADER_RESOURCES}]}
+        )
         if fit.fitting(req, clusters, mine):
             feasible.append(cls)
         else:

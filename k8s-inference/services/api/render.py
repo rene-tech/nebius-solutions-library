@@ -198,10 +198,15 @@ def _uploader(
         "command": ["/usr/local/bin/upload.sh"],
         "env": env,
         "envFrom": [{"secretRef": {"name": S3_ENV_SECRET}}],
-        "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "1", "memory": "1Gi"}},
+        "resources": UPLOADER_RESOURCES,
         "volumeMounts": [{"name": "work", "mountPath": "/work"}],
         "securityContext": RUNNER_SECURITY_CONTEXT,
     }
+
+
+# the uploader sidecar's requests: part of every run pod's effective requests (fit.pod_requests), so the feasibility
+# check of a GPU class (placement.feasible_classes) counts them next to the main container's envelope
+UPLOADER_RESOURCES = {"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "1", "memory": "1Gi"}}
 
 
 def _start_record(uploader: dict) -> dict:

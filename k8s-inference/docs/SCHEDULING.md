@@ -305,10 +305,10 @@ fit structural (api 0.11.80, fleet chart 0.1.12):
   label, what ONE node admits (`cpu`, `memory_gib`, `ephemeral_gib`, `gpus`, `shared_fs`), from the same helpers that
   size the Kueue quotas with one node (`node_reserve` for GPU pools, `system_reserve` for the system and CPU pools,
   the ephemeral share of the boot disk); `tools/check.sh` asserts it agrees with the ClusterQueues.
-- The class choice (api 0.11.175, `placement.feasible_classes`): for a run class with per-class images the class
+- The class choice (api 0.11.176, `placement.feasible_classes`): for a run class with per-class images the class
   is chosen at submission among the classes feasible for the run's envelope only: a class is feasible when at least
-  one of its pools on the allowed clusters has a node that holds the envelope the run would be rendered with for that
-  class (node shape, never free capacity: a feasible class may still queue). An impossible preferred class is skipped
+  one of its pools on the allowed clusters has a node that holds the pod the run would be rendered with for that
+  class (main plus the uploader sidecar; node shape, never free capacity: a feasible class may still queue). An impossible preferred class is skipped
   and logged (`GPU classes skipped as infeasible`) instead of failing the run; no feasible class keeps the 400 below.
   The envelope per class is the run class's own `resources_by_class: {"<gpu class>": {cpu, memory, cpu_limit,
   memory_limit, ephemeral_storage, ephemeral_storage_limit}}` (catalog `job.resourcesByClass`), overlaid on the job

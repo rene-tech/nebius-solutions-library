@@ -4,7 +4,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.175, dispatcher 0.2.17
+## api 0.11.176, dispatcher 0.2.17 (0.11.175 = the same without the sidecar in the feasibility check; built, never applied)
 
 - Per-class envelopes and a feasibility-aware class choice (docs/SCHEDULING.md "Per-node fit"): a run class may
   declare `resources_by_class: {"<gpu class>": {cpu, memory, cpu_limit, memory_limit, ephemeral_storage,
