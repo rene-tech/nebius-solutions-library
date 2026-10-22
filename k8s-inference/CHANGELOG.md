@@ -11,6 +11,9 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
   `map` without its `field` is refused.
 - The `api` logger writes INFO to the pod log (uvicorn configures only its own loggers; the skipped-class, fallback
   walk and stale-sample lines were invisible before).
+- stack: the platform stage passes the cloud stage's `images_regional` into the config module; a region with
+  `images_registry.use = true` rendered the offline placeholder host as its cache source before (found on the first
+  eu-south1 step-2 plan, never applied).
 
 - Multi-node runs keep the chosen class for every rank: the JobSet's pool affinity stays within the pools `build_run`
   chose (the chosen class's pools for a per-class image, narrowed by the per-node fit), only further narrowed to whole

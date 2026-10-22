@@ -17,7 +17,10 @@ variable "target" {
 module "config" {
   source = "../config"
   fleet  = var.fleet
-  cloud  = { clusters = local.cloud.clusters, hub = local.cloud.hub } # what charts/platform's values depend on (providers.tf)
+  # what charts/platform's values depend on (providers.tf) plus the regional registries the cloud stage created
+  # (a region's `images_registry.use` names its registry as the cache source; without this the config module fell
+  # back to its offline placeholder host, 2026-10-22)
+  cloud = { clusters = local.cloud.clusters, hub = local.cloud.hub, images_regional = try(local.cloud.images_regional, {}) }
 }
 
 # Short names, as the stage files use them.
