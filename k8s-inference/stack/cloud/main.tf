@@ -197,3 +197,77 @@ locals {
   images_source = coalesce(local.f.images.source,
   local.f.images.source == null ? "cr.${local.hub_region}.nebius.cloud/${trimprefix(nebius_registry_v1_registry.images[0].id, "registry-")}" : "")
 }
+
+# ---------------------------------------------------------------------------
+# Regional registries (docs/IMAGES.md "Regional registries"): a Container Registry in a worker region's own project
+# as the first origin of that region's image cache (`regions.<r>.images_registry.create`). Readers: the hub ops
+# identity, whose static key the caches already carry (viewer on this registry only). Pushers: the service accounts
+# named in `pushers` (editor on this registry only; they copy the images in, outside Terraform). The registry is
+# emptied before a destroy like the hub's.
+locals {
+  regional_registries = { for rn, r in local.f.regions : rn => r if r.images_registry.create && rn != local.hub_region }
+}
+
+resource "nebius_registry_v1_registry" "regional" {
+  for_each  = local.regional_registries
+  parent_id = each.value.project_id
+  name      = "${local.f.name}-images-${each.key}"
+  labels    = local.f.labels
+}
+
+resource "terraform_data" "empty_registry_regional" {
+  for_each = local.regional_registries
+  input = {
+    script   = "${path.module}/../scripts/empty-registry.sh"
+    registry = nebius_registry_v1_registry.regional[each.key].id
+  }
+  provisioner "local-exec" {
+    when    = destroy
+    command = "${self.input.script} ${self.input.registry}"
+  }
+}
+
+resource "nebius_iam_v1_group" "registry_readers" {
+  for_each  = local.regional_registries
+  parent_id = each.value.project_id
+  name      = "${local.f.name}-images-${each.key}-readers"
+}
+
+resource "nebius_iam_v1_group_membership" "registry_readers" {
+  for_each  = local.regional_registries
+  parent_id = nebius_iam_v1_group.registry_readers[each.key].id
+  member_id = nebius_iam_v1_service_account.ops[local.hub_project].id
+}
+
+resource "nebius_iam_v1_access_permit" "registry_readers" {
+  for_each    = local.regional_registries
+  parent_id   = nebius_iam_v1_group.registry_readers[each.key].id
+  resource_id = nebius_registry_v1_registry.regional[each.key].id
+  role        = "viewer"
+}
+
+resource "nebius_iam_v1_group" "registry_pushers" {
+  for_each  = { for rn, r in local.regional_registries : rn => r if length(r.images_registry.pushers) > 0 }
+  parent_id = each.value.project_id
+  name      = "${local.f.name}-images-${each.key}-pushers"
+}
+
+resource "nebius_iam_v1_group_membership" "registry_pushers" {
+  for_each  = { for p in flatten([for rn, r in local.regional_registries : [for sa in r.images_registry.pushers : { key = "${rn}/${sa}", region = rn, sa = sa }]]) : p.key => p }
+  parent_id = nebius_iam_v1_group.registry_pushers[each.value.region].id
+  member_id = each.value.sa
+}
+
+resource "nebius_iam_v1_access_permit" "registry_pushers" {
+  for_each    = nebius_iam_v1_group.registry_pushers
+  parent_id   = each.value.id
+  resource_id = nebius_registry_v1_registry.regional[each.key].id
+  role        = "editor"
+}
+
+locals {
+  images_regional = { for rn, reg in nebius_registry_v1_registry.regional : rn => {
+    id       = reg.id
+    registry = "cr.${rn}.nebius.cloud/${trimprefix(reg.id, "registry-")}"
+  } }
+}

@@ -115,6 +115,25 @@ name theirs.
   cache) and about three and a half minutes on the next node of the cluster.
   Pre-pull what a cold start must not wait for.
 
+## Regional registries
+
+By default every region's cache syncs `/nebius` from the one source registry in the hub project, so a region's
+first pull of an image crosses regions. A worker region can get an origin of its own, in two steps so the copy
+happens between them (`regions.<r>.images_registry` in `terraform.tfvars`):
+
+1. `create = true`: the cloud stage creates `<name>-images-<region>` in the region's project (the region's node
+   identity already reads its own project), with the hub ops identity as a reader of that registry only (the
+   caches' existing static key then reads it: the regional host joins `registry/zot-sync-credentials`) and the
+   service accounts listed in `pushers` as editors of that registry only. `./stack.sh output cloud -json
+   images_regional` prints the id and the `cr.<region>.nebius.cloud/<id>` prefix. Copy the images in by digest
+   (`crane copy <hub>/<path>@sha256:... <regional>/<path>@sha256:...`); nothing else changes yet.
+2. `use = true`: the region's fleet document names the regional origin (`regions.<r>.images_source`), and
+   `registry/zot-config` on that cluster lists two sync services for `/nebius`: the regional registry first, the
+   hub second. Zot tries them in order, so an image not yet copied still resolves from the hub, and a warm regional
+   pull never contacts the hub. Image references stay `registry.serverless2.local/nebius/...` everywhere; the
+   control cluster and regions without the flag keep the hub. Roll Zot to apply at once (as in "Switching the
+   source registry"); `tools/check.sh` asserts the order for every cluster.
+
 ## Adding an upstream
 
 Add an alias to `images.upstreams` (`<alias> = "https://<host>"`), add its

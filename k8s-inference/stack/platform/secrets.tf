@@ -159,6 +159,9 @@ locals {
   registry_host = split("/", local.cloud.hub.registry)[0]
   zot_credentials = merge(
     { (local.registry_host) = { username = "iam", password = local.registry_key } },
+    # the regional registries (docs/IMAGES.md "Regional registries"): the same key, the hub ops identity is a
+    # reader of each (cloud stage), keyed by the regional host; every cluster carries them (a miss costs nothing)
+    { for rn, x in try(local.cloud.images_regional, {}) : split("/", x.registry)[0] => { username = "iam", password = local.registry_key } },
     local.ngc_on == false ? {} : { "nvcr.io" = { username = "$oauthtoken", password = local.ngc_key } },
     local.extra_registry,
   )

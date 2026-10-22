@@ -48,3 +48,8 @@ output "secrets" {
     grafana_admin_password = random_password.grafana_admin.result
   }
 }
+
+output "images_regional" {
+  description = "Regional registries (regions.<r>.images_registry.create): the region's own origin of its image cache, by region name."
+  value       = local.images_regional
+}

@@ -271,6 +271,31 @@ for cid, v in d["values"].items():
         assert not img["image"].startswith(d["fleet"]["images"]["host"] + "/"), f"{cid}: pre-pull image {img['image']} names the logical host without the cache"
     print(f"   ok cache off {cid}: no zot, no containerd DaemonSet, api from {image.rsplit('/', 2)[0]}")
 EOF2
+  # Regional registries (docs/IMAGES.md "Regional registries"): by default one `/nebius` sync service, the hub; a worker
+  # region whose fleet document names `images_source` gets its own service FIRST and the hub last (the miss fallback).
+  step "charts/fleet: the cache syncs /nebius from the regional registry first, the hub last"
+  "$PYTHON" - "$TMP" "$ROOT" <<'EOF7'
+import copy, json, subprocess, sys, yaml
+tmp, root = sys.argv[1], sys.argv[2]
+fleet = json.load(open(f"{tmp}/fleet.json"))
+def zot(cluster, doc):
+    yaml.safe_dump({"cluster": cluster, "fleet": doc, "prepull": {"enabled": True, "images": []}}, open(f"{tmp}/regional-values.yaml", "w"))
+    r = subprocess.run(["helm", "template", "x", f"{root}/charts/fleet", "-f", f"{tmp}/regional-values.yaml"], capture_output=True, text=True)
+    if r.returncode: sys.exit(r.stderr)
+    cm = next(o for o in yaml.safe_load_all(r.stdout) if o and o["kind"] == "ConfigMap" and o["metadata"]["name"] == "zot-config")
+    cfg = json.loads(cm["data"]["config.json"])
+    return [(s["urls"][0], s["content"][0]["prefix"]) for s in cfg["extensions"]["sync"]["registries"] if s["content"][0]["destination"] == "/nebius"]
+hub_host = "https://" + fleet["images"]["source"].split("/")[0]
+for rn, r in fleet["regions"].items():
+    cid = r["id"]
+    assert zot(cid, fleet) and zot(cid, fleet)[-1][0] == hub_host and len(zot(cid, fleet)) == 1, f"{cid}: default render must sync /nebius from the hub only"
+    doc = copy.deepcopy(fleet); doc["regions"][rn]["images_source"] = f"cr.{rn}.nebius.cloud/regional-example"
+    order = zot(cid, doc)
+    assert [u for u, _ in order] == [f"https://cr.{rn}.nebius.cloud", hub_host], f"{cid}: regional origin first, hub last, got {order}"
+    assert order[0][1] == "/regional-example/**", f"{cid}: the regional prefix is the registry path, got {order[0][1]}"
+    assert zot(fleet["control"]["id"], doc)[-1][0] == hub_host and len(zot(fleet["control"]["id"], doc)) == 1, "the control cluster keeps the hub only"
+    print(f"   ok regional registry order {cid}: {[u for u, _ in order]}")
+EOF7
   # charts/platform for every cluster of the example against stack/platform/tests/golden/<cluster>.json: one hash per
   # object (every field) plus its component (the wave, hence the state address), so a template change shows as the
   # list of objects it changed and an unintended change fails the gate. UPDATE_GOLDEN=1 records a deliberate change.

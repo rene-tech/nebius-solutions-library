@@ -121,6 +121,16 @@ variable "fleet" {
         mount_on_system = optional(bool, false)
       }), {})
       image_cache_size_gib = optional(number) # default images.cache.size_gib
+      # A Container Registry in the region's own project as the first origin of the region's image cache
+      # (docs/IMAGES.md "Regional registries"). Two steps, so a copy happens between them: `create` makes the
+      # registry (cloud stage; the hub ops identity reads it, `pushers` = service account ids granted editor on
+      # that registry only, nothing project-wide), `use` makes the region's cache sync `/nebius` from it first and
+      # from the hub registry on a miss (platform stage). Image references never change.
+      images_registry = optional(object({
+        create  = optional(bool, false)
+        use     = optional(bool, false)
+        pushers = optional(list(string), [])
+      }), {})
       # GPU node pools. capacity.type: spot (max_price caps the USD per GPU-hour, null follows the spot
       # price), on_demand, or reserved (reservation_ids = capacity block groups, policy STRICT; rolled with
       # zero surge because a full reservation cannot surge). min_nodes = the node floor (the first model occupies it; warm_nodes keeps

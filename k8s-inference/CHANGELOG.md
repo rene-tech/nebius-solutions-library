@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## charts/fleet 0.1.15, stack: regional registries (api unchanged)
+
+- A worker region may own the first origin of its image cache (docs/IMAGES.md "Regional registries",
+  `regions.<r>.images_registry = { create, use, pushers }`): `create` makes `<name>-images-<region>` in the region's
+  project (cloud stage) with the hub ops identity as a reader of that registry only (the caches' static key reads it;
+  the regional host joins `zot-sync-credentials`) and the listed service accounts as editors of it only; `use` puts
+  the regional origin first in that cluster's `zot-config` and keeps the hub as the miss fallback (two sync services
+  for `/nebius`, in order). Image references, the control cluster and other regions are unchanged; `tools/check.sh`
+  asserts the order per cluster. Output `images_regional` of the cloud stage.
+
 ## api 0.11.177, dispatcher 0.2.17 (0.11.175 and 0.11.176 = earlier cuts of the same change; built, never applied)
 
 - Per-class envelopes and a feasibility-aware class choice (docs/SCHEDULING.md "Per-node fit"): a run class may

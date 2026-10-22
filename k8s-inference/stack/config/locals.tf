@@ -83,6 +83,9 @@ locals {
       project              = r.project_id
       system_pool          = r.system_pool # the CPU nodes the `system` Kueue flavor budgets (charts/fleet)
       image_cache_size_gib = coalesce(r.image_cache_size_gib, local.f.images.cache.size_gib)
+      # the region's own image origin (docs/IMAGES.md "Regional registries"): set only with images_registry.use, and
+      # only once the cloud stage created the registry (a missing registry fails the plan here, by name)
+      images_source = r.images_registry.use ? local.cloud_facts.images_regional[rn].registry : null
       # charts/tenant multinode.yaml renders the shared scratch claim (`checkpoints: shared`) only where the region has it
       weights_filesystem = { enabled = r.weights_filesystem.enabled, size_gib = r.weights_filesystem.size_gib, mount_on_system = r.weights_filesystem.mount_on_system }
       pools              = { for pn, p in r.pools : pn => merge(p, { capacity = { type = p.capacity.type, max_price = p.capacity.max_price } }) }
@@ -165,6 +168,9 @@ locals {
   cloud_facts = {
     clusters = try(var.cloud.clusters, local.cloud_placeholder.clusters)
     hub      = try(var.cloud.hub, local.cloud_placeholder.hub)
+    # regional registries (regions.<r>.images_registry.create): the placeholder names one per opted-in region, so a
+    # render without a cloud shows the regional origin where `use` is set
+    images_regional = try(var.cloud.images_regional, { for rn, r in local.f.regions : rn => { id = "registry-${rn}-example", registry = "cr.${rn}.nebius.cloud/${rn}-example" } if r.images_registry.create })
   }
   cloud_placeholder = {
     # TEST-NET-1 addresses and example ids: distinct per cluster, stable across renders (the golden set)
