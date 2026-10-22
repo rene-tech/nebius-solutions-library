@@ -147,3 +147,61 @@ def test_registration_validates_the_classes_and_the_keys(monkeypatch):
         "resourcesByClass"
         not in models.to_entry(models.validate({k: v for k, v in spec.items() if k != "resources_by_class"}))["job"]
     )
+
+
+def test_a_preferred_class_absent_from_the_allowed_clusters_is_skipped_at_submission(monkeypatch, caplog):
+    """The GPU portability worker's proof shape (2026-10-22): preferences [rtx-pro-6000, l40s], allowed_clusters
+    [north]; RTX pools exist only on south. The class chosen at submission is l40s, with the reason recorded in the
+    API log and the run rendered with the l40s image; no fallback wait, no queue time on a class that cannot place."""
+    import logging
+
+    import app as appmod
+    from schemas import InvokeRequest
+
+    doc = {
+        "pools": {
+            "south-rtx": {
+                "region": "south",
+                "pool": "rtx6000-ondemand-1x",
+                "gpu_class": "rtx-pro-6000",
+                "usd_per_gpu_hour": 1.8,
+            },
+            **POOLS,
+        },
+        "clusters": {"north": {"region": "eu-north1"}, "south": {"region": "eu-south1"}},
+        "fit": {
+            **FIT,
+            "south": {
+                "rtx6000-ondemand-1x": {
+                    "kind": "gpu",
+                    "gpus": 1,
+                    "cpu": 22,
+                    "memory_gib": 200,
+                    "ephemeral_gib": 400,
+                    "shared_fs": True,
+                }
+            },
+        },
+        "tenants": {},
+    }
+    monkeypatch.setattr(kube, "fleet", lambda: doc)
+    m = model(memory="48Gi")
+    m["gpu"] = {"count": 1, "classes": ["rtx-pro-6000", "l40s", "h100"]}
+    m["gpu_classes"] = ["rtx-pro-6000", "l40s", "h100"]
+    m["job"]["images"] = {
+        "rtx-pro-6000": "registry.serverless2.local/nebius/md:1.0-rtx",
+        "l40s": "registry.serverless2.local/nebius/md:1.0-l40s",
+    }
+    ex = {"placement": {"gpu_preference": ["rtx-pro-6000", "l40s"], "allowed_clusters": ["north"]}}
+    req = InvokeRequest(input=P)
+    with caplog.at_level(logging.INFO, logger="api"):
+        cls = appmod._class_for(m, req, None, "demo", ex, ["north"])
+    assert cls == "l40s"
+    assert any("rtx-pro-6000: no node of its pools" in r.getMessage() for r in caplog.records)  # the reason, logged
+    assert any("GPU class l40s chosen by fleet (eu-north1/l40s-ondemand-1x" in r.getMessage() for r in caplog.records)
+    pl = {"regions": ["north"], "classes": ["rtx-pro-6000", "l40s"], "profile": "prefer-rtx-pro-6000"}
+    j = jobs.build_run("op-proof", m, P, "demo", None, None, None, None, None, {}, "h", placement=pl, gpu_class=cls)
+    main = next(c for c in j["spec"]["template"]["spec"]["containers"] if c["name"] == "main")
+    assert main["image"] == "registry.serverless2.local/nebius/md:1.0-l40s"
+    assert j["metadata"]["labels"]["serverless2.nebius/gpu-class"] == "l40s"
+    assert j["metadata"]["annotations"]["serverless2.nebius/image"] == "registry.serverless2.local/nebius/md:1.0-l40s"
