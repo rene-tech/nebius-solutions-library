@@ -466,7 +466,7 @@ def _validate_variants(s: dict, kind: str) -> None:
         if not isinstance(routing, dict) or not isinstance(routing.get("field"), str) or not routing["field"]:
             raise HTTPException(
                 400,
-                "routing: {field: <request field, dotted>, map: {<value>: <variant>}, default: priority | <variant>}",
+                "routing: {field: <request field, dotted>, map: {<value>: <variant>}, default: priority | capacity | <variant>}",
             )
         mapping = routing.get("map") or {}
         if not isinstance(mapping, dict) or not all(
@@ -474,7 +474,7 @@ def _validate_variants(s: dict, kind: str) -> None:
         ):
             raise HTTPException(400, "routing.map: {<value>: <variant name>}")
         targets = set(mapping.values()) | (
-            {routing["default"]} if routing.get("default") not in (None, "priority") else set()
+            {routing["default"]} if routing.get("default") not in (None, "priority", "capacity") else set()
         )
         unknown = sorted(t for t in targets if t not in names)
         if unknown:

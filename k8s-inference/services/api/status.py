@@ -544,6 +544,7 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
         ),
         "gpu_class": labels.get(f"{LABEL}/gpu-class"),
         "image": ann.get(f"{LABEL}/image"),
+        "target": _json(ann.get(f"{LABEL}/target")),  # an endpoint call's resolved variant (api 0.11.179)
         "resumable": status in ("FAILED", "CANCELLED", "EXPORT_FAILED")
         and labels.get(f"{LABEL}/mode") == "run"
         and (ann.get(f"{LABEL}/checkpoints") == "shared" if is_jobset(job) else bool(ann.get(f"{LABEL}/pvc"))),

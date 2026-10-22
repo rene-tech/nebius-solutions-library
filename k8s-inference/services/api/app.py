@@ -134,7 +134,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.178", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.179", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -535,8 +535,11 @@ def with_served_model(m: dict, inp):
 
 def _variant_for(m: dict, inp, cluster: str) -> dict:
     """Which variant of an endpoint answers a request (docs/API.md "Variants"): the one the model's `routing`
-    field selects, else the first variant in priority order that has a ready replica, else the first (its cold
-    start is the request's)."""
+    field selects, else (`routing.default: priority`, the default) the first variant in priority order that has a
+    ready replica, else the first (its cold start is the request's); with `routing.default: capacity` the first
+    ADMITTING variant (a ready replica), else the first STARTABLE one (a deployment that can start a replica now:
+    not failed, and its pool has a node or room for one), else the first. One resolution per call: readiness and
+    the single inference request go to the variant this returns (api 0.11.179)."""
     vs = models.variants(m, cluster)
     if len(vs) == 1:
         return vs[0]
@@ -545,14 +548,113 @@ def _variant_for(m: dict, inp, cluster: str) -> dict:
     for part in (routing.get("field") or "").split("."):
         value = value.get(part) if isinstance(value, dict) else None
     target = (routing.get("map") or {}).get(str(value)) if value is not None else None
-    if target is None and routing.get("default") not in (None, "priority"):
+    if target is None and routing.get("default") not in (None, "priority", "capacity"):
         target = routing["default"]
     if target:
         return next((v for v in vs if v["name"] == target), vs[0])
-    for v in vs:
-        if (kube.endpoint_status(v["object"], m["namespace"]).get("replicas_ready") or 0) > 0:
+    states = [(v, _target_state(m, v, cluster)) for v in vs]
+    for v, st in states:
+        if st["admitting"]:
             return v
+    if routing.get("default") == "capacity":
+        for v, st in states:
+            if st["startable"]:
+                return v
     return vs[0]
+
+
+def _target_state(m: dict, v: dict, cluster: str) -> dict:
+    """The live state of one endpoint target (a variant on a cluster): `admitting` = a ready replica (it takes the
+    request now), `startable` = no ready replica but a replica can start (the deployment is not failed and its pool
+    has a node, or room for one under the pool's `max_nodes`); `status`, `replicas_ready` as endpoint_status reports."""
+    cluster = _cluster_id_of(cluster)
+    region = kube.cluster_region(cluster)
+    try:
+        st = kube.endpoint_status(v["object"], m["namespace"], region, nodes=int(m.get("nodes") or 1))
+    except (HTTPException, ApiException):
+        st = {"status": "unavailable", "replicas_ready": None}
+    ready = int(st.get("replicas_ready") or 0)
+    startable = (
+        ready == 0 and st.get("status") not in ("error", "unavailable") and _pool_headroom(cluster, v.get("pool"))
+    )
+    return {"status": st.get("status"), "replicas_ready": ready, "admitting": ready > 0, "startable": bool(startable)}
+
+
+def _pool_headroom(cluster: str, pool: str | None) -> bool:
+    """Whether a pool can hold one more replica right now: a node of the pool exists, or the pool may add one
+    (`max_nodes` of the fleet document above its current node count). Unknown pool or unreadable region: True (the
+    queue decides, as before)."""
+    if not pool:
+        return True
+    entry = kube.pool_entry(cluster, pool)
+    limit = entry.get("max_nodes")
+    if not limit:
+        return True
+    index = kube._node_index(kube.cluster_region(cluster), kube.NODE_CACHE_S)
+    if index is None:
+        return True
+    nodes = sum(1 for n in index.values() if (n or {}).get("pool") == pool)
+    return nodes < int(limit) or nodes > 0
+
+
+def _cluster_id_of(key: str) -> str:
+    """A deployment key as the fleet names the cluster: entries store cluster ids, normalised definitions region
+    names (models.variants); the public target names the cluster id."""
+    doc = kube.fleet()
+    ids = set(doc.get("clusters") or {}) | {
+        p.get("region") for p in (doc.get("pools") or {}).values() if p.get("region")
+    }
+    if key in ids:
+        return key
+    return next((cid for cid in sorted(ids) if kube.cluster_region(cid) == key), key)
+
+
+def _target_public(m: dict, cluster: str, v: dict) -> dict:
+    """One endpoint target as GET /v1/models shows it (docs/API.md "Variants"): the exact image that deployment runs
+    and its live admission state; no private spec or environment."""
+    cluster = _cluster_id_of(cluster)
+    region = kube.cluster_region(cluster)
+    gpu_class = kube.pool_entry(cluster, v.get("pool")).get("gpu_class")
+    image = v.get("image") or (m.get("images") or {}).get(gpu_class or "") or m.get("image")
+    st = _target_state(m, v, cluster)
+    return {
+        "cluster": cluster,
+        "region": region,
+        "variant": v["name"],
+        "id": v["object"],
+        "pool": v.get("pool"),
+        "gpu_class": gpu_class,
+        "image": models.normalise_image(image) if image else None,
+        "nodes": int(m.get("nodes") or 1),
+        "replicas": {"min": v.get("min"), "max": v.get("max"), "ready": st["replicas_ready"]},
+        "status": st["status"],
+        "admitting": st["admitting"],
+        "startable": st["startable"],
+    }
+
+
+def _targets_public(m: dict) -> list[dict]:
+    """Every target of an endpoint, deployments in declared order, variants in priority order."""
+    return [_target_public(m, cid, v) for cid in (m.get("regions") or []) for v in models.variants(m, cid)]
+
+
+def _target_record(m: dict, cluster: str, v: dict) -> dict:
+    """What an operation records about its resolved target (`Operation.target`): identity only, no live state."""
+    cluster = _cluster_id_of(cluster)
+    gpu_class = kube.pool_entry(cluster, v.get("pool")).get("gpu_class")
+    image = v.get("image") or (m.get("images") or {}).get(gpu_class or "") or m.get("image")
+    return {
+        "cluster": cluster,
+        "variant": v["name"],
+        "id": v["object"],
+        "image": models.normalise_image(image) if image else None,
+        **({"gpu_class": gpu_class} if gpu_class else {}),
+    }
+
+
+def _deployment_cluster(m: dict, region: str) -> str:
+    """The cluster id of the model's deployment the API reaches in `region` (the first when several)."""
+    return next((c for c in (m.get("regions") or []) if kube.cluster_region(c) == region), region)
 
 
 def _deployment_of(m: dict, requested: str | None) -> tuple[str, str]:
@@ -616,7 +718,7 @@ def _public(m: dict, p: Principal | None = None) -> dict:
         except (HTTPException, ApiException):
             st = {"status": "unavailable", "replicas_ready": None}
         statuses.append({"region": region, "cluster": cid, **st})
-    return catalog.to_public(m, statuses)
+    return {**catalog.to_public(m, statuses), "targets": _targets_public(m)}
 
 
 @app.get("/livez", include_in_schema=False)
@@ -1151,7 +1253,9 @@ def _invoke_job(
     if allowed and not FLEET_MANAGER and mode == "run" and region not in allowed:
         raise HTTPException(400, f"this API runs jobs in {region} only, which allowed_clusters {allowed} excludes")
     if mode == "async":  # the caller Job runs in the endpoint's region, through that region's gateway
-        rollout = _rollout_fence(m, region, ex)
+        cluster = _deployment_cluster(m, region)  # the deployment this region reaches (invoke validated the choice)
+        target_v = _variant_for(m, req.input, cluster)  # one resolution: readiness, the one request and the fence
+        rollout = _rollout_fence(m, region, ex, obj=target_v["object"])
         application = bool(ex and ex.get("io_mode") == "application")
         output_prefix = (
             "" if application else f"s3://{artifacts.storage(p.namespace, region)['bucket']}/operations/{name}"
@@ -1171,6 +1275,7 @@ def _invoke_job(
             key_hash=billing.key_hash(p.key),
             admitted=_admitted_token(keys.key_hash(p.key), m["name"], name) if cfg.ROUTER_KEY else None,
             priority=keys.effective_priority(p.info, req.priority),
+            target={**target_v, "record": _target_record(m, cluster, target_v)},
         )
     elif FLEET_MANAGER:
         _guard_run_input(m, req, p, REGION, ex)
@@ -1257,13 +1362,13 @@ def _require_delegation(p: Principal, model: str, root: str, stage: str) -> None
         raise HTTPException(403, f"model {model} is not granted to this key (root {root} is not active on this key)")
 
 
-def _rollout_fence(m: dict, region: str, ex: dict | None) -> dict | None:
+def _rollout_fence(m: dict, region: str, ex: dict | None, obj: str | None = None) -> dict | None:
     """The endpoint's revision state at admission of an endpoint call (kube._rollout); with
     `execution.require_converged` the call is refused (409) while the created, ready and rolled-out revisions differ
     (a new revision Pending, the previous one serving). A converged endpoint at zero passes: the fence reads the
     revisions, not the pods. Without the option the state is only recorded."""
     try:
-        st = kube.endpoint_status(m["k8s_name"], m["namespace"], region, nodes=int(m.get("nodes") or 1))
+        st = kube.endpoint_status(obj or m["k8s_name"], m["namespace"], region, nodes=int(m.get("nodes") or 1))
     except Exception:  # noqa: BLE001
         st = {}
     rollout = st.get("rollout")
@@ -1566,7 +1671,7 @@ async def _sync(
         # a cold endpoint (scaled to zero, a spot node starting) is waited for with idempotent GETs before the one
         # inference request, so the request is never cut by the revision timeout while the endpoint starts and is
         # never repeated (docs/API.md "Cold endpoints"); the wait spends the call's own budget
-        await _wait_until_ready(*_probe_target(m, region, p, admission), request, t0 + budget)
+        await _wait_until_ready(*_probe_target(m, region, p, admission, v), request, t0 + budget)
     remaining = t0 + budget - time.time()
     if remaining < 1:
         raise HTTPException(
@@ -1610,6 +1715,7 @@ async def _sync(
         "error": None if ok else str(body)[:500],
         "requester": req.requester,
         "key_alias": _key_alias(keys.key_hash(p.key)),
+        "target": _target_record(m, models.cluster_id() if region == REGION else _deployment_cluster(m, region), v),
     }
     return JSONResponse(
         {"result": body, "operation": op},
@@ -1628,12 +1734,14 @@ READY_PROBE_TIMEOUT_S = 30  # one readiness GET; the gateway holds it while the 
 READY_PROBE_PAUSE_S = 2  # between probes, doubling to 10 s
 
 
-def _probe_target(m: dict, region: str, p: Principal, admission: str) -> tuple[str, dict]:
+def _probe_target(m: dict, region: str, p: Principal, admission: str, v: dict | None = None) -> tuple[str, dict]:
     """The idempotent readiness GET of an endpoint: its health path, else the OpenAI models listing or its root; on
     the predictor Service when the endpoint runs here, through the region's gateway with the caller's key otherwise
     (the same path as the asynchronous caller's READY_URL, services/api/jobs.py)."""
     probe = m.get("health_path") or ("/v1/models" if m.get("protocol") == "openai" else "/")
-    v = _variant_for(m, {}, models.cluster_id() if region == REGION else region)
+    # the variant the call resolved (api 0.11.179: readiness and the inference request go to ONE target; before,
+    # the probe resolved again with an empty input and could probe another variant than the one posted to)
+    v = v or _variant_for(m, {}, models.cluster_id() if region == REGION else region)
     if region == REGION:
         host = (
             m["endpoint_host"]

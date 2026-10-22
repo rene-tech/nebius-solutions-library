@@ -279,3 +279,129 @@ def test_sync_requests_pick_a_variant_by_field_then_by_readiness(client, monkeyp
     chat = next(x for x in listed if x["model"] == "chat")
     assert [v["name"] for v in chat["variants"]] == ["reserved", "spot", "cheap"] and chat["routing"]["field"] == "tier"
     assert appmod._endpoint_model("chat-cheap")["name"] == "chat"
+
+
+def _world(monkeypatch, ready):
+    """The chat endpoint with three variants on the hub, a live state per object (api 0.11.179 tests)."""
+    monkeypatch.setattr(kube, "fleet", lambda: VARIANT_FLEET)
+    e = catalog.normalise(models.to_entry(SPEC))
+    monkeypatch.setattr(catalog, "get", lambda name: e if name == "chat" else None)
+    monkeypatch.setattr(models, "cluster_id", lambda: "hub")
+    monkeypatch.setattr(
+        kube,
+        "endpoint_status",
+        lambda name, ns, region="eu-north1", nodes=1: {
+            "status": "ready" if ready.get(name) else ready.get(f"{name}:status", "scaled-to-zero"),
+            "replicas_ready": ready.get(name, 0),
+        },
+    )
+    return e
+
+
+def test_the_probe_and_the_request_go_to_the_same_variant(client, monkeypatch):
+    """api 0.11.179: the sync probe used to resolve again with an empty input, so an explicit `tier` could probe one
+    variant and post to another; now one resolution serves both, and the operation records the target."""
+    c, _ = client
+    _world(monkeypatch, {"chat": 0, "chat-spot": 2, "chat-cheap": 0})
+    seen = {"get": [], "post": []}
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"choices": []}
+
+    class AC:
+        def __init__(self, timeout=None):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def aclose(self):
+            return None
+
+        async def get(self, url, headers=None):
+            seen["get"].append(url)
+            return _Ready()
+
+        async def post(self, url, json=None, headers=None):
+            seen["post"].append(url)
+            return Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", AC)
+    r = c.post("/v1/models/chat:invoke", json={"input": {"messages": [], "tier": "budget"}}, headers=H)
+    assert r.status_code == 200, r.text
+    assert seen["get"][-1].startswith("http://chat-cheap-predictor") and seen["post"][-1].startswith(
+        "http://chat-cheap-predictor"
+    )
+    assert r.json()["operation"]["target"] == {
+        "cluster": "hub",
+        "variant": "cheap",
+        "id": "chat-cheap",
+        "image": "registry.serverless2.local/docker/vllm/vllm-openai:v0.31.0-l40s",
+        "gpu_class": "l40s",
+    }
+
+
+def test_capacity_routing_prefers_admitting_then_startable(monkeypatch):
+    e = _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 1})
+    e = {**e, "routing": {**e["routing"], "default": "capacity"}}
+    monkeypatch.setattr(kube, "_node_index", lambda region, max_age: {"n1": {"pool": "h100-spot-1x"}})
+    assert appmod._variant_for(e, {}, "hub")["name"] == "cheap"  # the only admitting variant, whatever its rank
+    e2 = _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0, "chat:status": "error"})
+    e2 = {**e2, "routing": {**e2["routing"], "default": "capacity"}}
+    monkeypatch.setattr(kube, "_node_index", lambda region, max_age: {"n1": {"pool": "h100-spot-1x"}})
+    assert appmod._variant_for(e2, {}, "hub")["name"] == "spot"  # reserved failed; spot has a node: startable
+    monkeypatch.setattr(kube, "_node_index", lambda region, max_age: {})
+    assert appmod._pool_headroom("hub", "h100-spot-1x") is True  # no node yet but max_nodes unknown here: room
+    # `priority` keeps its behaviour: nothing ready -> the first variant
+    e3 = _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0})
+    assert appmod._variant_for(e3, {}, "hub")["name"] == "reserved"
+
+
+def test_an_async_call_targets_the_resolved_variant_and_records_it(client, monkeypatch):
+    c, fake = client
+    _world(monkeypatch, {"chat": 0, "chat-spot": 3, "chat-cheap": 0})
+    monkeypatch.setattr(models, "endpoint_domain", lambda region: "203.0.113.10.sslip.io")
+    r = c.post("/v1/models/chat:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
+    assert r.status_code == 202, r.text
+    job = fake.jobs[("tenant-demo", r.json()["id"])]
+    env = {e["name"]: e.get("value") for e in job["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert env["URL"].startswith("https://chat-spot-predictor.models.203.0.113.10.sslip.io/")
+    assert env["READY_URL"].startswith("https://chat-spot-predictor.models.203.0.113.10.sslip.io/")
+    import json as _json
+
+    assert _json.loads(job["metadata"]["annotations"]["serverless2.nebius/target"]) == {
+        "cluster": "hub",
+        "gpu_class": "h100",
+        "id": "chat-spot",
+        "image": "registry.serverless2.local/docker/vllm/vllm-openai:v0.31.0",
+        "variant": "spot",
+    }
+    op = c.get(f"/v1/operations/{r.json()['id']}", headers=H).json()
+    assert op["target"]["variant"] == "spot" and op["target"]["id"] == "chat-spot"
+
+
+def test_the_model_readback_lists_every_target(client, monkeypatch):
+    c, _ = client
+    e = _world(monkeypatch, {"chat": 1, "chat-spot": 0, "chat-cheap": 0})
+    monkeypatch.setattr(kube, "_node_index", lambda region, max_age: {"n1": {"pool": "h100-res-1x"}})
+    monkeypatch.setattr(catalog, "all_models", lambda: {"chat": e})
+    r = c.get("/v1/models/chat", headers=H)
+    assert r.status_code == 200, r.text
+    ts = r.json()["targets"]
+    assert [t["variant"] for t in ts] == ["reserved", "spot", "cheap"] and all(t["cluster"] == "hub" for t in ts)
+    by = {t["variant"]: t for t in ts}
+    assert by["reserved"]["admitting"] and not by["reserved"]["startable"] and by["reserved"]["replicas"]["ready"] == 1
+    assert by["cheap"]["image"].endswith("vllm-openai:v0.31.0-l40s") and by["cheap"]["gpu_class"] == "l40s"
+    assert by["spot"]["startable"] and not by["spot"]["admitting"] and by["spot"]["pool"] == "h100-spot-1x"
+    assert "spec" not in by["spot"] and "env" not in by["spot"]
+    # validation: `capacity` is a routing default
+    ok = models.to_entry(models.validate({**SPEC, "routing": {**SPEC["routing"], "default": "capacity"}}))
+    assert ok["routing"]["default"] == "capacity"

@@ -4,6 +4,20 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.179, dispatcher 0.2.17
+
+- One endpoint target per call (docs/API.md "Variants"): the variant a call resolves to is used for the readiness
+  probes AND the single inference request, synchronous and asynchronous (before: the sync probe resolved again with
+  an empty input and could probe another variant; the async caller always went to the base deployment, bypassing
+  declared variants); the convergence fence (`require_converged`) reads the chosen variant's rollout. `Operation.target`
+  records {cluster, variant, id, image, gpu_class} for an endpoint call (annotation `serverless2.nebius/target`).
+- `routing.default: capacity` (next to `priority` and a variant name): the first variant with a ready replica
+  (`admitting`), else the first that can start one now (`startable`: not failed, its pool has a node or room for one
+  under `max_nodes`), else the first. Declared order only, no ranking, no second queue.
+- `GET /v1/models` and `/v1/models/{id}` of an endpoint carry `targets`: every deployment a call may resolve to
+  (cluster, region, variant, id, pool, gpu_class, the exact image it runs, nodes, replicas {min, max, ready}, status,
+  admitting, startable); no private spec or environment. The App binds its variant images to this.
+
 ## api 0.11.178, dispatcher 0.2.17 (0.11.175-177 = earlier cuts; built, never applied)
 
 - `GraphStage.root` (operation read and list schemas): the graph root a stage belongs to, as `app._operation` has

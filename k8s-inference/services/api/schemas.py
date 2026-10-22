@@ -554,6 +554,35 @@ class ModelRollout(BaseModel):
     reason: str | None = None  # why not converged
 
 
+class ModelTarget(BaseModel):
+    """One deployment of an endpoint (docs/API.md "Variants", api 0.11.179): where a call may go, the exact image that
+    deployment runs, and whether it takes a request now (`admitting`: a ready replica) or can start one (`startable`:
+    not failed, its pool has a node or room for one). No private spec or environment."""
+
+    cluster: str
+    region: str | None = None
+    variant: str
+    id: str
+    pool: str | None = None
+    gpu_class: str | None = None
+    image: str | None = None
+    nodes: int | None = None
+    replicas: dict[str, int | None] | None = None
+    status: str | None = None
+    admitting: bool | None = None
+    startable: bool | None = None
+
+
+class EndpointTarget(BaseModel):
+    """The target an endpoint call was resolved to (one resolution for readiness and the single inference request)."""
+
+    cluster: str | None = None
+    variant: str | None = None
+    id: str | None = None
+    image: str | None = None
+    gpu_class: str | None = None
+
+
 class Model(BaseModel):
     id: str
     name: str
@@ -577,6 +606,7 @@ class Model(BaseModel):
     execution: ModelExecution | None = None  # run classes: the sanitized execution identity
     native_lease: Literal["optional", "required"] | None = None  # endpoints: docs/API.md "Native execution leases"
     ingress_isolation: Literal["declared-ports"] | None = None  # endpoints: docs/API.md "Ingress isolation"
+    targets: list[ModelTarget] | None = None  # endpoints: every deployment a call may resolve to (api 0.11.179)
 
 
 class SyncResponse(BaseModel):
@@ -767,6 +797,7 @@ class Operation(BaseModel):
     # the work volume's recorded lifecycle (docs/JOBS.md "Work volume lifecycle"): "released" = a resume needs
     # restart_from_inputs or a checkpoint_ref; "retained" = kept with a reason; absent = as the uploader left it
     work_volume: Literal["released", "retained"] | None = None
+    target: EndpointTarget | None = None  # an endpoint call: the variant it was resolved to (api 0.11.179)
     gpu_class: str | None = None
     image: str | None = None
     nodes: int | None = None

@@ -476,6 +476,25 @@ runs; a region without variants keeps the automatic pool choice. A redefinition 
 removes its service, its LiteLLM deployment and, once Knative has torn its routes down, its authorizer; a dropped
 warm variant holds no GPUs beyond that.
 
+### One target per call, and what a call may resolve to (api 0.11.179)
+
+A call resolves its variant once (`routing` field and map first, then `routing.default`) and uses that one target for
+the readiness probes and the single inference request, synchronous (the API's proxy) and asynchronous (the caller
+Job's `READY_URL` and `URL`); the convergence fence of `execution.require_converged` reads that variant's rollout.
+The operation records it as `target` ({cluster, variant, id, image, gpu_class}). `routing.default`:
+
+| value | the variant taken when the field selects none |
+|---|---|
+| `priority` (default) | the first with a ready replica, else the first (its cold start is the call's) |
+| `capacity` | the first with a ready replica (`admitting`), else the first that can start one now (`startable`: its deployment is not failed and its pool has a node, or room for one under the pool's `max_nodes`), else the first |
+| `<variant>` | that variant |
+
+Declared order, nothing ranked. `GET /v1/models/{id}` (and the list) of an endpoint carries `targets`: one entry per
+deployment the call may resolve to, deployments in declared order and variants in priority order, with `cluster`,
+`region`, `variant`, `id` (the object), `pool`, `gpu_class`, `image` (the exact reference that deployment runs:
+the variant's, else the class image, else the model's), `nodes`, `replicas` {min, max, ready}, `status`,
+`admitting` and `startable`; never the private spec or environment.
+
 ## Fleet operators
 
 A fleet operator is a key with `metadata.role=fleet` in the platform's own tenant (`platform`, next to the router

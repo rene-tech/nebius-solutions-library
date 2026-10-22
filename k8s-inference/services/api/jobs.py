@@ -1111,6 +1111,7 @@ def build_async(
     transfer_only: bool = False,
     scratch_leaf_of: str | None = None,
     priority: str | None = None,
+    target: dict | None = None,
 ) -> tuple[dict, dict]:
     """(Job, Secret): a queued endpoint call through LiteLLM's pass-through route when the model has
     one (spend lands on the caller's key), else through the gateway of the endpoint's region with the caller's key
@@ -1136,7 +1137,13 @@ def build_async(
     else:
         if not runtime_models.endpoint_domain(region):
             raise HTTPException(503, f"async calls need the endpoint domain of {region} (ENDPOINT_DOMAINS)")
-        url, auth = f"https://{runtime_models.endpoint_host(model, region)}{model['endpoint_path']}", f"Bearer {key}"
+        # the resolved target (api 0.11.179, app._variant_for: the variant the call goes to; the base deployment
+        # without one): readiness and the one request go to the same object
+        obj = (target or {}).get("object")
+        url, auth = (
+            f"https://{runtime_models.endpoint_host(model, region, obj)}{model['endpoint_path']}",
+            f"Bearer {key}",
+        )
         if ENDPOINT_CONNECT_TO:
             host = url.split("/")[2]
             env.append({"name": "CONNECT_TO", "value": f"{host}:443:{ENDPOINT_CONNECT_TO}"})
@@ -1170,7 +1177,12 @@ def build_async(
         # gateway (also for a LiteLLM-routed call: LiteLLM proxies the same endpoint), waited for up to
         # ENDPOINT_START_WAIT_S; the Job's deadline covers that wait on top of the call's timeout_s
         probe = model.get("health_path") or ("/v1/models" if model.get("protocol") == "openai" else "/")
-        env.append({"name": "READY_URL", "value": f"https://{runtime_models.endpoint_host(model, region)}{probe}"})
+        env.append(
+            {
+                "name": "READY_URL",
+                "value": f"https://{runtime_models.endpoint_host(model, region, (target or {}).get('object'))}{probe}",
+            }
+        )
         env.append({"name": "READY_MAX_WAIT", "value": str(ENDPOINT_START_WAIT_S)})
     if admitted:
         env.append(
@@ -1260,6 +1272,8 @@ def build_async(
     if leaf:
         _mount_scratch_leaf(pod, leaf, pools)
     meta = _meta(name, tenant, model["name"], "async", region, label, inp, idem, priority, key_hash, execution=ex)
+    if target and target.get("record"):  # Operation.target: the resolved variant, its exact image and class
+        meta["annotations"][f"{LABEL}/target"] = json.dumps(target["record"], sort_keys=True)
     if leaf:  # the capture is retained on the tenant's shared-scratch leaf (no claim of its own, nothing to attach)
         meta["annotations"][f"{LABEL}/scratch"] = "shared"
         meta["annotations"][f"{LABEL}/scratch-leaf"] = leaf
