@@ -487,7 +487,7 @@ The operation records it as `target` ({cluster, variant, id, image, gpu_class}).
 | value | the variant taken when the field selects none |
 |---|---|
 | `priority` (default) | the first with a ready replica, else the first (its cold start is the call's) |
-| `capacity` | the first target KNOWN to admit (`admitting`: a ready replica whose in-flight requests, Knative's stable concurrency, a windowed estimate over 60 s whose sample age is `in_flight_age_s`, are below ready replicas x its `container_concurrency`; a sample older than 120 s is unknown), else the first KNOWN to be startable (`startable`: a cold deployment that is not failed and whose pool has free GPUs for one replica or room for a node under `max_nodes`), else the first; an unknown or stale state (no concurrency limit, no measurement, an unreadable pool) is null and never counts. A preference between declared targets, not a promise of admission: the gateway's concurrency and queue enforcement stay authoritative |
+| `capacity` | the first target KNOWN to admit (`admitting`: a ready replica whose in-flight requests, Knative's stable concurrency, a windowed estimate over 60 s whose sample age is `in_flight_age_s`: the scrape time of the oldest contributing series by PromQL `timestamp()`, never the query's evaluation time, are below ready replicas x its `container_concurrency`; a sample older than 120 s, or of unknown age, is unknown), else the first KNOWN to be startable (`startable`: a cold deployment that is not failed and whose pool has free GPUs for one replica or room for a node under `max_nodes`), else the first; an unknown or stale state (no concurrency limit, no measurement, an unreadable pool) is null and never counts. A preference between declared targets, not a promise of admission: the gateway's concurrency and queue enforcement stay authoritative |
 | `<variant>` | that variant |
 
 Declared order, nothing ranked. `GET /v1/models/{id}` (and the list) of an endpoint carries `targets`: one entry per
@@ -495,7 +495,7 @@ deployment the call may resolve to, deployments in declared order and variants i
 `region`, `variant`, `id` (the object), `pool`, `gpu_class`, `image` (the exact reference that deployment runs:
 the variant's, else the class image, else the model's), `nodes`, `replicas` {min, max, ready}, `status`,
 `in_flight`, `in_flight_age_s`, `capacity`, `admitting` and `startable` (null when not measured or stale); never the private spec or environment.
-**Pre-send fallback (api 0.11.185, jobs 0.1.35).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
+**Pre-send fallback (api 0.11.186, jobs 0.1.36).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
 walk its declared targets before sending: the resolved variant first, then the other declared targets (the
 deployment's other variants and, with `regions: true` and no region named by the caller, the model's other deployments
 that the API reaches) in the operator's class order: `gpu.classes` (preferred first) ranks each target by the class of
@@ -505,7 +505,18 @@ by price or science: the order is the one the operator declared), at most 1 + `m
 call's budget; the one inference request goes to the target that answered (synchronous calls in the API, asynchronous
 calls in the caller Job, which records the chosen target in its capture as `out/target.json`). A refusal (401/403)
 ends the call at once; once the request is sent nothing moves; nothing is ever posted twice. `Operation.target`
-names the first target and `candidates` the walk. Without `routing.fallback` a call has one target, as before.
+names the target with `observed`: for a synchronous call the target the API sent the one request to (`observed:
+true`); for an asynchronous call the planned first target with `observed: false` until the caller's durable receipt
+(call.sh writes `out/target.json` BEFORE its one POST; the uploader forwards it in the attempt record) names the
+candidate that answered, then THAT candidate's identity as recorded at submission (cluster, variant, id, exact image,
+GPU class; never a lookup of the live definition afterwards) with `observed: true`. A pending candidate is never
+reported as an execution. `candidates` lists the walk's ids. Without `routing.fallback` a call has one target, as before.
+
+**No caller region needed (api 0.11.186).** With `routing.fallback.regions: true` a call that names no region resolves
+over EVERY deployment the API reaches in the operator's class order (the control API too, where the model has no
+home deployment): the resolved first target may be in another region, the asynchronous caller Job is created there,
+and the walk continues in that order. A region the caller names stays authoritative (that deployment only). Without
+declared cross-region fallback a model deployed in several regions still needs the caller's region, as before.
 
 ## Fleet operators
 

@@ -140,7 +140,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.185", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.186", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -539,16 +539,35 @@ def with_served_model(m: dict, inp):
     return inp
 
 
-def _variant_for(m: dict, inp, cluster: str) -> dict:
-    """Which variant of an endpoint answers a request (docs/API.md "Variants"): the one the model's `routing`
-    field selects, else (`routing.default: priority`, the default) the first variant in priority order that has a
+def _declared_targets(m: dict, cluster: str, region_given: bool) -> list[tuple[str, dict]]:
+    """Every (cluster, variant) a call may go to, in the operator's order (docs/API.md "Variants", api 0.11.186): the
+    deployment `cluster` reaches and, with `routing.fallback.regions` and no region named by the caller, every other
+    deployment this API reaches; ranked by `gpu.classes` (preferred first) for the class of each variant's pool,
+    declared order (variants, then deployments) within one class, a pool of no declared class last. Nothing else
+    ranks: no price, no science. An explicit caller region keeps that one deployment."""
+    pairs = [(cluster, v) for v in models.variants(m, cluster)]
+    fb = (m.get("routing") or {}).get("fallback") or {}
+    if fb.get("regions") and not region_given:
+        for cid in m.get("regions") or []:
+            if _cluster_id_of(cid) == _cluster_id_of(cluster) or kube.cluster_region(cid) not in kube.regions():
+                continue
+            pairs += [(cid, v) for v in models.variants(m, cid)]
+    rank = {c: i for i, c in enumerate(jobs.gpu_classes(m))}
+    pairs.sort(
+        key=lambda t: rank.get(kube.pool_entry(_cluster_id_of(t[0]), t[1].get("pool")).get("gpu_class"), len(rank))
+    )
+    return pairs
+
+
+def _resolve_target(m: dict, inp, pairs: list[tuple[str, dict]]) -> tuple[str, dict]:
+    """Which of the declared targets answers a request (docs/API.md "Variants"): the one the model's `routing` field
+    selects, else (`routing.default: priority`, the default) the first target in the operator's order that has a
     ready replica, else the first (its cold start is the request's); with `routing.default: capacity` the first
-    ADMITTING variant (a ready replica), else the first STARTABLE one (a deployment that can start a replica now:
-    not failed, and its pool has a node or room for one), else the first. One resolution per call: readiness and
-    the single inference request go to the variant this returns (api 0.11.179)."""
-    vs = models.variants(m, cluster)
-    if len(vs) == 1:
-        return vs[0]
+    ADMITTING target (a ready replica below its capacity), else the first STARTABLE one (not failed, its pool has a
+    node or room for one), else the first. One resolution per call: readiness and the single inference request go to
+    the target this returns (api 0.11.179); over every deployment with routing.fallback.regions (api 0.11.186)."""
+    if len(pairs) == 1:
+        return pairs[0]
     routing = m.get("routing") or {}
     value = inp
     for part in (routing.get("field") or "").split("."):
@@ -557,46 +576,46 @@ def _variant_for(m: dict, inp, cluster: str) -> dict:
     if target is None and routing.get("default") not in (None, "priority", "capacity"):
         target = routing["default"]
     if target:
-        return next((v for v in vs if v["name"] == target), vs[0])
+        return next((t for t in pairs if t[1]["name"] == target), pairs[0])
     if routing.get("default") != "capacity":
-        for v in vs:  # `priority`: the first variant with a ready replica, else the first (unchanged since 0.11.122)
-            if (kube.endpoint_status(v["object"], m["namespace"]).get("replicas_ready") or 0) > 0:
-                return v
-        return vs[0]
-    states = [(v, _target_state(m, v, cluster)) for v in vs]
-    for v, st in states:  # a target KNOWN to admit now (in-flight below its capacity); unknown never counts
+        for t in pairs:  # `priority`: the first target with a ready replica, else the first (since 0.11.122)
+            try:
+                st = kube.endpoint_status(t[1]["object"], m["namespace"], kube.cluster_region(_cluster_id_of(t[0])))
+            except (HTTPException, ApiException):
+                st = {}
+            if (st.get("replicas_ready") or 0) > 0:
+                return t
+        return pairs[0]
+    states = [
+        (t, _target_state(m, t[1], t[0])) for t in pairs
+    ]  # the pairs themselves: `_call_targets` excludes by identity
+    for t, st in states:  # a target KNOWN to admit now (in-flight below its capacity); unknown never counts
         if st["admitting"] is True:
-            return v
-    for v, st in states:  # else a cold target KNOWN to be startable now
+            return t
+    for t, st in states:  # else a cold target KNOWN to be startable now
         if st["startable"] is True:
-            return v
-    return vs[0]  # nothing known: the first variant and the ordinary queue (its cold start is the call's)
+            return t
+    return pairs[0]  # nothing known: the first target and the ordinary queue (its cold start is the call's)
+
+
+def _variant_for(m: dict, inp, cluster: str) -> dict:
+    """The variant of ONE deployment a request resolves to (`_resolve_target` over that deployment's variants)."""
+    return _resolve_target(m, inp, [(cluster, v) for v in models.variants(m, cluster)])[1]
 
 
 def _call_targets(m: dict, cluster: str, inp, region_given: bool) -> list[tuple[str, dict]]:
-    """The ordered (cluster, variant) targets of one call (docs/API.md "Variants", api 0.11.182/184): the resolved
-    variant of the chosen deployment first; with `routing.fallback`, the other declared targets (the deployment's other
-    variants and, with `fallback.regions` and no region named by the caller, the variants of the model's other
-    deployments that this API reaches) in the operator's class order: `gpu.classes` (preferred first) ranks each
-    target by the class of its pool, declared order (variants, then deployments) within one class, a pool of no
-    declared class last; at most 1 + `max_switches` entries. Serverless ranks nothing itself (no price, no science):
-    the order is the operator's. Without `routing.fallback`: one target."""
-    first = _variant_for(m, inp, cluster)
+    """The ordered (cluster, variant) targets of one call (docs/API.md "Variants", api 0.11.182/186): the resolved
+    target first (`_resolve_target` over the declared targets: the home deployment's variants, or with
+    `routing.fallback.regions` and no caller region every reachable deployment's, in the operator's class order), then
+    the other declared targets in that order; at most 1 + `max_switches` entries. Without `routing.fallback`: the one
+    deployment's resolved variant."""
     fb = (m.get("routing") or {}).get("fallback")
-    out = [(cluster, first)]
     if not fb:
-        return out
-    rest = [(cluster, v) for v in models.variants(m, cluster) if v["object"] != first["object"]]
-    if fb.get("regions") and not region_given:
-        for cid in m.get("regions") or []:
-            if _cluster_id_of(cid) == _cluster_id_of(cluster) or kube.cluster_region(cid) not in kube.regions():
-                continue
-            rest += [(cid, v) for v in models.variants(m, cid)]
-    rank = {c: i for i, c in enumerate(jobs.gpu_classes(m))}
-    rest.sort(
-        key=lambda t: rank.get(kube.pool_entry(_cluster_id_of(t[0]), t[1].get("pool")).get("gpu_class"), len(rank))
-    )
-    return out + rest[: int(fb.get("max_switches") or 0)]
+        return [(cluster, _variant_for(m, inp, cluster))]
+    pairs = _declared_targets(m, cluster, region_given)
+    first = _resolve_target(m, inp, pairs)
+    rest = [t for t in pairs if t is not first]
+    return [first] + rest[: int(fb.get("max_switches") or 0)]
 
 
 def _target_urls(
@@ -662,18 +681,17 @@ def _target_state(m: dict, v: dict, cluster: str) -> dict:
     if int(ready) > 0:
         limit = _replica_concurrency(m, v, region)
         # Knative's stable concurrency: the autoscaler's estimate over its stable window (60 s by default), scraped
-        # periodically; an estimate, never the instantaneous admitted count. A sample older than METRIC_STALE_S is
-        # unknown; a fresh one makes `admitting` a windowed judgement (below capacity on average over the window),
-        # never a promise that the next request is admitted: the gateway's own concurrency and queue enforcement
-        # stay authoritative (Root's note, 2026-10-22 19:35Z)
-        sample = monitoring.instant(
-            "sum(kn_revision_concurrency_stable{"
-            f'k8s_namespace_name="{m["namespace"]}",kn_service_name="{v["object"]}-predictor"'
-            "})",
-            region,
-        )
-        in_flight, age = sample if sample else (None, None)
-        if age is not None and age > METRIC_STALE_S:
+        # periodically; an estimate, never the instantaneous admitted count. A sample older than METRIC_STALE_S (or
+        # of unknown age) is unknown; a fresh one makes `admitting` a windowed judgement (below capacity on average
+        # over the window), never a promise that the next request is admitted: the gateway's own concurrency and
+        # queue enforcement stay authoritative (Root's note, 2026-10-22 19:35Z)
+        series = f'kn_revision_concurrency_stable{{k8s_namespace_name="{m["namespace"]}",kn_service_name="{v["object"]}-predictor"}}'
+        in_flight = monitoring.instant(f"sum({series})", region)
+        # the sample's own age: the scrape time of the OLDEST contributing series (`timestamp()`, conservative); the
+        # evaluation timestamp of the sum says nothing about it (Root, 20:05Z). No timestamp = unknown, never fresh
+        stamp = monitoring.instant(f"min(timestamp({series}))", region) if in_flight is not None else None
+        age = max(0.0, time.time() - stamp) if stamp is not None else None
+        if age is None or age > METRIC_STALE_S:
             in_flight = None
         out["in_flight"] = in_flight
         out["in_flight_age_s"] = round(age, 1) if age is not None else None
@@ -818,6 +836,15 @@ def _deployment_of(m: dict, requested: str | None) -> tuple[str, str]:
         if cid is None:
             if len(deps) == 1:
                 cid = deps[0]
+            elif ((m.get("routing") or {}).get("fallback") or {}).get("regions"):
+                # the operator declared cross-region fallback: a call without a region resolves over EVERY deployment
+                # this API reaches in the operator's class order (_declared_targets); the first of that order stands
+                # in here, the call's own resolution follows (api 0.11.186). A region the caller names stays
+                # authoritative. Before, such a call was refused with "give region", which disabled the fallback.
+                reachable = [c for c in deps if kube.cluster_region(c) in kube.regions()]
+                if not reachable:
+                    raise HTTPException(400, f"model {m['name']} is deployed in {deps}, none reachable from this API")
+                cid = _declared_targets(m, reachable[0], False)[0][0]
             else:
                 raise HTTPException(
                     400, f"model {m['name']} is deployed in {deps}; give region (a cluster id or a region)"
@@ -1393,10 +1420,13 @@ def _invoke_job(
         raise HTTPException(400, f"region {req.region} is not in allowed_clusters {allowed}")
     if allowed and not FLEET_MANAGER and mode == "run" and region not in allowed:
         raise HTTPException(400, f"this API runs jobs in {region} only, which allowed_clusters {allowed} excludes")
-    if mode == "async":  # the caller Job runs in the endpoint's region, through that region's gateway
+    if mode == "async":  # the caller Job runs in the resolved target's region, through that region's gateway
         cluster = _deployment_cluster(m, region)  # the deployment this region reaches (invoke validated the choice)
         candidates = _call_targets(m, cluster, req.input, bool(req.region))  # the resolved target first, then the
-        target_v = candidates[0][1]  # declared fallbacks (routing.fallback); readiness, the one request, the fence
+        cluster, target_v = candidates[
+            0
+        ]  # declared fallbacks (routing.fallback); readiness, the one request, the fence
+        region = kube.cluster_region(_cluster_id_of(cluster))  # with fallback.regions the first may be elsewhere
         rollout = _rollout_fence(m, region, ex, obj=target_v["object"])
         application = bool(ex and ex.get("io_mode") == "application")
         output_prefix = (
@@ -1419,9 +1449,13 @@ def _invoke_job(
             priority=keys.effective_priority(p.info, req.priority),
             target={
                 **target_v,
-                "record": {
+                "record": {  # the identities resolved NOW (exact image, class, cluster), immutable on the Job
                     **_target_record(m, cluster, target_v),
-                    **({"candidates": [c["object"] for _, c in candidates]} if len(candidates) > 1 else {}),
+                    **(
+                        {"candidates": [_target_record(m, cc, c) for cc, c in candidates]}
+                        if len(candidates) > 1
+                        else {}
+                    ),
                 },
                 "candidates": [
                     {
@@ -1826,6 +1860,12 @@ async def _sync(
     candidates = (
         _call_targets(m, target_cluster, req.input, bool(req.region)) if v and not m.get("litellm_route") else []
     )
+    if candidates and _cluster_id_of(candidates[0][0]) != _cluster_id_of(target_cluster):
+        # the operator's order put the first target in another deployment (routing.fallback.regions, api 0.11.186):
+        # readiness and the one request go there, through its region's gateway
+        target_cluster, v = candidates[0]
+        region = kube.cluster_region(_cluster_id_of(target_cluster))
+        _, url, headers = _target_urls(m, target_cluster, v, p, admission)
     t0 = time.time()
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     budget = (
@@ -1853,7 +1893,11 @@ async def _sync(
         # a cold endpoint (scaled to zero, a spot node starting) is waited for with idempotent GETs before the one
         # inference request, so the request is never cut by the revision timeout while the endpoint starts and is
         # never repeated (docs/API.md "Cold endpoints"); the wait spends the call's own budget
-        await _wait_until_ready(*_probe_target(m, region, p, admission, v), request, t0 + budget)
+        if candidates:  # the resolved target's own readiness URL (it may be another deployment's, api 0.11.186)
+            probe_url, _, probe_headers = _target_urls(m, target_cluster, v, p, admission)
+        else:
+            probe_url, probe_headers = _probe_target(m, region, p, admission, v)
+        await _wait_until_ready(probe_url, probe_headers, request, t0 + budget)
     remaining = t0 + budget - time.time()
     if remaining < 1:
         raise HTTPException(
@@ -1900,6 +1944,7 @@ async def _sync(
         "target": {
             **_target_record(m, target_cluster, v),
             **({"candidates": [c["object"] for _, c in candidates]} if len(candidates) > 1 else {}),
+            "observed": True,  # the API itself sent the one request there (api 0.11.186)
         }
         if v
         else None,

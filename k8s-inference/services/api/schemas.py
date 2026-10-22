@@ -585,7 +585,9 @@ class ModelTarget(BaseModel):
     in_flight: float | None = (
         None  # Knative's stable concurrency: a windowed estimate (60 s); None = not measured or stale
     )
-    in_flight_age_s: float | None = None  # age of that sample; older than 120 s counts as unknown
+    in_flight_age_s: float | None = (
+        None  # age of the OLDEST contributing sample (PromQL timestamp()); > 120 s = unknown
+    )
     capacity: int | None = None  # ready replicas x the replica's concurrency limit; None = no limit or unknown
     admitting: bool | None = None  # in_flight (windowed) < capacity; None = unknown; never a promise of admission
     startable: bool | None = None  # cold target: free GPUs on its pool or room for a node; None = unknown
@@ -602,6 +604,9 @@ class EndpointTarget(BaseModel):
     image: str | None = None
     gpu_class: str | None = None
     candidates: list[str] | None = None
+    observed: bool | None = None  # true once the target that received the one request is on durable record (the
+    # caller's receipt for an asynchronous call; the API's own send for a synchronous one); false = the planned first
+    # target of a walk that has not reported yet, never an execution (api 0.11.186)
 
 
 class Model(BaseModel):

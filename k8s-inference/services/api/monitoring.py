@@ -231,12 +231,14 @@ def _startups(
     return rows[:50]
 
 
-def instant(query: str, region: str, timeout: float = 4.0) -> tuple[float, float] | None:
-    """One instant PromQL query, synchronous (the endpoint target resolver runs in request threads): (the first
-    sample's value, its age in seconds: now minus the sample's own timestamp), None when the region's Prometheus
-    cannot be reached, answers an error or has no sample. Never a guess: a reader treats None as unknown and judges
-    the age itself (a windowed gauge such as Knative's stable concurrency is an estimate over its window, and a
-    sample older than its scrape cadence says nothing about now)."""
+def instant(query: str, region: str, timeout: float = 4.0) -> float | None:
+    """One instant PromQL query, synchronous (the endpoint target resolver runs in request threads): the first
+    result's value, None when the region's Prometheus cannot be reached, answers an error or has no result. Never a
+    guess: a reader treats None as unknown. The timestamp Prometheus returns next to the value is the EVALUATION
+    time, not the underlying sample's: a reader that needs the sample's age queries `timestamp(<series>)` (the
+    scrape time of each contributor; `min(...)` of them = the oldest, the conservative age) as a second instant
+    query (Root, 2026-10-22 20:05Z; 0.11.184 took the evaluation time for the sample's and could never see a stale
+    sample)."""
     try:
         base, headers, verify = target(PROMETHEUS_URL, region)
         with httpx.Client(timeout=timeout, verify=verify) as client:
@@ -246,10 +248,7 @@ def instant(query: str, region: str, timeout: float = 4.0) -> tuple[float, float
             if data.get("status") != "success":
                 return None
             result = (data.get("data") or {}).get("result") or []
-            if not result:
-                return None
-            ts, value = result[0]["value"]
-            return float(value), max(0.0, time.time() - float(ts))
+            return float(result[0]["value"][1]) if result else None
     except (HTTPException, httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
         return None
 

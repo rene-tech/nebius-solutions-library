@@ -163,6 +163,7 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
             else None
         )
         capture = _capture_of(body.get("capture"), operation, root, c)
+        target = _target_of(body.get("target"))
         resume = (
             _resume_for(c, operation, root, epoch, gang, body.get("_explicit_checkpoint_ref"))
             if gang and not cur
@@ -171,11 +172,12 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
         c.execute(
             """insert into attempts (operation, pod, root, tenant, namespace, epoch, region, node, pool, gpu_class, gpus, image,
                         image_digest, status, exit_code, started_at, ended_at, export_state, result_ref, checkpoint_ref, checkpoint_generation, updated_at, role, cluster,
-                        mode, model, io_mode, gang_rank, gang_restart, pod_uid, capture, resume_checkpoint_ref, resume_source_epoch, resume_source)
-                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        mode, model, io_mode, gang_rank, gang_restart, pod_uid, capture, resume_checkpoint_ref, resume_source_epoch, resume_source, target)
+                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                      on conflict (operation, pod) do update set
                         cluster = coalesce(excluded.cluster, attempts.cluster),
                         capture = coalesce(excluded.capture, attempts.capture),
+                        target = coalesce(excluded.target, attempts.target),
                         resume_checkpoint_ref = coalesce(attempts.resume_checkpoint_ref, excluded.resume_checkpoint_ref),
                         resume_source_epoch = coalesce(attempts.resume_source_epoch, excluded.resume_source_epoch),
                         resume_source = coalesce(attempts.resume_source, excluded.resume_source),
@@ -229,6 +231,7 @@ def record(region: str, ns: str, pod: str, body: dict) -> dict:
                 resume[0],
                 resume[1],
                 resume[2],
+                Json(target) if target is not None else None,
             ),
         )
         if body.get("reason"):  # the bounded cause (api 0.11.149): a later record without one keeps the first
@@ -266,6 +269,24 @@ def _resume_for(c, operation: str, root: str, epoch: int, gang: dict, explicit: 
 
 
 CAPTURE_SHA = re.compile(r"^[0-9a-f]{64}$")
+
+
+TARGET_KEYS = ("id", "url", "index", "of", "probes", "waited_s")
+
+
+def _target_of(raw) -> dict | None:
+    """The caller's target receipt (call.sh `out/target.json`, forwarded by the uploader; api 0.11.186): the id of the
+    declared target that answered readiness and received the one request, bounded to TARGET_KEYS; None without one,
+    400 for a shape that is not {id, ...}."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or not isinstance(raw.get("id"), str) or not raw["id"] or len(raw["id"]) > 253:
+        raise HTTPException(400, "target: an object {id, url, index, of, probes, waited_s} (call.sh out/target.json)")
+    return {
+        k: raw[k]
+        for k in TARGET_KEYS
+        if k in raw and isinstance(raw[k], (str, int, float)) and len(str(raw[k])) <= 2048
+    }
 
 
 def _capture_of(raw, operation: str, root: str, c) -> dict | None:
@@ -399,7 +420,7 @@ def gang_status(rows: list[dict]) -> str | None:
 COLS = (
     "operation, pod, root, tenant, namespace, epoch, region, node, pool, gpu_class, gpus, image, image_digest, status, exit_code, "
     "started_at, ended_at, export_state, result_ref, checkpoint_ref, checkpoint_generation, revision, updated_at, role, cluster, "
-    "mode, model, io_mode, gang_rank, gang_restart, pod_uid, capture, resume_checkpoint_ref, resume_source_epoch, resume_source, reason"
+    "mode, model, io_mode, gang_rank, gang_restart, pod_uid, capture, resume_checkpoint_ref, resume_source_epoch, resume_source, reason, target"
 )
 
 

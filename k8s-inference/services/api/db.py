@@ -434,6 +434,12 @@ create table if not exists operation_marks (
     """
     alter table attempts add column if not exists reason text;
     """,
+    # 32: the target an endpoint caller actually sent its one request to (docs/API.md "Variants", api 0.11.186): the
+    # uploader forwards call.sh's out/target.json ({id, url, index, of, probes, waited_s}, written BEFORE the POST),
+    # so Operation.target reports the observed placement, never a pending candidate
+    """
+    alter table attempts add column if not exists target jsonb;
+    """,
 ]
 
 _pool = None

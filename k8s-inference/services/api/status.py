@@ -364,6 +364,40 @@ def _capture_pending(attempts: list, ann: dict) -> bool:
     return done is not None and (datetime.now(timezone.utc) - done).total_seconds() <= FINALIZING_GRACE_S
 
 
+TARGET_IDENTITY = ("cluster", "variant", "id", "image", "gpu_class")
+
+
+def _target(ann: dict, records: list | None) -> dict | None:
+    """An endpoint call's target (docs/API.md "Variants"): the identity resolved at submission (the annotation: cluster,
+    variant, object id, exact image, GPU class; with routing.fallback the full identity of every candidate, in the
+    walk's order) and, once the caller's durable receipt (the uploader record's `target`, call.sh out/target.json
+    written BEFORE the one POST) names the candidate that answered, THAT candidate's recorded identity with
+    `observed: true`. Until then the planned first target with `observed: false`: a pending candidate is never reported
+    as an execution. Never a lookup of the live definition after the fact. `candidates` lists the walk's ids."""
+    planned = _json(ann.get(f"{LABEL}/target"))
+    if not isinstance(planned, dict):
+        return None
+    cands = planned.get("candidates") or []
+    by_id = {
+        c["id"]: c for c in cands if isinstance(c, dict) and c.get("id")
+    }  # 0.11.186 records identities, 0.11.182 ids
+    ids = [c["id"] if isinstance(c, dict) else c for c in cands]
+    receipt = next(
+        (r["target"] for r in reversed(records or []) if isinstance(r.get("target"), dict) and r["target"].get("id")),
+        None,
+    )
+    chosen = None
+    if receipt:
+        rid = receipt["id"]
+        chosen = by_id.get(rid) or (planned if rid in (planned.get("id"), "primary") else None)
+    base = chosen or planned
+    out = {k: base.get(k) for k in TARGET_IDENTITY}
+    out["observed"] = chosen is not None
+    if ids:
+        out["candidates"] = ids
+    return out
+
+
 def normalise(job: dict, price_per_call: float | None = None, records: list | None = None) -> dict:
     md, st, sp = job.get("metadata", {}), job.get("status", {}) or {}, job.get("spec", {})
     labels, ann = md.get("labels", {}), accounting_annotations(job)
@@ -544,7 +578,7 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
         ),
         "gpu_class": labels.get(f"{LABEL}/gpu-class"),
         "image": ann.get(f"{LABEL}/image"),
-        "target": _json(ann.get(f"{LABEL}/target")),  # an endpoint call's resolved variant (api 0.11.179)
+        "target": _target(ann, records),  # an endpoint call's target: observed from the caller's receipt (api 0.11.186)
         "resumable": status in ("FAILED", "CANCELLED", "EXPORT_FAILED")
         and labels.get(f"{LABEL}/mode") == "run"
         and (ann.get(f"{LABEL}/checkpoints") == "shared" if is_jobset(job) else bool(ann.get(f"{LABEL}/pvc"))),

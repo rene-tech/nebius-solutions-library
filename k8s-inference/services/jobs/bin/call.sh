@@ -172,7 +172,7 @@ wait_ready_one() {   # $1 = readiness URL, $2 = bound in seconds: one target's p
   done
 }
 
-# Pre-send fallback across declared targets (jobs 0.1.35, docs/API.md "Variants"): TARGETS is a JSON list of
+# Pre-send fallback across declared targets (jobs 0.1.35+, docs/API.md "Variants"): TARGETS is a JSON list of
 # {id, ready_url, url} in the order the API resolved (the first = READY_URL/URL as before; without TARGETS that one
 # target is the list). Each target but the last is probed for at most TARGET_COLD_WAIT seconds, the last for what is
 # left of READY_MAX_WAIT; the first that answers becomes URL and is recorded in out/target.json BEFORE any POST, so

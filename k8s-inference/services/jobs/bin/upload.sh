@@ -113,6 +113,10 @@ record() {   # $1 = status; the attempt as the uploader sees it now (main may st
   if [ -z "$ckpt" ] && [ -f /work/CHECKPOINT.json ]; then
     ckpt=$(jq -r '.checkpoint_ref // empty' /work/CHECKPOINT.json 2>/dev/null); gen=$(jq -r '.generation // empty' /work/CHECKPOINT.json 2>/dev/null)
   fi
+  # an endpoint caller's target receipt (call.sh out/target.json, written BEFORE its one POST: the declared target that
+  # answered readiness, jobs 0.1.36): the API projects the OBSERVED placement from it (docs/API.md "Variants")
+  local tgt=""
+  [ -f /work/out/target.json ] && tgt=$(jq -c 'select(type == "object" and (.id|type) == "string")' /work/out/target.json 2>/dev/null)
   # the record goes next to the outputs; a volume this container cannot write (a misconfigured claim) must not stop
   # the record from reaching the API: it is kept under /tmp then and the upload step reports the volume
   REC=/work/attempts
@@ -128,11 +132,12 @@ record() {   # $1 = status; the attempt as the uploader sees it now (main may st
   jq -cn --arg op "$OPERATION" --arg pod "$POD_NAME" --arg node "$node" --arg pool "$pool" --arg st "$1" --argjson exit "${EXIT:-null}" \
     --argjson gpus "${GPUS:-0}" --arg cls "${GPU_CLASS:-}" --arg s "$started" --arg e "$ended" --arg img "$image" --arg dg "$digest" \
     --arg exp "${EXPORT:-}" --arg res "$result" --arg ck "$ckpt" --arg gen "$gen" --arg mode "$([ "$MODE" = record ] && echo application || echo managed)" \
-    --arg opmode "${OPERATION_MODE:-}" --arg model "${MODEL:-}" --arg cap "$cap" --arg rsn "$rsn" \
+    --arg opmode "${OPERATION_MODE:-}" --arg model "${MODEL:-}" --arg cap "$cap" --arg rsn "$rsn" --arg tgt "$tgt" \
     '{operation:$op,pod:$pod,node:$node,pool:$pool,status:$st,exit_code:$exit,gpus:$gpus,gpu_class:$cls,started_at:$s,ended_at:$e,
       image:$img,image_digest:$dg,io_mode:$mode} + (if $exp != "" then {export:$exp} else {} end)
       + (if $rsn != "" then {reason:$rsn} else {} end)
       + (if $cap != "" then {capture:($cap|fromjson)} else {} end)
+      + (if $tgt != "" then {target:($tgt|fromjson)} else {} end)
       + (if $opmode != "" then {mode:$opmode} else {} end) + (if $model != "" then {model:$model} else {} end)
       + (if $res != "" then {result_ref:$res} else {} end) + (if $ck != "" then {checkpoint_ref:$ck} else {} end)
       + (if $gen != "" then {checkpoint_generation:($gen|tonumber)} else {} end)' > "$REC/$POD_NAME.json"

@@ -878,3 +878,47 @@ def test_a_pre_main_start_ack_never_defaults_export_to_na_and_the_terminal_recor
     }
     assert rec("op-wan-a", term)["export_state"] is None
     assert rec("op-wan-a", term)["export_state"] is None
+
+
+@pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL is needed for PostgreSQL integration tests"
+)
+def test_the_callers_target_receipt_is_kept_on_the_attempt_row(monkeypatch):
+    """api 0.11.186: the uploader forwards call.sh's out/target.json as `target`; the row keeps it (bounded to its known
+    keys, a later record without one keeps it), a malformed one is refused."""
+    import db
+
+    if not db.enabled():
+        pytest.skip("no test database")
+    monkeypatch.setattr(attempts, "_pod_facts", lambda *a, **k: {"uid": None, "gang": None, "digest": None})
+    op = f"op-tgt{os.urandom(3).hex()}"
+    row = attempts.record(
+        "eu-north1",
+        "tenant-demo",
+        f"{op}-abcde",
+        {
+            "operation": op,
+            "status": "started",
+            "gpus": 0,
+            "target": {
+                "id": "chat-spot",
+                "url": "https://x/",
+                "index": 2,
+                "of": 2,
+                "probes": 3,
+                "waited_s": 9,
+                "junk": {"a": 1},
+            },
+        },
+    )
+    assert row["target"] == {"id": "chat-spot", "url": "https://x/", "index": 2, "of": 2, "probes": 3, "waited_s": 9}
+    row = attempts.record(
+        "eu-north1", "tenant-demo", f"{op}-abcde", {"operation": op, "status": "succeeded", "gpus": 0}
+    )
+    assert row["target"]["id"] == "chat-spot"
+    assert attempts.for_operation(op)[0]["target"]["id"] == "chat-spot"
+    with pytest.raises(HTTPException) as e:
+        attempts.record(
+            "eu-north1", "tenant-demo", f"{op}-fghij", {"operation": op, "status": "started", "target": {"url": "x"}}
+        )
+    assert e.value.status_code == 400 and "target" in e.value.detail

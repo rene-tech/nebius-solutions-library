@@ -2,6 +2,8 @@
 name, in priority order (a warm floor on one pool, overflow on another), per-GPU-class images, a request field that
 picks a variant, LiteLLM deployments with priorities, and the objects every variant renders."""
 
+import time
+
 import pytest
 from fastapi import HTTPException
 
@@ -359,6 +361,7 @@ def test_the_probe_and_the_request_go_to_the_same_variant(client, monkeypatch):
         "id": "chat-cheap",
         "image": "registry.serverless2.local/docker/vllm/vllm-openai:v0.31.0-l40s",
         "gpu_class": "l40s",
+        "observed": True,  # the API sent the one request there (api 0.11.186)
     }
 
 
@@ -367,9 +370,14 @@ def _measurements(monkeypatch, in_flight: dict, limit: int | None, pools: dict):
     (monitoring.instant), the replica's concurrency limit (the deployment), the pool's free GPUs and node room."""
     import monitoring
 
-    def instant(q, region, timeout=4.0):  # a value means a fresh sample (10 s old); a tuple carries its own age
+    def instant(q, region, timeout=4.0):
+        # the value for `sum(...)`, the OLDEST contributor's scrape time for `min(timestamp(...))` (api 0.11.186); a
+        # plain value in the table = a sample scraped 10 s ago, a (value, age) tuple carries its own age
         v = next((v for k, v in in_flight.items() if k in q), None)
-        return None if v is None else (v if isinstance(v, tuple) else (v, 10.0))
+        if v is None:
+            return None
+        value, age = v if isinstance(v, tuple) else (v, 10.0)
+        return time.time() - age if q.startswith("min(timestamp(") else value
 
     monkeypatch.setattr(monitoring, "instant", instant)
     monkeypatch.setattr(appmod, "_replica_concurrency", lambda m, v, region: limit)
@@ -397,10 +405,18 @@ def test_capacity_routing_takes_only_known_admitting_or_startable_targets(monkey
         "in_flight_age_s": 10.0,
         "capacity": 8,
     }
-    # a stale sample (older than METRIC_STALE_S) is unknown, never "free": admitting None, the age still reported
+    # a stale underlying sample (its scrape time, `timestamp()`, older than METRIC_STALE_S) at a FRESH query time is
+    # unknown, never "free": admitting None, in_flight None, the age still reported (Root 20:05Z: the sum's own
+    # timestamp is the evaluation time and would never show this)
     _measurements(monkeypatch, {"chat-predictor": (8.0, 400.0), "chat-cheap-predictor": 1.0}, 4, pools)
     st = appmod._target_state(e, models.variants(e, "hub")[0], "hub")
-    assert st["admitting"] is None and st["in_flight"] is None and st["in_flight_age_s"] == 400.0
+    assert st["admitting"] is None and st["in_flight"] is None and round(st["in_flight_age_s"]) == 400
+    # a sample without any timestamp (no contributor answered timestamp()) is unknown too
+    import monitoring
+
+    monkeypatch.setattr(monitoring, "instant", lambda q, region, timeout=4.0: None if "timestamp(" in q else 1.0)
+    st = appmod._target_state(e, models.variants(e, "hub")[0], "hub")
+    assert st["admitting"] is None and st["in_flight"] is None and st["in_flight_age_s"] is None
     # no concurrency limit (rps scaling) or no measurement: admitting is UNKNOWN (None), never true
     _measurements(monkeypatch, {"chat-predictor": 8.0, "chat-cheap-predictor": 1.0}, None, pools)
     assert appmod._target_state(e, models.variants(e, "hub")[0], "hub")["admitting"] is None
@@ -584,7 +600,46 @@ def test_async_call_carries_the_ordered_targets_for_the_caller(client, monkeypat
     assert targets[0]["url"] == env["URL"] and targets[0]["ready_url"] == env["READY_URL"]
     assert targets[1]["url"].startswith("https://chat-spot-predictor.models.203.0.113.10.sslip.io/")
     rec = _json.loads(job["metadata"]["annotations"]["serverless2.nebius/target"])
-    assert rec["id"] == "chat" and rec["candidates"] == ["chat", "chat-spot"]
+    assert rec["id"] == "chat" and [c["id"] for c in rec["candidates"]] == ["chat", "chat-spot"]
+    # api 0.11.186: every candidate's identity is recorded at submission (exact image, class, cluster), immutable
+    assert rec["candidates"][1] == {
+        "cluster": "hub",
+        "variant": "spot",
+        "id": "chat-spot",
+        "image": "registry.serverless2.local/docker/vllm/vllm-openai:v0.31.0",
+        "gpu_class": "h100",
+    }
+    op_id = r.json()["id"]
+    op = c.get(f"/v1/operations/{op_id}", headers=H).json()
+    # before the caller reports: the planned first target, never an execution
+    assert op["target"]["id"] == "chat" and op["target"]["observed"] is False
+    assert op["target"]["candidates"] == ["chat", "chat-spot"]
+    # the caller fell to the second target (call.sh out/target.json, forwarded by the uploader's record): the
+    # operation reports THAT candidate's recorded identity as observed, not the first, not a live lookup
+    import artifacts
+
+    monkeypatch.setattr(
+        artifacts,
+        "attempt_records",
+        lambda ns, op, region, prefix: [
+            {
+                "pod": f"{op_id}-abc12",
+                "operation": op_id,
+                "status": "succeeded",
+                "target": {"id": "chat-spot", "url": "https://x/", "index": 2, "of": 2, "probes": 3, "waited_s": 9},
+            }
+        ],
+    )
+    op = c.get(f"/v1/operations/{op_id}", headers=H).json()
+    assert op["target"] == {
+        "cluster": "hub",
+        "variant": "spot",
+        "id": "chat-spot",
+        "image": "registry.serverless2.local/docker/vllm/vllm-openai:v0.31.0",
+        "gpu_class": "h100",
+        "observed": True,
+        "candidates": ["chat", "chat-spot"],
+    }
     # without routing.fallback: no TARGETS, one target (unchanged)
     _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0})
     r = c.post("/v1/models/chat:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
@@ -631,8 +686,94 @@ def test_fallback_validation_and_cross_deployment_candidates(monkeypatch):
         "chat-spot",
         "chat-cheap",
     ]  # an explicit region: that deployment only
+    # api 0.11.186: the RESOLVED first target follows the operator's order over every deployment too (capacity
+    # over all of them: the RTX south target is the first KNOWN to admit) and a call from the control API with no
+    # caller region is not refused with "give region": _deployment_of stands in with the order's first
+    e4 = {**e3, "routing": {**e3["routing"], "default": "capacity"}}
+    _measurements(
+        monkeypatch,
+        {"chat-predictor": 8.0, "chat-spot-predictor": 8.0, "chat-cheap-predictor": 8.0},
+        4,
+        {"rtx6000-ondemand-1x": {"nodes_ready": 1, "gpus_total": 1, "gpus_used": 0}},
+    )
+    ready = {"chat": 2, "chat-spot": 2, "chat-cheap": 2}  # the hub's three are full (8 in flight of 8)
+    monkeypatch.setattr(  # south's deployment (its first variant keeps the object name `chat`) is cold: startable
+        kube,
+        "endpoint_status",
+        lambda n, ns, region="eu-north1", nodes=1: {"status": "scaled-to-zero", "replicas_ready": 0}
+        if region == "eu-south1"
+        else {"status": "ready", "replicas_ready": ready.get(n, 0)},
+    )
+    monkeypatch.setattr(appmod, "REGION", "control")
+    monkeypatch.setattr(kube, "regions", lambda: ["control", "eu-north1", "eu-south1"])
+    monkeypatch.setattr(
+        kube, "cluster_region", lambda c: {"hub": "eu-north1", "south": "eu-south1", "control": "control"}.get(c, c)
+    )
+    assert appmod._deployment_of(e4, None) == ("hub", "eu-north1")  # h100 ranks first in e4's gpu.classes
+    first = appmod._call_targets(e4, "hub", {}, region_given=False)[0]
+    assert (first[0], first[1]["object"]) == ("south", "chat")  # the only target KNOWN to be startable
+    e5 = {**e4, "gpu_classes": ["rtx-pro-6000", "h100", "l40s"]}
+    assert appmod._deployment_of(e5, None) == ("south", "eu-south1")
+    assert [(c, v["object"]) for c, v in appmod._call_targets(e5, "hub", {}, region_given=False)] == [
+        ("south", "chat"),
+        ("hub", "chat"),
+        ("hub", "chat-spot"),
+        ("hub", "chat-cheap"),
+    ]
+    assert appmod._deployment_of(e5, "hub") == ("hub", "eu-north1")  # an explicit region stays authoritative
+    no_fb = {**e5, "routing": {k: v for k, v in e5["routing"].items() if k != "fallback"}}
+    with pytest.raises(HTTPException) as x:
+        appmod._deployment_of(no_fb, None)  # without declared cross-region fallback: as before
+    assert x.value.status_code == 400 and "give region" in x.value.detail
     with pytest.raises(HTTPException) as x:
         models.validate({**SPEC, "routing": {**SPEC["routing"], "fallback": {"max_switches": 9}}})
     assert x.value.status_code == 400 and "routing.fallback" in x.value.detail
     ok = models.to_entry(models.validate({**SPEC, "routing": {**SPEC["routing"], "fallback": {"max_switches": 2}}}))
     assert ok["routing"]["fallback"] == {"max_switches": 2, "cold_wait_s": 120, "regions": False}
+
+
+def test_control_api_resolves_a_no_region_call_over_every_deployment(client, monkeypatch):
+    """api 0.11.186 (Root 20:05Z): on the control API (REGION=control) a call with no region to a model deployed in
+    north and south with routing.fallback.regions is not refused: it resolves over every deployment in the operator's
+    class order; the asynchronous caller Job is created in the resolved target's region with the global walk, the
+    synchronous call probes and posts to the resolved target through its gateway."""
+    c, fake = client
+    e = _fallback_world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0}, max_switches=3, regions=True)
+    e2 = {
+        **e,
+        "regions": ["hub", "south"],
+        "gpu_classes": ["rtx-pro-6000", "h100", "l40s"],
+        "deployments": {
+            **e["deployments"],
+            "eu-south1": {"variants": [{"name": "rtx", "pool": "rtx6000-ondemand-1x", "min": 0, "max": 2}]},
+        },
+    }
+    south = {"region": "south", "pool": "rtx6000-ondemand-1x", "gpu_class": "rtx-pro-6000", "gpus_per_node": 1}
+    monkeypatch.setattr(
+        kube, "fleet", lambda: {**VARIANT_FLEET, "pools": {**VARIANT_FLEET["pools"], "south-rtx": south}}
+    )
+    monkeypatch.setattr(catalog, "get", lambda name: e2 if name == "chat" else None)
+    monkeypatch.setattr(appmod, "REGION", "control")
+    monkeypatch.setattr(kube, "regions", lambda: ["control", "eu-north1", "eu-south1"])
+    monkeypatch.setattr(
+        kube, "cluster_region", lambda x: {"hub": "eu-north1", "south": "eu-south1", "control": "control"}.get(x, x)
+    )
+    monkeypatch.setattr(models, "endpoint_domain", lambda region: f"{region}.example")
+    r = c.post("/v1/models/chat:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
+    assert r.status_code == 202, r.text
+    import json as _json
+
+    job = fake.jobs[("tenant-demo", r.json()["id"])]
+    env = {x["name"]: x.get("value") for x in job["spec"]["template"]["spec"]["containers"][0]["env"]}
+    rec = _json.loads(job["metadata"]["annotations"]["serverless2.nebius/target"])
+    assert rec["cluster"] == "south" and rec["id"] == "chat" and rec["gpu_class"] == "rtx-pro-6000"
+    assert [x["id"] for x in _json.loads(env["TARGETS"])] == ["chat", "chat", "chat-spot", "chat-cheap"]
+    assert env["URL"].startswith("https://chat-predictor.models.eu-south1.example/")
+    assert r.json()["region"] == "eu-south1"
+    # an explicit region keeps the caller in that deployment
+    r = c.post("/v1/models/chat:invoke", json={"mode": "async", "region": "hub", "input": {"messages": []}}, headers=H)
+    assert r.status_code == 202, r.text
+    rec = _json.loads(
+        fake.jobs[("tenant-demo", r.json()["id"])]["metadata"]["annotations"]["serverless2.nebius/target"]
+    )
+    assert rec["cluster"] == "hub"

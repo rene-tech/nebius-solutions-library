@@ -4,7 +4,26 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.185, jobs 0.1.35, dispatcher 0.2.17 (0.11.182-184 = earlier cuts of the same; built, never applied)
+## api 0.11.186, jobs 0.1.36, dispatcher 0.2.17 (0.11.182-185 / jobs 0.1.34-35 = earlier cuts of the same; built, never applied)
+
+- `Operation.target` reports the OBSERVED placement of an asynchronous call (Root, 2026-10-22 20:05Z): the caller's
+  receipt (call.sh `out/target.json`, written before its one POST) is forwarded by the uploader in the attempt record
+  (`target`, attempts column, migration 32) and the operation then shows the candidate that answered with the identity
+  recorded at submission (every candidate's cluster, variant, id, exact image and class are on the Job annotation),
+  `observed: true`; until then the planned first target with `observed: false`, never an execution. Synchronous calls
+  report `observed: true` (the API sent the request). Regression: a caller that fell to the second target.
+- Target staleness measured from the sample, not the query: `in_flight_age_s` is now the scrape time of the oldest
+  contributing series (`min(timestamp(kn_revision_concurrency_stable{...}))`), not the sum's evaluation timestamp,
+  which is always fresh (Root, 20:05Z); no timestamp = unknown. Regression: a stale underlying sample at a fresh
+  query time is unknown.
+- No caller region needed with declared cross-region fallback: `_deployment_of` no longer refuses a no-region call to a
+  model deployed in several regions when `routing.fallback.regions` is set (the control API, REGION=control, had
+  answered "give region", which disabled the fallback); the call resolves its first target over EVERY reachable
+  deployment in the operator's class order (`priority`/`capacity` over all of them), the asynchronous caller Job is
+  created in the resolved target's region, the synchronous call probes and posts there through its gateway. An
+  explicit caller region stays authoritative. End-to-end test on the control invoke path, async and sync.
+- Docs: a multi-node gang needs InfiniBand pools only with `interconnect: required`; `none` runs on any whole node of
+  the run's GPU count (the 2 x 1-GPU shape), as the code always did (the 185 prose said "fabric" too broadly).
 
 - `routing.field` and `routing.map` are optional: a `routing` of `default` (`capacity`) and `fallback` alone is
   accepted (the portable cohort's shape; the validator required a request field even when nothing routes on one); a
@@ -17,7 +36,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 
 - Multi-node runs keep the chosen class for every rank: the JobSet's pool affinity stays within the pools `build_run`
   chose (the chosen class's pools for a per-class image, narrowed by the per-node fit), only further narrowed to whole
-  InfiniBand nodes; until 0.11.183 the model's whole class list replaced it, so a two-class model with an L40S image
+  nodes of the run's GPU count (InfiniBand pools only with `interconnect: required`); until 0.11.183 the model's whole class list replaced it, so a two-class model with an L40S image
   could place ranks on H100 nodes (placement worker, 2026-10-22 19:39Z). Every rank pod carries the chosen class label
   the attempts project as `gpu_class`.
 - `resources_by_class` on endpoints: the envelope per GPU class is overlaid on each variant for the class of its pool
