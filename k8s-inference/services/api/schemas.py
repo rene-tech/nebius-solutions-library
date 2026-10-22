@@ -665,6 +665,9 @@ class NativeRelease(BaseModel):
 
 
 class GraphStage(BaseModel):
+    root: str | None = (
+        None  # the graph root this stage belongs to (api 0.11.178; app._operation emits it: the authoritative lineage, distinct from root_operation_id)
+    )
     id: str | None = None
     depends_on: list[str] | None = None
     operation: str | None = None

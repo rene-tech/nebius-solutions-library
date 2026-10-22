@@ -4,7 +4,12 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## charts/fleet 0.1.15, stack: regional registries (api unchanged)
+## api 0.11.178, dispatcher 0.2.17 (0.11.175-177 = earlier cuts; built, never applied)
+
+- `GraphStage.root` (operation read and list schemas): the graph root a stage belongs to, as `app._operation` has
+  emitted it since the stage composition; the response model dropped it. Optional, from the retained metadata, no
+  lookup, distinct from `root_operation_id` (the continuation root).
+
 
 - A worker region may own the first origin of its image cache (docs/IMAGES.md "Regional registries",
   `regions.<r>.images_registry = { create, use, pushers }`): `create` makes `<name>-images-<region>` in the region's
