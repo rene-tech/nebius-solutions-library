@@ -2651,6 +2651,12 @@ def switch_class(
         raise HTTPException(
             409, f"operation {name} is {op['status']} (placed: {bool(orig.get('_cluster'))}); no fallback"
         )
+    import stages
+
+    if stages.is_waiting(orig):
+        # parked by the dependency gate: not capacity-starved, and a successor rendered now would lose the gate and
+        # its DEPENDENCY_RESULTS (api 0.11.188); the gate hands it to Kueue when its dependencies delivered
+        raise HTTPException(409, f"operation {name} is waiting for its dependencies (stage gate); no fallback")
     import catalog
 
     model = catalog.pinned(model, ann)

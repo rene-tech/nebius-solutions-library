@@ -6,6 +6,7 @@ and a queued operation says why it waits."""
 import json
 
 import pytest
+from fastapi import HTTPException
 
 import app as appmod
 import attempts
@@ -883,3 +884,67 @@ def test_expired_operation_is_served_from_its_rows_and_superseded_handles_follow
     monkeypatch.setattr(attempts, "mark_successor", lambda operation, successor: None)
     assert c.get("/v1/operations/op-old", headers=H).json()["id"] == "op-gone"
     assert c.post("/v1/operations/op-gone:cancel", headers=H).status_code == 409
+
+
+def test_fallback_never_moves_a_stage_parked_by_the_gate_and_a_released_stage_keeps_its_results(client, monkeypatch):
+    """api 0.11.188 (Root, 2026-10-22 20:52Z, op-10a0f269ad65cb4b): a stage that waits for its dependencies (label
+    stage-waiting, the queue that never exists, suspended) is QUEUED by design, not for want of capacity: the
+    fallback pass skips it however long it waited, and switch_class refuses it. Once the gate admitted it (results
+    bound, real queue) a fallback is a continuation that keeps the stage identity, depends-on and the dependency
+    results (its own Secret delivered before the successor exists) and never the waiting label."""
+    import stages
+
+    c, fake = client
+    monkeypatch.setattr(kube, "fleet", lambda: TWO_CLASS_FLEET)
+    m = _fold_model()
+    monkeypatch.setattr(catalog, "get", lambda name: m if name == "fold" else None)
+    monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid))
+    r = c.post(
+        "/v1/models/fold:invoke",
+        json={
+            "input": {},
+            "execution": {"placement": {"gpu_preference": ["rtx-pro-6000", "l40s"], "fallback_wait_s": 60}},
+        },
+        headers=H,
+    )
+    assert r.status_code == 202, r.text
+    op = r.json()["id"]
+    job = fake.jobs[("tenant-demo", op)]
+    # the gate parks it as a stage of root `op-root` (what stages.mark_waiting does), long ago
+    stages.mark_waiting(job, "op-root", "fold-main", ["root"])
+    job["spec"]["suspend"] = True
+    job["metadata"]["creationTimestamp"] = "2026-10-05T20:00:00Z"
+    assert stages.is_waiting(job) and job["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] == stages.WAITING_QUEUE
+    assert appmod.fallback_switch() == []  # parked: never capacity-starved
+    assert ("tenant-demo", f"{op}-r1") not in fake.jobs and stages.WAITING in job["metadata"]["labels"]
+    with pytest.raises(HTTPException) as e:
+        jobs.switch_class("tenant-demo", op, "eu-north1", m, {}, "l40s", ["l40s"])
+    assert e.value.status_code == 409 and "waiting for its dependencies" in e.value.detail
+    assert job["metadata"]["annotations"].get(f"{LABEL}/successor") is None  # nothing fenced, nothing created
+    # the gate admits it: results bound, the real queue, suspended no more (what the gate does)
+    del job["metadata"]["labels"][stages.WAITING]
+    job["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] = "prefer-rtx-pro-6000"
+    stages.bind_results(job, json.dumps({"root": {"result_ref": "s3://b/root", "attempt": "op-root-abc"}}))
+    job["spec"]["suspend"] = False
+    moved = appmod.fallback_switch()
+    assert moved == [f"{op}-r1"]
+    new = fake.jobs[("tenant-demo", f"{op}-r1")]
+    nl, na = new["metadata"]["labels"], new["metadata"]["annotations"]
+    assert (
+        stages.WAITING not in nl
+        and nl["kueue.x-k8s.io/queue-name"] == "prefer-l40s"
+        and nl[stages.STAGE_ROOT] == "op-root"
+    )
+    assert na[stages.STAGE_ID] == "fold-main" and na[stages.DEPENDS_ON] == "root"
+    assert json.loads(na[stages.RESULTS])["root"]["result_ref"] == "s3://b/root"
+    env = {
+        e["name"]: e
+        for e in next(x for x in new["spec"]["template"]["spec"]["containers"] if x["name"] == "main")["env"]
+    }
+    assert env["DEPENDENCY_RESULTS"]["valueFrom"]["secretKeyRef"] == {
+        "name": f"{op}-r1-dependencies",
+        "key": stages.RESULTS_KEY,
+    }
+    sec = fake.secrets[("tenant-demo", f"{op}-r1-dependencies")]
+    assert json.loads(sec["stringData"][stages.RESULTS_KEY])["root"]["result_ref"] == "s3://b/root"

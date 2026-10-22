@@ -777,3 +777,61 @@ def test_control_api_resolves_a_no_region_call_over_every_deployment(client, mon
         fake.jobs[("tenant-demo", r.json()["id"])]["metadata"]["annotations"]["serverless2.nebius/target"]
     )
     assert rec["cluster"] == "hub"
+
+
+def test_require_converged_fences_every_candidate_and_takes_the_first_converged(client, monkeypatch):
+    """api 0.11.188 (Root 20:49Z): with execution.require_converged the convergence fence is judged on EVERY declared
+    target that could receive the one request; a candidate whose rollout is not converged is left out of the walk (an
+    old runtime image never serves by falling to it), the first that passes becomes the call's target; none passing
+    is the first's 409, nothing created."""
+    c, fake = client
+    _fallback_world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0}, max_switches=2)
+    monkeypatch.setattr(models, "endpoint_domain", lambda region: "203.0.113.10.sslip.io")
+    converged = {"chat": False, "chat-spot": True, "chat-cheap": True}
+
+    def status(n, ns, region="eu-north1", nodes=1):
+        ok = converged.get(n, True)
+        return {
+            "status": "ready" if ok else "deploying",
+            "replicas_ready": 0,
+            "rollout": {
+                "latest_created": "r-2",
+                "latest_ready": "r-2" if ok else "r-1",
+                "latest_rolled_out": "r-2" if ok else "r-1",
+                "serving_images": [],
+                "converged": ok,
+                "reason": None if ok else "revisions differ (created r-2, ready r-1, rolled out r-1)",
+            },
+        }
+
+    monkeypatch.setattr(kube, "endpoint_status", status)
+    body = {"mode": "async", "input": {"messages": []}, "execution": {"require_converged": True}}
+    r = c.post("/v1/models/chat:invoke", json=body, headers=H)
+    assert r.status_code == 202, r.text
+    import json as _json
+
+    job = fake.jobs[("tenant-demo", r.json()["id"])]
+    env = {e["name"]: e.get("value") for e in job["spec"]["template"]["spec"]["containers"][0]["env"]}
+    rec = _json.loads(job["metadata"]["annotations"]["serverless2.nebius/target"])
+    assert rec["id"] == "chat-spot"  # the first CONVERGED candidate, not the resolved first
+    assert [t["id"] for t in _json.loads(env["TARGETS"])] == ["chat-spot", "chat-cheap"]  # the unconverged one is out
+    assert job["metadata"]["annotations"]["serverless2.nebius/endpoint-revision"] == "r-2"
+    # every candidate diverged: the first's refusal, nothing created
+    converged.update({"chat-spot": False, "chat-cheap": False})
+    before = len(fake.jobs)
+    r = c.post("/v1/models/chat:invoke", json=body, headers=H)
+    assert (
+        r.status_code == 409
+        and r.json()["code"] == "rollout_pending"
+        and r.headers["x-serverless2-admission"] == "refused"
+    )
+    assert len(fake.jobs) == before
+    # without the option nothing is fenced: the resolved first target as before
+    r = c.post("/v1/models/chat:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
+    assert (
+        r.status_code == 202
+        and _json.loads(
+            fake.jobs[("tenant-demo", r.json()["id"])]["metadata"]["annotations"]["serverless2.nebius/target"]
+        )["id"]
+        == "chat"
+    )

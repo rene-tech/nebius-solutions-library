@@ -26,6 +26,7 @@ import jobs
 import keys
 import kube
 import models
+import stages
 import status
 from config import FLEET_MANAGER, REGION
 from resilience import retry
@@ -204,6 +205,11 @@ def fallback_switch() -> list[str]:
                 or not jobs.is_manager_job(job)
                 or status.finished(job)
                 or ann.get(f"{cfg.LABEL}/successor")
+                # a stage parked by the dependency gate (label stage-waiting, the queue that never exists) is QUEUED
+                # by design, not for want of capacity: its wait is its dependencies', never a fallback (api 0.11.188;
+                # until 0.11.187 the gate's member was switched after fallback_wait_s and its successor, rendered
+                # without the gate and without DEPENDENCY_RESULTS, ran before its root delivered: op-10a0f269ad65cb4b)
+                or stages.is_waiting(job)
             ):
                 continue
             created = datetime.fromisoformat(str(job["metadata"]["creationTimestamp"]).replace("Z", "+00:00"))

@@ -504,7 +504,10 @@ by price or science: the order is the one the operator declared), at most 1 + `m
 (5-3600 s); one that is not ready, with nothing sent to it, is left for the next; the last gets what is left of the
 call's budget; the one inference request goes to the target that answered (synchronous calls in the API, asynchronous
 calls in the caller Job, which records the chosen target in its capture as `out/target.json`). A refusal (401/403)
-ends the call at once; once the request is sent nothing moves; nothing is ever posted twice. `Operation.target`
+ends the call at once; once the request is sent nothing moves; nothing is ever posted twice. With
+`execution.require_converged` the convergence fence is judged on every declared target that could receive the request:
+a candidate whose rollout is not converged leaves the walk, the first converged one is the call's target (its ready
+revision recorded), none converged is the 409 refusal, nothing created (api 0.11.188). `Operation.target`
 names the target with `observed`: for a synchronous call the target the API sent the one request to (`observed:
 true`); for an asynchronous call the planned first target with `observed: false` until the caller's durable receipt
 (call.sh writes `out/target.json` BEFORE its one POST; the uploader forwards it in the attempt record) names the

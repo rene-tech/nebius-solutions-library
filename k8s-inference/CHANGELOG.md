@@ -4,6 +4,23 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.188, jobs 0.1.36, dispatcher 0.2.17
+
+- URGENT (Root, 2026-10-22 20:52Z, op-10a0f269ad65cb4b): the capacity fallback never moves a stage parked by the
+  dependency gate. A waiting stage (label `stage-waiting`, the queue that never exists, suspended) is QUEUED by design,
+  not for want of capacity; until 0.11.187 the fallback pass switched it after `fallback_wait_s` and its successor,
+  rendered without the gate and without DEPENDENCY_RESULTS, ran before its root delivered and failed. The reconciler's
+  fallback pass skips a waiting stage; `jobs.switch_class` refuses one (409). A stage the gate already admitted keeps,
+  through a fallback, its stage identity, `depends-on` and the dependency results (its own Secret delivered before the
+  successor exists), never the waiting label. Regression: a parked stage is never moved however long it waited; a
+  released one moves with its results.
+- `execution.require_converged` fences EVERY declared target that could receive the one request (Root, 20:49Z): a
+  candidate whose rollout is not converged leaves the walk (an old runtime image never serves by falling to it), the
+  first that passes is the call's target and records its ready revision; none passing = the first's 409, nothing
+  created. Until 0.11.187 only the resolved first target was fenced, so its rollout blocked a converged alternative
+  (ten 409s on the public r8 wave). One POST, the receipt unchanged. Regression: first diverged + second converged ->
+  the second; all diverged -> 409.
+
 ## api 0.11.187, jobs 0.1.36, dispatcher 0.2.17
 
 - Endpoint registration fit counts the fleet's reserved overhead once: the per-node budget of the fit table (reserves

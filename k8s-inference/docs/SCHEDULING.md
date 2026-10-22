@@ -274,6 +274,11 @@ kubectl -n kueue-system get cm spot-prices -o jsonpath='{.data.spot\.json}'
 
 ## Fallback to the next class
 
+A stage parked by the dependency gate (docs/JOBS.md "Stage composition": label `stage-waiting`, the queue that never
+exists, suspended) is QUEUED by design, not for want of capacity: the fallback pass never moves it and `switch_class`
+refuses it (api 0.11.188). Once the gate admitted it, a fallback is an ordinary continuation that keeps the stage
+identity, `depends-on` and the bound dependency results.
+
 A run that names `execution.placement.gpu_preference` and `fallback_wait_s` (docs/JOBS.md "Execution options") is
 rendered for the first class of its preference (that class's image, `prefer-<class>` queue, the class's pools as
 affinity). The control API's reconcile loop (every 15 s) looks at fleet runs that are still unplaced (no worker

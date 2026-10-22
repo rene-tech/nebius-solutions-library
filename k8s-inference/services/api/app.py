@@ -140,7 +140,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.187", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.188", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -1423,11 +1423,24 @@ def _invoke_job(
     if mode == "async":  # the caller Job runs in the resolved target's region, through that region's gateway
         cluster = _deployment_cluster(m, region)  # the deployment this region reaches (invoke validated the choice)
         candidates = _call_targets(m, cluster, req.input, bool(req.region))  # the resolved target first, then the
-        cluster, target_v = candidates[
-            0
-        ]  # declared fallbacks (routing.fallback); readiness, the one request, the fence
+        # declared fallbacks (routing.fallback). The convergence fence (execution.require_converged) is judged on
+        # EVERY target that could receive the one request (api 0.11.188): a candidate whose rollout is not converged
+        # is left out of the walk (an old runtime image never serves by falling to it), the first that passes is
+        # the call's target; none passing = the first's refusal (409, nothing created). Until 0.11.187 only the
+        # resolved first target was fenced, so its rollout blocked a converged alternative (Root, 20:49Z).
+        rollouts: dict[str, dict | None] = {}
+        refusal: RolloutPending | None = None
+        for cc, c in candidates:
+            try:
+                rollouts[c["object"]] = _rollout_fence(m, kube.cluster_region(_cluster_id_of(cc)), ex, obj=c["object"])
+            except RolloutPending as e:
+                refusal = refusal or e
+        candidates = [(cc, c) for cc, c in candidates if c["object"] in rollouts]
+        if not candidates:
+            raise refusal  # type: ignore[misc]  # every candidate refused: the first's reason
+        cluster, target_v = candidates[0]  # readiness, the one request, the recorded rollout
         region = kube.cluster_region(_cluster_id_of(cluster))  # with fallback.regions the first may be elsewhere
-        rollout = _rollout_fence(m, region, ex, obj=target_v["object"])
+        rollout = rollouts[target_v["object"]]
         application = bool(ex and ex.get("io_mode") == "application")
         output_prefix = (
             "" if application else f"s3://{artifacts.storage(p.namespace, region)['bucket']}/operations/{name}"
