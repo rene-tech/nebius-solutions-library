@@ -1172,7 +1172,7 @@ def build_async(
     else:
         env.append({"name": "REQUEST_BODY", "value": json.dumps(inp)})
     if target and target.get("candidates") and not transfer_only:
-        # pre-send fallback across the declared targets (jobs 0.1.34, docs/API.md "Variants"): the caller probes them
+        # pre-send fallback across the declared targets (jobs 0.1.35, docs/API.md "Variants"): the caller probes them
         # in this order, each but the last for TARGET_COLD_WAIT, and posts once to the first that answers
         env.append({"name": "TARGETS", "value": json.dumps(target["candidates"])})
         env.append({"name": "TARGET_COLD_WAIT", "value": str(int(target.get("cold_wait_s") or 120))})

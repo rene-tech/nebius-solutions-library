@@ -76,7 +76,7 @@ TWO='[{"id":"a","ready_url":"https://a.example/ready","url":"https://a.example/i
 TARGETS="$TWO" COLD=0 check "second target after a cold first" "0 2 1 ok 200" "000 200" "200:{}"
 [ "$(jq -r .id "$T/work/out/target.json")" = b ] || fail "out/target.json should name target b, got $(cat "$T/work/out/target.json" 2>/dev/null)"
 [ "$(tail -1 "$T/POST.urls")" = "https://b.example/infer" ] || fail "the POST should go to target b, went to $(tail -1 "$T/POST.urls")"
-[ "$(sed -n 1p "$T/GET.urls")" = "https://a.example/ready" ] && [ "$(sed -n 2p "$T/GET.urls")" = "https://b.example/ready" ] || fail "the probes should visit a then b: $(cat "$T/GET.urls")"
+if [ "$(sed -n 1p "$T/GET.urls")" != "https://a.example/ready" ] || [ "$(sed -n 2p "$T/GET.urls")" != "https://b.example/ready" ]; then fail "the probes should visit a then b: $(cat "$T/GET.urls")"; fi
 TARGETS="$TWO" COLD=0 check "refused on the first target" "2 1 0 refused 403" "403:{\"detail\":\"no\"}" "200:{}"
 TARGETS="$TWO" COLD=0 WAIT=0 check "no target ready" "5 2 0 not_ready 0" "000 000" "200:{}"
 [ ! -f "$T/work/out/target.json" ] || fail "no target should be recorded when nothing answered"

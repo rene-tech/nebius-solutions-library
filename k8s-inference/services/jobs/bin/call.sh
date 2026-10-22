@@ -172,7 +172,7 @@ wait_ready_one() {   # $1 = readiness URL, $2 = bound in seconds: one target's p
   done
 }
 
-# Pre-send fallback across declared targets (jobs 0.1.34, docs/API.md "Variants"): TARGETS is a JSON list of
+# Pre-send fallback across declared targets (jobs 0.1.35, docs/API.md "Variants"): TARGETS is a JSON list of
 # {id, ready_url, url} in the order the API resolved (the first = READY_URL/URL as before; without TARGETS that one
 # target is the list). Each target but the last is probed for at most TARGET_COLD_WAIT seconds, the last for what is
 # left of READY_MAX_WAIT; the first that answers becomes URL and is recorded in out/target.json BEFORE any POST, so
@@ -194,7 +194,7 @@ wait_ready() {
     [ "$total" -gt 1 ] && echo "$(date -u +%FT%TZ) target $i/$total $id: probing for up to ${bound}s"
     wait_ready_one "$ready" "$bound"; rc=$?
     case "$rc" in
-      0) URL=$url; TARGET_ID=$id
+      0) URL=$url
          jq -cn --arg id "$id" --arg u "$url" --argjson i "$i" --argjson n "$total" --argjson p "$READY_PROBES" --argjson w "$READY_WAITED" \
            '{id:$id, url:$u, index:$i, of:$n, probes:$p, waited_s:$w}' > out/target.json 2>/dev/null
          [ "$total" -gt 1 ] && echo "$(date -u +%FT%TZ) target $id ready: the inference request goes there"

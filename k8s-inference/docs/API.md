@@ -494,7 +494,7 @@ deployment the call may resolve to, deployments in declared order and variants i
 `region`, `variant`, `id` (the object), `pool`, `gpu_class`, `image` (the exact reference that deployment runs:
 the variant's, else the class image, else the model's), `nodes`, `replicas` {min, max, ready}, `status`,
 `in_flight`, `capacity`, `admitting` and `startable` (null when not measured); never the private spec or environment.
-**Pre-send fallback (api 0.11.182, jobs 0.1.34).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
+**Pre-send fallback (api 0.11.183, jobs 0.1.35).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
 walk its declared targets before sending: the resolved variant first, then the deployment's other variants in priority
 order and, with `regions: true` and no region named by the caller, the model's other deployments in declared order
 that the API reaches, at most 1 + `max_switches` targets. Each target but the last is probed for `cold_wait_s`
