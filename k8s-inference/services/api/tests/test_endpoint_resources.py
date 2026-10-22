@@ -234,6 +234,9 @@ def test_the_weight_generation_per_class_renders_per_variant(monkeypatch):
         {"weights_by_class": {"l40s": {"path": "a/../b"}}},
         {"weights_by_class": {"l40s": {"path": ""}}},
         {"weights_by_class": {"l40s": {"path": "x/"}}},
+        {"weights_by_class": {"l40s": {"path": "x\n"}}},  # a trailing newline (match vs fullmatch)
+        {"weights_by_class": {"l40s": {"path": "a//b"}}},  # an empty segment: not normalised
+        {"weights_by_class": {"l40s": {"path": "a/./b"}}},  # a dot segment: not normalised
         {"weights_by_class": {"l40s": {"path": "x", "mount_path": "/other"}}},
         {"weights": None, "weights_by_class": {"l40s": {"path": "x"}}},
     ):

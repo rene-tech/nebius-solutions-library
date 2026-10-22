@@ -432,7 +432,12 @@ def validate(spec: dict) -> dict:
             raise HTTPException(400, f"weights_by_class: {unknown} not in gpu.classes {classes}")
         for c, v in wbc.items():
             path = v["path"]
-            if path.startswith("/") or path != path.strip("/") or not DATA_PATH_RE.match(path):
+            if (
+                path.startswith("/")
+                or path != path.strip("/")
+                or not DATA_PATH_RE.fullmatch(path)  # fullmatch: a trailing newline is no match
+                or any(seg in ("", ".", "..") for seg in path.split("/"))  # normalised: no empty or dot segment
+            ):
                 raise HTTPException(
                     400,
                     f"weights_by_class.{c}.path: a non-empty relative directory, normalised, no '..', no leading or trailing '/'",

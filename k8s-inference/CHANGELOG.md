@@ -4,7 +4,11 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.192, jobs 0.1.36, dispatcher 0.2.17 (0.11.191 = the weights cut before the gang fix; built, never applied)
+## api 0.11.193, jobs 0.1.36, dispatcher 0.2.17 (0.11.191/192 = the same cut before review corrections; built, never applied)
+
+- `weights_by_class.<class>.path` is matched in full and must be normalised: no trailing newline (`fullmatch`), no empty
+  segment (`a//b`), no dot segment (`a/./b`), besides the existing no-`..`, relative, no leading/trailing slash
+  rules (Root's 192 review). The model's base `weights` rule is unchanged. Regression: the three cases.
 
 - A gang's authority is NOTHING until the newest epoch's coordinator (rank 0) recorded (Root, 2026-10-22,
   op-8a272812ab83489c: rank 1 recorded one second before rank 0 and `attempts.authority` fell back to the newest row,

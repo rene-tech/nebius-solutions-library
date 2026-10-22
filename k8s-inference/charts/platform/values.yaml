@@ -23,7 +23,7 @@ images:                        # the platform images (terraform.tfvars images.ve
   cacheNodePort: 30500               # the Zot NodePort (images.cache.node_port): the second mirror entry, on the node's loopback
   peerNodePort: 30021                # the Spegel registry NodePort: the first mirror entry, on the node's address (node-config)
   mirrors: {}                        # <certs.d directory> -> <upstream url> of the public registries Spegel mirrors (stack/config: images.upstreams)
-  api: registry.serverless2.local/nebius/serverless2/api:0.11.192
+  api: registry.serverless2.local/nebius/serverless2/api:0.11.193
   dispatcher: registry.serverless2.local/nebius/serverless2/dispatcher:0.2.12
   ops: registry.serverless2.local/nebius/serverless2/ops:0.1.12
 api:                           # the control cluster only (clusters/common/apps/api.yaml)
