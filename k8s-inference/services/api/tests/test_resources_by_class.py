@@ -1,4 +1,4 @@
-"""Per-class envelopes and the feasibility-aware class choice (api 0.11.176, docs/SCHEDULING.md "Per-node fit"): a
+"""Per-class envelopes and the feasibility-aware class choice (api 0.11.177, docs/SCHEDULING.md "Per-node fit"): a
 run class declares `resources_by_class`, the run is rendered with the chosen class's envelope (and a fallback with the
 next class's), and the class chosen at submission skips a preferred class no node of its pools can hold while a later
 class can; no feasible class keeps the `impossible shape` refusal."""
@@ -89,6 +89,14 @@ def test_an_impossible_preferred_class_is_skipped_for_a_feasible_one(monkeypatch
     # the sidecar counts: a main of 56.9Gi on a 57 GiB node is infeasible once the uploader's 256Mi joins it
     m3 = model(resourcesByClass={"l40s": {"memory": "56.9Gi"}})
     assert placement.feasible_classes(m3, ["l40s", "h100"], 1, None)[0] == ["h100"]
+    # a class whose pools lack what the run mounts is no candidate: an H100 pool without the shared filesystem
+    doc = copy.deepcopy(DOC)
+    doc["fit"]["north"]["h100-reserved-1x"]["shared_fs"] = False
+    monkeypatch.setattr(kube, "fleet", lambda: doc)
+    m4 = model(resourcesByClass={"l40s": {"memory": "48Gi"}}, data="refdb")
+    feasible, skipped = placement.feasible_classes(m4, ["h100", "l40s"], 1, None)
+    assert feasible == ["l40s"] and "with the shared filesystem" in skipped[0]
+    monkeypatch.setattr(kube, "fleet", lambda: DOC)
     # a class without any pool is left to choose_class (it reports "preferred (no pool)"); no fit.yaml: unchanged
     assert placement.feasible_classes(m, ["b300", "h100"], 1, None)[0] == ["b300", "h100"]
     monkeypatch.setattr(fit, "table", lambda: {})

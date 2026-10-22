@@ -111,19 +111,27 @@ def feasible_classes(model: dict, classes: list[str], gpus: int, clusters: list[
     if not fit.table():
         return list(classes), []
     pools = kube.fleet().get("pools") or {}
+    job = model.get("job") or {}
+    # what the run needs of a node besides size, as build_run renders it: the shared filesystem for weights, data,
+    # restricted assets or shared checkpoints (a placeholder parameter counts: the conservative side), local NVMe
+    # for `scratch: local-nvme`; a pool whose node lacks it is no candidate (fit._capable)
+    need_fs = bool(job.get("weights") or job.get("data") or job.get("assets") or job.get("checkpoints") == "shared")
+    need_nvme = str(job.get("scratch") or "").lower() == "local-nvme"
     feasible, skipped = [], []
     for cls in classes:
         mine = {p["pool"] for p in pools.values() if p.get("gpu_class") == cls}
         if not mine:
             feasible.append(cls)
             continue
-        res = resource_block(class_resources(model.get("job") or {}, cls), max(int(gpus), 0))
+        res = resource_block(class_resources(job, cls), max(int(gpus), 0))
         # the pod as rendered: main plus the uploader sidecar (an init step's own request never exceeds them)
         req = fit.pod_requests(
             {"containers": [{"name": "main", "resources": res}, {"name": "uploader", "resources": UPLOADER_RESOURCES}]}
         )
-        if fit.fitting(req, clusters, mine):
+        if fit.fitting(req, clusters, mine, shared_fs=need_fs, local_nvme=need_nvme):
             feasible.append(cls)
         else:
-            skipped.append(f"{cls}: no node of its pools holds {fit.describe(req)}")
+            caps = " with the shared filesystem" if need_fs else ""
+            caps += " with local NVMe" if need_nvme else ""
+            skipped.append(f"{cls}: no node of its pools{caps} holds {fit.describe(req)}")
     return feasible, skipped
