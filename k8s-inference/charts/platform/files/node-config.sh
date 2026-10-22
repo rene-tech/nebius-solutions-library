@@ -43,6 +43,9 @@ write_mirror() { # <dir> <server url>: the file this node must have; replaced on
 write_mirror "$IMAGES_HOST" "https://$IMAGES_HOST"
 # shellcheck disable=SC2086  # MIRRORS is a space-separated list of <dir>=<url> by contract (the DaemonSet renders it)
 for m in ${MIRRORS:-}; do write_mirror "${m%%=*}" "${m#*=}"; done
+# the exact host tables now on this node, one line per file: the rollout readback reads these from the pod log of
+# every node (kubectl logs -c configure), no debug pod needed
+for f in "$CERTS"/*/hosts.toml; do echo "mirror tables $(basename "$(dirname "$f")"): $(grep -o "^\[host\.'[^']*'\]" "$f" | tr '\n' ' ')"; done
 # 2. memlock (docs/JOBS.md "Multi-node runs"): RDMA memory registration is bounded by RLIMIT_MEMLOCK (8 MiB on the node
 # image); an unlimited limit on the containerd unit lets every container register memory without CAP_IPC_LOCK
 NEED_RESTART=0

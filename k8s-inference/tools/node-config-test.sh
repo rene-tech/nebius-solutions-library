@@ -89,6 +89,7 @@ grep -q '^imports = \["/etc/containerd/conf.d/\*.toml"\]' "$T/fresh/etc/containe
 grep -q 'systemctl daemon-reload' "$T/calls.txt" || fail "fresh node: no daemon-reload for the memlock drop-in"
 [ -f "$T/fresh/etc/containerd/certs.d/.serverless2-containerd-restarted" ] || fail "fresh node: no restart marker"
 [ "$(echo "$out" | grep -c 'mirror file for .* written')" = 3 ] || fail "fresh node: expected three written files: $out"
+echo "$out" | grep -q "mirror tables registry.serverless2.local: \[host.'http://10.0.0.7:30021'\] \[host.'http://127.0.0.1:30500'\]" || fail "fresh node: the per-node table readback line is missing: $out"
 echo "   ok fresh node: three valid mirror files (peer first, then the cache), memlock drop-in, drop-in, one restart, marker"
 
 # 2. idempotence: the same node again (its restarted containerd now has unlimited memlock): no file changes, no systemd call
