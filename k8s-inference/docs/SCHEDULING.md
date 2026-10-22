@@ -329,8 +329,8 @@ fit structural (api 0.11.80, fleet chart 0.1.12):
   `fit.yaml` (an older fleet chart) nothing changes.
 - A multi-node run (`nodes > 1`, a JobSet) keeps the pools chosen above for every rank (the chosen class's pools,
   narrowed by the fit), further narrowed to whole nodes of the run's GPU count on the fabric when `interconnect`
-  requires it; a gang is never widened to the model's other classes (api 0.11.184).
-- Endpoints (api 0.11.184): `resources_by_class` on an endpoint overlays the envelope per GPU class on each variant
+  requires it; a gang is never widened to the model's other classes (api 0.11.185).
+- Endpoints (api 0.11.185): `resources_by_class` on an endpoint overlays the envelope per GPU class on each variant
   for the class of the variant's pool (the same keys and overlay as a run's; a class without an entry keeps the base
   `resources`), and at registration every variant's pod, rendered as it will be applied (the server, the renderer's
   sidecars and init containers, plus the queue-proxy request of a Knative pod), must fit one node of its pool on its

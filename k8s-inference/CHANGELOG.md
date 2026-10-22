@@ -4,7 +4,13 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.184, jobs 0.1.35, dispatcher 0.2.17 (0.11.182/183 = earlier cuts of the same; built, never applied)
+## api 0.11.185, jobs 0.1.35, dispatcher 0.2.17 (0.11.182-184 = earlier cuts of the same; built, never applied)
+
+- `routing.field` and `routing.map` are optional: a `routing` of `default` (`capacity`) and `fallback` alone is
+  accepted (the portable cohort's shape; the validator required a request field even when nothing routes on one); a
+  `map` without its `field` is refused.
+- The `api` logger writes INFO to the pod log (uvicorn configures only its own loggers; the skipped-class, fallback
+  walk and stale-sample lines were invisible before).
 
 - Multi-node runs keep the chosen class for every rank: the JobSet's pool affinity stays within the pools `build_run`
   chose (the chosen class's pools for a per-class image, narrowed by the per-node fit), only further narrowed to whole

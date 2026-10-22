@@ -111,7 +111,7 @@ def test_requests_below_limits_project_and_render_as_declared():
 
 
 def test_the_envelope_per_class_renders_per_variant_and_must_fit_its_pool(monkeypatch):
-    """api 0.11.184: an endpoint's `resources_by_class` is overlaid per variant for the GPU class of the variant's pool
+    """api 0.11.185: an endpoint's `resources_by_class` is overlaid per variant for the GPU class of the variant's pool
     (the same keys and overlay as a run's); an omitted class keeps the base `resources`; the map reaches no object;
     and every variant's rendered pod (plus Knative's queue-proxy request) must fit one node of its pool at
     registration: 400 `impossible shape` names the variant, nothing is shrunk."""

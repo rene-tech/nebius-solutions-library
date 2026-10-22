@@ -88,6 +88,12 @@ from schemas import (
 )
 
 log = logging.getLogger("api")
+if not log.handlers:  # uvicorn configures only its own loggers: without this the INFO lines (a skipped class, a
+    # fallback walk, a stale sample) never reached the pod log, only WARNING+ through logging's last resort
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    log.addHandler(_h)
+    log.setLevel(logging.INFO)
 PAGE_DEFAULT, PAGE_MAX = 50, 500  # every list route: `limit` default and ceiling (docs/API.md "Pagination")
 _ops_auth_cache: dict = {}  # (key hash, role, models) -> (listing, until, names, entries): list_operations
 
@@ -134,7 +140,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.184", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.185", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated

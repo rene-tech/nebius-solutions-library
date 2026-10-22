@@ -467,7 +467,8 @@ Each variant is its own Knative service: the first keeps the model's name (`chat
 `<id>-<variant>` (`chat-spot`, `chat-cheap`), each with its pool, replica bounds and image (`variant.image`, else
 `images.<class of the pool>`, else the model's image). All of them carry the model's labels, hostname certificate
 and authorizer. A request through `:invoke` goes to the variant that `routing.field` selects (`map` maps the field's
-value, dotted paths allowed), else to the `default` variant, else (`priority`) to the first variant with a ready
+value, dotted paths allowed; both optional, a `routing` of `default` and `fallback` alone is a policy without
+request-based selection), else to the `default` variant, else (`priority`) to the first variant with a ready
 replica, else to the first one. Through LiteLLM the model group lists every variant of every cluster as a deployment
 with its priority (`order`), so the OpenAI route tries the warm floor before the overflow. `GET /v1/endpoints` reports
 `variants` (name, object id, pool, bounds, image, live state) and `routing`. `images` alone (no variants) gives a
@@ -494,11 +495,11 @@ deployment the call may resolve to, deployments in declared order and variants i
 `region`, `variant`, `id` (the object), `pool`, `gpu_class`, `image` (the exact reference that deployment runs:
 the variant's, else the class image, else the model's), `nodes`, `replicas` {min, max, ready}, `status`,
 `in_flight`, `in_flight_age_s`, `capacity`, `admitting` and `startable` (null when not measured or stale); never the private spec or environment.
-**Pre-send fallback (api 0.11.184, jobs 0.1.35).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
+**Pre-send fallback (api 0.11.185, jobs 0.1.35).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
 walk its declared targets before sending: the resolved variant first, then the other declared targets (the
 deployment's other variants and, with `regions: true` and no region named by the caller, the model's other deployments
 that the API reaches) in the operator's class order: `gpu.classes` (preferred first) ranks each target by the class of
-its pool, declared order within one class, a pool of no declared class last (api 0.11.184; the platform ranks nothing
+its pool, declared order within one class, a pool of no declared class last (api 0.11.185; the platform ranks nothing
 by price or science: the order is the one the operator declared), at most 1 + `max_switches` targets. Each target but the last is probed for `cold_wait_s`
 (5-3600 s); one that is not ready, with nothing sent to it, is left for the next; the last gets what is left of the
 call's budget; the one inference request goes to the target that answered (synchronous calls in the API, asynchronous

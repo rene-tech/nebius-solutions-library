@@ -824,7 +824,7 @@ def _multinode(
     # placement: whole nodes, InfiniBand pools only when required (preferred = soft), WITHIN the pools build_run already
     # chose (its pool term: the chosen class's pools for a per-class image, else the run's class list, narrowed by the
     # per-node fit): every rank runs the same image on the same class, so the gang's pool set is only ever narrowed
-    # here, never widened to the model's other classes (api 0.11.184; until then the model's whole class list replaced
+    # here, never widened to the model's other classes (api 0.11.185; until then the model's whole class list replaced
     # it and a widened per-class-image model could land ranks on another class's pool). The local-NVMe and
     # shared-filesystem terms are kept as they are.
     existing = (

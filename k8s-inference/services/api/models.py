@@ -463,16 +463,22 @@ def _validate_variants(s: dict, kind: str) -> None:
                     raise HTTPException(400, f"deployments.{region}.variants[{i}].image: a non-empty image reference")
                 v["name"] = name
     if routing is not None:
-        if not isinstance(routing, dict) or not isinstance(routing.get("field"), str) or not routing["field"]:
+        # `field` + `map` route on a request field; both are optional (api 0.11.185): a `routing` of `default` and
+        # `fallback` alone is the operator's capacity/fallback policy without request-based selection
+        if not isinstance(routing, dict) or (
+            routing.get("field") is not None and not isinstance(routing["field"], str)
+        ):
             raise HTTPException(
                 400,
-                "routing: {field: <request field, dotted>, map: {<value>: <variant>}, default: priority | capacity | <variant>}",
+                "routing: {field: <request field, dotted>, map: {<value>: <variant>}, default: priority | capacity | <variant>, fallback: {...}}",
             )
         mapping = routing.get("map") or {}
         if not isinstance(mapping, dict) or not all(
             isinstance(k, str) and isinstance(v, str) for k, v in mapping.items()
         ):
             raise HTTPException(400, "routing.map: {<value>: <variant name>}")
+        if mapping and not routing.get("field"):
+            raise HTTPException(400, "routing.map needs routing.field (the request field whose value it maps)")
         targets = set(mapping.values()) | (
             {routing["default"]} if routing.get("default") not in (None, "priority", "capacity") else set()
         )

@@ -119,6 +119,19 @@ def test_validation_of_variants_and_routing():
     bad({"deployments": {"eu-north1": {"variants": [{"name": "a", "pool": "h100-res-1x", "min": 3, "max": 1}]}}})
     bad({"routing": {"field": "tier", "map": {"fast": "unknown"}}})
     bad({"kind": "job", "command": "x", "routing": {"field": "tier"}})
+    bad({"routing": {"map": {"fast": "reserved"}}})  # a map without the field it maps
+    bad({"routing": {"field": 7}})
+    # api 0.11.185: `default` + `fallback` alone is a routing (no request-based selection), the cohort proposal's shape
+    ok = models.to_entry(
+        {
+            **SPEC,
+            "routing": {"default": "capacity", "fallback": {"max_switches": 3, "cold_wait_s": 60, "regions": True}},
+        }
+    )
+    assert ok["routing"] == {
+        "default": "capacity",
+        "fallback": {"max_switches": 3, "cold_wait_s": 60, "regions": True},
+    }
 
 
 def test_each_variant_renders_its_own_objects_under_the_model_label():
@@ -598,7 +611,7 @@ def test_fallback_validation_and_cross_deployment_candidates(monkeypatch):
         kube, "fleet", lambda: {**VARIANT_FLEET, "pools": {**VARIANT_FLEET["pools"], "south-rtx": south}}
     )
     cands = appmod._call_targets(e2, "hub", {}, region_given=False)
-    # api 0.11.184: after the resolved target the walk follows the operator's class order (gpu.classes: h100, l40s;
+    # api 0.11.185: after the resolved target the walk follows the operator's class order (gpu.classes: h100, l40s;
     # the RTX pool's class is undeclared -> last), declared order within a class; never region-major
     assert [(c, v["object"]) for c, v in cands] == [
         ("hub", "chat"),

@@ -232,7 +232,7 @@ MULTINODE_DOC = {
 
 
 def test_a_multi_node_run_keeps_the_chosen_class_for_every_rank(monkeypatch):
-    """api 0.11.184: a JobSet's pool affinity stays within the pools build_run chose for the class the ranks are
+    """api 0.11.185: a JobSet's pool affinity stays within the pools build_run chose for the class the ranks are
     rendered for (per-class images), narrowed to whole InfiniBand nodes; it is never widened to the model's other
     classes (until 0.11.183 the model's whole class list replaced it, so a two-class model with an L40S image could put
     ranks on H100 nodes). Every rank pod carries the chosen class label the attempts project as `gpu_class`."""
