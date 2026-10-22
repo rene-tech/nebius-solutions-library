@@ -1171,6 +1171,11 @@ def build_async(
             env.append({"name": "TRANSFER_ONLY", "value": "1"})
     else:
         env.append({"name": "REQUEST_BODY", "value": json.dumps(inp)})
+    if target and target.get("candidates") and not transfer_only:
+        # pre-send fallback across the declared targets (jobs 0.1.34, docs/API.md "Variants"): the caller probes them
+        # in this order, each but the last for TARGET_COLD_WAIT, and posts once to the first that answers
+        env.append({"name": "TARGETS", "value": json.dumps(target["candidates"])})
+        env.append({"name": "TARGET_COLD_WAIT", "value": str(int(target.get("cold_wait_s") or 120))})
     if not transfer_only and runtime_models.endpoint_domain(region):
         # the readiness probe before the one inference POST (docs/API.md "Cold endpoints"): the endpoint's health
         # path, else an idempotent GET on the OpenAI models listing or the endpoint's root, through the endpoint's own

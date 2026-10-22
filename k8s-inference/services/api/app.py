@@ -134,7 +134,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.181", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.182", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -565,6 +565,51 @@ def _variant_for(m: dict, inp, cluster: str) -> dict:
         if st["startable"] is True:
             return v
     return vs[0]  # nothing known: the first variant and the ordinary queue (its cold start is the call's)
+
+
+def _call_targets(m: dict, cluster: str, inp, region_given: bool) -> list[tuple[str, dict]]:
+    """The ordered (cluster, variant) targets of one call (docs/API.md "Variants", api 0.11.182): the resolved variant
+    of the chosen deployment first; with `routing.fallback`, the deployment's other variants in priority order, then
+    (`fallback.regions`, and only when the caller named no region) the variants of the model's other deployments in
+    declared order that this API reaches; at most 1 + `max_switches` entries. Without `routing.fallback`: one target."""
+    first = _variant_for(m, inp, cluster)
+    fb = (m.get("routing") or {}).get("fallback")
+    out = [(cluster, first)]
+    if not fb:
+        return out
+    rest = [(cluster, v) for v in models.variants(m, cluster) if v["object"] != first["object"]]
+    if fb.get("regions") and not region_given:
+        for cid in m.get("regions") or []:
+            if _cluster_id_of(cid) == _cluster_id_of(cluster) or kube.cluster_region(cid) not in kube.regions():
+                continue
+            rest += [(cid, v) for v in models.variants(m, cid)]
+    return out + rest[: int(fb.get("max_switches") or 0)]
+
+
+def _target_urls(
+    m: dict, cluster: str, v: dict, p: Principal, admission: str, via_gateway: bool = False
+) -> tuple[str, str, dict]:
+    """(readiness URL, inference URL, headers) of one target: the predictor Service when the target runs on this
+    cluster and the API proxies itself, else that region's gateway with the caller's key; `via_gateway` always the
+    gateway (the asynchronous caller Job never reaches a predictor Service directly: key check and accounting)."""
+    probe = m.get("health_path") or ("/v1/models" if m.get("protocol") == "openai" else "/")
+    region = kube.cluster_region(_cluster_id_of(cluster))
+    if region == REGION and not via_gateway:
+        host = (
+            m["endpoint_host"]
+            if v["object"] == m["k8s_name"]
+            else f"http://{v['object']}-predictor.{m['namespace']}.svc.cluster.local"
+        )
+        return host + probe, host + m["endpoint_path"], {}
+    if not models.endpoint_domain(region):
+        raise HTTPException(503, f"calls to {region} need its endpoint domain (ENDPOINT_DOMAINS)")
+    host = f"https://{models.endpoint_host(m, region, v['object'])}"
+    headers = {
+        "Authorization": f"Bearer {p.key}",
+        ADMITTED_HEADER: _admitted_token(keys.key_hash(p.key), m["name"], admission),
+        OPERATION_HEADER: admission,
+    }
+    return host + probe, host + m["endpoint_path"], headers
 
 
 def _target_state(m: dict, v: dict, cluster: str) -> dict:
@@ -1322,7 +1367,8 @@ def _invoke_job(
         raise HTTPException(400, f"this API runs jobs in {region} only, which allowed_clusters {allowed} excludes")
     if mode == "async":  # the caller Job runs in the endpoint's region, through that region's gateway
         cluster = _deployment_cluster(m, region)  # the deployment this region reaches (invoke validated the choice)
-        target_v = _variant_for(m, req.input, cluster)  # one resolution: readiness, the one request and the fence
+        candidates = _call_targets(m, cluster, req.input, bool(req.region))  # the resolved target first, then the
+        target_v = candidates[0][1]  # declared fallbacks (routing.fallback); readiness, the one request, the fence
         rollout = _rollout_fence(m, region, ex, obj=target_v["object"])
         application = bool(ex and ex.get("io_mode") == "application")
         output_prefix = (
@@ -1343,7 +1389,24 @@ def _invoke_job(
             key_hash=billing.key_hash(p.key),
             admitted=_admitted_token(keys.key_hash(p.key), m["name"], name) if cfg.ROUTER_KEY else None,
             priority=keys.effective_priority(p.info, req.priority),
-            target={**target_v, "record": _target_record(m, cluster, target_v)},
+            target={
+                **target_v,
+                "record": {
+                    **_target_record(m, cluster, target_v),
+                    **({"candidates": [c["object"] for _, c in candidates]} if len(candidates) > 1 else {}),
+                },
+                "candidates": [
+                    {
+                        "id": c["object"],
+                        "ready_url": _target_urls(m, cc, c, p, name, via_gateway=True)[0],
+                        "url": _target_urls(m, cc, c, p, name, via_gateway=True)[1],
+                    }
+                    for cc, c in candidates
+                ]
+                if len(candidates) > 1
+                else None,
+                "cold_wait_s": ((m.get("routing") or {}).get("fallback") or {}).get("cold_wait_s"),
+            },
         )
     elif FLEET_MANAGER:
         _guard_run_input(m, req, p, REGION, ex)
@@ -1731,12 +1794,34 @@ async def _sync(
                 OPERATION_HEADER: admission,
             },
         )
+    target_cluster = models.cluster_id() if region == REGION else _deployment_cluster(m, region)
+    candidates = (
+        _call_targets(m, target_cluster, req.input, bool(req.region)) if v and not m.get("litellm_route") else []
+    )
     t0 = time.time()
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     budget = (
         req.timeout_s or SYNC_TIMEOUT_S
     )  # the call's whole wall clock: the wait for a cold endpoint, then the inference
-    if int(m.get("nodes") or 1) == 1:
+    if int(m.get("nodes") or 1) == 1 and len(candidates) > 1:
+        # pre-send fallback across the declared targets (docs/API.md "Variants", api 0.11.182): a target not ready within
+        # routing.fallback.cold_wait_s, with nothing sent to it, is left for the next; the last gets what is left of the
+        # budget; the one inference request goes to the target that answered
+        fb = (m.get("routing") or {}).get("fallback") or {}
+        for i, (cand_cluster, cand) in enumerate(candidates):
+            probe_url, cand_url, cand_headers = _target_urls(m, cand_cluster, cand, p, admission)
+            last = i == len(candidates) - 1
+            bound = t0 + budget if last else min(t0 + budget, time.time() + float(fb.get("cold_wait_s") or 120))
+            try:
+                await _wait_until_ready(probe_url, cand_headers, request, bound)
+            except HTTPException as e:
+                if e.status_code == 503 and not last and time.time() < t0 + budget:
+                    log.info("%s: target %s not ready within its cold wait, next target", m["name"], cand["object"])
+                    continue
+                raise
+            v, url, headers, target_cluster = cand, cand_url, cand_headers, cand_cluster
+            break
+    elif int(m.get("nodes") or 1) == 1:
         # a cold endpoint (scaled to zero, a spot node starting) is waited for with idempotent GETs before the one
         # inference request, so the request is never cut by the revision timeout while the endpoint starts and is
         # never repeated (docs/API.md "Cold endpoints"); the wait spends the call's own budget
@@ -1784,7 +1869,10 @@ async def _sync(
         "error": None if ok else str(body)[:500],
         "requester": req.requester,
         "key_alias": _key_alias(keys.key_hash(p.key)),
-        "target": _target_record(m, models.cluster_id() if region == REGION else _deployment_cluster(m, region), v)
+        "target": {
+            **_target_record(m, target_cluster, v),
+            **({"candidates": [c["object"] for _, c in candidates]} if len(candidates) > 1 else {}),
+        }
         if v
         else None,
     }

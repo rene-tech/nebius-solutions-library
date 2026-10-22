@@ -152,12 +152,12 @@ not_durable_exit() {   # $1 = what: a durability failure AFTER the POST: the cap
 # time: past it the call fails explicitly instead of running into the Job's deadline. The probe counter is its own: the
 # inference POST's retry budget starts fresh and the POST is still made exactly once.
 # Returns 0 ready, 1 refused (401/403: READY_CODE), 2 not ready within the bound (READY_CODE = the last answer).
-wait_ready() {
+wait_ready_one() {   # $1 = readiness URL, $2 = bound in seconds: one target's probes (the loop of jobs <= 0.1.33)
   READY_CODE=""; READY_PROBES=0; READY_WAITED=0
-  [ -n "${READY_URL:-}" ] || return 0
-  local n=0 code ready_start=$SECONDS ready_max=${READY_MAX_WAIT:-${CALL_TIMEOUT:-3600}}
+  [ -n "$1" ] || return 0
+  local n=0 code ready_start=$SECONDS ready_max=$2
   while :; do
-    code=$(curl -sS -o out/ready.txt -w '%{http_code}' "$READY_URL" "${curl_auth[@]}" --max-time "${READY_TIMEOUT:-30}" 2>out/ready_error.txt) || code=000
+    code=$(curl -sS -o out/ready.txt -w '%{http_code}' "$1" "${curl_auth[@]}" --max-time "${READY_TIMEOUT:-30}" 2>out/ready_error.txt) || code=000
     n=$((n + 1)); echo "$(date -u +%FT%TZ) readiness probe $n -> HTTP $code"
     READY_CODE=$code; READY_PROBES=$n; READY_WAITED=$(( SECONDS - ready_start ))
     case "$code" in
@@ -170,6 +170,40 @@ wait_ready() {
     fi
     ready_pause $n
   done
+}
+
+# Pre-send fallback across declared targets (jobs 0.1.34, docs/API.md "Variants"): TARGETS is a JSON list of
+# {id, ready_url, url} in the order the API resolved (the first = READY_URL/URL as before; without TARGETS that one
+# target is the list). Each target but the last is probed for at most TARGET_COLD_WAIT seconds, the last for what is
+# left of READY_MAX_WAIT; the first that answers becomes URL and is recorded in out/target.json BEFORE any POST, so
+# the one inference request goes to exactly one target and nothing was sent to the others. A refusal (401/403) is the
+# key's and ends the call at once; nothing ready anywhere ends it with nothing sent (exit 5).
+wait_ready() {
+  local targets="" n i total id ready url bound rc waited_total=0 start=$SECONDS
+  local ready_max=${READY_MAX_WAIT:-${CALL_TIMEOUT:-3600}}
+  if [ -n "${TARGETS:-}" ]; then
+    targets=$(printf '%s' "$TARGETS" | jq -c '.[]' 2>/dev/null) || { echo "TARGETS is not a JSON list; using READY_URL/URL"; targets=""; }
+  fi
+  [ -n "$targets" ] || targets=$(jq -cn --arg r "${READY_URL:-}" --arg u "${URL:-}" '{id:"primary", ready_url:$r, url:$u}')
+  total=$(printf '%s\n' "$targets" | grep -c .); i=0
+  while IFS= read -r t; do
+    i=$((i + 1)); id=$(printf '%s' "$t" | jq -r '.id'); ready=$(printf '%s' "$t" | jq -r '.ready_url // ""'); url=$(printf '%s' "$t" | jq -r '.url')
+    waited_total=$(( SECONDS - start ))
+    if [ "$i" -lt "$total" ]; then bound=${TARGET_COLD_WAIT:-$ready_max}; [ $((ready_max - waited_total)) -lt "$bound" ] && bound=$((ready_max - waited_total)); else bound=$((ready_max - waited_total)); fi
+    [ "$bound" -lt 0 ] && bound=0
+    [ "$total" -gt 1 ] && echo "$(date -u +%FT%TZ) target $i/$total $id: probing for up to ${bound}s"
+    wait_ready_one "$ready" "$bound"; rc=$?
+    case "$rc" in
+      0) URL=$url; TARGET_ID=$id
+         jq -cn --arg id "$id" --arg u "$url" --argjson i "$i" --argjson n "$total" --argjson p "$READY_PROBES" --argjson w "$READY_WAITED" \
+           '{id:$id, url:$u, index:$i, of:$n, probes:$p, waited_s:$w}' > out/target.json 2>/dev/null
+         [ "$total" -gt 1 ] && echo "$(date -u +%FT%TZ) target $id ready: the inference request goes there"
+         return 0;;
+      1) return 1;;
+      2) [ "$i" -lt "$total" ] && echo "$(date -u +%FT%TZ) target $id not ready within ${READY_WAITED}s: nothing was sent to it; next target";;
+    esac
+  done <<< "$targets"
+  return 2
 }
 
 if [ "${IO_MODE:-managed}" != application ]; then

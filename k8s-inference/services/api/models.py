@@ -480,6 +480,16 @@ def _validate_variants(s: dict, kind: str) -> None:
         if unknown:
             raise HTTPException(400, f"routing: variants {unknown} are not defined in deployments.<region>.variants")
         routing.setdefault("default", "priority")
+        fb = routing.get("fallback")
+        if fb is not None:  # bounded pre-send fallback (docs/API.md "Variants"); the shape of schemas.FallbackSpec
+            from schemas import FallbackSpec
+
+            try:
+                routing["fallback"] = FallbackSpec.model_validate(fb).model_dump()
+            except ValidationError:
+                raise HTTPException(
+                    400, "routing.fallback: {max_switches (0-7), cold_wait_s (5-3600), regions (bool)}"
+                ) from None
 
 
 def _assets_spec(raw) -> list[dict]:

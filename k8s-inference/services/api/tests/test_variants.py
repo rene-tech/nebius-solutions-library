@@ -461,3 +461,145 @@ def test_the_model_readback_lists_every_target(client, monkeypatch):
     # validation: `capacity` is a routing default
     ok = models.to_entry(models.validate({**SPEC, "routing": {**SPEC["routing"], "default": "capacity"}}))
     assert ok["routing"]["default"] == "capacity"
+
+
+def _fallback_world(monkeypatch, ready, max_switches=1, regions=False):
+    e = _world(monkeypatch, ready)
+    e = {
+        **e,
+        "routing": {**e["routing"], "fallback": {"max_switches": max_switches, "cold_wait_s": 5, "regions": regions}},
+    }
+    monkeypatch.setattr(catalog, "get", lambda name: e if name == "chat" else None)
+    return e
+
+
+def test_sync_pre_send_fallback_moves_to_the_next_target_only_before_sending(client, monkeypatch):
+    """api 0.11.182: the first target is probed for cold_wait_s; not ready, the next declared target is probed; the one
+    inference request goes to the target that answered; a refusal ends the call; max_switches bounds the walk."""
+    c, _ = client
+    _fallback_world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0}, max_switches=2)
+    seen = {"get": [], "post": []}
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"choices": []}
+
+    class NotYet:
+        status_code = 503
+        headers = {}
+        content = b""
+        text = ""
+
+        def json(self):
+            return {}
+
+    class AC:
+        def __init__(self, timeout=None):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def aclose(self):
+            return None
+
+        async def get(self, url, headers=None):
+            seen["get"].append(url)
+            return _Ready() if "chat-cheap" in url else NotYet()
+
+        async def post(self, url, json=None, headers=None):
+            seen["post"].append(url)
+            return Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", AC)
+    monkeypatch.setattr(appmod, "READY_PROBE_PAUSE_S", 0)
+    monkeypatch.setattr(appmod.time, "time", _Clock(step=3.0))  # every probe costs 3 s of wall clock
+    r = c.post("/v1/models/chat:invoke", json={"input": {"messages": []}}, headers=H)
+    assert r.status_code == 200, r.text
+    assert len(seen["post"]) == 1 and seen["post"][0].startswith(
+        "http://chat-cheap-predictor"
+    )  # one request, third target
+    assert any("chat-predictor" in u for u in seen["get"]) and any("chat-spot-predictor" in u for u in seen["get"])
+    op = r.json()["operation"]
+    assert op["target"]["variant"] == "cheap" and op["target"]["candidates"] == ["chat", "chat-spot", "chat-cheap"]
+    # max_switches 0: the resolved target only; not ready within the budget -> 503, nothing sent
+    _fallback_world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0}, max_switches=0)
+    seen["post"].clear()
+    r = c.post("/v1/models/chat:invoke", json={"input": {"messages": []}, "timeout_s": 8}, headers=H)
+    assert r.status_code == 503 and r.headers.get("x-serverless2-inference") == "not-sent" and seen["post"] == []
+
+
+class _Clock:
+    """A monotonic test clock: every read advances by `step` seconds (the readiness loop measures its budget by it)."""
+
+    def __init__(self, step: float):
+        import time as _t
+
+        self.now, self.step = _t.time(), step
+
+    def __call__(self):
+        self.now += self.step
+        return self.now
+
+
+def test_async_call_carries_the_ordered_targets_for_the_caller(client, monkeypatch):
+    c, fake = client
+    _fallback_world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0}, max_switches=1)
+    monkeypatch.setattr(models, "endpoint_domain", lambda region: "203.0.113.10.sslip.io")
+    r = c.post("/v1/models/chat:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
+    assert r.status_code == 202, r.text
+    job = fake.jobs[("tenant-demo", r.json()["id"])]
+    env = {e["name"]: e.get("value") for e in job["spec"]["template"]["spec"]["containers"][0]["env"]}
+    import json as _json
+
+    targets = _json.loads(env["TARGETS"])
+    assert [t["id"] for t in targets] == ["chat", "chat-spot"] and env["TARGET_COLD_WAIT"] == "5"
+    assert targets[0]["url"] == env["URL"] and targets[0]["ready_url"] == env["READY_URL"]
+    assert targets[1]["url"].startswith("https://chat-spot-predictor.models.203.0.113.10.sslip.io/")
+    rec = _json.loads(job["metadata"]["annotations"]["serverless2.nebius/target"])
+    assert rec["id"] == "chat" and rec["candidates"] == ["chat", "chat-spot"]
+    # without routing.fallback: no TARGETS, one target (unchanged)
+    _world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0})
+    r = c.post("/v1/models/chat:invoke", json={"mode": "async", "input": {"messages": []}}, headers=H)
+    job = fake.jobs[("tenant-demo", r.json()["id"])]
+    env = {e["name"]: e.get("value") for e in job["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert "TARGETS" not in env
+
+
+def test_fallback_validation_and_cross_deployment_candidates(monkeypatch):
+    e = _fallback_world(monkeypatch, {"chat": 0, "chat-spot": 0, "chat-cheap": 0}, max_switches=7, regions=True)
+    # a second deployment in another region the API reaches: its variants follow the first deployment's, in order
+    e2 = {
+        **e,
+        "regions": ["hub", "south"],
+        "deployments": {
+            **e["deployments"],
+            "eu-south1": {"variants": [{"name": "rtx", "pool": "rtx6000-ondemand-1x", "min": 0, "max": 2}]},
+        },
+    }
+    monkeypatch.setattr(kube, "regions", lambda: ["eu-north1", "eu-south1"])
+    monkeypatch.setattr(kube, "cluster_region", lambda c: {"hub": "eu-north1", "south": "eu-south1"}.get(c, c))
+    cands = appmod._call_targets(e2, "hub", {}, region_given=False)
+    assert [(c, v["object"]) for c, v in cands] == [
+        ("hub", "chat"),
+        ("hub", "chat-spot"),
+        ("hub", "chat-cheap"),
+        ("south", "chat"),  # a deployment's first variant keeps the model's own object name on its cluster
+    ]
+    assert [v["object"] for _, v in appmod._call_targets(e2, "hub", {}, region_given=True)] == [
+        "chat",
+        "chat-spot",
+        "chat-cheap",
+    ]  # an explicit region: that deployment only
+    with pytest.raises(HTTPException) as x:
+        models.validate({**SPEC, "routing": {**SPEC["routing"], "fallback": {"max_switches": 9}}})
+    assert x.value.status_code == 400 and "routing.fallback" in x.value.detail
+    ok = models.to_entry(models.validate({**SPEC, "routing": {**SPEC["routing"], "fallback": {"max_switches": 2}}}))
+    assert ok["routing"]["fallback"] == {"max_switches": 2, "cold_wait_s": 120, "regions": False}

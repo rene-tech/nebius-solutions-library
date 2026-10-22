@@ -494,8 +494,15 @@ deployment the call may resolve to, deployments in declared order and variants i
 `region`, `variant`, `id` (the object), `pool`, `gpu_class`, `image` (the exact reference that deployment runs:
 the variant's, else the class image, else the model's), `nodes`, `replicas` {min, max, ready}, `status`,
 `in_flight`, `capacity`, `admitting` and `startable` (null when not measured); never the private spec or environment.
-The deployment a call goes to is still the caller's region or this API's (`_deployment_of`); declared cross-region
-alternatives with pre-send fallback are a later release.
+**Pre-send fallback (api 0.11.182, jobs 0.1.34).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
+walk its declared targets before sending: the resolved variant first, then the deployment's other variants in priority
+order and, with `regions: true` and no region named by the caller, the model's other deployments in declared order
+that the API reaches, at most 1 + `max_switches` targets. Each target but the last is probed for `cold_wait_s`
+(5-3600 s); one that is not ready, with nothing sent to it, is left for the next; the last gets what is left of the
+call's budget; the one inference request goes to the target that answered (synchronous calls in the API, asynchronous
+calls in the caller Job, which records the chosen target in its capture as `out/target.json`). A refusal (401/403)
+ends the call at once; once the request is sent nothing moves; nothing is ever posted twice. `Operation.target`
+names the first target and `candidates` the walk. Without `routing.fallback` a call has one target, as before.
 
 ## Fleet operators
 

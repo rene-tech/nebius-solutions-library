@@ -19,8 +19,9 @@ cat > "$T/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 # scripted answers: GETS (readiness) and POSTS (inference) hold "code[:body]" words; -o names the body file
 out=""; hdr=""; method=GET
-while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift;; -D) hdr=$2; shift;; -X) method=$2; shift;; esac; shift; done
-f="$LOG_DIR/$method.count"; n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$f"
+url=""
+while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift;; -D) hdr=$2; shift;; -X) method=$2; shift;; http*) url=$1;; esac; shift; done
+f="$LOG_DIR/$method.count"; n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$f"; echo "$url" >> "$LOG_DIR/$method.urls"
 if [ "$method" = POST ]; then set -- $POSTS; else set -- $GETS; fi
 spec=${!n:-${@: -1}}; code=${spec%%:*}; body=${spec#*:}; [ "$body" = "$spec" ] && body=""
 edge=0; case "$code" in *@edge) edge=1; code=${code%@edge};; esac   # "<code>@edge": the edge's own refusal (its header)
@@ -37,10 +38,10 @@ chmod +x "$T/bin/curl" "$T/bin/sleep"
 run() { # <GETS> <POSTS> [READY_URL|-]: run the managed caller; prints "exit gets posts outcome http"
   # READY_MAX_WAIT is wall-clock in call.sh while sleep is a no-op here: the normal cases get a generous bound (the
   # scripted probes decide the outcome, never the clock); only the not-ready case sets a short one explicitly (WAIT)
-  rm -rf "$T/work"; mkdir -p "$T/work"; rm -f "$T/GET.count" "$T/POST.count"
+  rm -rf "$T/work"; mkdir -p "$T/work"; rm -f "$T/GET.count" "$T/POST.count" "$T/GET.urls" "$T/POST.urls"
   local ready=${3:-https://ep.example/healthz}; [ "$ready" = - ] && ready=""
   (cd "$T" && WORK="$T/work" LOG_DIR="$T" GETS="$1" POSTS="$2" READY_URL="$ready" URL=https://ep.example/infer REQUEST_BODY='{"x":1}' \
-     OPERATION=op-1 POD_NAME=pod-1 CALL_TIMEOUT=60 READY_MAX_WAIT="${WAIT:-600}" PATH="$T/bin:$PATH" bash "$T/call.sh" > "$T/log" 2>&1); local rc=$?
+     OPERATION=op-1 POD_NAME=pod-1 CALL_TIMEOUT=60 READY_MAX_WAIT="${WAIT:-600}" TARGETS="${TARGETS:-}" TARGET_COLD_WAIT="${COLD:-}" PATH="$T/bin:$PATH" bash "$T/call.sh" > "$T/log" 2>&1); local rc=$?
   echo "$rc $(cat "$T/GET.count" 2>/dev/null || echo 0) $(cat "$T/POST.count" 2>/dev/null || echo 0) $(jq -r '"\(.outcome) \(.http_status)"' "$T/work/out/call.json" 2>/dev/null || echo none)"
 }
 check() { # <name> <expected> <GETS> <POSTS> [READY_URL|-]: one run, its first result judged and reported as is
@@ -68,4 +69,15 @@ out=$(WAIT=1 run "000" "200:{}"); read -r rc _ posts _ http <<< "$out"
 if [ "$rc" != 5 ] || [ "$posts" != 0 ] || [ "$http" != 0 ]; then fail "not ready within the bound: $out"; fi
 # 6. without READY_URL the POST is made directly, once
 check "no readiness URL" "0 0 1 ok 200" "" "200:{}" -
+# 7. pre-send fallback across declared targets (jobs 0.1.34): the first target, not ready within its cold bound, is
+# left for the second (nothing was sent to it); the one POST goes to the target that answered, which out/target.json
+# names; a refusal on the first ends the call (the key's); nothing ready anywhere posts nothing
+TWO='[{"id":"a","ready_url":"https://a.example/ready","url":"https://a.example/infer"},{"id":"b","ready_url":"https://b.example/ready","url":"https://b.example/infer"}]'
+TARGETS="$TWO" COLD=0 check "second target after a cold first" "0 2 1 ok 200" "000 200" "200:{}"
+[ "$(jq -r .id "$T/work/out/target.json")" = b ] || fail "out/target.json should name target b, got $(cat "$T/work/out/target.json" 2>/dev/null)"
+[ "$(tail -1 "$T/POST.urls")" = "https://b.example/infer" ] || fail "the POST should go to target b, went to $(tail -1 "$T/POST.urls")"
+[ "$(sed -n 1p "$T/GET.urls")" = "https://a.example/ready" ] && [ "$(sed -n 2p "$T/GET.urls")" = "https://b.example/ready" ] || fail "the probes should visit a then b: $(cat "$T/GET.urls")"
+TARGETS="$TWO" COLD=0 check "refused on the first target" "2 1 0 refused 403" "403:{\"detail\":\"no\"}" "200:{}"
+TARGETS="$TWO" COLD=0 WAIT=0 check "no target ready" "5 2 0 not_ready 0" "000 000" "200:{}"
+[ ! -f "$T/work/out/target.json" ] || fail "no target should be recorded when nothing answered"
 echo "   ok call.sh managed: cold start waited then one POST; no response = unknown (exit 4, no re-POST); 5xx body = exit 5; edge 429 retried, model 408/429 taken once as a 4xx; refused/not-ready probes post nothing"

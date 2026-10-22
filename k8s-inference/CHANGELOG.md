@@ -4,6 +4,19 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.182, jobs 0.1.34, dispatcher 0.2.17
+
+- Bounded pre-send fallback across an endpoint's declared targets (docs/API.md "Variants"): `routing.fallback =
+  {max_switches (0-7, default 1), cold_wait_s (5-3600, default 120), regions (false)}`. A call's targets are the
+  resolved variant, then the deployment's other variants in priority order and, with `regions` and no region named
+  by the caller, the model's other deployments in declared order that this API reaches, at most 1 + max_switches.
+  Each target but the last is probed for `cold_wait_s`; one not ready with nothing sent to it is left for the next;
+  the one inference request goes to the target that answered. Synchronous: in the API (503 `not-sent` when none
+  answered within the call's budget). Asynchronous: the caller Job (jobs 0.1.34, `TARGETS` + `TARGET_COLD_WAIT`)
+  walks the same list and records the chosen target in its capture (`out/target.json`); `URL`/`READY_URL` stay the
+  first. A refusal (401/403) ends the call; once sent nothing moves; the convergence fence reads the first target.
+  `Operation.target.candidates` lists the walk. Without `routing.fallback` nothing changes.
+
 ## api 0.11.181, dispatcher 0.2.17 (0.11.179 and 0.11.180 = earlier cuts; built, never applied)
 
 - Target state is measured, never guessed (Root's 19:08Z review): `admitting` = a ready target whose in-flight

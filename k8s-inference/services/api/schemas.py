@@ -380,10 +380,23 @@ class DeploymentSpec(BaseModel):
     variants: list[VariantSpec] | None = None
 
 
+class FallbackSpec(BaseModel):
+    """Bounded pre-send fallback across an endpoint's declared targets (docs/API.md "Variants", api 0.11.182): a target
+    that is not ready within `cold_wait_s` while nothing was sent to it is left for the next declared target, at most
+    `max_switches` times; `regions` adds the other deployments of the model (declared order) when the caller names no
+    region. Once the one inference request is sent nothing moves."""
+
+    model_config = ConfigDict(extra="forbid")
+    max_switches: int = Field(default=1, ge=0, le=7)
+    cold_wait_s: int = Field(default=120, ge=5, le=3600)
+    regions: bool = False
+
+
 class RoutingSpec(BaseModel):
     field: str | None = None
     map: dict[str, str] | None = None
     default: str | None = None
+    fallback: FallbackSpec | None = None
 
 
 class FinalizeSpec(BaseModel):
@@ -577,13 +590,15 @@ class ModelTarget(BaseModel):
 
 
 class EndpointTarget(BaseModel):
-    """The target an endpoint call was resolved to (one resolution for readiness and the single inference request)."""
+    """The target an endpoint call was resolved to (one resolution for readiness and the single inference request);
+    `candidates` lists the declared alternatives the call may fall to before sending (routing.fallback), first = this."""
 
     cluster: str | None = None
     variant: str | None = None
     id: str | None = None
     image: str | None = None
     gpu_class: str | None = None
+    candidates: list[str] | None = None
 
 
 class Model(BaseModel):
