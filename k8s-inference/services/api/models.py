@@ -544,6 +544,52 @@ _CAMEL = {
     "ephemeral_storage": "ephemeralStorage",
     "ephemeral_storage_limit": "ephemeralStorageLimit",
 }  # public resource field -> job block key (render.RESOURCE_KEYS)
+QUEUE_PROXY_CPU = 0.025  # Knative's queue-proxy sidecar on every endpoint pod: its default request (25m, no memory)
+
+
+def _by_class(s: dict) -> dict:
+    """`resources_by_class` as the catalog's `resourcesByClass` (docs/SCHEDULING.md "Per-node fit"): the envelope per
+    GPU class, overlaid on the block for the class chosen (a run) or the class of the variant's pool (an endpoint)."""
+    per = s.get("resources_by_class") or {}
+    return {"resourcesByClass": {c: {_CAMEL[k]: str(x) for k, x in v.items()} for c, v in per.items()}} if per else {}
+
+
+def _endpoint_fit(entry: dict) -> None:
+    """Per-node fit of an endpoint at registration (docs/SCHEDULING.md "Per-node fit"): every variant's pod, rendered
+    as it will be applied (the server with its class envelope, the renderer's sidecars and init containers, plus the
+    queue-proxy request of a Knative pod), must fit ONE node of its pool on its cluster, with the shared filesystem
+    when the weights mount it: 400 `impossible shape` otherwise, nothing reduced or widened. A pool the fit table does
+    not know, a Kueue-placed variant (no pool) or no fit.yaml at all: no judgement."""
+    import fit
+
+    if not fit.table():
+        return
+    for cluster in entry["deployments"]:
+        for v in variants(entry, cluster):
+            docs = render_endpoint.render(entry, cluster, "fit.invalid", INFINIBAND_CLAIM_TEMPLATE, v)
+            pods = [(d["spec"]["predictor"], True) for d in docs if d["kind"] == "InferenceService"] + [
+                (d["spec"]["leaderWorkerTemplate"][t]["spec"], False)
+                for d in docs
+                if d["kind"] == "LeaderWorkerSet"
+                for t in ("leaderTemplate", "workerTemplate")
+            ]
+            for pod, knative in pods:
+                pool = (pod.get("nodeSelector") or {}).get(f"{LABEL}/pool")
+                if not pool or pool not in (fit.table().get(cluster) or {}):
+                    continue
+                req = fit.pod_requests(pod)
+                req["cpu"] += QUEUE_PROXY_CPU if knative else 0
+                need_fs = any(
+                    x.get("name") == "weights" and x.get("persistentVolumeClaim") for x in pod.get("volumes") or []
+                )
+                if not fit.fitting(req, [cluster], {pool}, shared_fs=need_fs):
+                    caps = " with the shared filesystem" if need_fs else ""
+                    raise HTTPException(
+                        400,
+                        f"impossible shape: variant {v['name']} on {cluster}/{pool} needs {fit.describe(req)} on one node{caps} "
+                        f"and no node of that pool holds it; its node admits {fit.largest([cluster], {pool}, shared_fs=need_fs)} "
+                        '(resources_by_class declares the envelope per GPU class; docs/SCHEDULING.md "Per-node fit")',
+                    )
 
 
 def to_entry(spec: dict, managed_by: str = "api") -> dict:
@@ -610,6 +656,9 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
             },
             "timeout": int(s.get("timeout_s", 600)),
             "shm": {"enabled": True, "size": f"{int(s.get('shm_gib', 1))}Gi"},
+            **_by_class(
+                s
+            ),  # the envelope per GPU class, overlaid for the class of each variant's pool (render_endpoint)
         }
         if "automount_service_account_token" in s:
             runtime["automountServiceAccountToken"] = s["automount_service_account_token"]
@@ -758,6 +807,7 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
         )
         if not entry["servedModel"]:
             entry.pop("servedModel")
+        _endpoint_fit(entry)
     else:
         job: dict = {
             "image": image,
@@ -786,16 +836,7 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
             # restricted assets (docs/JOBS.md "Restricted assets"): operator-owned aliases of the fleet registry
             **({"assets": _assets_spec(s["assets"])} if s.get("assets") else {}),
             "env": dict(s.get("env") or {}),
-            # the envelope per GPU class (docs/SCHEDULING.md "Per-node fit"): overlaid on the block for the class chosen
-            **(
-                {
-                    "resourcesByClass": {
-                        c: {_CAMEL[k]: str(x) for k, x in v.items()} for c, v in s["resources_by_class"].items()
-                    }
-                }
-                if s.get("resources_by_class")
-                else {}
-            ),
+            **_by_class(s),  # the envelope per GPU class, overlaid on the block for the class chosen
             "envFrom": [{"secretRef": {"name": name}} for name in s.get("env_secrets", [])],
             # per-GPU-class images (docs/SCHEDULING.md "Per-GPU images for runs"): the class chosen at submission picks one
             **(

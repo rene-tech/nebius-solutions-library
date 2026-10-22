@@ -228,6 +228,18 @@ def values(entry: dict, cluster: str, domain: str, ib_claim_template: str, varia
         over.pop(key, None)
     base = {k: copy.deepcopy(x) for k, x in top.items() if k not in OMIT}
     vals = _merge_overwrite(_merge_overwrite(base, copy.deepcopy(runtime)), over)
+    # the envelope per GPU class (`resources_by_class`, docs/SCHEDULING.md "Per-node fit"): the class of the variant's
+    # pool on this cluster picks its entry, overlaid on `resources` exactly as a run's (render.class_resources); no
+    # entry for that class, or no pool (Kueue placement): the base resources unchanged. The map reaches no object.
+    per = vals.pop("resourcesByClass", None)
+    if per and vals.get("pool"):
+        import kube
+        from render import class_resources
+
+        vals["resources"] = class_resources(
+            {**(vals.get("resources") or {}), "resourcesByClass": per},
+            kube.pool_entry(cluster, vals["pool"]).get("gpu_class"),
+        )
     if vals.get("pool"):
         # a deployment pinned to `system` (a GPU-free endpoint) serves from the cluster's customer CPU pool instead
         # when the fleet keeps tenants off the system nodes (kube.tenant_pool, docs/FLEET.md "Customer CPU pools");

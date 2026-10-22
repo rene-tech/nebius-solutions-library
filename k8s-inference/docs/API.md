@@ -68,7 +68,7 @@ shape of a model definition: a container plus a few knobs.
 ```
 
 `protocol` is `openai | http | websocket | grpc`; `gpu.classes` lists the classes the image runs on,
-preferred first; `resources` is the endpoint container's `cpu` and `memory` requests (defaults 4 / 16Gi; = the limits)
+preferred first; `resources` is the endpoint container's `cpu` and `memory` requests (defaults 4 / 16Gi; = the limits; `resources_by_class` overlays the envelope per GPU class on each variant for the class of its pool, and every variant's pod must fit one node of its pool at registration, docs/SCHEDULING.md "Per-node fit")
 and, optionally, `cpu_limit` / `memory_limit` above them and `ephemeral_storage` with `ephemeral_storage_limit` (the
 kubelet's node-local scratch: request = limit unless both are given; nothing is rendered without them), the same names
 a run class uses; an endpoint's `timeout_s` (its Knative revision timeout) may not exceed the fleet's
@@ -486,18 +486,20 @@ The operation records it as `target` ({cluster, variant, id, image, gpu_class}).
 | value | the variant taken when the field selects none |
 |---|---|
 | `priority` (default) | the first with a ready replica, else the first (its cold start is the call's) |
-| `capacity` | the first target KNOWN to admit now (`admitting`: a ready replica whose in-flight requests, Knative's stable concurrency, are below ready replicas x its `container_concurrency`), else the first KNOWN to be startable (`startable`: a cold deployment that is not failed and whose pool has free GPUs for one replica or room for a node under `max_nodes`), else the first; an unknown state (no concurrency limit, no measurement, an unreadable pool) is null and never counts |
+| `capacity` | the first target KNOWN to admit (`admitting`: a ready replica whose in-flight requests, Knative's stable concurrency, a windowed estimate over 60 s whose sample age is `in_flight_age_s`, are below ready replicas x its `container_concurrency`; a sample older than 120 s is unknown), else the first KNOWN to be startable (`startable`: a cold deployment that is not failed and whose pool has free GPUs for one replica or room for a node under `max_nodes`), else the first; an unknown or stale state (no concurrency limit, no measurement, an unreadable pool) is null and never counts. A preference between declared targets, not a promise of admission: the gateway's concurrency and queue enforcement stay authoritative |
 | `<variant>` | that variant |
 
 Declared order, nothing ranked. `GET /v1/models/{id}` (and the list) of an endpoint carries `targets`: one entry per
 deployment the call may resolve to, deployments in declared order and variants in priority order, with `cluster`,
 `region`, `variant`, `id` (the object), `pool`, `gpu_class`, `image` (the exact reference that deployment runs:
 the variant's, else the class image, else the model's), `nodes`, `replicas` {min, max, ready}, `status`,
-`in_flight`, `capacity`, `admitting` and `startable` (null when not measured); never the private spec or environment.
-**Pre-send fallback (api 0.11.183, jobs 0.1.35).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
-walk its declared targets before sending: the resolved variant first, then the deployment's other variants in priority
-order and, with `regions: true` and no region named by the caller, the model's other deployments in declared order
-that the API reaches, at most 1 + `max_switches` targets. Each target but the last is probed for `cold_wait_s`
+`in_flight`, `in_flight_age_s`, `capacity`, `admitting` and `startable` (null when not measured or stale); never the private spec or environment.
+**Pre-send fallback (api 0.11.184, jobs 0.1.35).** `routing.fallback = {max_switches, cold_wait_s, regions}` lets a call
+walk its declared targets before sending: the resolved variant first, then the other declared targets (the
+deployment's other variants and, with `regions: true` and no region named by the caller, the model's other deployments
+that the API reaches) in the operator's class order: `gpu.classes` (preferred first) ranks each target by the class of
+its pool, declared order within one class, a pool of no declared class last (api 0.11.184; the platform ranks nothing
+by price or science: the order is the one the operator declared), at most 1 + `max_switches` targets. Each target but the last is probed for `cold_wait_s`
 (5-3600 s); one that is not ready, with nothing sent to it, is left for the next; the last gets what is left of the
 call's budget; the one inference request goes to the target that answered (synchronous calls in the API, asynchronous
 calls in the caller Job, which records the chosen target in its capture as `out/target.json`). A refusal (401/403)

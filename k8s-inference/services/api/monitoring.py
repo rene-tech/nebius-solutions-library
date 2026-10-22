@@ -231,10 +231,12 @@ def _startups(
     return rows[:50]
 
 
-def instant(query: str, region: str, timeout: float = 4.0) -> float | None:
-    """One instant PromQL query, synchronous (the endpoint target resolver runs in request threads): the first
-    sample's value, None when the region's Prometheus cannot be reached, answers an error or has no sample. Never a
-    guess: a reader treats None as unknown."""
+def instant(query: str, region: str, timeout: float = 4.0) -> tuple[float, float] | None:
+    """One instant PromQL query, synchronous (the endpoint target resolver runs in request threads): (the first
+    sample's value, its age in seconds: now minus the sample's own timestamp), None when the region's Prometheus
+    cannot be reached, answers an error or has no sample. Never a guess: a reader treats None as unknown and judges
+    the age itself (a windowed gauge such as Knative's stable concurrency is an estimate over its window, and a
+    sample older than its scrape cadence says nothing about now)."""
     try:
         base, headers, verify = target(PROMETHEUS_URL, region)
         with httpx.Client(timeout=timeout, verify=verify) as client:
@@ -244,7 +246,10 @@ def instant(query: str, region: str, timeout: float = 4.0) -> float | None:
             if data.get("status") != "success":
                 return None
             result = (data.get("data") or {}).get("result") or []
-            return float(result[0]["value"][1]) if result else None
+            if not result:
+                return None
+            ts, value = result[0]["value"]
+            return float(value), max(0.0, time.time() - float(ts))
     except (HTTPException, httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
         return None
 

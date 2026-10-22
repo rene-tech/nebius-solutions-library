@@ -134,7 +134,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.183", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.184", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -568,10 +568,13 @@ def _variant_for(m: dict, inp, cluster: str) -> dict:
 
 
 def _call_targets(m: dict, cluster: str, inp, region_given: bool) -> list[tuple[str, dict]]:
-    """The ordered (cluster, variant) targets of one call (docs/API.md "Variants", api 0.11.182): the resolved variant
-    of the chosen deployment first; with `routing.fallback`, the deployment's other variants in priority order, then
-    (`fallback.regions`, and only when the caller named no region) the variants of the model's other deployments in
-    declared order that this API reaches; at most 1 + `max_switches` entries. Without `routing.fallback`: one target."""
+    """The ordered (cluster, variant) targets of one call (docs/API.md "Variants", api 0.11.182/184): the resolved
+    variant of the chosen deployment first; with `routing.fallback`, the other declared targets (the deployment's other
+    variants and, with `fallback.regions` and no region named by the caller, the variants of the model's other
+    deployments that this API reaches) in the operator's class order: `gpu.classes` (preferred first) ranks each
+    target by the class of its pool, declared order (variants, then deployments) within one class, a pool of no
+    declared class last; at most 1 + `max_switches` entries. Serverless ranks nothing itself (no price, no science):
+    the order is the operator's. Without `routing.fallback`: one target."""
     first = _variant_for(m, inp, cluster)
     fb = (m.get("routing") or {}).get("fallback")
     out = [(cluster, first)]
@@ -583,6 +586,10 @@ def _call_targets(m: dict, cluster: str, inp, region_given: bool) -> list[tuple[
             if _cluster_id_of(cid) == _cluster_id_of(cluster) or kube.cluster_region(cid) not in kube.regions():
                 continue
             rest += [(cid, v) for v in models.variants(m, cid)]
+    rank = {c: i for i, c in enumerate(jobs.gpu_classes(m))}
+    rest.sort(
+        key=lambda t: rank.get(kube.pool_entry(_cluster_id_of(t[0]), t[1].get("pool")).get("gpu_class"), len(rank))
+    )
     return out + rest[: int(fb.get("max_switches") or 0)]
 
 
@@ -612,6 +619,9 @@ def _target_urls(
     return host + probe, host + m["endpoint_path"], headers
 
 
+METRIC_STALE_S = 120.0  # a concurrency sample older than this (two scrape intervals) is unknown, never "free"
+
+
 def _target_state(m: dict, v: dict, cluster: str) -> dict:
     """The live admission state of one endpoint target (a variant on a cluster), from existing state only, unknown
     published as None (never a guess): `replicas_ready` (endpoint_status); for a target with a ready replica,
@@ -638,19 +648,29 @@ def _target_state(m: dict, v: dict, cluster: str) -> dict:
         "admitting": None,
         "startable": None,
         "in_flight": None,
+        "in_flight_age_s": None,
         "capacity": None,
     }
     if ready is None or st.get("status") == "unavailable":
         return out
     if int(ready) > 0:
         limit = _replica_concurrency(m, v, region)
-        in_flight = monitoring.instant(
+        # Knative's stable concurrency: the autoscaler's estimate over its stable window (60 s by default), scraped
+        # periodically; an estimate, never the instantaneous admitted count. A sample older than METRIC_STALE_S is
+        # unknown; a fresh one makes `admitting` a windowed judgement (below capacity on average over the window),
+        # never a promise that the next request is admitted: the gateway's own concurrency and queue enforcement
+        # stay authoritative (Root's note, 2026-10-22 19:35Z)
+        sample = monitoring.instant(
             "sum(kn_revision_concurrency_stable{"
             f'k8s_namespace_name="{m["namespace"]}",kn_service_name="{v["object"]}-predictor"'
             "})",
             region,
         )
+        in_flight, age = sample if sample else (None, None)
+        if age is not None and age > METRIC_STALE_S:
+            in_flight = None
         out["in_flight"] = in_flight
+        out["in_flight_age_s"] = round(age, 1) if age is not None else None
         out["capacity"] = int(ready) * limit if limit else None
         out["admitting"] = (
             (in_flight < out["capacity"]) if (out["capacity"] is not None and in_flight is not None) else None
@@ -725,6 +745,7 @@ def _target_public(m: dict, cluster: str, v: dict, live: bool) -> dict:
             "admitting": None,
             "startable": None,
             "in_flight": None,
+            "in_flight_age_s": None,
             "capacity": None,
         }
     )
@@ -740,6 +761,7 @@ def _target_public(m: dict, cluster: str, v: dict, live: bool) -> dict:
         "replicas": {"min": v.get("min"), "max": v.get("max"), "ready": st["replicas_ready"]},
         "status": st["status"],
         "in_flight": st["in_flight"],
+        "in_flight_age_s": st["in_flight_age_s"],
         "capacity": st["capacity"],
         "admitting": st["admitting"],
         "startable": st["startable"],

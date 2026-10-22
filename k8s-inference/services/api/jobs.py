@@ -821,30 +821,39 @@ def _multinode(
     ib = interconnect == "required"
     main = next(c for c in pod["containers"] if c["name"] == "main")
     uploader = next(c for c in pod["containers"] if c["name"] == "uploader")
-    # placement: whole nodes of the model's classes; InfiniBand pools only when required (preferred = soft). The
-    # the local-NVMe term of `scratch: local-nvme` and the shared-filesystem term (build_run) are kept; the single-node
-    # class affinity is replaced.
-    classes = gpu_classes(model)
-    kept = [
-        t
-        for t in (
-            ((pod.get("affinity") or {}).get("nodeAffinity") or {}).get(
-                "requiredDuringSchedulingIgnoredDuringExecution"
+    # placement: whole nodes, InfiniBand pools only when required (preferred = soft), WITHIN the pools build_run already
+    # chose (its pool term: the chosen class's pools for a per-class image, else the run's class list, narrowed by the
+    # per-node fit): every rank runs the same image on the same class, so the gang's pool set is only ever narrowed
+    # here, never widened to the model's other classes (api 0.11.184; until then the model's whole class list replaced
+    # it and a widened per-class-image model could land ranks on another class's pool). The local-NVMe and
+    # shared-filesystem terms are kept as they are.
+    existing = (
+        (
+            (
+                ((pod.get("affinity") or {}).get("nodeAffinity") or {}).get(
+                    "requiredDuringSchedulingIgnoredDuringExecution"
+                )
             )
             or {}
         )
         .get("nodeSelectorTerms", [{}])[0]
         .get("matchExpressions", [])
-        if t.get("key")
-        in (f"{LABEL}/local-nvme", f"{LABEL}/shared-fs")  # the placement needs survive the class rewrite
-    ]
+    )
+    kept = [t for t in existing if t.get("key") in (f"{LABEL}/local-nvme", f"{LABEL}/shared-fs")]
+    chosen = next((t["values"] for t in existing if t.get("key") == f"{LABEL}/pool"), None)
+    classes = (placement or {}).get("classes") or gpu_classes(model)
     pools: list[str] = []
     if classes and gpus:
-        pools = kube.class_pools(classes, gpus_per_node=gpus, interconnect="infiniband" if ib else None)
+        pools = [
+            p
+            for p in kube.class_pools(classes, gpus_per_node=gpus, interconnect="infiniband" if ib else None)
+            if chosen is None or p in chosen
+        ]
         if not pools and kube.fleet()["pools"]:
             raise HTTPException(
                 400,
                 f"no {'InfiniBand ' if ib else ''}pool with {gpus}-GPU nodes for classes {classes} in the fleet"
+                + (f" among the fitting pools {chosen}" if chosen else "")
                 + (
                     " (multi-node runs need the fabric: pass interconnect: none to run NCCL over TCP on purpose)"
                     if ib

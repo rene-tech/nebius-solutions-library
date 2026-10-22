@@ -205,3 +205,73 @@ def test_a_preferred_class_absent_from_the_allowed_clusters_is_skipped_at_submis
     assert main["image"] == "registry.serverless2.local/nebius/md:1.0-l40s"
     assert j["metadata"]["labels"]["serverless2.nebius/gpu-class"] == "l40s"
     assert j["metadata"]["annotations"]["serverless2.nebius/image"] == "registry.serverless2.local/nebius/md:1.0-l40s"
+
+
+MULTINODE_DOC = {
+    "pools": {
+        "north-l40s-8x": {
+            "region": "north",
+            "pool": "l40s-ib-8x",
+            "gpu_class": "l40s",
+            "gpus_per_node": 8,
+            "interconnect": "infiniband",
+            "usd_per_gpu_hour": 1.5,
+        },
+        "north-h100-8x": {
+            "region": "north",
+            "pool": "h100-ib-8x",
+            "gpu_class": "h100",
+            "gpus_per_node": 8,
+            "interconnect": "infiniband",
+            "usd_per_gpu_hour": 2.0,
+        },
+    },
+    "clusters": {"north": {"region": "eu-north1"}},
+    "tenants": {},
+}
+
+
+def test_a_multi_node_run_keeps_the_chosen_class_for_every_rank(monkeypatch):
+    """api 0.11.184: a JobSet's pool affinity stays within the pools build_run chose for the class the ranks are
+    rendered for (per-class images), narrowed to whole InfiniBand nodes; it is never widened to the model's other
+    classes (until 0.11.183 the model's whole class list replaced it, so a two-class model with an L40S image could put
+    ranks on H100 nodes). Every rank pod carries the chosen class label the attempts project as `gpu_class`."""
+    monkeypatch.setattr(kube, "fleet", lambda: MULTINODE_DOC)
+    m = copy.deepcopy(catalog.get("batch-example-tuned"))
+    m["gpu"] = {"count": 8, "classes": ["l40s", "h100"]}
+    m["gpu_classes"] = ["l40s", "h100"]
+    m["job"] = {**m["job"], "nodes": 2, "gpu": 8, "images": {"l40s": "reg/x:l40s", "h100": "reg/x:h100"}}
+    for cls, pool in (("l40s", "l40s-ib-8x"), ("h100", "h100-ib-8x")):
+        pl = {"regions": ["north"], "classes": [cls]}
+        js = jobs.build_run("op-mn", m, P, "demo", None, None, None, None, None, {}, "h", placement=pl, gpu_class=cls)
+        tmpl = js["spec"]["replicatedJobs"][0]["template"]["spec"]["template"]
+        pod = tmpl["spec"]
+        terms = pod["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"][
+            0
+        ]["matchExpressions"]
+        assert next(c for c in pod["containers"] if c["name"] == "main")["image"].endswith(f"reg/x:{cls}")
+        assert [t for t in terms if t["key"] == f"{LABEL}/pool"] == [
+            {"key": f"{LABEL}/pool", "operator": "In", "values": [pool]}
+        ]
+        assert tmpl["metadata"]["labels"][f"{LABEL}/gpu-class"] == cls
+    # a class without a whole-node InfiniBand pool: refused, never silently widened to the other class
+    with pytest.raises(HTTPException) as e:
+        doc = copy.deepcopy(MULTINODE_DOC)
+        doc["pools"]["north-l40s-8x"]["interconnect"] = "none"
+        monkeypatch.setattr(kube, "fleet", lambda: doc)
+        jobs.build_run(
+            "op-mn2",
+            m,
+            P,
+            "demo",
+            None,
+            None,
+            None,
+            None,
+            None,
+            {},
+            "h",
+            placement={"regions": ["north"], "classes": ["l40s"]},
+            gpu_class="l40s",
+        )
+    assert e.value.status_code == 400 and "no InfiniBand pool" in e.value.detail and "['l40s']" in e.value.detail

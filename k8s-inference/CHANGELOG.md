@@ -4,7 +4,28 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.183, jobs 0.1.35, dispatcher 0.2.17 (0.11.182 / jobs 0.1.34 = the same cut before two shellcheck findings; built, never applied)
+## api 0.11.184, jobs 0.1.35, dispatcher 0.2.17 (0.11.182/183 = earlier cuts of the same; built, never applied)
+
+- Multi-node runs keep the chosen class for every rank: the JobSet's pool affinity stays within the pools `build_run`
+  chose (the chosen class's pools for a per-class image, narrowed by the per-node fit), only further narrowed to whole
+  InfiniBand nodes; until 0.11.183 the model's whole class list replaced it, so a two-class model with an L40S image
+  could place ranks on H100 nodes (placement worker, 2026-10-22 19:39Z). Every rank pod carries the chosen class label
+  the attempts project as `gpu_class`.
+- `resources_by_class` on endpoints: the envelope per GPU class is overlaid on each variant for the class of its pool
+  (same keys and overlay as a run's, `render.class_resources`; an omitted class keeps the base `resources`; the map
+  reaches no object), and registration renders every variant's pod as it will be applied and refuses one that fits no
+  node of its pool (400 `impossible shape`, naming the variant; queue-proxy's request counted on Knative pods; the
+  shared filesystem required when the weights mount it). Existing entries are untouched until their next PUT.
+- Pre-send fallback order is the operator's class order: after the resolved target, the other declared targets rank by
+  `gpu.classes` (preferred first) for the class of their pool, declared order within a class, a pool of no declared
+  class last; a region-major walk could pick an H100 in the home region before a cheaper declared RTX elsewhere
+  (Root, 19:48Z). Serverless ranks nothing by price or science.
+
+- Target state semantics sharpened (Root's 19:35Z note): `in_flight` is Knative's stable concurrency, a windowed
+  estimate (60 s) scraped periodically, never the instantaneous admitted count; its sample age is published
+  (`in_flight_age_s`) and a sample older than 120 s is unknown. `admitting` therefore means "below capacity on average
+  over the window", never a promise that the next request is admitted: the gateway's concurrency and queue enforcement
+  stay authoritative, and `routing.default: capacity` is a preference between declared targets, not a scheduler.
 
 - Bounded pre-send fallback across an endpoint's declared targets (docs/API.md "Variants"): `routing.fallback =
   {max_switches (0-7, default 1), cold_wait_s (5-3600, default 120), regions (false)}`. A call's targets are the

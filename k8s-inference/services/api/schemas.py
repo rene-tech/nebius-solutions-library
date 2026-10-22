@@ -582,9 +582,12 @@ class ModelTarget(BaseModel):
     nodes: int | None = None
     replicas: dict[str, int | None] | None = None
     status: str | None = None
-    in_flight: float | None = None  # Knative's stable concurrency of the revision; None = not measured
+    in_flight: float | None = (
+        None  # Knative's stable concurrency: a windowed estimate (60 s); None = not measured or stale
+    )
+    in_flight_age_s: float | None = None  # age of that sample; older than 120 s counts as unknown
     capacity: int | None = None  # ready replicas x the replica's concurrency limit; None = no limit or unknown
-    admitting: bool | None = None  # in_flight < capacity; None = unknown
+    admitting: bool | None = None  # in_flight (windowed) < capacity; None = unknown; never a promise of admission
     startable: bool | None = None  # cold target: free GPUs on its pool or room for a node; None = unknown
     """One deployment of an endpoint: unknown is null, never a guess."""
 

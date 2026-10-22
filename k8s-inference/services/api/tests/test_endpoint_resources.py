@@ -2,6 +2,9 @@
 catalog projection (models.to_entry) and the native renderer (render_endpoint): request = limit unless both are given;
 the defaults (4 CPU, 16Gi, no ephemeral storage) are unchanged and nothing is rendered without them."""
 
+import pytest
+from fastapi import HTTPException
+
 import catalog
 import kube
 import models
@@ -105,3 +108,54 @@ def test_requests_below_limits_project_and_render_as_declared():
     v = {"resources": {"gpu": 1, "cpu": "24", "memory": "128Gi", "cpuRequest": "8", "memoryRequest": "64Gi"}}
     res = render_endpoint._resources(v)
     assert res["requests"]["cpu"] == "8" and res["limits"]["cpu"] == "24" and res["limits"]["memory"] == "128Gi"
+
+
+def test_the_envelope_per_class_renders_per_variant_and_must_fit_its_pool(monkeypatch):
+    """api 0.11.184: an endpoint's `resources_by_class` is overlaid per variant for the GPU class of the variant's pool
+    (the same keys and overlay as a run's); an omitted class keeps the base `resources`; the map reaches no object;
+    and every variant's rendered pod (plus Knative's queue-proxy request) must fit one node of its pool at
+    registration: 400 `impossible shape` names the variant, nothing is shrunk."""
+    import json
+
+    from test_resources_by_class import DOC
+
+    monkeypatch.setattr(kube, "fleet", lambda: DOC)
+    spec = {
+        **SPEC,
+        "gpu": {"count": 1, "classes": ["l40s", "h100"]},
+        "resources": {"cpu": "8", "memory": "96Gi"},
+        "resources_by_class": {"l40s": {"memory": "48Gi", "cpu_limit": "10"}},
+        "deployments": {
+            "eu-north1": {
+                "variants": [{"name": "big", "pool": "h100-reserved-1x"}, {"name": "cheap", "pool": "l40s-ondemand-1x"}]
+            }
+        },
+    }
+    e = models.to_entry(spec)
+    assert e["runtime"]["resourcesByClass"] == {"l40s": {"memory": "48Gi", "cpuLimit": "10"}}
+    by, docs = {}, []
+    for v in models.variants(e, "north"):
+        for d in render_endpoint.render(e, "north", "models.example", "ib", v):
+            docs.append(d)
+            if d["kind"] == "InferenceService":
+                by[v["name"]] = d["spec"]["predictor"]["containers"][0]["resources"]
+    assert (
+        by["big"]["requests"] == {"nvidia.com/gpu": "1", "cpu": "8", "memory": "96Gi"}
+        and by["big"]["limits"]["cpu"] == "8"
+    )
+    assert by["cheap"]["requests"] == {"nvidia.com/gpu": "1", "cpu": "8", "memory": "48Gi"}
+    assert by["cheap"]["limits"] == {"nvidia.com/gpu": "1", "cpu": "10", "memory": "48Gi"}
+    assert "resourcesByClass" not in json.dumps(docs)
+    # omitted: equivalent to today, the base envelope on every variant
+    e2 = models.to_entry({**spec, "resources": {"cpu": "8", "memory": "48Gi"}, "resources_by_class": None})
+    assert "resourcesByClass" not in e2["runtime"]
+    for v in models.variants(e2, "north"):
+        isvc = next(
+            d for d in render_endpoint.render(e2, "north", "models.example", "ib", v) if d["kind"] == "InferenceService"
+        )
+        assert isvc["spec"]["predictor"]["containers"][0]["resources"]["requests"]["memory"] == "48Gi"
+    # the 96Gi envelope on the L40S pool (57Gi nodes) without an overlay: refused at registration, naming the variant
+    with pytest.raises(HTTPException) as x:
+        models.to_entry({**spec, "resources_by_class": None})
+    assert x.value.status_code == 400 and "impossible shape: variant cheap on north/l40s-ondemand-1x" in x.value.detail
+    assert "48Gi" not in x.value.detail and "resources_by_class" in x.value.detail

@@ -354,9 +354,11 @@ def _measurements(monkeypatch, in_flight: dict, limit: int | None, pools: dict):
     (monitoring.instant), the replica's concurrency limit (the deployment), the pool's free GPUs and node room."""
     import monitoring
 
-    monkeypatch.setattr(
-        monitoring, "instant", lambda q, region, timeout=4.0: next((v for k, v in in_flight.items() if k in q), None)
-    )
+    def instant(q, region, timeout=4.0):  # a value means a fresh sample (10 s old); a tuple carries its own age
+        v = next((v for k, v in in_flight.items() if k in q), None)
+        return None if v is None else (v if isinstance(v, tuple) else (v, 10.0))
+
+    monkeypatch.setattr(monitoring, "instant", instant)
     monkeypatch.setattr(appmod, "_replica_concurrency", lambda m, v, region: limit)
     monkeypatch.setattr(kube, "pool_usage", lambda cluster, pool: pools.get(pool, {"nodes_ready": None}))
 
@@ -379,8 +381,13 @@ def test_capacity_routing_takes_only_known_admitting_or_startable_targets(monkey
         "admitting": False,
         "startable": None,
         "in_flight": 8.0,
+        "in_flight_age_s": 10.0,
         "capacity": 8,
     }
+    # a stale sample (older than METRIC_STALE_S) is unknown, never "free": admitting None, the age still reported
+    _measurements(monkeypatch, {"chat-predictor": (8.0, 400.0), "chat-cheap-predictor": 1.0}, 4, pools)
+    st = appmod._target_state(e, models.variants(e, "hub")[0], "hub")
+    assert st["admitting"] is None and st["in_flight"] is None and st["in_flight_age_s"] == 400.0
     # no concurrency limit (rps scaling) or no measurement: admitting is UNKNOWN (None), never true
     _measurements(monkeypatch, {"chat-predictor": 8.0, "chat-cheap-predictor": 1.0}, None, pools)
     assert appmod._target_state(e, models.variants(e, "hub")[0], "hub")["admitting"] is None
@@ -586,12 +593,25 @@ def test_fallback_validation_and_cross_deployment_candidates(monkeypatch):
     }
     monkeypatch.setattr(kube, "regions", lambda: ["eu-north1", "eu-south1"])
     monkeypatch.setattr(kube, "cluster_region", lambda c: {"hub": "eu-north1", "south": "eu-south1"}.get(c, c))
+    south = {"region": "south", "pool": "rtx6000-ondemand-1x", "gpu_class": "rtx-pro-6000", "gpus_per_node": 1}
+    monkeypatch.setattr(
+        kube, "fleet", lambda: {**VARIANT_FLEET, "pools": {**VARIANT_FLEET["pools"], "south-rtx": south}}
+    )
     cands = appmod._call_targets(e2, "hub", {}, region_given=False)
+    # api 0.11.184: after the resolved target the walk follows the operator's class order (gpu.classes: h100, l40s;
+    # the RTX pool's class is undeclared -> last), declared order within a class; never region-major
     assert [(c, v["object"]) for c, v in cands] == [
         ("hub", "chat"),
         ("hub", "chat-spot"),
         ("hub", "chat-cheap"),
         ("south", "chat"),  # a deployment's first variant keeps the model's own object name on its cluster
+    ]
+    e3 = {**e2, "gpu_classes": ["h100", "rtx-pro-6000", "l40s"]}  # the operator ranks RTX above L40S: RTX south first
+    assert [(c, v["object"]) for c, v in appmod._call_targets(e3, "hub", {}, region_given=False)] == [
+        ("hub", "chat"),
+        ("hub", "chat-spot"),
+        ("south", "chat"),
+        ("hub", "chat-cheap"),
     ]
     assert [v["object"] for _, v in appmod._call_targets(e2, "hub", {}, region_given=True)] == [
         "chat",
