@@ -996,45 +996,48 @@ def _multinode(
     }
     if timeout_s:
         job_spec["activeDeadlineSeconds"] = timeout_s
-    delivery_pending = bool((fz := r.get("finalize")) and fz.get("onExitCodes"))
-    if delivery_pending:
-        # "compute done, delivery pending" (docs/JOBS.md "Finalization by the application") ends the gang at once and
-        # for good: the indexed Job fails on that exit of main (podFailurePolicy, reason PodFailurePolicy) and the
-        # JobSet's failure policy turns THAT reason into FailJobSet instead of its Recreate restart, so the completed
-        # science is never recomputed by a whole-gang restart; re-delivery is the model's CPU finalizer (:export)
-        job_spec["podFailurePolicy"] = {
-            "rules": [
-                {
-                    "action": "FailJob",
-                    "onExitCodes": {"containerName": "main", "operator": "In", "values": list(fz["onExitCodes"])},
-                }
-            ]
-        }
+    # the indexed Job's pod failure rules, in order (api 0.11.194, docs/JOBS.md "Multi-node runs"): first the
+    # finalizer's "compute done, delivery pending" exit (docs/JOBS.md "Finalization by the application"), then a
+    # disruption (DisruptionTarget: drain, preemption, node loss) COUNTED (with backoffLimit 0 the indexed Job fails
+    # and the JobSet recreates the gang; Ignore would replace one index while the other ranks idle), then any exit of
+    # main other than 0, 137 and 143 is TERMINAL. A terminal exit fails the Job with reason PodFailurePolicy and the
+    # JobSet's `terminal` rule ends the gang (FailJobSet) instead of its Recreate restart: a finished or spent
+    # computation is never replayed (op-5ea6831076e6fa0a: three restarts of an exhausted budget, 2026-10-22). 137 and
+    # 143 (a kill, a SIGTERM: infrastructure) and a pod lost without an exit of main fail the Job by its backoffLimit
+    # (reason BackoffLimitExceeded) and the gang restarts from its last checkpoint, at most maxRestarts times.
+    rules = []
+    if (fz := r.get("finalize")) and fz.get("onExitCodes"):
+        rules.append(
+            {
+                "action": "FailJob",
+                "onExitCodes": {"containerName": "main", "operator": "In", "values": list(fz["onExitCodes"])},
+            }
+        )
+    rules += [
+        {"action": "Count", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]},
+        {"action": "FailJob", "onExitCodes": {"containerName": "main", "operator": "NotIn", "values": [0, 137, 143]}},
+    ]
+    job_spec["podFailurePolicy"] = {"rules": rules}
     meta["annotations"][f"{LABEL}/nodes"] = str(nodes)
     meta["annotations"][f"{LABEL}/interconnect"] = interconnect
     meta["annotations"][f"{LABEL}/checkpoints"] = checkpoints
     spec = {
         "network": {"enableDNSHostnames": True, "subdomain": name, "publishNotReadyAddresses": True},
         "successPolicy": {"operator": "All", "targetReplicatedJobs": ["workers"]},
-        # any pod loss (preemption, node loss, application failure) fails the indexed Job (backoffLimit 0) and the
-        # JobSet recreates every pod: ranks restart together from the last checkpoint
+        # an infrastructure loss (preemption, node loss, a killed rank) fails the indexed Job (backoffLimit 0) and the
+        # JobSet recreates every pod: ranks restart together from the last checkpoint; a terminal exit (the pod
+        # failure rules above, reason PodFailurePolicy) ends the gang instead
         "failurePolicy": {
             "maxRestarts": JOB_BACKOFF_LIMIT,
             "restartStrategy": "Recreate",
-            **(
+            "rules": [
                 {
-                    "rules": [
-                        {
-                            "name": "delivery_pending",  # JobSet rule names: [A-Za-z0-9_:]+ only (webhook)
-                            "action": "FailJobSet",
-                            "onJobFailureReasons": ["PodFailurePolicy"],
-                            "targetReplicatedJobs": ["workers"],
-                        }
-                    ]
+                    "name": "terminal",  # JobSet rule names: [A-Za-z0-9_:]+ only (webhook)
+                    "action": "FailJobSet",
+                    "onJobFailureReasons": ["PodFailurePolicy"],
+                    "targetReplicatedJobs": ["workers"],
                 }
-                if delivery_pending
-                else {}
-            ),
+            ],
         },
         "ttlSecondsAfterFinished": JOB_TTL_S,
         "replicatedJobs": [

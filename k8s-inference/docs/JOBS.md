@@ -265,8 +265,13 @@ whole node (`gpu` = the preset's GPU count, so the pod takes the node), the same
   `local` (default) keeps them under `/work`, gone with the pod. Rank 0 uploads `/work`
   (minus `in/` and `checkpoint/`) and `STATUS.json`; every rank uploads its attempt record
   (`UPLOAD_SCOPE=rank0`).
-- **Failure, preemption, resume.** The indexed Job has `backoffLimit: 0`; any pod loss (spot
-  preemption, node loss, an application exit) fails it and the JobSet's
+- **Failure, preemption, resume.** The indexed Job has `backoffLimit: 0` and classifies a pod
+  failure once (api 0.11.194): an exit of `main` other than 0, 137 and 143 is the application's
+  verdict (a spent budget, a wrong input, the finalizer's delivery-pending exit): the Job fails with
+  reason `PodFailurePolicy` and the JobSet's `terminal` rule ends the run (`FailJobSet`), never a
+  restart that replays a finished or spent computation. An infrastructure loss (spot preemption,
+  node drain, node loss: `DisruptionTarget`, counted; a kill or SIGTERM of `main`: 137/143; a pod
+  gone without an exit) fails the Job by its backoffLimit and the JobSet's
   `failurePolicy: {maxRestarts: 3, restartStrategy: Recreate}` recreates every pod, so the ranks
   restart together from the last checkpoint (restart-all; a partial rank set cannot continue an
   NCCL job). After `maxRestarts` the run is FAILED. `:cancel` suspends the JobSet (pods get
@@ -349,7 +354,7 @@ docs.nebius.com/kubernetes/gpu/clusters, docs.nebius.com/kubernetes/node-groups/
 | **NIC claims are ExactCount: 8 per node (4 on GB300).** | Kueue's DRA accounting (0.20) supports ExactCount claims only; the tenant's `ib-8` / `ib-4` templates hand the pod every NIC of its node (the pod has the whole node anyway). |
 | **Size of one run**: `nodes <= MULTINODE_MAX_NODES` (64 by default), a node group holds at most 100 nodes, and a fabric has limited GPU capacity. | Nebius publishes no fixed maximum per GPU cluster; "each fabric has limited GPU capacity" and a GPU cluster is bounded by the quota of its project and the free capacity of its fabric. A 16-node run needs 16 nodes in ONE pool (one node group, one GPU cluster): size `max_nodes` (and the reservation) accordingly; the Kueue quota of the pool is NICs per node x `max_nodes`. |
 | **Spot preemption = restart-all** from the last checkpoint; after `maxRestarts` (3) the run is FAILED. | A partial rank set cannot continue an NCCL job. Use `checkpoints: shared` so the restart (and a `:resume`) continues from the shared filesystem; `local` checkpoints die with the pod. Reserved or on-demand pools avoid the restarts. |
-| **"Delivery pending" never restarts the gang.** A class with `finalize.on_exit_codes` installs that exit as a `podFailurePolicy` FailJob on the indexed Job and a JobSet failure-policy rule (`FailJobSet` on reason `PodFailurePolicy`): the completed science is never recomputed; `:export` runs the model's finalizer as ONE CPU pod on the shared checkpoint claim ("Finalization by the application"). Needs `checkpoints: shared`; a gang without it retains nothing to deliver (409). A managed-I/O gang has no re-export (rank 0's `/work` is node-local). | JobSet ≥ v0.6 (`failurePolicy.rules`). |
+| **"Delivery pending" never restarts the gang.** A class with `finalize.on_exit_codes` installs that exit as the FIRST `podFailurePolicy` FailJob rule on the indexed Job; the JobSet's `terminal` rule (`FailJobSet` on reason `PodFailurePolicy`) ends the gang for it as for any other terminal exit (api 0.11.194): the completed science is never recomputed; `:export` runs the model's finalizer as ONE CPU pod on the shared checkpoint claim ("Finalization by the application"). Needs `checkpoints: shared`; a gang without it retains nothing to deliver (409). A managed-I/O gang has no re-export (rank 0's `/work` is node-local). | JobSet ≥ v0.6 (`failurePolicy.rules`). |
 | **One run per node at a time.** | A pod requests the preset's GPU count, CPU and memory; nothing else fits on the node while it runs. |
 | **Which platforms and regions have fabrics** | H100 (`gpu-h100-sxm`): eu-north1 `fabric-2/3/4/6`. H200 (`gpu-h200-sxm`): eu-north1 `fabric-7`, eu-west1 `fabric-5`, eu-north2 `eu-north2-a`. B200 (`gpu-b200-sxm`, `8gpu-160vcpu-1792gb`): us-central1, me-west1. B300 (`gpu-b300-sxm`, `8gpu-192vcpu-2768gb`): uk-south1, eu-west2, us-north1. GB300 (`gpu-gb300`): 4 NICs per node. No fabric: L40S, RTX PRO 6000, every 1-GPU preset. The fabric names change as Nebius adds capacity: `infiniband_fabric` in `terraform.tfvars` is the one place to update (docs.nebius.com/compute/clusters/gpu). |
 

@@ -797,6 +797,16 @@ def complete(
             # holds a live reservation. No customer or admin key is stored or forwarded; the call goes through the
             # model's gateway (never LiteLLM's pass-through, which would need a key). Application I/O: the request
             # from the binding, one durable POST, the capture delivered to the platform-owned destination
+            # the same target resolution as an ordinary call (api._call_target, 0.11.194): the variant the model's
+            # routing selects within the child's region (fixed at admission: its binding copy and result_ref live
+            # there), the convergence fence on every candidate, the identities recorded on the Job, the bounded
+            # pre-send fallback for the caller. A fence refusal keeps the intent pending (the sweep asks again)
+            try:
+                _cluster, _v, _rollout, target = api._call_target(
+                    {**cm, "litellm_route": None}, api._deployment_cluster(cm, row["region"]), {}, True, ex, child
+                )
+            except api.RolloutPending as e:
+                return _ambiguous(row, f"target: {e.detail}", synchronous)
             cjob, secret = jobs.build_async(
                 child,
                 {**cm, "litellm_route": None},
@@ -812,6 +822,7 @@ def complete(
                 key_hash=key_hash,
                 admitted=admitted,
                 priority=priority,  # the parent's (its key's at submission): a child never outranks its run
+                target=target,
             )
             a = cjob["metadata"]["annotations"]
             a[f"{LABEL}/child-of"] = row["parent"]

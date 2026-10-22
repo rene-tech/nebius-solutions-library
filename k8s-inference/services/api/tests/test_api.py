@@ -2193,10 +2193,8 @@ def test_multinode_run_builds_a_jobset(client, monkeypatch):
     assert js["kind"] == "JobSet" and js["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] == "prefer-h100"
     spec = js["spec"]
     assert spec["network"]["enableDNSHostnames"] is True and spec["network"]["subdomain"] == op["id"]
-    assert (
-        spec["failurePolicy"] == {"maxRestarts": 3, "restartStrategy": "Recreate"}
-        and spec["successPolicy"]["operator"] == "All"
-    )
+    assert spec["failurePolicy"]["maxRestarts"] == 3 and spec["failurePolicy"]["restartStrategy"] == "Recreate"
+    assert spec["failurePolicy"]["rules"][0]["name"] == "terminal" and spec["successPolicy"]["operator"] == "All"
     rj = spec["replicatedJobs"][0]["template"]["spec"]
     assert (rj["parallelism"], rj["completions"], rj["completionMode"], rj["backoffLimit"]) == (2, 2, "Indexed", 0)
     pod = _jobset_pod(js)

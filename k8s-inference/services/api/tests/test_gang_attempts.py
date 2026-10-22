@@ -118,24 +118,83 @@ def test_a_delivery_pending_exit_fails_the_jobset_without_a_gang_restart(monkeyp
     js = _render(monkeypatch, FINALIZE)
     assert js["kind"] == "JobSet"
     spec = js["spec"]["replicatedJobs"][0]["template"]["spec"]
-    assert spec["podFailurePolicy"] == {
-        "rules": [{"action": "FailJob", "onExitCodes": {"containerName": "main", "operator": "In", "values": [75]}}]
-    }
+    assert spec["podFailurePolicy"]["rules"][0] == {
+        "action": "FailJob",
+        "onExitCodes": {"containerName": "main", "operator": "In", "values": [75]},
+    }  # the finalizer's exit stays the FIRST rule (api 0.11.194 added the generic rules after it)
     assert spec["backoffLimit"] == 0 and spec["template"]["spec"]["restartPolicy"] == "Never"
     fp = js["spec"]["failurePolicy"]
-    assert fp["restartStrategy"] == "Recreate" and fp["maxRestarts"] >= 1  # every other loss: the gang restarts
+    assert fp["restartStrategy"] == "Recreate" and fp["maxRestarts"] >= 1  # an infrastructure loss: the gang restarts
     assert fp["rules"] == [
         {
-            "name": "delivery_pending",
+            "name": "terminal",
             "action": "FailJobSet",
             "onJobFailureReasons": ["PodFailurePolicy"],
             "targetReplicatedJobs": ["workers"],
         }
     ]
-    # without a finalizer: no policy, the gang restart as before
+    assert _gang_outcome(js, exit_code=75) == "terminal"
+    # without a finalizer: no delivery rule, the generic classification alone
     plain = _render(monkeypatch)
-    assert "podFailurePolicy" not in plain["spec"]["replicatedJobs"][0]["template"]["spec"]
-    assert "rules" not in plain["spec"]["failurePolicy"]
+    assert plain["spec"]["replicatedJobs"][0]["template"]["spec"]["podFailurePolicy"]["rules"][0]["action"] == "Count"
+    assert plain["spec"]["failurePolicy"]["rules"] == fp["rules"]
+    assert _gang_outcome(plain, exit_code=75) == "terminal"  # an unknown non-zero exit: an application verdict
+
+
+def _gang_outcome(js: dict, exit_code: int | None = None, disruption: bool = False) -> str:
+    """What the rendered policies do with ONE failed pod of the gang's indexed Job, evaluated as the Job controller
+    (the first matching podFailurePolicy rule, else the failure counts against backoffLimit 0) and JobSet (its rules
+    by the Job's failure reason, else restartStrategy) do: `terminal` (FailJobSet, no restart), `restart` (Recreate
+    of every rank, bounded by maxRestarts) or `replace` (Ignore: one index replaced while the other ranks wait)."""
+    spec = js["spec"]["replicatedJobs"][0]["template"]["spec"]
+    assert spec["backoffLimit"] == 0
+    action = None
+    for rule in spec["podFailurePolicy"]["rules"]:
+        if rule.get("onPodConditions"):
+            if disruption and any(c["type"] == "DisruptionTarget" for c in rule["onPodConditions"]):
+                action = rule["action"]
+                break
+            continue
+        oc = rule["onExitCodes"]
+        if exit_code is not None and ((exit_code in oc["values"]) == (oc["operator"] == "In")):
+            action = rule["action"]
+            break
+    if action == "Ignore":
+        return "replace"
+    reason = "PodFailurePolicy" if action == "FailJob" else "BackoffLimitExceeded"
+    for rule in js["spec"]["failurePolicy"].get("rules") or []:
+        if reason in rule["onJobFailureReasons"]:
+            return "terminal" if rule["action"] == "FailJobSet" else rule["action"]
+    return "restart" if js["spec"]["failurePolicy"]["restartStrategy"] == "Recreate" else "terminal"
+
+
+def test_a_terminal_application_exit_never_replays_the_gang_and_an_interruption_may(monkeypatch):
+    """api 0.11.194 (Root + placement, 2026-10-22): the gang's indexed Job classifies a pod failure once. An exit of
+    main other than 0, 137 and 143 is the application's verdict (a spent budget, a wrong input, the finalizer's
+    delivery-pending exit): the Job fails with reason PodFailurePolicy and the JobSet ends (FailJobSet), never a
+    Recreate that replays the finished or spent computation (op-5ea6831076e6fa0a: three restarts of an exhausted
+    300 s budget, each exit 1 within 36 s). A kill (137), a SIGTERM (143), a disruption (drain, preemption, node loss:
+    counted, never ignored, so no rank is stranded) or a pod lost without an exit of main restarts every rank from
+    the last checkpoint, at most maxRestarts times. The finalizer's codes stay first and are never widened."""
+    from config import JOB_BACKOFF_LIMIT
+
+    for js in (_render(monkeypatch, FINALIZE), _render(monkeypatch)):
+        for code in (1, 2, 75, 3, 255):
+            assert _gang_outcome(js, exit_code=code) == "terminal", code
+        for code in (137, 143):
+            assert _gang_outcome(js, exit_code=code) == "restart", code
+        assert _gang_outcome(js, disruption=True) == "restart"
+        assert _gang_outcome(js) == "restart"  # no exit of main at all (the node went away)
+        rules = js["spec"]["replicatedJobs"][0]["template"]["spec"]["podFailurePolicy"]["rules"]
+        assert all(r["action"] != "Ignore" for r in rules)
+        assert js["spec"]["failurePolicy"]["maxRestarts"] == JOB_BACKOFF_LIMIT
+    js = _render(monkeypatch, FINALIZE)
+    rules = js["spec"]["replicatedJobs"][0]["template"]["spec"]["podFailurePolicy"]["rules"]
+    assert rules[0]["onExitCodes"]["values"] == [75] and rules[-1]["onExitCodes"] == {
+        "containerName": "main",
+        "operator": "NotIn",
+        "values": [0, 137, 143],
+    }
 
 
 def test_the_rdma_memlock_contract_is_stated_not_granted(monkeypatch):

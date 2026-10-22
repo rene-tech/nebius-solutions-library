@@ -4,6 +4,25 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.194, jobs 0.1.36, dispatcher 0.2.17
+
+- A multi-node run's indexed Job classifies a pod failure once (docs/JOBS.md "Multi-node runs"): an exit of `main`
+  other than 0, 137 and 143 is terminal (`podFailurePolicy` FailJob, the JobSet's `terminal` rule `FailJobSet`), never
+  a Recreate that replays a finished or spent computation (gromacs-mpi op-5ea6831076e6fa0a: three gang restarts of
+  an exhausted 300 s budget, each exit 1 within 36 s); a disruption (`DisruptionTarget`) is counted, not ignored (an
+  ignored one replaced one index while the other ranks waited); 137/143 and a pod lost without an exit restart the
+  gang as before, at most `maxRestarts` times. The finalizer's `finalize.on_exit_codes` rule stays first and is not
+  widened. The JobSet rule is rendered on every gang now (it was `delivery_pending`, on gangs with a finalizer only).
+  Single-node runs are unchanged (`backoffLimit: 3`, docs/JOBS.md "Retries"). Regression: exits 1/2/75/3/255 terminal,
+  137/143/disruption/no-exit restart, no Ignore rule, with and without a finalizer.
+- An endpoint child (`children.complete`) resolves its target through the same resolver as an ordinary asynchronous
+  call (`app._call_target`): the variant the model's routing selects within the child's region (fixed at admission),
+  the convergence fence on every candidate, the resolved identities recorded on the Job (`Operation.target`, its
+  `candidates`) and the ordered pre-send fallback list for the caller (`TARGETS`). Until now a child went to the base
+  deployment with no record (`target: null`, public-final-r1 lerobot-children-r1) and no fallback walk. The child's
+  owner, admission token, durable id and bound request are unchanged. Regression: parity of the child's record,
+  `TARGETS`, cold wait and URLs with the ordinary call of the same model under the same key.
+
 ## api 0.11.193, jobs 0.1.36, dispatcher 0.2.17 (0.11.191/192 = the same cut before review corrections; built, never applied)
 
 - `weights_by_class.<class>.path` is matched in full and must be normalised: no trailing newline (`fullmatch`), no empty

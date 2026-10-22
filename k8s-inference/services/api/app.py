@@ -140,7 +140,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.193", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.194", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -618,6 +618,49 @@ def _call_targets(m: dict, cluster: str, inp, region_given: bool) -> list[tuple[
     return [first] + rest[: int(fb.get("max_switches") or 0)]
 
 
+def _call_target(
+    m: dict, cluster: str, inp, region_given: bool, ex: dict | None, name: str
+) -> tuple[str, dict, dict | None, dict]:
+    """ONE asynchronous endpoint call's target: (cluster, variant, its rollout state, the `target` of
+    jobs.build_async). The resolved target first, then the declared fallbacks (`_call_targets`, routing.fallback);
+    the convergence fence (execution.require_converged) is judged on EVERY target that could receive the one request
+    (api 0.11.188): a candidate whose rollout is not converged is left out of the walk (an old runtime image never
+    serves by falling to it), the first that passes is the call's target; none passing = the first's refusal
+    (RolloutPending, 409, nothing created). The `target` carries the identities resolved NOW (exact image, class,
+    cluster; the candidates' too), immutable on the Job, and the ordered pre-send fallback list for the caller.
+    Shared by the ordinary call (invoke) and an endpoint child (children.complete, api 0.11.194: until then a child
+    went to the base deployment with no record and no walk)."""
+    candidates = _call_targets(m, cluster, inp, region_given)
+    rollouts: dict[tuple[str, str], dict | None] = {}  # keyed (cluster, object): one object name per deployment
+    refusal: RolloutPending | None = None
+    for cc, c in candidates:
+        try:
+            rollouts[(cc, c["object"])] = _rollout_fence(
+                m, kube.cluster_region(_cluster_id_of(cc)), ex, obj=c["object"]
+            )
+        except RolloutPending as e:
+            refusal = refusal or e
+    candidates = [(cc, c) for cc, c in candidates if (cc, c["object"]) in rollouts]
+    if not candidates:
+        raise refusal  # type: ignore[misc]  # every candidate refused: the first's reason
+    cluster, v = candidates[0]  # readiness, the one request, the recorded rollout
+    record = _target_record(m, cluster, v)
+    if len(candidates) > 1:
+        record["candidates"] = [_target_record(m, cc, c) for cc, c in candidates]
+    target = {
+        **v,
+        "record": record,
+        "candidates": [
+            {"id": c["object"], "ready_url": _gateway_urls(m, cc, c)[0], "url": _gateway_urls(m, cc, c)[1]}
+            for cc, c in candidates
+        ]
+        if len(candidates) > 1
+        else None,
+        "cold_wait_s": ((m.get("routing") or {}).get("fallback") or {}).get("cold_wait_s"),
+    }
+    return cluster, v, rollouts[(cluster, v["object"])], target
+
+
 def _target_urls(
     m: dict, cluster: str, v: dict, p: Principal, admission: str, via_gateway: bool = False
 ) -> tuple[str, str, dict]:
@@ -633,15 +676,24 @@ def _target_urls(
             else f"http://{v['object']}-predictor.{m['namespace']}.svc.cluster.local"
         )
         return host + probe, host + m["endpoint_path"], {}
-    if not models.endpoint_domain(region):
-        raise HTTPException(503, f"calls to {region} need its endpoint domain (ENDPOINT_DOMAINS)")
-    host = f"https://{models.endpoint_host(m, region, v['object'])}"
+    ready_url, url = _gateway_urls(m, cluster, v)
     headers = {
         "Authorization": f"Bearer {p.key}",
         ADMITTED_HEADER: _admitted_token(keys.key_hash(p.key), m["name"], admission),
         OPERATION_HEADER: admission,
     }
-    return host + probe, host + m["endpoint_path"], headers
+    return ready_url, url, headers
+
+
+def _gateway_urls(m: dict, cluster: str, v: dict) -> tuple[str, str]:
+    """(readiness URL, inference URL) of one target through its region's gateway (no credential: the caller Job
+    carries its own)."""
+    probe = m.get("health_path") or ("/v1/models" if m.get("protocol") == "openai" else "/")
+    region = kube.cluster_region(_cluster_id_of(cluster))
+    if not models.endpoint_domain(region):
+        raise HTTPException(503, f"calls to {region} need its endpoint domain (ENDPOINT_DOMAINS)")
+    host = f"https://{models.endpoint_host(m, region, v['object'])}"
+    return host + probe, host + m["endpoint_path"]
 
 
 METRIC_STALE_S = 120.0  # a concurrency sample older than this (two scrape intervals) is unknown, never "free"
@@ -1422,29 +1474,8 @@ def _invoke_job(
         raise HTTPException(400, f"this API runs jobs in {region} only, which allowed_clusters {allowed} excludes")
     if mode == "async":  # the caller Job runs in the resolved target's region, through that region's gateway
         cluster = _deployment_cluster(m, region)  # the deployment this region reaches (invoke validated the choice)
-        candidates = _call_targets(m, cluster, req.input, bool(req.region))  # the resolved target first, then the
-        # declared fallbacks (routing.fallback). The convergence fence (execution.require_converged) is judged on
-        # EVERY target that could receive the one request (api 0.11.188): a candidate whose rollout is not converged
-        # is left out of the walk (an old runtime image never serves by falling to it), the first that passes is
-        # the call's target; none passing = the first's refusal (409, nothing created). Until 0.11.187 only the
-        # resolved first target was fenced, so its rollout blocked a converged alternative (Root, 20:49Z).
-        rollouts: dict[
-            tuple[str, str], dict | None
-        ] = {}  # keyed (cluster, object): the same object name exists per deployment
-        refusal: RolloutPending | None = None
-        for cc, c in candidates:
-            try:
-                rollouts[(cc, c["object"])] = _rollout_fence(
-                    m, kube.cluster_region(_cluster_id_of(cc)), ex, obj=c["object"]
-                )
-            except RolloutPending as e:
-                refusal = refusal or e
-        candidates = [(cc, c) for cc, c in candidates if (cc, c["object"]) in rollouts]
-        if not candidates:
-            raise refusal  # type: ignore[misc]  # every candidate refused: the first's reason
-        cluster, target_v = candidates[0]  # readiness, the one request, the recorded rollout
+        cluster, target_v, rollout, target = _call_target(m, cluster, req.input, bool(req.region), ex, name)
         region = kube.cluster_region(_cluster_id_of(cluster))  # with fallback.regions the first may be elsewhere
-        rollout = rollouts[(cluster, target_v["object"])]
         application = bool(ex and ex.get("io_mode") == "application")
         output_prefix = (
             "" if application else f"s3://{artifacts.storage(p.namespace, region)['bucket']}/operations/{name}"
@@ -1464,28 +1495,7 @@ def _invoke_job(
             key_hash=billing.key_hash(p.key),
             admitted=_admitted_token(keys.key_hash(p.key), m["name"], name) if cfg.ROUTER_KEY else None,
             priority=keys.effective_priority(p.info, req.priority),
-            target={
-                **target_v,
-                "record": {  # the identities resolved NOW (exact image, class, cluster), immutable on the Job
-                    **_target_record(m, cluster, target_v),
-                    **(
-                        {"candidates": [_target_record(m, cc, c) for cc, c in candidates]}
-                        if len(candidates) > 1
-                        else {}
-                    ),
-                },
-                "candidates": [
-                    {
-                        "id": c["object"],
-                        "ready_url": _target_urls(m, cc, c, p, name, via_gateway=True)[0],
-                        "url": _target_urls(m, cc, c, p, name, via_gateway=True)[1],
-                    }
-                    for cc, c in candidates
-                ]
-                if len(candidates) > 1
-                else None,
-                "cold_wait_s": ((m.get("routing") or {}).get("fallback") or {}).get("cold_wait_s"),
-            },
+            target=target,
         )
     elif FLEET_MANAGER:
         _guard_run_input(m, req, p, REGION, ex)

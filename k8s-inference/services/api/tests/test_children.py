@@ -1656,3 +1656,64 @@ def test_a_child_and_its_export_retry_carry_the_parents_priority(rig, monkeypatc
     retry = fake.jobs[(NS, r.json()["id"])]
     assert retry["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] == "bulk-backfill"
     assert retry["spec"]["template"]["spec"]["priorityClassName"] == "serverless2-batch"
+
+
+def test_a_child_resolves_its_target_exactly_as_an_ordinary_call(rig, monkeypatch):
+    """api 0.11.194 (Root, public-final-r1 lerobot-children-r1: children SUCCEEDED with `target: null` and no fallback
+    walk): a child goes through the same resolver as an ordinary asynchronous call (app._call_target): the variant the
+    model's routing selects within the child's region, the recorded identities of the target and of every candidate,
+    the ordered pre-send fallback list for the caller. Parity is asserted against the ordinary call of the same model
+    under the same key; the child's owner, admission token and durable id are unchanged."""
+    c, fake, op, identity = rig
+    spec = {
+        **ENDPOINT,
+        "gpu": {"count": 1, "classes": ["h100", "l40s"]},
+        "images": {"l40s": "example.org/cosmos:1-l40s"},
+        "deployments": {
+            "eu-north1": {
+                "variants": [
+                    {"name": "fast", "pool": "h100-spot-1x", "min": 0, "max": 2},
+                    {"name": "cheap", "pool": "l40s-ondemand-1x", "min": 0, "max": 2},
+                ]
+            }
+        },
+        "routing": {"default": "priority", "fallback": {"max_switches": 1, "cold_wait_s": 7}},
+    }
+    fake.entries["cosmos-nano"] = _entry(spec)
+    monkeypatch.setattr(models_mod, "endpoint_domain", lambda region: "203.0.113.10.sslip.io")
+    monkeypatch.setattr(
+        kube,
+        "endpoint_status",
+        lambda name, ns, region="eu-north1", nodes=1: {"status": "scaled-to-zero", "replicas_ready": 0},
+    )
+    # the ordinary asynchronous call of the same model by the same key
+    r = c.post("/v1/models/cosmos-nano:invoke", json={"mode": "async", "input": {}}, headers=H)
+    assert r.status_code == 202, r.text
+    ordinary = fake.jobs[(NS, r.json()["id"])]
+    oenv, _ = _env(ordinary)
+    orec = json.loads(ordinary["metadata"]["annotations"][f"{LABEL}/target"])
+    assert [x["id"] for x in orec["candidates"]] == [x["id"] for x in json.loads(oenv["TARGETS"])]
+    assert len(orec["candidates"]) == 2 and orec["candidates"][1]["gpu_class"] == "l40s"
+    # the child: the same record, the same ordered targets, the same cold wait
+    r = _post(c, op, "u1", {"prompt": "x"})
+    assert r.status_code == 201, r.text
+    child = r.json()["child"]
+    cjob = fake.jobs[(NS, child)]
+    cenv, _ = _env(cjob)
+    crec = json.loads(cjob["metadata"]["annotations"][f"{LABEL}/target"])
+    assert crec == orec
+    assert json.loads(cenv["TARGETS"]) == json.loads(oenv["TARGETS"])
+    assert cenv["TARGET_COLD_WAIT"] == oenv["TARGET_COLD_WAIT"] == "7"
+    assert cenv["URL"] == oenv["URL"] and cenv["READY_URL"] == oenv["READY_URL"]
+    assert cenv["IO_MODE"] == "application" and "REQUEST_BODY" not in cenv  # still the bound request, one POST
+    # unchanged: the child's identity, owner and admission credential
+    ann = cjob["metadata"]["annotations"]
+    assert child == children.child_id(op, "u1") and ann[f"{LABEL}/child-of"] == op
+    assert ann.get(f"{LABEL}/owner") == fake.jobs[(NS, op)]["metadata"]["annotations"].get(f"{LABEL}/owner")
+    admitted = api._admitted_token(keys.key_hash("sk-good"), "cosmos-nano", child)
+    assert fake.secrets[(NS, f"{child}-auth")]["stringData"]["admitted"] == admitted
+    assert "sk-good" not in json.dumps([cjob, fake.secrets[(NS, f"{child}-auth")]])
+    # the readback shows the planned target (never null) and its candidates, observed False until the caller reports
+    got = c.get(f"/v1/operations/{child}", headers=H).json()
+    assert got["target"]["id"] == orec["id"] and got["target"]["observed"] is False
+    assert got["target"]["candidates"] == [x["id"] for x in orec["candidates"]]
