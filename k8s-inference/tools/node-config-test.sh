@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# charts/platform/files/node-config.sh (the containerd registry configuration of a node, docs/IMAGES.md): a fresh node
-# gets the bootstrap mirror file, the memlock drop-in and ONE restart; a node that already serves the mirrors with
-# unlimited memlock sees no write and no restart; a Spegel-written mirror file is never overwritten; a served runtime
-# with a missing memlock drop-in is restarted once without touching the mirror file. Host commands are stubs; nothing
-# leaves the temp directory. Run by tools/check.sh.
+# charts/platform/files/node-config.sh (the containerd registry configuration of a node, docs/IMAGES.md): the script
+# OWNS every per-registry mirror file (the logical host and the public registries): peer NodePort first, then the
+# cache, valid TOML with unique tables, replaced atomically and only when different (idempotent; a second run writes
+# nothing); a fresh node also gets the memlock drop-in and ONE containerd restart; a node that already serves the
+# mirrors with unlimited memlock sees no restart however its mirror files change (a hosts-file change alone never
+# restarts containerd). Host commands are stubs; nothing leaves the temp directory. Run by tools/check.sh.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 S="$ROOT/charts/platform/files/node-config.sh"
@@ -37,84 +38,112 @@ cat > "$B/containerd" <<'EOF'
 #!/bin/bash
 echo "containerd $*" >> "$CALLS"; exit 0
 EOF
-# RACE=<file>: a `mkdir` that, after the real mkdir of the mirror directory, drops Spegel's peers file there — the file
-# "appears" between the script's absence check and its publication
-cat > "$B/mkdir" <<'EOF'
-#!/bin/bash
-/bin/mkdir "$@"
-if [ -n "${RACE:-}" ] && [[ "${@: -1}" == */certs.d/registry.serverless2.local ]]; then
-  printf 'server = "http://127.0.0.1:30500"\n\n[host."http://10.0.0.9:5000"]\n  capabilities = ["pull", "resolve"]\n' > "$RACE"
-fi
-EOF
 chmod +x "$B"/*
-node() { # <dir>: a host filesystem; memlock=<0|1> hosts=<none|spegel|boot> served=<0|1>
+node() { # <dir> <memlock 0|1> <hosts none|spegel|boot|dup> <limit bounded|unlimited>: a host filesystem
   local d=$1 memlock=$2 hosts=$3 limit=$4
+  local h="$d/etc/containerd/certs.d/registry.serverless2.local"
   mkdir -p "$d/etc/containerd/certs.d" "$d/etc/systemd/system/containerd.service.d" "$d/proc/4242"
   printf 'version = 2\n[plugins."io.containerd.grpc.v1.cri".containerd]\n  snapshotter = "overlayfs"\n' > "$d/etc/containerd/config.toml"
   [ "$memlock" = 1 ] && printf '[Service]\nLimitMEMLOCK=infinity\n' > "$d/etc/systemd/system/containerd.service.d/serverless2-memlock.conf"
   if [ "$limit" = unlimited ]; then printf 'Max locked memory         unlimited            unlimited            bytes\n' > "$d/proc/4242/limits"; else printf 'Max locked memory         8388608              8388608              bytes\n' > "$d/proc/4242/limits"; fi
   case "$hosts" in
-    spegel) mkdir -p "$d/etc/containerd/certs.d/registry.serverless2.local"; printf 'server = "http://127.0.0.1:30500"\n\n[host."http://10.0.0.7:5000"]\n  capabilities = ["pull", "resolve"]\n\n[host."http://127.0.0.1:30500"]\n  capabilities = ["pull", "resolve"]\n' > "$d/etc/containerd/certs.d/registry.serverless2.local/hosts.toml";;
-    boot) mkdir -p "$d/etc/containerd/certs.d/registry.serverless2.local"; printf 'server = "http://127.0.0.1:30500"\n' > "$d/etc/containerd/certs.d/registry.serverless2.local/hosts.toml";;
+    spegel) mkdir -p "$h"; printf "server = 'https://registry.serverless2.local'\n\n[host.'http://10.0.0.7:30020']\ncapabilities = ['pull', 'resolve']\ndial_timeout = '200ms'\n\n[host.'http://10.0.0.7:30021']\ncapabilities = ['pull', 'resolve']\ndial_timeout = '200ms'\n\n[host.'http://127.0.0.1:30500']\ncapabilities = ['pull', 'resolve']\ndial_timeout = '200ms'\n" > "$h/hosts.toml";;
+    boot) mkdir -p "$h"; printf 'server = "http://127.0.0.1:30500"\n\n[host."http://127.0.0.1:30500"]\n  capabilities = ["pull", "resolve"]\n' > "$h/hosts.toml";;
+    dup) mkdir -p "$h"; printf "server = 'https://registry.serverless2.local'\n\n[host.'http://10.0.0.7:30021']\ncapabilities = ['pull', 'resolve']\n\n[host.'http://10.0.0.7:30021']\ncapabilities = ['pull', 'resolve']\n" > "$h/hosts.toml";;
   esac
   return 0
 }
-run() { # <dir> <pull ok> [race file] -> stdout; CALLS reset
+run() { # <dir> <pull ok> -> stdout; CALLS reset
   CALLS="$T/calls.txt"; : > "$CALLS"
-  PATH="$B:$PATH" CALLS="$CALLS" PULL_OK="$2" RACE="${3:-}" HOST_ROOT="$1" IMAGES_HOST=registry.serverless2.local CACHE_NODE_PORT=30500 SETTLE_S=0 sh "$S"
+  PATH="$B:$PATH" CALLS="$CALLS" PULL_OK="$2" HOST_ROOT="$1" IMAGES_HOST=registry.serverless2.local CACHE_NODE_PORT=30500 NODE_IP=10.0.0.7 PEER_NODE_PORT=30021 \
+    MIRRORS="docker.io=https://registry-1.docker.io ghcr.io=https://ghcr.io" SETTLE_S=0 sh "$S"
 }
+valid() { # <hosts.toml> <server>: parses as TOML, exactly the two hosts in order (peer first, then the cache), the server
+  python3 - "$1" "$2" <<'PY'
+import sys, tomllib
+f, server = sys.argv[1], sys.argv[2]
+raw = open(f, "rb").read()
+d = tomllib.loads(raw.decode())  # raises on a duplicate table
+hosts = list(d.get("host", {}))
+assert d["server"] == server, (f, d["server"])
+assert hosts == ["http://10.0.0.7:30021", "http://127.0.0.1:30500"], (f, hosts)
+assert all(d["host"][h]["capabilities"] == ["pull", "resolve"] and d["host"][h]["dial_timeout"] == "200ms" for h in hosts)
+PY
+}
+files() { echo "$1/etc/containerd/certs.d/registry.serverless2.local/hosts.toml https://registry.serverless2.local $1/etc/containerd/certs.d/docker.io/hosts.toml https://registry-1.docker.io $1/etc/containerd/certs.d/ghcr.io/hosts.toml https://ghcr.io"; }
+check_files() { set -- $(files "$1"); while [ $# -gt 0 ]; do [ -f "$1" ] || fail "missing mirror file $1"; valid "$1" "$2" || fail "invalid mirror file $1"; shift 2; done; }
 
-# 1. a fresh CPU node (nothing written yet, memlock bounded, mirrors not served): bootstrap file + memlock + ONE restart
+# 1. a fresh CPU node (nothing written yet, memlock bounded, mirrors not served): the three mirror files, memlock + ONE restart
 node "$T/fresh" 0 none bounded
 out=$(run "$T/fresh" 0) || fail "fresh node: script failed: $out"
-H="$T/fresh/etc/containerd/certs.d/registry.serverless2.local/hosts.toml"
-[ -f "$H" ] || fail "fresh node: no bootstrap mirror file"
-grep -q 'server = "http://127.0.0.1:30500"' "$H" || fail "fresh node: the mirror file does not point at the loopback cache"
+check_files "$T/fresh"
 [ -f "$T/fresh/etc/systemd/system/containerd.service.d/serverless2-memlock.conf" ] || fail "fresh node: no memlock drop-in"
 [ -f "$T/fresh/etc/containerd/conf.d/serverless2-registry.toml" ] || fail "fresh node: no containerd drop-in"
 grep -q '^imports = \["/etc/containerd/conf.d/\*.toml"\]' "$T/fresh/etc/containerd/config.toml" || fail "fresh node: imports line not added"
 [ "$(grep -c 'systemctl restart containerd' "$T/calls.txt")" = 1 ] || fail "fresh node: expected exactly one containerd restart, got: $(cat "$T/calls.txt")"
 grep -q 'systemctl daemon-reload' "$T/calls.txt" || fail "fresh node: no daemon-reload for the memlock drop-in"
 [ -f "$T/fresh/etc/containerd/certs.d/.serverless2-containerd-restarted" ] || fail "fresh node: no restart marker"
-echo "   ok fresh node: bootstrap mirror file, memlock drop-in, drop-in, one restart, marker"
+[ "$(echo "$out" | grep -c 'mirror file for .* written')" = 3 ] || fail "fresh node: expected three written files: $out"
+echo "   ok fresh node: three valid mirror files (peer first, then the cache), memlock drop-in, drop-in, one restart, marker"
 
-# 2. an initialized node (Spegel wrote the mirror file with its peers, memlock unlimited, mirrors served): nothing written, no restart
+# 2. idempotence: the same node again (its restarted containerd now has unlimited memlock): no file changes, no systemd call
+printf 'Max locked memory         unlimited            unlimited            bytes\n' > "$T/fresh/proc/4242/limits"
+shas=$(cd "$T/fresh" && find etc/containerd/certs.d -name hosts.toml -exec sha256sum {} + | sort)
+out=$(run "$T/fresh" 1) || fail "second run: script failed: $out"
+[ "$(cd "$T/fresh" && find etc/containerd/certs.d -name hosts.toml -exec sha256sum {} + | sort)" = "$shas" ] || fail "second run: a mirror file changed"
+[ "$(echo "$out" | grep -c 'mirror file for .*: unchanged')" = 3 ] || fail "second run: not reported unchanged: $out"
+grep -q 'systemctl' "$T/calls.txt" && fail "second run: systemd was called: $(cat "$T/calls.txt")"
+for leftover in "$T"/fresh/etc/containerd/certs.d/*/hosts.toml.node-config.*; do [ -e "$leftover" ] && fail "a temporary was left behind: $leftover"; done
+echo "   ok idempotent: second run writes nothing, no restart, no temporaries"
+
+# 3. a served node with Spegel's old 3-entry file (dead hostPort first), memlock unlimited: the file is REPLACED by the
+#    owned one, its original kept once, no drop-in, no restart (a hosts-file change alone never restarts containerd)
 node "$T/served" 1 spegel unlimited
-before=$(sha256sum "$T/served/etc/containerd/certs.d/registry.serverless2.local/hosts.toml")
 cfg_before=$(sha256sum "$T/served/etc/containerd/config.toml")
 out=$(run "$T/served" 1) || fail "served node: script failed: $out"
-[ "$(sha256sum "$T/served/etc/containerd/certs.d/registry.serverless2.local/hosts.toml")" = "$before" ] || fail "served node: Spegel's mirror file was rewritten"
+check_files "$T/served"
+H="$T/served/etc/containerd/certs.d/registry.serverless2.local/hosts.toml"
+[ -f "$H.pre-node-config" ] && grep -q '30020' "$H.pre-node-config" || fail "served node: the replaced file was not kept"
 [ "$(sha256sum "$T/served/etc/containerd/config.toml")" = "$cfg_before" ] || fail "served node: config.toml was touched"
 [ ! -f "$T/served/etc/containerd/conf.d/serverless2-registry.toml" ] || fail "served node: a drop-in was written although the runtime serves the mirrors"
-grep -q 'systemctl' "$T/calls.txt" && fail "served node: systemd was called: $(cat "$T/calls.txt")"
+grep -q 'systemctl' "$T/calls.txt" && fail "served node: systemd was called for a hosts-file change: $(cat "$T/calls.txt")"
 [ -f "$T/served/etc/containerd/certs.d/.serverless2-containerd-restarted" ] || fail "served node: the marker must be set once the probe passes"
-echo "   ok served node: Spegel's mirror file untouched, no drop-in, no restart"
+pre=$(sha256sum "$H.pre-node-config"); run "$T/served" 1 > /dev/null; [ "$(sha256sum "$H.pre-node-config")" = "$pre" ] || fail "served node: the kept original was overwritten on a later run"
+echo "   ok served node: old Spegel file replaced (original kept once), no drop-in, no restart"
 
-# 3. Spegel's file present, memlock unlimited, but the runtime does not serve the mirrors yet: drop-in + one restart, the mirror file untouched
+# 4. a served runtime whose memlock drop-in is missing: drop-in + one restart; the mirror files are owned as well
 node "$T/stale" 1 spegel unlimited
-before=$(sha256sum "$T/stale/etc/containerd/certs.d/registry.serverless2.local/hosts.toml")
 out=$(run "$T/stale" 0) || fail "stale runtime: script failed: $out"
-[ "$(sha256sum "$T/stale/etc/containerd/certs.d/registry.serverless2.local/hosts.toml")" = "$before" ] || fail "stale runtime: Spegel's mirror file was rewritten"
+check_files "$T/stale"
 [ "$(grep -c 'systemctl restart containerd' "$T/calls.txt")" = 1 ] || fail "stale runtime: expected one restart"
 grep -q 'systemctl daemon-reload' "$T/calls.txt" && fail "stale runtime: daemon-reload without a memlock change"
-echo "   ok stale runtime: one restart with the drop-in, Spegel's mirror file untouched, no daemon-reload"
+echo "   ok stale runtime: one restart with the drop-in, mirror files owned"
 
-# 4. a node booted with the cloud-init fragment (bootstrap file + memlock present, mirrors served): a no-op
+# 5. reboot: a node booted with the cloud-init fragment (bootstrap file: the cache only, memlock present, mirrors served):
+#    the bootstrap file is completed to the owned one, nothing else happens
 node "$T/booted" 1 boot unlimited
-before=$(sha256sum "$T/booted/etc/containerd/certs.d/registry.serverless2.local/hosts.toml")
 out=$(run "$T/booted" 1) || fail "booted node: script failed: $out"
-[ "$(sha256sum "$T/booted/etc/containerd/certs.d/registry.serverless2.local/hosts.toml")" = "$before" ] || fail "booted node: the boot-time mirror file was rewritten"
+check_files "$T/booted"
 grep -q 'systemctl' "$T/calls.txt" && fail "booted node: systemd was called"
-echo "   ok booted node (cloud-init fragment): no-op"
-# 5. the race: Spegel writes its peers file between the absence check and the publication: Spegel's file wins
-# byte-for-byte, no temporary is left behind, the rest of the run (memlock, served runtime) is unaffected
-node "$T/race" 1 none unlimited
-RH="$T/race/etc/containerd/certs.d/registry.serverless2.local/hosts.toml"
-out=$(run "$T/race" 1 "$RH") || fail "race: script failed: $out"
-grep -q '10.0.0.9:5000' "$RH" || fail "race: Spegel's peers file was clobbered by the bootstrap file"
-[ "$(grep -c 'server = ' "$RH")" = 1 ] || fail "race: the mirror file is not Spegel's alone"
-for leftover in "$T"/race/etc/containerd/certs.d/registry.serverless2.local/hosts.toml.bootstrap.*; do [ -e "$leftover" ] && fail "race: a temporary was left behind: $leftover"; done
-echo "$out" | grep -q 'appeared meanwhile' || fail "race: the script did not report the lost race: $out"
-grep -q 'systemctl' "$T/calls.txt" && fail "race: systemd was called on a served node"
-echo "   ok race: Spegel's file published in between wins, no temporary left, no restart"
+echo "   ok booted node (cloud-init fragment): bootstrap file completed, no restart"
+
+# 6. a configured node (marker from an earlier run, memlock unlimited) whose probe pull FAILS right after the hosts-file
+#    rewrite (a transient, or the mirrors themselves): retried, reported, NEVER a containerd restart; the files are owned
+node "$T/transient" 1 spegel unlimited
+touch "$T/transient/etc/containerd/certs.d/.serverless2-containerd-restarted"
+out=$(PROBE_RETRIES=2 run "$T/transient" 0) || fail "transient: script failed: $out"
+check_files "$T/transient"
+grep -q 'systemctl' "$T/calls.txt" && fail "transient: systemd was called on a configured node: $(cat "$T/calls.txt")"
+[ "$(grep -c 'crictl pull' "$T/calls.txt")" = 3 ] || fail "transient: expected the probe and two retries, got: $(grep -c 'crictl pull' "$T/calls.txt")"
+echo "$out" | grep -q 'still fails after 2 retries' || fail "transient: not reported: $out"
+[ ! -f "$T/transient/etc/containerd/conf.d/serverless2-registry.toml" ] || fail "transient: a drop-in was written"
+echo "   ok configured node + failing probe: retried, reported, no restart, files owned"
+
+# 7. a broken file (the same [host] table twice, which containerd rejects): replaced by a valid one, no restart
+node "$T/dup" 1 dup unlimited
+python3 -c 'import sys,tomllib; tomllib.loads(open(sys.argv[1]).read())' "$T/dup/etc/containerd/certs.d/registry.serverless2.local/hosts.toml" 2>/dev/null && fail "dup fixture is not a duplicate-table file"
+out=$(run "$T/dup" 1) || fail "dup: script failed: $out"
+check_files "$T/dup"
+grep -q 'systemctl' "$T/calls.txt" && fail "dup: systemd was called"
+echo "   ok duplicate-table file: replaced by a valid one, no restart"
 echo "node-config: all checks passed"

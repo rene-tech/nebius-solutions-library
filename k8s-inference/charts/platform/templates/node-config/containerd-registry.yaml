@@ -9,9 +9,10 @@
 # boot (`stack/modules/cluster`), so on a fresh GPU node this is a no-op; CPU (system) nodes get their configuration from
 # this DaemonSet alone (and, since 0.1.12, from the cloud-init fragment the batch pools share with the GPU pools, so this
 # is a no-op there too). A node that still lacks the mirror file for the logical host (created before that fragment) gets
-# a bootstrap one here, pointing at the cache on the node's loopback, and never over a file Spegel already wrote.
-# Running containers are unaffected (they belong to their shims); the kubelet reconnects. Spegel then writes
-# the per-registry hosts.toml files that this setting makes containerd read.
+# Running containers are unaffected (they belong to their shims); the kubelet reconnects. Since 2026-10-22 this
+# DaemonSet is the SOLE owner of the per-registry hosts.toml files containerd reads (Spegel's own writer is off: its
+# chart listed a never-programmed hostPort first, and a duplicate table made containerd reject the file): one peer
+# entry (the Spegel NodePort on the node's address), then the cache; a hosts-file change alone never restarts containerd.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -39,6 +40,12 @@ spec:
             - { name: HOST_ROOT, value: /host }
             - { name: IMAGES_HOST, value: {{ .Values.images.host | quote }} }
             - { name: CACHE_NODE_PORT, value: {{ .Values.images.cacheNodePort | default 30500 | quote }} }
+            # the mirror files this script owns (docs/IMAGES.md): the Spegel registry NodePort on this node first,
+            # then the cache; one file per public registry Spegel mirrors (images.mirrors: <dir> -> <upstream url>)
+            - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+            - { name: PEER_NODE_PORT, value: {{ .Values.images.peerNodePort | default 30021 | quote }} }
+            - name: MIRRORS
+              value: {{ $m := list }}{{ range $k, $v := (.Values.images.mirrors | default dict) }}{{ $m = append $m (printf "%s=%s" $k $v) }}{{ end }}{{ join " " $m | quote }}
           # the script is a chart file (charts/platform/files/node-config.sh, tested by tools/node-config-test.sh)
           command: [sh, -c]
           args:

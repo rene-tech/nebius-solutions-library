@@ -19,12 +19,11 @@ spegel:
   additionalMirrorTargets:
     - http://127.0.0.1:30500
   resolveTags: true
-  containerdMirrorAdd: true
-# NOTE (2026-10-22 21:20Z): `service.registry.hostPort: 30021` (= the NodePort, meant to replace the dead hostPort entry)
-# made chart 0.7.4 write the SAME `[host.'http://NODE_IP:30021']` table twice into hosts.toml; TOML forbids a duplicate
-# table, containerd rejected the file and pulls fell back to the unreachable logical host (every new pull on a rolled
-# node failed). Reverted to the chart default (hostPort 30020, dead but parseable, the state of the last 10 days) as
-# containment; the unique-target correction is a separate reviewed change (node-config owning hosts.toml).
+  containerdMirrorAdd: false
+# Spegel does NOT write containerd's hosts.toml files here (2026-10-22): its chart lists a never-programmed hostPort
+# first (Cilium kube-proxy replacement on mk8s programs no pod hostPort), and setting that hostPort to the NodePort made
+# it write the same [host] table twice, which containerd rejects. node-config (charts/platform/templates/node-config)
+# owns the files: the Spegel NodePort first, then the Zot cache. Spegel keeps mirroring and serving every registry below.
 resources:
   requests: { cpu: 50m, memory: 128Mi }
   limits: { memory: 256Mi }

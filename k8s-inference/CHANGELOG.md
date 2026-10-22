@@ -4,7 +4,29 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## fleet values: Spegel mirror targets NodePort first (clusters/common/values/spegel.yaml)
+## platform chart + fleet values: node-config owns containerd's mirror files (Spegel's writer off)
+
+- Incident 2026-10-22 21:11-21:35Z: `service.registry.hostPort: 30021` made Spegel 0.7.4 write the same `[host]` table
+  twice; containerd rejected the file and fell back to the unreachable logical host, so every new pull on a rolled node
+  failed (south all nodes, north 41 of 42) until in-place repair and the values revert. Both clusters are back on the
+  previous template.
+- Durable correction: `spegel.containerdMirrorAdd: false` (Spegel keeps mirroring and serving every registry, it just
+  writes no files) and node-config (`charts/platform/files/node-config.sh`) becomes the sole owner of every
+  per-registry hosts.toml: the logical host and each public registry Spegel mirrors (`images.mirrors`, from the
+  fleet's `images.upstreams`), one peer entry first (the Spegel NodePort on the node's address, `images.peerNodePort`),
+  then the Zot cache on the loopback; valid TOML with unique tables, written atomically and only when different (a
+  second run writes nothing; the first replaced file is kept once as `hosts.toml.pre-node-config`); a hosts-file
+  change alone never restarts containerd. The DaemonSet carries `NODE_IP` (status.hostIP), `PEER_NODE_PORT` and
+  `MIRRORS`. Tests (`tools/node-config-test.sh`, run by the gate): the generated files parse with tomllib with exactly
+  the two hosts in order, idempotence, the old Spegel file and a boot-time bootstrap are replaced, a duplicate-table
+  file is repaired, a served node sees no systemd call for a hosts-only change, the restart logic is unchanged.
+- A node that is already configured (restart marker + unlimited memlock on the running containerd) never restarts
+  containerd for a failing probe pull after the hosts-file rewrite: the probe is retried briefly and reported
+  (`PROBE_RETRIES`, default 3); a genuine bootstrap/config repair keeps its one restart. Regression: configured node +
+  failing pull -> files owned, retried, reported, no systemd call (Root, 2026-10-22 21:43Z).
+- The earlier entry below (hostPort = NodePort) is superseded and was reverted.
+
+## fleet values: Spegel mirror targets NodePort first (clusters/common/values/spegel.yaml) (REVERTED 21:27-21:34Z)
 
 - `service.registry.hostPort: 30021` (= the NodePort): Cilium's kube-proxy replacement on the fleet programs no pod
   hostPort, so the mirror file's first entry (NODE_IP:30020) refused every dial and containerd's blob re-open after a

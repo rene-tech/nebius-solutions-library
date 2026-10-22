@@ -2,10 +2,12 @@
 # node-config (charts/platform/templates/node-config, docs/IMAGES.md "The setting at boot"): run once per node by the
 # DaemonSet's init container against the host's filesystem (HOST_ROOT, /host) with the host's systemd through nsenter.
 # What it guarantees on a node, in this order, touching nothing that is already right:
-#   1. the bootstrap mirror file for the logical host (IMAGES_HOST -> the Zot NodePort on the node's loopback) when
-#      the node has NONE yet (a fresh node before Spegel ran): the first pulls of the logical host then go to the cache
-#      instead of falling back to DNS ("server misbehaving"); a file that exists (cloud-init's, or Spegel's with its
-#      peers) is NEVER rewritten here: Spegel owns it from its first run on;
+#   1. the per-registry mirror files (hosts.toml for the logical host and for every public registry Spegel mirrors):
+#      this script is their SOLE owner (Spegel's own writer is off, clusters/common/values/spegel.yaml): one peer entry
+#      first (the Spegel registry NodePort on this node's address), then the cache on the loopback; written atomically
+#      and only when the file differs (idempotent), replacing whatever is there (cloud-init's bootstrap, an old
+#      Spegel-written file, a broken one). A hosts-file change alone never restarts containerd: it re-reads certs.d
+#      per pull;
 #   2. the unlimited memlock on the containerd unit (a drop-in; a daemon-reload and one restart when it was missing);
 #   3. containerd serving the per-registry mirror files: decided on the RUNNING process by a probe pull through the
 #      logical host, never on a file; only when that fails is the drop-in written and containerd restarted once.
@@ -27,23 +29,20 @@ host_pid() { nsenter -t 1 -m -u -i -n -p -- pidof containerd | cut -d' ' -f1; }
 probe_pull() { chroot "$HOST_ROOT" crictl pull "$PROBE" > /dev/null 2>&1; }
 
 mkdir -p "$CERTS"
-# 1. the bootstrap mirror file, only when absent, published WITHOUT clobbering: a hard link from a uniquely named
-# temporary of this run (same filesystem) into the final name creates the file atomically and FAILS when a file exists
-# there — Spegel may have written its peers file between the absence check and this publication; whatever exists wins,
-# the temporary is removed. (A rename would silently replace it.)
-if [ ! -f "$HOSTS" ]; then
-  mkdir -p "$(dirname "$HOSTS")"
-  TMP="$HOSTS.bootstrap.$$"
-  printf 'server = "http://127.0.0.1:%s"\n\n[host."http://127.0.0.1:%s"]\n  capabilities = ["pull", "resolve"]\n' "$CACHE_NODE_PORT" "$CACHE_NODE_PORT" > "$TMP"
-  if ln "$TMP" "$HOSTS" 2>/dev/null; then
-    echo "bootstrap mirror file written for $IMAGES_HOST (the cache on 127.0.0.1:$CACHE_NODE_PORT; Spegel rewrites it with its peers)"
-  else
-    echo "mirror file for $IMAGES_HOST appeared meanwhile (Spegel): left as is"
-  fi
-  rm -f "$TMP"
-else
-  echo "mirror file for $IMAGES_HOST present: left as is"
-fi
+# 1. the mirror files, owned here. NODE_IP: the node's address (the DaemonSet's status.hostIP); PEER_NODE_PORT: the
+# Spegel registry NodePort; MIRRORS: "<dir>=<upstream url> ..." for the public registries (the logical host always).
+: "${NODE_IP:?NODE_IP is required}"
+PEER_NODE_PORT=${PEER_NODE_PORT:-30021}
+write_mirror() { # <dir> <server url>: the file this node must have; replaced only when it differs (atomic rename)
+  dir="$CERTS/$1"; f="$dir/hosts.toml"; tmp="$f.node-config.$$"
+  mkdir -p "$dir"
+  printf "server = '%s'\n\n[host.'http://%s:%s']\ncapabilities = ['pull', 'resolve']\ndial_timeout = '200ms'\n\n[host.'http://127.0.0.1:%s']\ncapabilities = ['pull', 'resolve']\ndial_timeout = '200ms'\n" "$2" "$NODE_IP" "$PEER_NODE_PORT" "$CACHE_NODE_PORT" > "$tmp"
+  if [ -f "$f" ] && cmp -s "$tmp" "$f"; then rm -f "$tmp"; echo "mirror file for $1: unchanged"; return 0; fi
+  [ -f "$f" ] && [ ! -f "$f.pre-node-config" ] && cp "$f" "$f.pre-node-config"   # the first replaced file, kept once
+  mv "$tmp" "$f" && echo "mirror file for $1 written (peer $NODE_IP:$PEER_NODE_PORT first, then the cache on 127.0.0.1:$CACHE_NODE_PORT)"
+}
+write_mirror "$IMAGES_HOST" "https://$IMAGES_HOST"
+for m in ${MIRRORS:-}; do write_mirror "${m%%=*}" "${m#*=}"; done
 # 2. memlock (docs/JOBS.md "Multi-node runs"): RDMA memory registration is bounded by RLIMIT_MEMLOCK (8 MiB on the node
 # image); an unlimited limit on the containerd unit lets every container register memory without CAP_IPC_LOCK
 NEED_RESTART=0
@@ -59,6 +58,14 @@ if [ -n "$cpid" ] && ! grep -q 'locked memory.*unlimited' "$HOST_ROOT/proc/$cpid
 # the cache). Yes + memlock unlimited: nothing to do
 if [ "$NEED_RESTART" = 0 ] && probe_pull; then
   [ -f "$MARK" ] || touch "$MARK"; echo "containerd serves the registry mirrors (probe pull ok) with unlimited memlock"; exit 0
+fi
+# A node that is already configured (the restart marker from an earlier run, memlock unlimited on the running process)
+# needs no restart for a hosts-file change: containerd re-reads certs.d per pull, and a probe that fails here is
+# transient (the cache or a peer busy, a pull in flight) or the mirror's own problem, never fixed by a restart. Retry
+# briefly and report; a genuine repair (no marker, bounded memlock, no drop-in) keeps its one restart below.
+if [ "$NEED_RESTART" = 0 ] && [ -f "$MARK" ]; then
+  n=0; while [ $n -lt "${PROBE_RETRIES:-3}" ]; do n=$((n + 1)); sleep "${SETTLE_S:-5}"; probe_pull && { echo "containerd serves the registry mirrors (probe pull ok after $n retries) with unlimited memlock"; exit 0; }; done
+  echo "!! configured node: the probe pull through $PROBE still fails after $n retries (the mirrors, not the runtime: no restart); the next rollout re-checks"; exit 0
 fi
 # Legacy repair: an earlier version appended the two tables to config.toml itself, which duplicates the cri.containerd
 # table and makes the next containerd start fail. Drop that trailing block.
