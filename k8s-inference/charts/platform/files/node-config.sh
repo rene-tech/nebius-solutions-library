@@ -21,7 +21,6 @@ CFG=$HOST_ROOT/etc/containerd/config.toml
 DROPIN=$HOST_ROOT/etc/containerd/conf.d/serverless2-registry.toml
 CERTS=$HOST_ROOT/etc/containerd/certs.d
 MARK=$CERTS/.serverless2-containerd-restarted
-HOSTS=$CERTS/$IMAGES_HOST/hosts.toml
 MEMLOCK=$HOST_ROOT/etc/systemd/system/containerd.service.d/serverless2-memlock.conf
 PROBE=$IMAGES_HOST/docker/library/busybox:1.36
 host_systemctl() { nsenter -t 1 -m -u -i -n -p -- systemctl "$@"; }
@@ -38,10 +37,11 @@ write_mirror() { # <dir> <server url>: the file this node must have; replaced on
   mkdir -p "$dir"
   printf "server = '%s'\n\n[host.'http://%s:%s']\ncapabilities = ['pull', 'resolve']\ndial_timeout = '200ms'\n\n[host.'http://127.0.0.1:%s']\ncapabilities = ['pull', 'resolve']\ndial_timeout = '200ms'\n" "$2" "$NODE_IP" "$PEER_NODE_PORT" "$CACHE_NODE_PORT" > "$tmp"
   if [ -f "$f" ] && cmp -s "$tmp" "$f"; then rm -f "$tmp"; echo "mirror file for $1: unchanged"; return 0; fi
-  [ -f "$f" ] && [ ! -f "$f.pre-node-config" ] && cp "$f" "$f.pre-node-config"   # the first replaced file, kept once
+  if [ -f "$f" ] && [ ! -f "$f.pre-node-config" ]; then cp "$f" "$f.pre-node-config"; fi   # the first replaced file, kept once
   mv "$tmp" "$f" && echo "mirror file for $1 written (peer $NODE_IP:$PEER_NODE_PORT first, then the cache on 127.0.0.1:$CACHE_NODE_PORT)"
 }
 write_mirror "$IMAGES_HOST" "https://$IMAGES_HOST"
+# shellcheck disable=SC2086  # MIRRORS is a space-separated list of <dir>=<url> by contract (the DaemonSet renders it)
 for m in ${MIRRORS:-}; do write_mirror "${m%%=*}" "${m#*=}"; done
 # 2. memlock (docs/JOBS.md "Multi-node runs"): RDMA memory registration is bounded by RLIMIT_MEMLOCK (8 MiB on the node
 # image); an unlimited limit on the containerd unit lets every container register memory without CAP_IPC_LOCK

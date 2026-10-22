@@ -65,7 +65,7 @@
  },
  "apps/DaemonSet/spegel/containerd-registry-config": {
   "component": "node-config",
-  "sha256": "ad3f3e7b89f53b43d113480548c22c8458e4cacc36772420ee76324a3a7b6864"
+  "sha256": "03d7c49fb5b9458e98f6e0d98a69efbf22c911fdf77b7bdc9e26d615c6eb7170"
  },
  "apps/Deployment/api/api": {
   "component": "api",

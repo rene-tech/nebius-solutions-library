@@ -71,7 +71,12 @@ assert all(d["host"][h]["capabilities"] == ["pull", "resolve"] and d["host"][h][
 PY
 }
 files() { echo "$1/etc/containerd/certs.d/registry.serverless2.local/hosts.toml https://registry.serverless2.local $1/etc/containerd/certs.d/docker.io/hosts.toml https://registry-1.docker.io $1/etc/containerd/certs.d/ghcr.io/hosts.toml https://ghcr.io"; }
-check_files() { set -- $(files "$1"); while [ $# -gt 0 ]; do [ -f "$1" ] || fail "missing mirror file $1"; valid "$1" "$2" || fail "invalid mirror file $1"; shift 2; done; }
+check_files() { # <dir>: every owned file exists and is valid
+  local pairs; pairs=$(files "$1")
+  # shellcheck disable=SC2086  # a space-separated <file> <server> list built above
+  set -- $pairs
+  while [ $# -gt 0 ]; do [ -f "$1" ] || fail "missing mirror file $1"; valid "$1" "$2" || fail "invalid mirror file $1"; shift 2; done
+}
 
 # 1. a fresh CPU node (nothing written yet, memlock bounded, mirrors not served): the three mirror files, memlock + ONE restart
 node "$T/fresh" 0 none bounded
@@ -103,7 +108,7 @@ cfg_before=$(sha256sum "$T/served/etc/containerd/config.toml")
 out=$(run "$T/served" 1) || fail "served node: script failed: $out"
 check_files "$T/served"
 H="$T/served/etc/containerd/certs.d/registry.serverless2.local/hosts.toml"
-[ -f "$H.pre-node-config" ] && grep -q '30020' "$H.pre-node-config" || fail "served node: the replaced file was not kept"
+if ! { [ -f "$H.pre-node-config" ] && grep -q '30020' "$H.pre-node-config"; }; then fail "served node: the replaced file was not kept"; fi
 [ "$(sha256sum "$T/served/etc/containerd/config.toml")" = "$cfg_before" ] || fail "served node: config.toml was touched"
 [ ! -f "$T/served/etc/containerd/conf.d/serverless2-registry.toml" ] || fail "served node: a drop-in was written although the runtime serves the mirrors"
 grep -q 'systemctl' "$T/calls.txt" && fail "served node: systemd was called for a hosts-file change: $(cat "$T/calls.txt")"
