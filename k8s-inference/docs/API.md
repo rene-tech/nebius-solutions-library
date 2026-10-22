@@ -68,7 +68,7 @@ shape of a model definition: a container plus a few knobs.
 ```
 
 `protocol` is `openai | http | websocket | grpc`; `gpu.classes` lists the classes the image runs on,
-preferred first; `resources` is the endpoint container's `cpu` and `memory` requests (defaults 4 / 16Gi; = the limits; `resources_by_class` overlays the envelope per GPU class on each variant for the class of its pool, and every variant's pod must fit one node of its pool at registration, docs/SCHEDULING.md "Per-node fit")
+preferred first; `resources` is the endpoint container's `cpu` and `memory` requests (defaults 4 / 16Gi; = the limits; `resources_by_class` overlays the envelope per GPU class on each variant for the class of its pool, and every variant's pod must fit one node of its pool at registration, docs/SCHEDULING.md "Per-node fit"; `weights_by_class` (`{"<gpu class>": {"path"}}`) likewise picks the weight generation per variant for the class of its pool, path only, mount path/env/read_only/prepare staying the model's `weights`)
 and, optionally, `cpu_limit` / `memory_limit` above them and `ephemeral_storage` with `ephemeral_storage_limit` (the
 kubelet's node-local scratch: request = limit unless both are given; nothing is rendered without them), the same names
 a run class uses; an endpoint's `timeout_s` (its Knative revision timeout) may not exceed the fleet's
@@ -77,7 +77,7 @@ and the API's ceiling from that one value; 400 above it, naming the knob) and it
 `weights.env` may not set the names Knative reserves (`PORT`, `K_SERVICE`, `K_CONFIGURATION`, `K_REVISION`: 400;
 Knative injects the serving port into `PORT`), so no definition is accepted that would never reconcile;
 `regions` defaults to every region with a pool of one of the classes; `kind: job`
-defines a run class instead (`cpu`, `memory`, `cpu_limit`, `memory_limit`, `ephemeral_storage`, `ephemeral_storage_limit`, `resources_by_class` (the envelope per GPU class, docs/SCHEDULING.md "Per-node fit"), `disk_gi`, `scratch`, `parameters`, `delegates`, `retry`; requests are what the scheduler guarantees, limits what a container may grow to; `delegates` names the run classes a graph rooted on this class may bind stages to, docs/JOBS.md "Delegated stages"). The full field list is
+defines a run class instead (`cpu`, `memory`, `cpu_limit`, `memory_limit`, `ephemeral_storage`, `ephemeral_storage_limit`, `resources_by_class` (the envelope per GPU class, docs/SCHEDULING.md "Per-node fit"), `weights_by_class` (`{"<gpu class>": {"path"}}`: the weight generation per class, path only, over `weights`; the chosen class's directory is mounted, a fallback re-render takes the next class's), `disk_gi`, `scratch`, `parameters`, `delegates`, `retry`; requests are what the scheduler guarantees, limits what a container may grow to; `delegates` names the run classes a graph rooted on this class may bind stages to, docs/JOBS.md "Delegated stages"). The full field list is
 the module docstring of `services/api/models.py`; the response schema is `Model` in `services/api/schemas.py`.
 
 #### Execution identity and rollout state

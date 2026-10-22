@@ -409,6 +409,34 @@ def validate(spec: dict) -> dict:
         unknown = [c for c in per if c not in classes]
         if unknown:
             raise HTTPException(400, f"resources_by_class: {unknown} not in gpu.classes {classes}")
+    wbc = s.get("weights_by_class")
+    if wbc is not None:
+        # the weight generation per GPU class (api 0.11.191): path only, over the model's `weights` (its mount path,
+        # env, read_only and prepare stay), for the class chosen (a run) or the variant's pool class (an endpoint);
+        # the same relative, normalised, confined path rule as `weights`/`data`
+        if not isinstance(s.get("weights"), dict) or not s["weights"].get("path"):
+            raise HTTPException(
+                400, "weights_by_class needs the model's `weights` (its path is the default generation)"
+            )
+        if (
+            not isinstance(wbc, dict)
+            or not wbc
+            or not all(
+                isinstance(c, str) and isinstance(v, dict) and set(v) == {"path"} and isinstance(v["path"], str)
+                for c, v in wbc.items()
+            )
+        ):
+            raise HTTPException(400, 'weights_by_class: {"<gpu class>": {"path": "<relative directory>"}}')
+        unknown = [c for c in wbc if c not in classes]
+        if unknown:
+            raise HTTPException(400, f"weights_by_class: {unknown} not in gpu.classes {classes}")
+        for c, v in wbc.items():
+            path = v["path"]
+            if path.startswith("/") or path != path.strip("/") or not DATA_PATH_RE.match(path):
+                raise HTTPException(
+                    400,
+                    f"weights_by_class.{c}.path: a non-empty relative directory, normalised, no '..', no leading or trailing '/'",
+                )
     _validate_variants(s, kind)
     s["kind"] = kind
     return s
@@ -729,6 +757,8 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
                 },
                 "env": dict(w.get("env") or {}),
             }
+            if s.get("weights_by_class"):
+                runtime["weightsByClass"] = {c: v["path"] for c, v in s["weights_by_class"].items()}
         nodes, interconnect = int(s.get("nodes", 1)), s.get("interconnect", "none")
         if nodes > 1 and not s.get("regions"):  # by default every region that has a whole-node pool of the class
             regions = [r for r in regions if pool_for(r, classes, count, nodes, interconnect)]
@@ -917,6 +947,10 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
             )
         if w := s.get("weights"):
             job.update({"weights": w["path"], "weightsMountPath": w.get("mount_path", "/weights")})
+            if s.get(
+                "weights_by_class"
+            ):  # the generation per chosen class, overlaid in build_run (render.class_weights)
+                job["weightsByClass"] = {c: v["path"] for c, v in s["weights_by_class"].items()}
         entry.update(
             {
                 "mode": "run",

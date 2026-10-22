@@ -69,6 +69,7 @@ from render import (
     _uploader,
     class_images,
     class_resources,
+    class_weights,
     gpu_classes,
     image_for_class,
     profile_of,
@@ -521,6 +522,7 @@ def build_run(
     else:
         gpu_class = None
     job = class_resources(job, gpu_class)  # the chosen class's envelope (docs/SCHEDULING.md "Per-node fit")
+    job = class_weights(job, gpu_class)  # and its weight generation (docs/JOBS.md "Model weights for runs")
     if not job.get("image") or not job.get("command"):
         raise HTTPException(500, f"model {model['name']} has no job.image/job.command")
     from models import normalise_image  # a caller-supplied image (container-run) goes through the region's cache too

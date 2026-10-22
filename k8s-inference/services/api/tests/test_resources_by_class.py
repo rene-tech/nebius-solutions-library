@@ -308,3 +308,22 @@ def test_a_templated_envelope_is_rendered_before_the_fit_and_the_class_choice(mo
     # feasible_classes itself still refuses a template reaching it (the contract: callers render first)
     with pytest.raises(ValueError):
         placement.feasible_classes(m, ["l40s", "h100"], 1, ["north"])
+
+
+def test_a_run_mounts_the_weight_generation_of_its_chosen_class_and_a_fallback_rerender_the_next(monkeypatch):
+    """api 0.11.191: `weights_by_class` on a run class: the chosen class's directory is the weights subPath; a fallback
+    re-render for the next class (switch_class -> build_run) selects that class's generation; no entry = the model's."""
+    monkeypatch.setattr(kube, "fleet", lambda: DOC)
+    m = model(
+        memory="48Gi",
+        weights="cosmos/gen-h100",
+        weightsMountPath="/weights",
+        weightsByClass={"l40s": "cosmos/gen-l40s"},
+    )
+    pl = {"regions": ["north"], "classes": ["l40s", "h100"]}
+    for cls, want in (("l40s", "cosmos/gen-l40s"), ("h100", "cosmos/gen-h100")):
+        j = jobs.build_run("op-w", m, P, "demo", None, None, None, None, None, {}, "h", placement=pl, gpu_class=cls)
+        main = next(c for c in j["spec"]["template"]["spec"]["containers"] if c["name"] == "main")
+        w = next(x for x in main["volumeMounts"] if x["name"] == "weights")
+        assert w["subPath"] == want and w["mountPath"] == "/weights" and w["readOnly"] is True
+        assert "weightsByClass" not in j["metadata"]["annotations"].get(f"{LABEL}/input", "")

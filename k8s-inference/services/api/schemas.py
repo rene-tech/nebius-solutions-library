@@ -448,6 +448,7 @@ class ModelSpec(BaseModel):
     )
     pull_secret: SkipValidation[str | None] = None
     weights: SkipValidation[WeightsSpec | None] = None
+    weights_by_class: dict[str, dict] | None = None  # {"<gpu class>": {"path": ...}}: the weight generation per class
     data: SkipValidation[DataSpec | None] = None
     regions: SkipValidation[list[str] | None] = None
     deployments: SkipValidation[dict[str, DeploymentSpec] | None] = None

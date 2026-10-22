@@ -177,3 +177,66 @@ def test_the_envelope_per_class_renders_per_variant_and_must_fit_its_pool(monkey
         models.to_entry({**spec, "resources_by_class": None})
     assert x.value.status_code == 400 and "impossible shape: variant cheap on north/l40s-ondemand-1x" in x.value.detail
     assert "48Gi" not in x.value.detail and "resources_by_class" in x.value.detail
+
+
+def test_the_weight_generation_per_class_renders_per_variant(monkeypatch):
+    """api 0.11.191: `weights_by_class` (path only) picks the shared-filesystem directory per variant for the class of
+    its pool; mount path, env, read-only and prepare stay the model's; a class without an entry keeps `weights.path`;
+    omitted = byte-equal rendering; the map reaches no object; validation refuses unknown classes, absolute or
+    non-normalised paths, parent references, an empty path and a mapping without the model's `weights`."""
+    import copy
+    import json
+
+    from test_resources_by_class import DOC
+
+    monkeypatch.setattr(kube, "fleet", lambda: DOC)
+    base = {
+        **SPEC,
+        "gpu": {"count": 1, "classes": ["l40s", "h100"]},
+        "resources": {"cpu": "4", "memory": "16Gi"},
+        "weights": {
+            "path": "cosmos/gen-h100",
+            "mount_path": "/weights",
+            "env": {"HF_HOME": "/weights"},
+            "read_only": True,
+        },
+        "deployments": {
+            "eu-north1": {
+                "variants": [{"name": "big", "pool": "h100-reserved-1x"}, {"name": "cheap", "pool": "l40s-ondemand-1x"}]
+            }
+        },
+    }
+    spec = {**base, "weights_by_class": {"l40s": {"path": "cosmos/gen-l40s"}}}
+    e = models.to_entry(copy.deepcopy(spec))
+    assert e["runtime"]["weightsByClass"] == {"l40s": "cosmos/gen-l40s"}
+    mounts, docs = {}, []
+    for v in models.variants(e, "north"):
+        for d in render_endpoint.render(e, "north", "models.example", "ib", v):
+            docs.append(d)
+            if d["kind"] == "InferenceService":
+                c = d["spec"]["predictor"]["containers"][0]
+                mounts[v["name"]] = next(m for m in c["volumeMounts"] if m["name"] == "weights")
+    assert mounts["big"]["subPath"] == "cosmos/gen-h100" and mounts["cheap"]["subPath"] == "cosmos/gen-l40s"
+    assert mounts["big"]["mountPath"] == mounts["cheap"]["mountPath"] == "/weights"
+    assert mounts["big"]["readOnly"] is True and mounts["cheap"]["readOnly"] is True
+    assert "weightsByClass" not in json.dumps(docs)
+    # omitted: byte-equal to today's rendering
+    plain = models.to_entry(copy.deepcopy(base))
+    assert "weightsByClass" not in plain["runtime"]
+    assert render_endpoint.render(
+        plain, "north", "models.example", "ib", models.variants(plain, "north")[1]
+    ) == render_endpoint.render(
+        models.to_entry(copy.deepcopy(base)), "north", "models.example", "ib", models.variants(plain, "north")[1]
+    )
+    for bad in (
+        {"weights_by_class": {"b300": {"path": "x"}}},
+        {"weights_by_class": {"l40s": {"path": "/abs"}}},
+        {"weights_by_class": {"l40s": {"path": "a/../b"}}},
+        {"weights_by_class": {"l40s": {"path": ""}}},
+        {"weights_by_class": {"l40s": {"path": "x/"}}},
+        {"weights_by_class": {"l40s": {"path": "x", "mount_path": "/other"}}},
+        {"weights": None, "weights_by_class": {"l40s": {"path": "x"}}},
+    ):
+        with pytest.raises(HTTPException) as x:
+            models.to_entry(copy.deepcopy({**base, **bad}))
+        assert x.value.status_code == 400 and "weights" in x.value.detail, bad

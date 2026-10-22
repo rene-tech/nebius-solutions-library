@@ -317,6 +317,17 @@ def class_resources(job: dict, gpu_class: str | None) -> dict:
     return out
 
 
+def class_weights(job: dict, gpu_class: str | None) -> dict:
+    """The job block with the weight generation of `gpu_class` (`job.weightsByClass`, public `weights_by_class`, api
+    0.11.191): the `weights` path becomes that class's directory; mount path and everything else stay the model's. The
+    map itself never reaches the Job; a class without an entry keeps the model's `weights`."""
+    out = {k: v for k, v in job.items() if k != "weightsByClass"}
+    path = (job.get("weightsByClass") or {}).get(gpu_class or "")
+    if path:
+        out["weights"] = path
+    return out
+
+
 def resource_block(r: dict, gpus: int) -> dict:
     """The main container's resources from a (rendered) job block: requests cpu/memory (defaults 1 / 2Gi), the memory
     limit (= request unless memoryLimit), an optional CPU limit, ephemeral storage (request = limit unless both) and

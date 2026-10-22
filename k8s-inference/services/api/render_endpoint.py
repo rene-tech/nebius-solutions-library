@@ -240,6 +240,16 @@ def values(entry: dict, cluster: str, domain: str, ib_claim_template: str, varia
             {**(vals.get("resources") or {}), "resourcesByClass": per},
             kube.pool_entry(cluster, vals["pool"]).get("gpu_class"),
         )
+    # the weight generation per GPU class (`weights_by_class`, api 0.11.191): the variant's pool class picks the
+    # shared-filesystem path; mount path, env, read-only and prepare stay the model's; absent = unchanged
+    wbc = vals.pop("weightsByClass", None)
+    if wbc and vals.get("pool") and (vals.get("weights") or {}).get("sharedFilesystem"):
+        import kube
+
+        gen = wbc.get(kube.pool_entry(cluster, vals["pool"]).get("gpu_class") or "")
+        if gen:
+            vals["weights"] = copy.deepcopy(vals["weights"])
+            vals["weights"]["sharedFilesystem"]["path"] = gen
     if vals.get("pool"):
         # a deployment pinned to `system` (a GPU-free endpoint) serves from the cluster's customer CPU pool instead
         # when the fleet keeps tenants off the system nodes (kube.tenant_pool, docs/FLEET.md "Customer CPU pools");

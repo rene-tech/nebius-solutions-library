@@ -4,6 +4,18 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.191, jobs 0.1.36, dispatcher 0.2.17
+
+- `weights_by_class: {"<gpu class>": {"path": "<relative directory>"}}` on endpoints and run classes (Root, 2026-10-22
+  21:56Z): the weight generation per GPU class, path only, over the model's `weights` (mount path, env, read_only and
+  prepare stay the model's; the same relative, normalised, confined path rule; keys must be declared classes; the
+  model's `weights` is required as the default generation). An endpoint variant mounts the generation of its pool's
+  class (`render_endpoint.values`, next to `resources_by_class`); a run mounts the generation of its chosen class and
+  a fallback re-render the next class's (`render.class_weights` in `build_run`); the map reaches no object; absent =
+  byte-equal rendering. Images per class and the target fence are unchanged. Tests: per-variant subPath, run per
+  class, omitted equivalence, refusals (unknown class, absolute, parent reference, empty, trailing slash, extra keys,
+  no base weights).
+
 ## api 0.11.190, jobs 0.1.36, dispatcher 0.2.17
 
 - URGENT (public MPI 1x1/2x1 submissions answered 500 with no operation, 2026-10-22): the class choice judged the
