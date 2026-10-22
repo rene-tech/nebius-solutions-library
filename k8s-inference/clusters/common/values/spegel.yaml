@@ -20,6 +20,15 @@ spegel:
     - http://127.0.0.1:30500
   resolveTags: true
   containerdMirrorAdd: true
+# The containerd mirror file lists the registry's hostPort first, then its NodePort, then additionalMirrorTargets.
+# Cilium here runs kube-proxy replacement without hostPort support (mk8s-managed, no enable-host-port), so a pod
+# hostPort is never programmed: NODE_IP:30020 refused on every node, and containerd's blob re-open after a broken
+# peer stream (httpReadSeeker) goes to that first host with no fallback: a definite pull failure
+# (gpu-portability-e3-h200-r2, 2026-10-22). The hostPort is set to the NodePort so every listed host answers; the
+# chart renders the entry twice, harmless. (hostPort null renders a broken `http://NODE_IP:` entry in chart 0.7.4.)
+service:
+  registry:
+    hostPort: 30021
 resources:
   requests: { cpu: 50m, memory: 128Mi }
   limits: { memory: 256Mi }

@@ -4,6 +4,14 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## fleet values: Spegel mirror targets NodePort first (clusters/common/values/spegel.yaml)
+
+- `service.registry.hostPort: 30021` (= the NodePort): Cilium's kube-proxy replacement on the fleet programs no pod
+  hostPort, so the mirror file's first entry (NODE_IP:30020) refused every dial and containerd's blob re-open after a
+  broken peer stream (httpReadSeeker) failed on it with no fallback, a definite pull failure (H200 qualification pod,
+  2026-10-22). The Spegel DaemonSet rolls on apply and rewrites hosts.toml with NODE_IP:30021 first, then the Zot
+  NodePort. (hostPort null renders a broken `http://NODE_IP:` entry in chart 0.7.4.)
+
 ## api 0.11.189, jobs 0.1.36, dispatcher 0.2.17 (0.11.188 = the same cut before Root's review; built, never applied)
 
 - The candidate fence is keyed by (cluster, object): a deployment's first variant keeps the model's id in every region,
