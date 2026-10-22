@@ -4,6 +4,13 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.187, jobs 0.1.36, dispatcher 0.2.17
+
+- Endpoint registration fit counts the fleet's reserved overhead once: the per-node budget of the fit table (reserves
+  included) is the whole judgement, as for runs; 0.11.186 added Knative queue-proxy's 25m on top and refused an
+  envelope that fills the budget exactly (evo2-40b, 14 CPU / 180Gi on h200 nodes that allocate 15.9 CPU and run it).
+  Regressions: the exact-budget envelope is accepted, one CPU or one GiB over is refused (Root, 2026-10-22 20:35Z).
+
 ## api 0.11.186, jobs 0.1.36, dispatcher 0.2.17 (0.11.182-185 / jobs 0.1.34-35 = earlier cuts of the same; built, never applied)
 
 - `Operation.target` reports the OBSERVED placement of an asynchronous call (Root, 2026-10-22 20:05Z): the caller's

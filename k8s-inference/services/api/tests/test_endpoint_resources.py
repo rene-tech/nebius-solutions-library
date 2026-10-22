@@ -154,6 +154,24 @@ def test_the_envelope_per_class_renders_per_variant_and_must_fit_its_pool(monkey
             d for d in render_endpoint.render(e2, "north", "models.example", "ib", v) if d["kind"] == "InferenceService"
         )
         assert isvc["spec"]["predictor"]["containers"][0]["resources"]["requests"]["memory"] == "48Gi"
+    # an envelope that fills the pool's per-node budget EXACTLY is accepted (api 0.11.187): the budget's reserves
+    # cover the platform sidecars, nothing is added on top (0.11.186 added queue-proxy's 25m and refused evo2-40b's
+    # 14 CPU / 180Gi on h200 nodes that allocate 15.9 CPU and run it today)
+    full = {
+        **spec,
+        "resources": {"cpu": "14", "memory": "180Gi"},
+        "resources_by_class": None,
+        "deployments": {"eu-north1": {"variants": [{"name": "big", "pool": "h100-reserved-1x"}]}},
+    }
+    assert models.to_entry(full)["runtime"]["resources"]["cpu"] == "14"
+    # one CPU over the budget, or one GiB over: genuinely oversized, refused as before
+    for res in ({"cpu": "15", "memory": "180Gi"}, {"cpu": "14", "memory": "181Gi"}):
+        with pytest.raises(HTTPException) as over:
+            models.to_entry({**full, "resources": res})
+        assert (
+            over.value.status_code == 400
+            and "impossible shape: variant big on north/h100-reserved-1x" in over.value.detail
+        )
     # the 96Gi envelope on the L40S pool (57Gi nodes) without an overlay: refused at registration, naming the variant
     with pytest.raises(HTTPException) as x:
         models.to_entry({**spec, "resources_by_class": None})

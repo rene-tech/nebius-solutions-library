@@ -334,8 +334,9 @@ fit structural (api 0.11.80, fleet chart 0.1.12):
 - Endpoints (api 0.11.185): `resources_by_class` on an endpoint overlays the envelope per GPU class on each variant
   for the class of the variant's pool (the same keys and overlay as a run's; a class without an entry keeps the base
   `resources`), and at registration every variant's pod, rendered as it will be applied (the server, the renderer's
-  sidecars and init containers, plus the queue-proxy request of a Knative pod), must fit one node of its pool on its
-  cluster, with the shared filesystem when the weights mount it: **400 `impossible shape`** names the variant. A pool
+  sidecars and init containers), must fit one node of its pool on its cluster against the same per-node budget the
+  run fit uses (its reserves cover the platform's own sidecars such as Knative's queue-proxy; nothing is added on
+  top, so an envelope that fills the budget exactly is accepted, api 0.11.187), with the shared filesystem when the weights mount it: **400 `impossible shape`** names the variant. A pool
   the table does not know, or a Kueue-placed variant, gets no judgement.
 - Recovery of a run admitted before this (or by a worker whose table lagged): the control API's reconcile loop
   (`reconciliation.unschedulable_switch`) looks at placed fleet runs whose pods are all Pending and unbound, whose

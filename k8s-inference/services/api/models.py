@@ -550,7 +550,6 @@ _CAMEL = {
     "ephemeral_storage": "ephemeralStorage",
     "ephemeral_storage_limit": "ephemeralStorageLimit",
 }  # public resource field -> job block key (render.RESOURCE_KEYS)
-QUEUE_PROXY_CPU = 0.025  # Knative's queue-proxy sidecar on every endpoint pod: its default request (25m, no memory)
 
 
 def _by_class(s: dict) -> dict:
@@ -562,10 +561,13 @@ def _by_class(s: dict) -> dict:
 
 def _endpoint_fit(entry: dict) -> None:
     """Per-node fit of an endpoint at registration (docs/SCHEDULING.md "Per-node fit"): every variant's pod, rendered
-    as it will be applied (the server with its class envelope, the renderer's sidecars and init containers, plus the
-    queue-proxy request of a Knative pod), must fit ONE node of its pool on its cluster, with the shared filesystem
-    when the weights mount it: 400 `impossible shape` otherwise, nothing reduced or widened. A pool the fit table does
-    not know, a Kueue-placed variant (no pool) or no fit.yaml at all: no judgement."""
+    as it will be applied (the server with its class envelope, the renderer's sidecars and init containers), must fit
+    ONE node of its pool on its cluster, with the shared filesystem when the weights mount it: 400 `impossible shape`
+    otherwise, nothing reduced or widened. The budget is the fit table's per-node figure, the same the run fit uses:
+    its reserves already cover the platform's own sidecars (Knative's queue-proxy among them), so nothing is added on
+    top (api 0.11.187; 0.11.186 added queue-proxy's 25m and refused an envelope that fills the budget exactly, which
+    schedules: an H200 node allocates 15.9 CPU against a 14 CPU budget). A pool the fit table does not know, a
+    Kueue-placed variant (no pool) or no fit.yaml at all: no judgement."""
     import fit
 
     if not fit.table():
@@ -573,18 +575,17 @@ def _endpoint_fit(entry: dict) -> None:
     for cluster in entry["deployments"]:
         for v in variants(entry, cluster):
             docs = render_endpoint.render(entry, cluster, "fit.invalid", INFINIBAND_CLAIM_TEMPLATE, v)
-            pods = [(d["spec"]["predictor"], True) for d in docs if d["kind"] == "InferenceService"] + [
-                (d["spec"]["leaderWorkerTemplate"][t]["spec"], False)
+            pods = [d["spec"]["predictor"] for d in docs if d["kind"] == "InferenceService"] + [
+                d["spec"]["leaderWorkerTemplate"][t]["spec"]
                 for d in docs
                 if d["kind"] == "LeaderWorkerSet"
                 for t in ("leaderTemplate", "workerTemplate")
             ]
-            for pod, knative in pods:
+            for pod in pods:
                 pool = (pod.get("nodeSelector") or {}).get(f"{LABEL}/pool")
                 if not pool or pool not in (fit.table().get(cluster) or {}):
                     continue
                 req = fit.pod_requests(pod)
-                req["cpu"] += QUEUE_PROXY_CPU if knative else 0
                 need_fs = any(
                     x.get("name") == "weights" and x.get("persistentVolumeClaim") for x in pod.get("volumes") or []
                 )
