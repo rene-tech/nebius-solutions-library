@@ -4,7 +4,15 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.191, jobs 0.1.36, dispatcher 0.2.17
+## api 0.11.192, jobs 0.1.36, dispatcher 0.2.17 (0.11.191 = the weights cut before the gang fix; built, never applied)
+
+- A gang's authority is NOTHING until the newest epoch's coordinator (rank 0) recorded (Root, 2026-10-22,
+  op-8a272812ab83489c: rank 1 recorded one second before rank 0 and `attempts.authority` fell back to the newest row,
+  exposing the peer as the current coordinator to the App's storage authorization): no peer and no prior epoch's
+  coordinator substitutes; the lifecycle then reports attempt_id/epoch null (pending) and `synthesize` keeps the
+  gang's outcome from every rank (`gang_status`), so a failed or interrupted peer still decides. No authorization
+  relaxation anywhere. Regression: peer-first -> authority None and lifecycle pending; coordinator one second later ->
+  rank 0 of its epoch; failed gang with peers only stays failed.
 
 - `weights_by_class: {"<gpu class>": {"path": "<relative directory>"}}` on endpoints and run classes (Root, 2026-10-22
   21:56Z): the weight generation per GPU class, path only, over the model's `weights` (mount path, env, read_only and

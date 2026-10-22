@@ -46,8 +46,19 @@ def test_the_coordinator_of_the_newest_incarnation_speaks_for_the_gang():
     # the peers recorded first and the coordinator later: still the coordinator
     rows2 = _gang_rows(op, ["started", "started"], epoch=2)[::-1]
     assert attempts.authority(rows2)["gang_rank"] == 0
-    # without a coordinator record yet: the newest row; an ordinary operation: its newest pod
-    assert attempts.authority(_gang_rows(op, ["x", "started"], epoch=3)[1:])["gang_rank"] == 1
+    # without the newest epoch's coordinator record: NOTHING speaks for the gang (api 0.11.192): a peer that started
+    # first is no substitute, nor is a prior epoch's coordinator; the lifecycle is pending (attempt_id/epoch None)
+    peer_first = _gang_rows(op, ["succeeded", "succeeded"]) + _gang_rows(op, ["x", "started"], epoch=3)[1:]
+    assert attempts.authority(peer_first) is None
+    pending = attempts.lifecycle(op, op, peer_first)
+    assert pending["attempt_id"] is None and pending["epoch"] is None
+    # the coordinator records one second later: it speaks, with its own epoch
+    both = peer_first + _gang_rows(op, ["started", "x"], epoch=3)[:1]
+    assert attempts.authority(both)["gang_rank"] == 0 and attempts.authority(both)["epoch"] == 3
+    # a failed gang stays failed with only peers on record: the outcome counts every rank
+    failed_peer = _gang_rows(op, ["x", "failed"], epoch=4)[1:]
+    assert attempts.authority(failed_peer) is None and attempts.gang_status(failed_peer) == "failed"
+    # an ordinary operation: its newest pod
     solo = [
         {**_record("op-solo", "op-solo-a", "failed", epoch=1), "operation": "op-solo"},
         {**_record("op-solo", "op-solo-b", "started", epoch=2), "operation": "op-solo"},

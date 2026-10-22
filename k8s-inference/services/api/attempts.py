@@ -387,13 +387,16 @@ def _gang_epoch(c, operation: str, gang: dict, top: int) -> int:
 
 def authority(rows: list[dict]) -> dict | None:
     """The record that speaks for an operation's newest attempt: the newest epoch's row; for a gang (rows with a rank)
-    the coordinator's (rank 0) when it recorded, so the lifecycle names the rank that publishes."""
+    the coordinator's (rank 0) of the newest epoch, and NOTHING until it recorded (api 0.11.192: a peer that started
+    first, or a prior epoch's coordinator, is never a substitute: the App's storage authorization reads this as the
+    current coordinator and must see "pending", never a peer; op-8a272812ab83489c, rank 1 recorded one second before
+    rank 0). The gang's outcome stays `gang_status` (every rank)."""
     if not rows:
         return None
     top = max(int(r.get("epoch") or 0) for r in rows)
     newest = [r for r in rows if int(r.get("epoch") or 0) == top]
     if any(r.get("gang_rank") is not None for r in newest):
-        return next((r for r in newest if r.get("gang_rank") == 0), newest[-1])
+        return next((r for r in newest if r.get("gang_rank") == 0), None)
     return newest[-1]
 
 
@@ -541,13 +544,14 @@ def synthesize(operation: str, tenant: str) -> dict | None:
     rows = [r for r in for_operation(operation) if r["operation"] == operation and r["tenant"] == tenant]
     if not rows:
         return _never_started(operation, tenant)
-    last = authority(rows)  # a gang: the coordinator of the newest incarnation; its outcome counts every rank
+    last = authority(rows)  # a gang: the coordinator of the newest incarnation (None until it recorded); the gang's
+    # outcome counts every rank (gang_status), so a failed or interrupted peer still decides a gang without rank 0
     status = {"succeeded": "SUCCEEDED", "failed": "FAILED", "interrupted": "PREEMPTED", "started": "PREEMPTED"}.get(
-        gang_status(rows) or last["status"], "FAILED"
+        gang_status(rows) or (last["status"] if last else "started"), "FAILED"
     )
-    export = last.get("export_state")
+    export = (last or {}).get("export_state")
     if status == "SUCCEEDED" and (
-        export == "failed" or export is None or (export == "n/a" and not last.get("result_ref"))
+        export == "failed" or export is None or (export == "n/a" and not (last or {}).get("result_ref"))
     ):
         status = "EXPORT_FAILED"
     m = _marks(operation)
