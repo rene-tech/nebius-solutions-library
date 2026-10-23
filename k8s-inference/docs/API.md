@@ -347,7 +347,7 @@ regional state, a tenant's usage, an operation's records and placement) is done 
 |---|---|---|
 | `GET /v1/operations` | newest first (`created_at` desc, id asc) | as before; served from the API's list-watch store (`services/api/store.py`: one copy of every tenant's Jobs, pods, JobSets and Workloads per region, listed once and kept current by the Kubernetes watch with bookmarks, relisted on 410 Gone or every `STORE_RESYNC_S`), so a page, a poll or an operation view reads memory and lists nothing; a region whose store is not synced yet, or whose watch has been broken for `STORE_STALE_S`, is listed directly; a mutation this API makes is applied to its own store at once (a submission, a cancellation, a resume shows on the next list); a listing with an unreachable region is never reused |
 | `GET /v1/endpoints` | model id, then cluster id | one entry per deployment |
-| `GET /v1/models` | model id | |
+| `GET /v1/models` | model id | the live endpoint state is read for the page's definitions only; `include_status=false` (api 0.11.197) reads none of it: a metadata-only page (ids, versions, deployments, targets; every deployment's `status`/`replicas_ready` null) for discovery clients that do not show live state |
 | `GET /v1/keys`, `GET /v1/fleet/tenants/{t}/keys` | alias | |
 | `GET /v1/fleet/tenants` | tenant name | the usage reads are for the page only |
 | `GET /v1/fleet/operations` | newest first | the fleet operator's in-flight view (below) |

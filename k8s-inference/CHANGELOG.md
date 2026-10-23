@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.197, jobs 0.1.36, dispatcher 0.2.17
+
+- `GET /v1/models?include_status=false` (default true, unchanged): the metadata-only page. No live read at all for
+  the page (no `endpoint_status`, no target state); every deployment's `status` and `replicas_ready` are null;
+  ids, definition versions, deployments, per-class targets (identity, image, class, pool), execution identity,
+  authorization and the pagination headers are exactly those of the default page. For discovery clients that do not
+  show live state (the website catalog, the App's discovery): a cold `limit=500` listing spent its seconds in
+  sequential cluster reads for status fields nobody displayed (Root, 2026-10-23 08:42Z). Regression: zero reads with
+  false, the default still reads, identical bodies but the status fields, cursor parity, 422 on a non-boolean.
+
 ## api 0.11.196, jobs 0.1.36, dispatcher 0.2.17 (0.11.195 = the same cut; its frozen gate failed on the contract below; built, never applied)
 
 - `Model.parameters[].options` is declared as the definition's own scalars (`str | int | float | bool`), no longer

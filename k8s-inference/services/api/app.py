@@ -140,7 +140,7 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.196", lifespan=_lifespan)
+app = FastAPI(title="Nebius Serverless 2.0 customer API", version="0.11.197", lifespan=_lifespan)
 
 
 INPUT_MAX_BYTES = 60000  # a run's or async call's input lives on its Job (annotation, env): bounded, never truncated
@@ -923,7 +923,12 @@ def _deployment_of(m: dict, requested: str | None) -> tuple[str, str]:
     return cid, region
 
 
-def _public(m: dict, p: Principal | None = None, live: bool = False) -> dict:
+def _public(m: dict, p: Principal | None = None, live: bool = False, status: bool = True) -> dict:
+    """A model as the catalog routes show it. `status` False (GET /v1/models?include_status=false, api 0.11.197) is
+    the metadata-only projection: identity, definition version, deployments, per-class targets, execution identity,
+    exactly as otherwise, but no live read at all (no endpoint_status, no target state): every deployment's
+    `status` and `replicas_ready` are null. A discovery page that does not show live state (the website, the App's
+    catalog) reads no cluster; the default stays the live page the console shows."""
     if p is not None and (p.info.get("metadata") or {}).get("role") != "admin":
         m = {**m, "spec": None}  # container configuration belongs to fleet administrators
     if m["mode"] == "run":
@@ -933,6 +938,9 @@ def _public(m: dict, p: Principal | None = None, live: bool = False) -> dict:
         "regions"
     ]:  # deployments by cluster id; the live state is read in the cluster's region (REGION_KUBECONFIGS)
         region = kube.cluster_region(cid)
+        if not status:
+            statuses.append({"region": region, "cluster": cid, "status": None, "replicas_ready": None})
+            continue
         try:
             st = kube.endpoint_status(m["k8s_name"], m["namespace"], region)
         except (HTTPException, ApiException):
@@ -1075,11 +1083,15 @@ def list_models(
     p: Principal = Depends(scoped("read:catalog")),
     limit: int | None = Query(None, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
+    include_status: bool = Query(
+        True, description="false: metadata only, no live endpoint state is read (every deployment's status null)"
+    ),
 ):
     """The definitions the key may see, by id, one page at a time (docs/API.md "Pagination": `limit`, `cursor`,
-    `X-Next-Cursor`, `X-Total-Count`); the live endpoint state is read for the page's definitions only."""
+    `X-Next-Cursor`, `X-Total-Count`); the live endpoint state is read for the page's definitions only, and not at
+    all with `include_status=false` (api 0.11.197: a metadata-only discovery page costs no cluster read)."""
     mine = [m for m in catalog.all_models().values() if allows_model(p, m["name"])]
-    return [_public(m, p) for m in _page(response, mine, lambda m: m["name"], cursor, limit)]
+    return [_public(m, p, status=include_status) for m in _page(response, mine, lambda m: m["name"], cursor, limit)]
 
 
 def _runtime_or_409(mid: str) -> dict:

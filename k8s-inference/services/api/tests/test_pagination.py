@@ -534,3 +534,45 @@ def test_listings_drop_managed_fields_and_auth_entries_pin_one_generation(client
         c.get("/v1/operations", headers={"Authorization": f"Bearer {ADMIN}"}).status_code == 200
     )  # another principal lists
     assert {v[0] for v in appmod._ops_auth_cache.values()} == {gen_b}  # the older generation is unpinned
+
+
+def test_models_without_status_read_nothing_live_and_keep_identity_and_pagination(client, monkeypatch):
+    """api 0.11.197 (Root, website catalog latency): `GET /v1/models?include_status=false` is the metadata-only
+    page: zero endpoint_status reads and zero target-state reads for the page, every deployment's `status` and
+    `replicas_ready` null, while authorization, ids, definition versions, deployments, per-class targets (identity,
+    image, class, pool) and the pagination headers are exactly those of the default page. The default is unchanged
+    (the page's definitions are read live)."""
+    c, fake = client
+    base = catalog.get("llm-example")
+    many = {
+        f"m-{i:02d}": {**base, "name": f"m-{i:02d}", "k8s_name": f"m-{i:02d}", "regions": ["eu-north1"]}
+        for i in range(5)
+    }
+    monkeypatch.setattr(catalog, "all_models", lambda: many)
+    reads = []
+    monkeypatch.setattr(
+        kube,
+        "endpoint_status",
+        lambda n, ns, region="eu-north1", nodes=1: reads.append(n) or {"status": "ready", "replicas_ready": 1},
+    )
+    monkeypatch.setattr(appmod, "_target_state", lambda *a, **k: (_ for _ in ()).throw(AssertionError("live read")))
+    live = c.get("/v1/models?limit=3", headers=H)
+    assert live.status_code == 200 and sorted(set(reads)) == ["m-00", "m-01", "m-02"]  # the default still reads
+    reads.clear()
+    r = c.get("/v1/models?limit=3&include_status=false", headers=H)
+    assert r.status_code == 200 and reads == []  # nothing read live for the page
+    assert [m["id"] for m in r.json()] == ["m-00", "m-01", "m-02"]
+    assert r.headers["X-Total-Count"] == "5" and r.headers["X-Next-Cursor"] == live.headers["X-Next-Cursor"]
+    for meta, full in zip(r.json(), live.json()):
+        assert meta["regions"] == [
+            {"region": "eu-north1", "cluster": "eu-north1", "status": None, "replicas_ready": None}
+        ]
+        assert full["regions"][0]["status"] == "ready" and full["regions"][0]["replicas_ready"] == 1
+        strip = lambda d: {k: v for k, v in d.items() if k != "regions"}  # noqa: E731
+        assert strip(meta) == strip(full)  # identity, version, targets, execution: identical
+        assert meta["targets"] and all(t["image"] and t["cluster"] for t in meta["targets"])
+    r2 = c.get(f"/v1/models?limit=3&include_status=false&cursor={r.headers['X-Next-Cursor']}", headers=H)
+    assert [m["id"] for m in r2.json()] == ["m-03", "m-04"] and reads == [] and "X-Next-Cursor" not in r2.headers
+    assert c.get("/v1/models?include_status=maybe", headers=H).status_code == 422
+    # a key that may not see a model still does not see it (the same filter runs before the projection)
+    assert c.get("/v1/models?include_status=false", headers={"Authorization": "Bearer nope"}).status_code == 401
