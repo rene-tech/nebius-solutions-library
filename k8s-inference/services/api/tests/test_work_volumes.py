@@ -713,12 +713,14 @@ def test_absent_identity_is_not_delivery_proof_and_codes_come_from_the_pinned_de
     monkeypatch.setattr(
         catalog,
         "pinned",
-        lambda m, ann: {"job": {"finalize": {"onExitCodes": [75]}}, "version": 7}
+        lambda m, ann, labels=None: {"job": {"finalize": {"onExitCodes": [75]}}, "version": 7}
         if ann.get(f"{L}/model-version") == "7"
         else m,
     )
     assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "finalizer pending")
-    monkeypatch.setattr(catalog, "pinned", lambda m, ann: m)  # history missing: pinned cannot find version 7
+    monkeypatch.setattr(
+        catalog, "pinned", lambda m, ann, labels=None: m
+    )  # history missing: pinned cannot find version 7
     assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "unknown: declared version 7 missing")
     defs.pop("md")  # the definition itself is gone
     assert decide(claim("op-b-r1-work", op="op-b-r1"))[:2] == ("keep", "unknown: definition missing")

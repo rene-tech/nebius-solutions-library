@@ -725,7 +725,7 @@ def _finalizer_pending(
         # the codes the OPERATION was rendered with (catalog.pinned, models_history), never a newer definition's:
         # removing a finalizer later must not turn a delivery-pending run into "ended"; a version that cannot be
         # found is unknown (fail closed)
-        entry = catalog.pinned(entry, ann)
+        entry = catalog.pinned(entry, ann, job["metadata"].get("labels") or {})
         if str(entry.get("version")) != str(want):
             return "keep", f"unknown: declared version {want} missing"
     codes = ((entry.get("job") or {}).get("finalize") or {}).get("onExitCodes") or []

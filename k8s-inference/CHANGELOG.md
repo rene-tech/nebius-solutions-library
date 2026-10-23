@@ -4,6 +4,21 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## api 0.11.198, jobs 0.1.36, dispatcher 0.2.17
+
+- Every run Job freezes the images it was rendered from: the resolved image of its class (`serverless2.nebius/image`,
+  now on every run) and the definition's complete class-to-image map (`serverless2.nebius/images`). A continuation
+  of a catalog-managed run (resume, export retry, class fallback, unschedulable switch, recovery, the finalizer
+  judgement) re-renders from that frozen map through `catalog.pinned`: the SAME class and a CHANGED class both get
+  the ORIGINAL image for that class, whatever the fleet catalog holds later. An operation admitted before the map was
+  recorded pins its admitted class only; a continuation on another class is refused as unknown (409 from
+  `render.image_for_class`), never rendered from the current definition or guessed. The API-managed revision pin is
+  unchanged. Why: a catalog-managed class re-rendered from the current overlay, so after an image substitution a
+  `:resume` of an older gromacs-mpi operation would have run the new image against the App's immutable private MPI
+  binding (Nims + MAIN, SAI-MD-BUDGET-R9 preflight). Generic, no per-model rule, nothing new scheduled. Regression:
+  unit (same class, changed class, legacy class refusal, no guess, single image, revision pin unchanged) and end to
+  end through fallback_switch and `:resume` with and without `gpu_class`, legacy 409.
+
 ## api 0.11.197, jobs 0.1.36, dispatcher 0.2.17
 
 - `GET /v1/models?include_status=false` (default true, unchanged): the metadata-only page. No live read at all for

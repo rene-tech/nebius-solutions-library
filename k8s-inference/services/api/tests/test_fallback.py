@@ -630,6 +630,141 @@ def test_resume_renders_the_pinned_revision(monkeypatch):
     assert catalog.pinned(current, {}) is current
 
 
+def _catalog_fold(new_default: str, new_rtx: str, new_l40s: str):
+    """A catalog-managed per-class definition (no revision history), as the fleet catalog holds it NOW."""
+    import models
+
+    return catalog.normalise(
+        models.to_entry(
+            {**PER_CLASS, "image": new_default, "images": {"rtx-pro-6000": new_rtx, "l40s": new_l40s}},
+            managed_by="catalog",
+        )
+    )
+
+
+def test_continuation_of_a_catalog_managed_run_keeps_the_image_it_was_rendered_with(monkeypatch):
+    """api 0.11.198 (Nims + MAIN, SAI-MD-BUDGET-R9 preflight): a catalog-managed definition has no revision history,
+    so a continuation pins what the Job froze at admission: the complete class-to-image map and its class's image.
+    SAME class and CHANGED class both render the ORIGINAL image for that class after the catalog moved (the App's
+    private MPI binding is immutable and compares the attempt's image with the recorded one). An operation admitted
+    before the map was recorded pins its admitted class only; a changed class is refused as unknown (409), never
+    rendered from the current definition. API-managed definitions keep pinning by revision."""
+    import render
+
+    old_rtx, old_l40s, old_def = (
+        "reg/fold@sha256:" + "a" * 64,
+        "reg/fold@sha256:" + "b" * 64,
+        "reg/fold@sha256:" + "c" * 64,
+    )
+    current = _catalog_fold("reg/fold@sha256:" + "d" * 64, "reg/fold@sha256:" + "e" * 64, "reg/fold@sha256:" + "f" * 64)
+    assert current.get("version") is None and current["managed_by"] == "catalog"
+    frozen = json.dumps({"default": old_def, "rtx-pro-6000": old_rtx, "l40s": old_l40s}, sort_keys=True)
+    ann = {f"{LABEL}/image": old_rtx, f"{LABEL}/images": frozen}
+    same = catalog.pinned(current, ann, {f"{LABEL}/gpu-class": "rtx-pro-6000"})
+    assert render.image_for_class(same, "rtx-pro-6000") == old_rtx  # same class: the original
+    assert render.image_for_class(same, "l40s") == old_l40s  # changed class: the ORIGINAL image for that class
+    assert render.image_for_class(same, None) == old_def
+    assert render.image_for_class(current, "l40s").endswith("f" * 64)  # the definition itself is untouched
+    # admitted before the map existed (only the admitted class's image on record): that class only, else 409
+    legacy = catalog.pinned(current, {f"{LABEL}/image": old_rtx}, {f"{LABEL}/gpu-class": "rtx-pro-6000"})
+    assert render.image_for_class(legacy, "rtx-pro-6000") == old_rtx
+    with pytest.raises(HTTPException) as e:
+        render.image_for_class(legacy, "l40s")
+    assert e.value.status_code == 409 and "not recorded" in e.value.detail
+    # per-class images with no admitted class and no map: nothing pinned, nothing guessed; no record: unchanged
+    assert catalog.pinned(current, {f"{LABEL}/image": old_rtx}, {}) is current
+    assert catalog.pinned(current, {}, {f"{LABEL}/gpu-class": "l40s"}) is current
+    # a single-image class pins job.image
+    single = catalog.normalise(
+        models_mod.to_entry({**PER_CLASS, "image": "reg/one@sha256:" + "9" * 64, "images": None}, managed_by="catalog")
+    )
+    assert render.image_for_class(catalog.pinned(single, {f"{LABEL}/image": old_def}, {}), None) == old_def
+
+
+def test_catalog_managed_fallback_and_resume_render_the_frozen_original_images(client, monkeypatch):
+    """End to end through the real paths (api 0.11.198): a run of a catalog-managed per-class definition is admitted,
+    then the fleet catalog moves every image. The class fallback successor (changed class) and `:resume` with
+    `gpu_class` (changed class) render the ORIGINAL image for that class from the Job's frozen map; `:resume` on the
+    same class renders the original image of that class. A run admitted before the map existed is refused (409) on a
+    changed class and continues on its own class."""
+    c, fake = client
+    monkeypatch.setattr(kube, "fleet", lambda: TWO_CLASS_FLEET)
+    monkeypatch.setattr(kube, "workload_clusters", lambda ns: {})
+    monkeypatch.setattr(kube, "workload_cluster_of", lambda ns, uid: kube.workload_clusters(ns).get(uid))
+    old = _catalog_fold("reg/fold:old-default", "reg/fold:old-rtx", "reg/fold:old-l40s")
+    holder = {"m": old}
+    monkeypatch.setattr(catalog, "get", lambda name: holder["m"] if name == "fold" else None)
+    r = c.post(
+        "/v1/models/fold:invoke",
+        json={
+            "input": {},
+            "execution": {"placement": {"gpu_preference": ["rtx-pro-6000", "l40s"], "fallback_wait_s": 60}},
+        },
+        headers=H,
+    )
+    assert r.status_code == 202, r.text
+    op = r.json()["id"]
+    job = fake.jobs[("tenant-demo", op)]
+    ann = job["metadata"]["annotations"]
+    assert f"{LABEL}/model-version" not in ann and ann[f"{LABEL}/image"].endswith("old-rtx")
+    frozen = json.loads(ann[f"{LABEL}/images"])  # normalised to the fleet's logical registry host
+    assert {k: v.rsplit("/", 1)[-1] for k, v in frozen.items()} == {
+        "default": "fold:old-default",
+        "rtx-pro-6000": "fold:old-rtx",
+        "l40s": "fold:old-l40s",
+    }
+    # the catalog moves every image (a fleet catalog substitution)
+    holder["m"] = _catalog_fold("reg/fold:new-default", "reg/fold:new-rtx", "reg/fold:new-l40s")
+    # fallback to the next class: the ORIGINAL l40s image, not the current one
+    job["metadata"]["creationTimestamp"] = "2026-10-05T20:00:00Z"
+    assert appmod.fallback_switch() == [f"{op}-r1"]
+    new = fake.jobs[("tenant-demo", f"{op}-r1")]
+    main = next(x for x in new["spec"]["template"]["spec"]["containers"] if x["name"] == "main")
+    assert main["image"].endswith("old-l40s") and new["metadata"]["labels"][f"{LABEL}/gpu-class"] == "l40s"
+    assert json.loads(new["metadata"]["annotations"][f"{LABEL}/images"])["rtx-pro-6000"].endswith(
+        "old-rtx"
+    )  # the map travels
+    # resume of the successor on a changed class with a portable checkpoint: the ORIGINAL rtx image
+    new["status"] = {"conditions": [{"type": "Failed", "status": "True", "message": "node lost"}]}
+    fake.pvcs.pop(("tenant-demo", f"{op}-r1-work"), None)
+    r = c.post(
+        f"/v1/operations/{op}-r1:resume",
+        json={"checkpoint_ref": "s3://cust/ckpt/1", "gpu_class": "rtx-pro-6000"},
+        headers=H,
+    )
+    assert r.status_code == 202, r.text
+    r2 = fake.jobs[("tenant-demo", f"{op}-r2")]
+    assert next(x for x in r2["spec"]["template"]["spec"]["containers"] if x["name"] == "main")["image"].endswith(
+        "old-rtx"
+    )
+    # resume on the same class: the original image of that class
+    r2["status"] = {"conditions": [{"type": "Failed", "status": "True", "message": "node lost"}]}
+    fake.pvcs.pop(("tenant-demo", f"{op}-r2-work"), None)
+    r = c.post(f"/v1/operations/{op}-r2:resume", json={"checkpoint_ref": "s3://cust/ckpt/2"}, headers=H)
+    assert r.status_code == 202, r.text
+    r3 = fake.jobs[("tenant-demo", f"{op}-r3")]
+    assert next(x for x in r3["spec"]["template"]["spec"]["containers"] if x["name"] == "main")["image"].endswith(
+        "old-rtx"
+    )
+    # an operation admitted before the map was recorded: same class continues, a changed class is refused (409)
+    legacy = fake.jobs[("tenant-demo", f"{op}-r3")]
+    legacy["metadata"]["annotations"].pop(f"{LABEL}/images")
+    legacy["status"] = {"conditions": [{"type": "Failed", "status": "True", "message": "node lost"}]}
+    fake.pvcs.pop(("tenant-demo", f"{op}-r3-work"), None)
+    r = c.post(
+        f"/v1/operations/{op}-r3:resume", json={"checkpoint_ref": "s3://cust/ckpt/3", "gpu_class": "l40s"}, headers=H
+    )
+    assert r.status_code == 409 and "not recorded" in r.text, r.text
+    assert ("tenant-demo", f"{op}-r4") not in fake.jobs
+    r = c.post(f"/v1/operations/{op}-r3:resume", json={"checkpoint_ref": "s3://cust/ckpt/3"}, headers=H)
+    assert r.status_code == 202, r.text
+    assert next(
+        x
+        for x in fake.jobs[("tenant-demo", f"{op}-r4")]["spec"]["template"]["spec"]["containers"]
+        if x["name"] == "main"
+    )["image"].endswith("old-rtx")
+
+
 def test_admitted_queued_run_names_its_cluster_phase_and_wait(client, monkeypatch):
     """docs/API.md: a run admitted on a worker whose node is still coming up shows the cluster, `phase` and a bounded
     reason from the pod the API lists (no Events), before any authenticated attempt exists; the QUEUED contract and the

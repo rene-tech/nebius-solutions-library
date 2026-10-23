@@ -86,11 +86,23 @@ def class_images(model: dict) -> dict | None:
 
 
 def image_for_class(model: dict, gpu_class: str | None) -> str | None:
-    """The image a run uses on `gpu_class`: the class's entry of `job.images`, else its default, else `job.image`."""
+    """The image a run uses on `gpu_class`: the class's entry of `job.images`, else its default, else `job.image`. A
+    definition pinned to the classes an operation recorded (`job.pinned_classes`, catalog.pinned for an operation
+    admitted before api 0.11.198 froze its class map) answers for those classes only: any other class is unknown
+    (409), never the current definition's image."""
+    job = model.get("job") or {}
+    pinned = job.get("pinned_classes")
+    if pinned is not None and gpu_class not in pinned:
+        raise HTTPException(
+            409,
+            f"model {model.get('name')}: the original image for GPU class {gpu_class} is not recorded on this "
+            f"operation (admitted before api 0.11.198 froze the class map); continue it on {', '.join(pinned)} "
+            "or submit anew",
+        )
     images = class_images(model)
     if not images:
-        return (model.get("job") or {}).get("image")
-    return images.get(gpu_class or "", images["default"])
+        return job.get("image")
+    return images.get(gpu_class or "", images.get("default") or job.get("image"))
 
 
 def _render(value, params: dict):

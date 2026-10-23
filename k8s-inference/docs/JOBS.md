@@ -142,6 +142,14 @@ privilege, no host path, no shared tenant mount: the alias cannot reach anything
 
 ## Resume
 
+
+A continuation never silently takes a newer definition: an API-managed definition pins the revision the operation was
+rendered from (`serverless2.nebius/model-version`, re-rendered from the models history); a catalog-managed definition
+pins what the Job froze at admission (api 0.11.198): the resolved image of its class (`serverless2.nebius/image`) and
+the complete class-to-image map (`serverless2.nebius/images`), so a continuation on the same class or on another class
+(a fallback, a `:resume` with `gpu_class`) renders the original image for that class. An operation admitted before the
+map was recorded continues on its own class only; another class is refused (409) rather than rendered from the current
+definition.
 A resumed operation names its successor: durably (the attempt marks the handle and the stage gate follow, also once
 the original Job expired) and on its Job while it exists. `GET /v1/operations/<original>` therefore answers with the
 current head of the lineage (the original stays readable through its rows), a graph child waiting on a resumed

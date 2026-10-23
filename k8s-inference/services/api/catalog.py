@@ -7,6 +7,7 @@ parameters [] (run, rendered into a Kubernetes Job by jobs.py, docs/JOBS.md), na
 priorityClassName, parameters, price_per_gpu_hour, paused}} ("hub" = this API's region)."""
 
 import glob
+import json
 import os
 
 import yaml
@@ -137,22 +138,46 @@ def get(name: str) -> dict | None:
     return all_models().get(name)
 
 
-def pinned(model: dict, ann: dict) -> dict:
-    """The model as the operation was rendered from it: a resume or an export retry re-renders from the revision the
-    Job pinned (`serverless2.nebius/model-version`, models_history), never silently from a newer definition."""
+def pinned(model: dict, ann: dict, labels: dict | None = None) -> dict:
+    """The model as the operation was rendered from it: a resume, an export retry, a class fallback, an unschedulable
+    switch or a recovery successor re-renders from what the Job pinned, never from a newer definition. An API-managed
+    definition pins its revision (`serverless2.nebius/model-version`, models_history). A catalog-managed definition
+    has no revision history, so its pin is what the Job froze at admission (api 0.11.198): the complete class-to-image
+    map (`serverless2.nebius/images`) and the resolved image of its class (`serverless2.nebius/image`), so a
+    continuation on ANY class renders the original image for that class. An operation admitted before that record
+    exists pins its admitted class only (label `gpu-class`); a continuation on another class is refused as unknown
+    (render.image_for_class, 409), never rendered from the current definition or guessed."""
     want = ann.get(f"{LABEL}/model-version")
-    if not want or str(model.get("version")) == str(want) or model.get("managed_by") != "api":
-        return model
-    import db
-    import models as runtime_store
+    if want and str(model.get("version")) != str(want) and model.get("managed_by") == "api":
+        import db
+        import models as runtime_store
 
-    if not db.enabled():
+        if db.enabled():
+            for h in db.history(model["name"], 500):
+                if str(h["version"]) == str(want) and h.get("spec"):
+                    entry = runtime_store.to_entry(h["spec"], managed_by="api")
+                    return normalise({**entry, "version": h["version"]})
         return model
-    for h in db.history(model["name"], 500):
-        if str(h["version"]) == str(want) and h.get("spec"):
-            entry = runtime_store.to_entry(h["spec"], managed_by="api")
-            return normalise({**entry, "version": h["version"]})
-    return model
+    image = ann.get(f"{LABEL}/image")
+    if not image or model.get("version") is not None or not (model.get("job") or {}).get("image"):
+        return model
+    job = {**model["job"], "image": image}
+    recorded = ann.get(f"{LABEL}/images")
+    if recorded:
+        try:
+            images = json.loads(recorded)
+        except ValueError:
+            images = None
+        if isinstance(images, dict) and images and all(isinstance(v, str) and v for v in images.values()):
+            job["images"] = images  # the complete original map: every class resolves as at admission
+            return {**model, "job": job}
+    gpu_class = (labels or {}).get(f"{LABEL}/gpu-class")
+    if job.get("images") and not gpu_class:
+        return model  # per-class images, no record and no admitted class: nothing can be pinned, nothing is guessed
+    if job.get("images"):
+        job["images"] = {gpu_class: image}
+        job["pinned_classes"] = [gpu_class]  # admitted before the map was recorded: that class only (409 elsewhere)
+    return {**model, "job": job}
 
 
 def region_params(m: dict, region: str) -> dict:

@@ -708,8 +708,12 @@ def build_run(
             rates.setdefault(pool_region, {})[pool["pool"]] = rate
     meta["annotations"][f"{LABEL}/billing-rates"] = json.dumps(rates, sort_keys=True)
     meta["annotations"][f"{LABEL}/scratch"] = scratch
-    if gpu_class:
-        meta["annotations"][f"{LABEL}/image"] = job["image"]
+    # the images this operation was rendered from, frozen on the Job (api 0.11.198): the resolved image of its class
+    # and the complete class-to-image map of the definition at admission, so a continuation on ANY class renders the
+    # original image for that class whatever the catalog holds later (catalog.pinned)
+    meta["annotations"][f"{LABEL}/image"] = job["image"]
+    if class_images(model):
+        meta["annotations"][f"{LABEL}/images"] = json.dumps(class_images(model), sort_keys=True)
     nodes = int(r.get("nodes", 1) or 1)
     if ex:
         execution.apply_run(pod, r, ex, name, S3_ENV_SECRET)  # io mode, identity, private input, profile (docs/JOBS.md)
@@ -2489,7 +2493,7 @@ def export_again(
         raise HTTPException(409, f"operation {name} has no kept work volume to export")
     import catalog
 
-    model = catalog.pinned(model, ann)
+    model = catalog.pinned(model, ann, labels)
     if gang:
         try:
             retry(kube.core(worker).read_namespaced_persistent_volume_claim, SHARED_SCRATCH_PVC, ns)
@@ -2709,7 +2713,7 @@ def switch_class(
         raise HTTPException(409, f"operation {name} is waiting for its dependencies (stage gate); no fallback")
     import catalog
 
-    model = catalog.pinned(model, ann)
+    model = catalog.pinned(model, ann, labels)
     try:
         ex = json.loads(ann.get(f"{LABEL}/execution") or "{}") or {}
     except ValueError:
@@ -2856,7 +2860,7 @@ def switch_unschedulable(
     snapshot_uids = {p["metadata"].get("uid") for p in orig.get("_pods") or []}
     import catalog
 
-    model = catalog.pinned(model, ann)
+    model = catalog.pinned(model, ann, labels)
     try:
         ex = json.loads(ann.get(f"{LABEL}/execution") or "{}") or {}
     except ValueError:
@@ -3155,7 +3159,7 @@ def resume(
         raise HTTPException(400, "only run operations can be resumed")
     import catalog
 
-    model = catalog.pinned(model, ann)
+    model = catalog.pinned(model, ann, labels)
     pvc = ann.get(f"{LABEL}/pvc")
     worker = orig["_region"] if is_manager_job(orig) else region
     try:
