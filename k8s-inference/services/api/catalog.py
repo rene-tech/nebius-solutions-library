@@ -172,11 +172,12 @@ def pinned(model: dict, ann: dict, labels: dict | None = None) -> dict:
             job["images"] = images  # the complete original map: every class resolves as at admission
             return {**model, "job": job}
     gpu_class = (labels or {}).get(f"{LABEL}/gpu-class")
-    if job.get("images") and not gpu_class:
-        return model  # per-class images, no record and no admitted class: nothing can be pinned, nothing is guessed
     if job.get("images"):
-        job["images"] = {gpu_class: image}
-        job["pinned_classes"] = [gpu_class]  # admitted before the map was recorded: that class only (409 elsewhere)
+        # admitted before the map was recorded: the recorded image answers for the admitted class only; with no
+        # admitted class on record no class is answerable (pinned_classes empty): render.image_for_class refuses
+        # every class as unknown rather than taking the current definition's bytes (Nims' review of 0.11.198)
+        job["images"] = {gpu_class: image} if gpu_class else {}
+        job["pinned_classes"] = [gpu_class] if gpu_class else []
     return {**model, "job": job}
 
 

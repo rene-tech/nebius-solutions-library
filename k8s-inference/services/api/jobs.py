@@ -712,7 +712,10 @@ def build_run(
     # and the complete class-to-image map of the definition at admission, so a continuation on ANY class renders the
     # original image for that class whatever the catalog holds later (catalog.pinned)
     meta["annotations"][f"{LABEL}/image"] = job["image"]
-    if class_images(model):
+    if class_images(model) and (model.get("job") or {}).get("pinned_classes") is None:
+        # the complete map, only when it IS complete: a continuation rendered from a restricted pin (an operation
+        # admitted before the map existed, catalog.pinned) carries its recorded image alone, so the restriction
+        # survives every successor; a partial map is never promoted to a complete one (Nims' review of 0.11.198)
         meta["annotations"][f"{LABEL}/images"] = json.dumps(class_images(model), sort_keys=True)
     nodes = int(r.get("nodes", 1) or 1)
     if ex:

@@ -671,8 +671,14 @@ def test_continuation_of_a_catalog_managed_run_keeps_the_image_it_was_rendered_w
     with pytest.raises(HTTPException) as e:
         render.image_for_class(legacy, "l40s")
     assert e.value.status_code == 409 and "not recorded" in e.value.detail
-    # per-class images with no admitted class and no map: nothing pinned, nothing guessed; no record: unchanged
-    assert catalog.pinned(current, {f"{LABEL}/image": old_rtx}, {}) is current
+    # per-class images, a recorded image but NO admitted class on record: no class is answerable (0.11.199, Nims'
+    # review): every class is refused rather than rendered from the current definition
+    unknown = catalog.pinned(current, {f"{LABEL}/image": old_rtx}, {})
+    for cls in ("rtx-pro-6000", "l40s", None):
+        with pytest.raises(HTTPException) as e:
+            render.image_for_class(unknown, cls)
+        assert e.value.status_code == 409 and "submit anew" in e.value.detail
+    # no recorded image at all: unchanged (nothing to pin)
     assert catalog.pinned(current, {}, {f"{LABEL}/gpu-class": "l40s"}) is current
     # a single-image class pins job.image
     single = catalog.normalise(
@@ -758,6 +764,19 @@ def test_catalog_managed_fallback_and_resume_render_the_frozen_original_images(c
     assert ("tenant-demo", f"{op}-r4") not in fake.jobs
     r = c.post(f"/v1/operations/{op}-r3:resume", json={"checkpoint_ref": "s3://cust/ckpt/3"}, headers=H)
     assert r.status_code == 202, r.text
+    # the same-class successor of a legacy operation carries the recorded image only, never a synthesized complete
+    # map (0.11.199, Nims' review): the NEXT continuation on a changed class is still refused
+    r4 = fake.jobs[("tenant-demo", f"{op}-r4")]
+    assert f"{LABEL}/images" not in r4["metadata"]["annotations"] and r4["metadata"]["annotations"][
+        f"{LABEL}/image"
+    ].endswith("old-rtx")
+    r4["status"] = {"conditions": [{"type": "Failed", "status": "True", "message": "node lost"}]}
+    fake.pvcs.pop(("tenant-demo", f"{op}-r4-work"), None)
+    r = c.post(
+        f"/v1/operations/{op}-r4:resume", json={"checkpoint_ref": "s3://cust/ckpt/4", "gpu_class": "l40s"}, headers=H
+    )
+    assert r.status_code == 409 and "not recorded" in r.text, r.text
+    assert ("tenant-demo", f"{op}-r5") not in fake.jobs
     assert next(
         x
         for x in fake.jobs[("tenant-demo", f"{op}-r4")]["spec"]["template"]["spec"]["containers"]

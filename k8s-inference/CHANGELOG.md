@@ -4,7 +4,15 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.198, jobs 0.1.36, dispatcher 0.2.17
+## api 0.11.199, jobs 0.1.36, dispatcher 0.2.17 (0.11.198 = the same pin before Nims' review corrections; built, never applied)
+
+- Two fail-closed corrections to the pin below (Nims' offline review of 0.11.198): an operation with a recorded image
+  but no admitted class on record and a per-class definition is refused on every class (409 "submit anew"), never
+  rendered from the current definition; a continuation rendered from a restricted pin (an operation admitted before
+  the map existed) carries its recorded image only, so the restriction survives every successor and a partial map is
+  never promoted to a complete one (the same-class successor of a legacy operation still refuses a changed class).
+  Regression: both cases, unit and end to end.
+
 
 - Every run Job freezes the images it was rendered from: the resolved image of its class (`serverless2.nebius/image`,
   now on every run) and the definition's complete class-to-image map (`serverless2.nebius/images`). A continuation

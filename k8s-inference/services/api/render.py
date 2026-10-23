@@ -96,9 +96,11 @@ def image_for_class(model: dict, gpu_class: str | None) -> str | None:
         raise HTTPException(
             409,
             f"model {model.get('name')}: the original image for GPU class {gpu_class} is not recorded on this "
-            f"operation (admitted before api 0.11.198 froze the class map); continue it on {', '.join(pinned)} "
-            "or submit anew",
+            "operation (admitted before api 0.11.198 froze the class map); "
+            + (f"continue it on {', '.join(pinned)} or submit anew" if pinned else "submit anew"),
         )
+    if pinned:
+        return job["images"][gpu_class]  # the recorded image of the admitted class, never a synthesized default
     images = class_images(model)
     if not images:
         return job.get("image")
