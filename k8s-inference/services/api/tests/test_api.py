@@ -3046,6 +3046,59 @@ def test_endpoint_pool_fits_the_gpu_count(monkeypatch):
     assert models.pool_for("hub", ["h100"], 8) == "h100-spot-8x"  # plain before InfiniBand
 
 
+def test_a_terminal_exit_matched_by_a_notin_rule_is_failed_never_queued():
+    """op-d1c78611a615f76a (MAIN, 2026-10-24 14:11Z): main exited 1 (a malformed TPR, an XDR read error) at 14:11:15Z,
+    the uploader posted the record by 14:11:24Z, the Job's Failed condition (PodFailurePolicy) came at 14:11:27Z.
+    The live Job's rules end with `FailJob` on `NotIn [0, 137, 143]`; `_fails_job` only read `In` rules, so between
+    the pod's end and the Job's condition the projection fell to QUEUED with phase `starting`: a client saw
+    RUNNING -> QUEUED/starting -> FAILED. A terminal exit under either operator is FAILED at once. Rules are read in
+    order like the Job controller does: a `Count` on 137/143 before the `NotIn` rule keeps a counted exit retryable."""
+    rules = [
+        {"action": "FailJob", "onExitCodes": {"containerName": "main", "operator": "In", "values": [75]}},
+        {"action": "Ignore", "onPodConditions": [{"status": "True", "type": "DisruptionTarget"}]},
+        {"action": "Count", "onExitCodes": {"containerName": "main", "operator": "In", "values": [137, 143]}},
+        {"action": "FailJob", "onExitCodes": {"containerName": "main", "operator": "NotIn", "values": [0, 137, 143]}},
+    ]
+    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, 1) is True
+    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, 75) is True
+    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, 137) is False  # counted: retried
+    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, 0) is False
+    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, None) is False
+    base = {
+        "metadata": {
+            "name": "op-xdr",
+            "namespace": "tenant-demo",
+            "labels": {f"{L}/tenant": "demo", f"{L}/mode": "run", f"{L}/model": "gromacs"},
+            "annotations": {f"{L}/input": "{}", f"{L}/pvc": "op-xdr-work"},
+            "creationTimestamp": "2026-10-24T14:09:45Z",
+        },
+        "spec": {"backoffLimit": 1, "podFailurePolicy": {"rules": rules}},
+        "status": {"startTime": "2026-10-24T14:09:52Z", "conditions": [{"type": "Suspended", "status": "False"}]},
+        "_cluster": "eu-south1",
+    }
+    # the pod ended (main exit 1, uploader done), the Job's Failed condition not on record yet
+    ended = {**base, "_pods": [pod("op-xdr", "Failed", "2026-10-24T14:11:00Z", "2026-10-24T14:11:15Z", 1)]}
+    op = jobs.normalise(ended)
+    assert op["status"] == "FAILED" and op["phase"] is None
+    assert [a["status"] for a in op["attempts"]] == ["FAILED"]
+    # the pod already gone, the uploader's record standing in: the same
+    rec = [
+        {
+            "operation": "op-xdr",
+            "pod": "op-xdr-5rxnv",
+            "status": "failed",
+            "exit_code": 1,
+            "gpus": 1,
+            "started_at": "2026-10-24T14:11:00Z",
+            "ended_at": "2026-10-24T14:11:15Z",
+        }
+    ]
+    assert jobs.normalise({**base, "_pods": []}, None, rec)["status"] == "FAILED"
+    # unchanged: a counted exit (137) with no Failed condition is between attempts, QUEUED
+    counted = {**base, "_pods": [pod("op-xdr", "Failed", "2026-10-24T14:11:00Z", "2026-10-24T14:11:15Z", 137)]}
+    assert jobs.normalise(counted)["status"] == "QUEUED"
+
+
 def test_a_finished_pod_before_the_jobs_completion_is_finalizing_never_queued():
     """api 0.11.200 (MAIN, op-2a6971406115d085 2026-10-24): between main's exit 0 and the Job's Complete condition
     (the controller's or MultiKueue's copy onto the manager Job, seconds later) the pod is already Succeeded, so no

@@ -4,6 +4,16 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## unreleased (source only, 2026-10-24; not cut, not applied)
+
+- A run whose newest attempt ended with an exit the Job's failure policy turns into `FailJob` is `FAILED` at once
+  under either operator of the rule. `status._fails_job` read only `operator: In` rules, while the class policies end
+  with `FailJob` on `NotIn [0, 137, 143]`, so a terminal exit 1 (op-d1c78611a615f76a, a malformed TPR, 14:11Z) fell
+  to the QUEUED fallback between the pod's end and the Job's `Failed` condition: a client saw
+  RUNNING -> QUEUED/starting -> FAILED (present since the rule existed; 0.11.200 covered the SUCCEEDED counterpart
+  only). The rules are now read in order, the first `onExitCodes` rule for `main` that matches decides, so a `Count`
+  on 137/143 before the `NotIn` rule keeps a counted exit retryable (QUEUED between attempts).
+
 ## api 0.11.200, jobs 0.1.36, dispatcher 0.2.17 (cut 2026-10-24 as a plan-only candidate on the R10 pins; not applied)
 
 - A run whose newest attempt exited 0 and whose pod is no longer running is `FINALIZING` until the Job's completion
