@@ -31,18 +31,22 @@ FINALIZING_GRACE_S = 600  # a completed run without a delivery record is FINALIZ
 
 
 def _fails_job(job: dict, exit_code) -> bool:
-    """Whether `exit_code` of `main` is one the Job's podFailurePolicy answers with FailJob (no more pod retries):
-    the rules in order, the first `onExitCodes` rule for `main` that matches decides, under `In` or `NotIn` (the
-    class policies end with `FailJob NotIn [0, retryable...]`; a `Count` on the retryable codes comes before it).
-    Pod-condition rules (DisruptionTarget) are not about an exit and are skipped."""
-    if exit_code is None:
+    """Whether `exit_code` of `main` is one the Job's podFailurePolicy answers with FailJob (no more pod retries),
+    read as the Job controller does (batch/v1 PodFailurePolicyOnExitCodesRequirement): exit 0 never matches a rule
+    whatever its values; the rules in order, the first `onExitCodes` rule for `main` whose operator (`In`: the code is
+    listed; `NotIn`: it is not) matches decides, so a `Count` or `Ignore` ahead of the class policies' closing
+    `FailJob NotIn [0, retryable...]` keeps its codes retryable. Pod-condition rules (DisruptionTarget) are about the
+    pod, not the exit, and are skipped; an unknown operator matches nothing."""
+    if exit_code in (None, 0):
         return False
+    code = int(exit_code)
     for rule in ((job.get("spec") or {}).get("podFailurePolicy") or {}).get("rules") or []:
         codes = rule.get("onExitCodes") or {}
         if not codes or codes.get("containerName", "main") != "main":
             continue
-        listed = int(exit_code) in [int(v) for v in codes.get("values") or []]
-        if listed if codes.get("operator", "In") == "In" else not listed:
+        values = [int(v) for v in codes.get("values") or []]
+        operator = codes.get("operator", "In")
+        if (operator == "In" and code in values) or (operator == "NotIn" and code not in values):
             return rule.get("action") == "FailJob"
     return False
 

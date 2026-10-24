@@ -3059,11 +3059,72 @@ def test_a_terminal_exit_matched_by_a_notin_rule_is_failed_never_queued():
         {"action": "Count", "onExitCodes": {"containerName": "main", "operator": "In", "values": [137, 143]}},
         {"action": "FailJob", "onExitCodes": {"containerName": "main", "operator": "NotIn", "values": [0, 137, 143]}},
     ]
-    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, 1) is True
-    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, 75) is True
-    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, 137) is False  # counted: retried
-    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, 0) is False
-    assert status._fails_job({"spec": {"podFailurePolicy": {"rules": rules}}}, None) is False
+    pol = lambda r: {"spec": {"podFailurePolicy": {"rules": r}}}  # noqa: E731
+    assert status._fails_job(pol(rules), 1) is True
+    assert status._fails_job(pol(rules), 75) is True
+    assert status._fails_job(pol(rules), 137) is False  # counted: retried
+    assert status._fails_job(pol(rules), 0) is False and status._fails_job(pol(rules), None) is False
+    # exit 0 never matches an onExitCodes rule, whatever its values (batch/v1: a rule is evaluated for non-zero exits)
+    assert (
+        status._fails_job(pol([{"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [137, 143]}}]), 0)
+        is False
+    )
+    assert status._fails_job(pol([{"action": "FailJob", "onExitCodes": {"operator": "In", "values": [0]}}]), 0) is False
+    # ordering: a Count or Ignore ahead of a NotIn rule that would otherwise fail the code wins; after it, the NotIn does
+    assert (
+        status._fails_job(
+            pol(
+                [
+                    {"action": "Count", "onExitCodes": {"operator": "In", "values": [137]}},
+                    {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [0]}},
+                ]
+            ),
+            137,
+        )
+        is False
+    )
+    assert (
+        status._fails_job(
+            pol(
+                [
+                    {"action": "Ignore", "onExitCodes": {"operator": "In", "values": [3]}},
+                    {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [0]}},
+                ]
+            ),
+            3,
+        )
+        is False
+    )
+    assert (
+        status._fails_job(
+            pol(
+                [
+                    {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [0]}},
+                    {"action": "Count", "onExitCodes": {"operator": "In", "values": [137]}},
+                ]
+            ),
+            137,
+        )
+        is True
+    )
+    # other containers' rules and unknown operators match nothing; pod-condition rules are skipped
+    assert (
+        status._fails_job(
+            pol([{"action": "FailJob", "onExitCodes": {"containerName": "uploader", "operator": "In", "values": [1]}}]),
+            1,
+        )
+        is False
+    )
+    assert (
+        status._fails_job(pol([{"action": "FailJob", "onExitCodes": {"operator": "Between", "values": [1]}}]), 1)
+        is False
+    )
+    assert (
+        status._fails_job(
+            pol([{"action": "FailJob", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]}]), 1
+        )
+        is False
+    )
     base = {
         "metadata": {
             "name": "op-xdr",
@@ -3094,9 +3155,16 @@ def test_a_terminal_exit_matched_by_a_notin_rule_is_failed_never_queued():
         }
     ]
     assert jobs.normalise({**base, "_pods": []}, None, rec)["status"] == "FAILED"
-    # unchanged: a counted exit (137) with no Failed condition is between attempts, QUEUED
+    # unchanged: a counted exit (137) with no Failed condition is between attempts, QUEUED; so is an exit 1 of a pod the
+    # cluster disrupted (DisruptionTarget: the Ignore rule, a preempted attempt), never FAILED
     counted = {**base, "_pods": [pod("op-xdr", "Failed", "2026-10-24T14:11:00Z", "2026-10-24T14:11:15Z", 137)]}
     assert jobs.normalise(counted)["status"] == "QUEUED"
+    disrupted = {
+        **base,
+        "_pods": [pod("op-xdr", "Failed", "2026-10-24T14:11:00Z", "2026-10-24T14:11:15Z", 1, disrupted=True)],
+    }
+    op = jobs.normalise(disrupted)
+    assert op["status"] == "QUEUED" and [a["status"] for a in op["attempts"]] == ["PREEMPTED"]
 
 
 def test_a_finished_pod_before_the_jobs_completion_is_finalizing_never_queued():
