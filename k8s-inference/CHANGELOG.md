@@ -4,7 +4,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.200 (source prepared on the branch 2026-10-24; not cut, not built, not applied)
+## api 0.11.200, jobs 0.1.36, dispatcher 0.2.17 (cut 2026-10-24 as a plan-only candidate on the R10 pins; not applied)
 
 - A run whose newest attempt exited 0 and whose pod is no longer running is `FINALIZING` until the Job's completion
   is on record, never `QUEUED`. Between main's exit and the Job's `Complete` condition (the controller's, or for a
