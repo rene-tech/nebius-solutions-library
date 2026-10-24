@@ -122,6 +122,24 @@ def _lifecycle_fields(r: dict) -> dict:
     return out
 
 
+def _finishing(attempts: list, pods: list) -> bool:
+    """The run ended well and only its completion is not on record yet: the attempt that started last succeeded, no
+    pod of the Job is pending, running or unknown (a newer attempt without a start time sorts first, never last), and
+    no other attempt failed or was preempted AFTER that success ended (a gang rank that started earlier can end later).
+    Anything else is the ordinary QUEUED, RUNNING or FAILED judgement."""
+    if not attempts or attempts[-1]["status"] != "SUCCEEDED":
+        return False
+    if any((p.get("status") or {}).get("phase", "Pending") in ("Pending", "Running", "Unknown") for p in pods):
+        return False
+    done = _ts(attempts[-1].get("ended_at"))
+    for a in attempts[:-1]:
+        if a["status"] in ("FAILED", "PREEMPTED"):
+            ended = _ts(a.get("ended_at"))
+            if done is None or ended is None or ended > done:
+                return False
+    return True
+
+
 def _attempts(pods: list, records: list | None = None, name: str | None = None) -> list[dict]:
     """One attempt per pod, live pods first; attempt records from the bucket (uploader-written,
     docs/JOBS.md) stand in for pods that preemption or node loss deleted. `_gpus` is internal."""
@@ -510,6 +528,12 @@ def normalise(job: dict, price_per_call: float | None = None, records: list | No
         (p.get("status") or {}).get("phase") == "Running" for p in job.get("_pods", [])
     ):
         status = "RUNNING"  # includes finalization: main ended, the uploader is still exporting
+    elif _finishing(attempts, job.get("_pods", [])) and not ann.get(f"{LABEL}/cancelled"):
+        # main exited 0 and its pod is no longer running, but the Job's own completion is not on record yet: the
+        # Job controller's condition (or, for a fleet-placed run, MultiKueue's copy of it onto the manager Job)
+        # lags the pod by seconds. The run is finishing, never queued again: a QUEUED/starting flicker between
+        # RUNNING and SUCCEEDED (op-2a6971406115d085, 2026-10-24 10:49:09Z, 10 s) misreads a done run as restarting
+        status = "FINALIZING"
     else:
         status = "QUEUED"  # gated by Kueue, pending for a node, being placed, or between attempts after a preemption
     cancel_attempt(attempts, bool(ann.get(f"{LABEL}/cancelled")))  # the attempt the cancel interrupted

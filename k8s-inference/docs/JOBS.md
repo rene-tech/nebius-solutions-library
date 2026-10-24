@@ -1008,6 +1008,7 @@ fallback moved the run; the operation's `successor` is live, and reading the ori
 |---|---|
 | no pod running, no terminal condition | `QUEUED` (gated, pending, or between attempts after a preemption) |
 | a pod with `main` running | `RUNNING` |
+| newest attempt exited 0, no pod running, no terminal condition yet | `FINALIZING` (the Job's completion is not on record yet: the controller's condition, or MultiKueue's copy of it, lags the pod by seconds; api 0.11.200) |
 | condition `Complete` / `SuccessCriteriaMet` | `SUCCEEDED` |
 | condition `Failed` / `FailureTarget` | `FAILED`, or `CANCELLED` with the `cancelled` annotation |
 

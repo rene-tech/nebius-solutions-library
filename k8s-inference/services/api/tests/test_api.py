@@ -3046,6 +3046,112 @@ def test_endpoint_pool_fits_the_gpu_count(monkeypatch):
     assert models.pool_for("hub", ["h100"], 8) == "h100-spot-8x"  # plain before InfiniBand
 
 
+def test_a_finished_pod_before_the_jobs_completion_is_finalizing_never_queued():
+    """api 0.11.200 (MAIN, op-2a6971406115d085 2026-10-24): between main's exit 0 and the Job's Complete condition
+    (the controller's or MultiKueue's copy onto the manager Job, seconds later) the pod is already Succeeded, so no
+    attempt is RUNNING and no pod is Running; the projection used to fall to QUEUED with phase `starting`, so a
+    client saw RUNNING -> QUEUED/starting -> SUCCEEDED. A run whose newest attempt succeeded is FINALIZING until its
+    completion is on record. A pending pod, a preempted newest attempt and a cancelled run keep their statuses."""
+    base = {
+        "metadata": {
+            "name": "op-fin",
+            "namespace": "tenant-demo",
+            "labels": {f"{L}/tenant": "demo", f"{L}/mode": "run", f"{L}/model": "fold"},
+            "annotations": {f"{L}/input": "{}", f"{L}/pvc": "op-fin-work"},
+            "creationTimestamp": "2026-10-24T10:44:36Z",
+        },
+        "spec": {},
+        "status": {"startTime": "2026-10-24T10:44:44Z", "conditions": [{"type": "Suspended", "status": "False"}]},
+        "_cluster": "eu-north1",
+    }
+    done = {**base, "_pods": [pod("op-fin", "Succeeded", "2026-10-24T10:45:41Z", "2026-10-24T10:48:56Z", 0)]}
+    op = jobs.normalise(done)
+    assert op["status"] == "FINALIZING" and op["phase"] is None and op["reason"] is None
+    assert [a["status"] for a in op["attempts"]] == ["SUCCEEDED"]
+    # the pod already gone, the uploader's record standing in: the same
+    gone = {**base, "_pods": []}
+    rec = [
+        {
+            "operation": "op-fin",
+            "pod": "op-fin-suc",
+            "status": "succeeded",
+            "gpus": 1,
+            "started_at": "2026-10-24T10:45:41Z",
+            "ended_at": "2026-10-24T10:48:56Z",
+        }
+    ]
+    assert jobs.normalise(gone, None, rec)["status"] == "FINALIZING"
+    # once the Job is Complete: the existing rules (a delivery record decides SUCCEEDED, else FINALIZING then EXPORT_FAILED)
+    complete = {
+        **done,
+        "status": {
+            **done["status"],
+            "completionTime": "2026-10-24T10:49:09Z",
+            "conditions": [{"type": "Complete", "status": "True"}],
+        },
+    }
+    assert jobs.normalise(complete, None, [{**rec[0], "export": "succeeded"}])["status"] == "SUCCEEDED"
+    # unchanged: a pending pod is QUEUED/starting; a preempted newest attempt is QUEUED (between attempts)
+    pending = {**base, "_pods": [pod("op-fin", "Pending", "2026-10-24T10:45:41Z")]}
+    op = jobs.normalise(pending)
+    assert op["status"] == "QUEUED" and op["phase"] == "starting"
+    preempted = {
+        **base,
+        "_pods": [pod("op-fin", "Failed", "2026-10-24T10:45:41Z", "2026-10-24T10:46:00Z", 137, disrupted=True)],
+    }
+    assert jobs.normalise(preempted)["status"] == "QUEUED"
+    # ordering (Nims' review): an older success never hides a newer attempt. A newer Pending pod (no start time: it
+    # sorts FIRST among attempts) keeps the run QUEUED; a rank that started earlier but failed AFTER the success ended
+    # is not finishing either; export failure after Complete stays EXPORT_FAILED
+    old_success = [
+        {**rec[0], "pod": "op-fin-old", "started_at": "2026-10-24T10:30:00Z", "ended_at": "2026-10-24T10:40:00Z"}
+    ]
+    newer_pending = {**base, "_pods": [pod("op-fin", "Pending", "2026-10-24T10:45:41Z")]}
+    op = jobs.normalise(newer_pending, None, old_success)
+    assert op["status"] == "QUEUED" and op["phase"] == "starting"
+    later_failure = old_success + [
+        {
+            "operation": "op-fin",
+            "pod": "op-fin-r1",
+            "status": "failed",
+            "exit_code": 1,
+            "gpus": 1,
+            "started_at": "2026-10-24T10:29:00Z",
+            "ended_at": "2026-10-24T10:41:00Z",
+        }
+    ]
+    assert jobs.normalise(gone, None, later_failure)["status"] != "FINALIZING"
+    earlier_failure = old_success + [
+        {
+            "operation": "op-fin",
+            "pod": "op-fin-r0",
+            "status": "failed",
+            "exit_code": 1,
+            "gpus": 1,
+            "started_at": "2026-10-24T10:20:00Z",
+            "ended_at": "2026-10-24T10:25:00Z",
+        }
+    ]
+    assert (
+        jobs.normalise(gone, None, earlier_failure)["status"] == "FINALIZING"
+    )  # a failure before the success: finishing
+    export_failed = {
+        **done,
+        "status": {
+            **done["status"],
+            "completionTime": "2026-10-24T10:49:09Z",
+            "conditions": [{"type": "Complete", "status": "True"}],
+        },
+    }
+    assert jobs.normalise(export_failed, None, [{**rec[0], "export": "failed"}])["status"] == "EXPORT_FAILED"
+    # unchanged: a cancelled run whose last pod happened to exit 0 stays CANCELLED
+    cancelled = {
+        **done,
+        "metadata": {**done["metadata"], "annotations": {**done["metadata"]["annotations"], f"{L}/cancelled": "true"}},
+    }
+    assert jobs.normalise(cancelled)["status"] == "CANCELLED"
+
+
 def test_cancel_of_a_dispatched_jobset_deactivates_its_workload(client):
     """Fleet path: cancelling a running multi-node run deactivates its manager Workload (Kueue evicts it) besides
     suspending the worker's JobSet; the suspend alone was undone by Kueue and the pods restarted (test fleet, 2026-10-09)."""

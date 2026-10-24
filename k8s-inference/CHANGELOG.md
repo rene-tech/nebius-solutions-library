@@ -4,7 +4,15 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## api 0.11.199, jobs 0.1.36, dispatcher 0.2.17 (0.11.198 = the same pin before Nims' review corrections; built, never applied)
+## api 0.11.200 (source prepared on the branch 2026-10-24; not cut, not built, not applied)
+
+- A run whose newest attempt exited 0 and whose pod is no longer running is `FINALIZING` until the Job's completion
+  is on record, never `QUEUED`. Between main's exit and the Job's `Complete` condition (the controller's, or for a
+  fleet-placed run MultiKueue's copy of it onto the manager Job) the projection found no running attempt and no
+  running pod and fell to QUEUED with phase `starting`, so a client saw RUNNING -> QUEUED/starting -> SUCCEEDED
+  (op-2a6971406115d085, 2026-10-24 10:49:09Z, ten seconds, one successful attempt, no replay). Cancelled runs, pending
+  pods and preempted attempts keep their statuses. Regression: `test_a_finished_pod_before_the_jobs_completion_is_finalizing_never_queued`.
+
 
 - Two fail-closed corrections to the pin below (Nims' offline review of 0.11.198): an operation with a recorded image
   but no admitted class on record and a per-class definition is refused on every class (409 "submit anew"), never
