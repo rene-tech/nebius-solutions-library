@@ -4,7 +4,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## unreleased (source only, 2026-10-24; not cut, not applied)
+## api 0.11.201, jobs 0.1.36, dispatcher 0.2.17 (cut 2026-10-24 as a plan-only candidate on the 200 pins; not applied)
 
 - A run whose newest attempt ended with an exit the Job's failure policy turns into `FailJob` is `FAILED` at once
   under either operator of the rule. `status._fails_job` read only `operator: In` rules, while the class policies end
