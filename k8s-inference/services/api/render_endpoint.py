@@ -145,6 +145,12 @@ NOT_SETTINGS = ("paused", "price_per_gpu_hour", "parameters")
 # kinds by name); `apply` follows it, so the Service exists before the route that references it
 KIND_ORDER = {"ConfigMap": 0, "PersistentVolumeClaim": 1, "Service": 2}  # the pod's mounts before the pod
 
+# the worker container of every rendered endpoint pod (the InferenceService predictor, the LeaderWorkerSet member): the
+# one whose image is the endpoint's runtime identity (sessions.worker_endpoint_check); sidecars (queue-proxy) are not
+WORKER_CONTAINER_KSERVE = "kserve-container"
+WORKER_CONTAINER_LWS = "endpoint"
+WORKER_CONTAINERS = (WORKER_CONTAINER_KSERVE, WORKER_CONTAINER_LWS)
+
 
 def _fail(what: str, obj: str) -> HTTPException:
     return HTTPException(400, f"endpoint ({obj}): {what}")
@@ -550,7 +556,7 @@ def _inferenceservice(v: dict) -> dict:
         image = images[v["pool"]]
     else:
         image = _required(v.get("image"), "image is required", v["name"])
-    c: dict = {"name": "kserve-container", "image": image}
+    c: dict = {"name": WORKER_CONTAINER_KSERVE, "image": image}
     if v.get("command"):
         c["command"] = list(v["command"])
     if v.get("args"):
@@ -591,7 +597,7 @@ def _inferenceservice(v: dict) -> dict:
 
 def _lws_container(v: dict, nodes: int, ib: int, leader: bool, command) -> dict:
     r = v.get("resources") or {}
-    c: dict = {"name": "endpoint", "image": _required(v.get("image"), "image is required", v["name"])}
+    c: dict = {"name": WORKER_CONTAINER_LWS, "image": _required(v.get("image"), "image is required", v["name"])}
     if command:
         c["command"] = list(command)
     if v.get("args"):

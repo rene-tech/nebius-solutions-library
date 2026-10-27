@@ -132,20 +132,43 @@ def test_the_worker_must_be_the_targets_pod_running_the_targets_image():
     m = {"name": "chat", "namespace": "models"}
     img = models.normalise_image("vllm/vllm-openai:v0.31.0-l40s")
     s = {"model": "chat", "object": "chat-cheap", "image": img}
-    sessions.worker_endpoint_check(s, m, "chat-cheap", "models", ["vllm/vllm-openai:v0.31.0-l40s", "queue-proxy:1"])
+    good = [("kserve-container", "vllm/vllm-openai:v0.31.0-l40s"), ("queue-proxy", "queue-proxy:1")]
+    sessions.worker_endpoint_check(s, m, "chat-cheap", "models", good)
+    sessions.worker_endpoint_check(s, m, "chat-cheap", "models", [("endpoint", "vllm/vllm-openai:v0.31.0-l40s")])  # LWS
     with pytest.raises(HTTPException) as e:  # a sibling variant's pod
-        sessions.worker_endpoint_check(s, m, "chat-spot", "models", ["vllm/vllm-openai:v0.31.0-l40s"])
+        sessions.worker_endpoint_check(s, m, "chat-spot", "models", good)
     assert e.value.status_code == 403 and "bound to chat-cheap" in e.value.detail
     with pytest.raises(HTTPException) as e:  # the same object rolled to another image
-        sessions.worker_endpoint_check(s, m, "chat-cheap", "models", ["vllm/vllm-openai:v0.32.0-l40s"])
+        sessions.worker_endpoint_check(
+            s, m, "chat-cheap", "models", [("kserve-container", "vllm/vllm-openai:v0.32.0-l40s")]
+        )
     assert e.value.status_code == 403 and "bound to image" in e.value.detail
-    with pytest.raises(HTTPException):  # no image known on the pod
-        sessions.worker_endpoint_check(s, m, "chat-cheap", "models", [])
+    with pytest.raises(HTTPException) as e:  # the stored image on a SIDECAR, the worker rolled: never accepted
+        sessions.worker_endpoint_check(
+            s,
+            m,
+            "chat-cheap",
+            "models",
+            [("kserve-container", "vllm/vllm-openai:v0.32.0-l40s"), ("sidecar", "vllm/vllm-openai:v0.31.0-l40s")],
+        )
+    assert e.value.status_code == 403 and "worker runs" in e.value.detail
+    with pytest.raises(HTTPException) as e:  # no serving container at all
+        sessions.worker_endpoint_check(s, m, "chat-cheap", "models", [("sidecar", "vllm/vllm-openai:v0.31.0-l40s")])
+    assert e.value.status_code == 403 and "0 serving containers" in e.value.detail
+    with pytest.raises(HTTPException) as e:  # two serving names in one pod: ambiguous, never a worker pod
+        sessions.worker_endpoint_check(
+            s,
+            m,
+            "chat-cheap",
+            "models",
+            [("kserve-container", "vllm/vllm-openai:v0.31.0-l40s"), ("endpoint", "vllm/vllm-openai:v0.31.0-l40s")],
+        )
+    assert e.value.status_code == 403 and "2 serving containers" in e.value.detail
     with pytest.raises(HTTPException) as e:  # another model, as before
-        sessions.worker_endpoint_check(s, {"name": "other", "namespace": "models"}, "chat-cheap", "models", [img])
+        sessions.worker_endpoint_check(s, {"name": "other", "namespace": "models"}, "chat-cheap", "models", good)
     assert e.value.status_code == 403
     legacy = {"model": "chat", "object": None, "image": None}
-    sessions.worker_endpoint_check(legacy, m, "chat-spot", "models", ["anything:1"])
+    sessions.worker_endpoint_check(legacy, m, "chat-spot", "models", [("sidecar", "anything:1")])
 
 
 def test_verify_worker_reads_the_image_from_the_pod_object_not_the_worker(monkeypatch):
@@ -183,19 +206,28 @@ def test_verify_worker_reads_the_image_from_the_pod_object_not_the_worker(monkey
     def pod(name, label, image):
         return SimpleNamespace(
             metadata=SimpleNamespace(uid="uid-" + name, labels={"serving.kserve.io/inferenceservice": label}),
-            spec=SimpleNamespace(containers=[SimpleNamespace(image=image), SimpleNamespace(image="queue-proxy:1")]),
+            spec=SimpleNamespace(
+                containers=[
+                    SimpleNamespace(name="kserve-container", image=image),
+                    SimpleNamespace(name="queue-proxy", image="queue-proxy:1"),
+                ]
+            ),
             status=SimpleNamespace(container_statuses=[]),
         )
 
     pods["good"] = pod("good", "chat-cheap", "vllm/vllm-openai:v0.31.0-l40s")
     pods["rolled"] = pod("rolled", "chat-cheap", "vllm/vllm-openai:v0.32.0-l40s")
     pods["sibling"] = pod("sibling", "chat-spot", "vllm/vllm-openai:v0.31.0-l40s")
+    pods["decoy"] = pod(
+        "decoy", "chat-cheap", "vllm/vllm-openai:v0.32.0-l40s"
+    )  # the worker rolled, a sidecar keeps the old image
+    pods["decoy"].spec.containers.append(SimpleNamespace(name="sidecar", image="vllm/vllm-openai:v0.31.0-l40s"))
     monkeypatch.setattr(k8s, "AuthenticationV1Api", Reviews)
     monkeypatch.setattr(kube, "_client", lambda region: None)
     monkeypatch.setattr(kube, "core", lambda region: Core())
     w = sessions.verify_worker("good", s, lambda label: m)
     assert w["uid"] == "uid-good" and w["region"] == "eu-north1"
-    for token in ("rolled", "sibling"):
+    for token in ("rolled", "sibling", "decoy"):
         with pytest.raises(HTTPException) as e:
             sessions.verify_worker(token, s, lambda label: m)
         assert e.value.status_code == 403
@@ -211,3 +243,29 @@ def test_the_security_policy_names_the_object_the_hook_learns_the_target_from():
     assert (
         appmod._endpoint_model
     )  # the hook resolves the model from an object name (catalog.get(...) or _endpoint_model)
+
+
+def test_the_hook_decides_on_the_canonical_model_whatever_object_the_policy_named(targeted, monkeypatch):
+    """A variant's SecurityPolicy names the OBJECT; every decision of the hook (an admitted credential bound to the
+    canonical model, the key's model grant, the markers) is about the model, so an endpoint child's call to a variant
+    host is accepted as it was when every policy named the model; only a live session's bind uses the object."""
+    c, fs, e = targeted
+    seen = {}
+
+    def principal(token, operation, model):
+        seen["admitted"] = (token, operation, model)
+        from auth import Principal
+
+        return Principal(key="s2-admitted.t", tenant="demo", info={"key_alias": "a", "metadata": {}}, key_hash="h")
+
+    monkeypatch.setattr(appmod, "_admitted_principal", principal)
+    monkeypatch.setattr(
+        appmod, "_authorize_model", lambda p, model, *a, **k: seen.setdefault("authorize", model) and ("op-1", "a")
+    )
+    hdr = {"Authorization": "Bearer s2-admitted.t", "x-serverless2-operation": "op-1", "x-serverless2-attempt": "a"}
+    for obj in ("chat", "chat-spot", "chat-cheap"):
+        seen.clear()
+        r = c.post(f"/internal/authorize/{obj}/v1/chat/completions", headers=hdr)
+        assert r.status_code == 200, (obj, r.text)
+        assert seen["admitted"] == ("t", "op-1", "chat") and seen["authorize"] == "chat"
+    assert c.post("/internal/authorize/no-such-object/v1/x", headers=hdr).status_code == 404

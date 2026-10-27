@@ -1189,7 +1189,12 @@ def get_model(model: str, p: Principal = Depends(scoped("read:catalog"))):
     include_in_schema=False,
 )
 async def authorize_endpoint(model: str, request: Request, path: str = ""):
-    """Envoy prefixes the original URI with a model identity fixed by the endpoint's SecurityPolicy."""
+    """Envoy prefixes the original URI with the identity the endpoint's SecurityPolicy fixed: the OBJECT the request
+    reached (a variant's own name, the model id for the base object; render_endpoint). Everything the hook decides
+    (admitted credentials, the key's model grant, markers) is about the canonical MODEL; only a live session's bind
+    uses the object (a targeted session binds at its own endpoint only)."""
+    obj = model
+    model = (catalog.get(model) or _endpoint_model(model))["name"]
     if sessions.enabled():
         if any(request.headers.get(h) for h in sessions.INJECTED):
             # only the hook sets these towards the worker; a client that sends them is forging a worker identity
@@ -1198,10 +1203,7 @@ async def authorize_endpoint(model: str, request: Request, path: str = ""):
         if claim:
             # a live session (docs/API.md "Sessions"): the claim binds exactly once, the session already holds the
             # key's slot and request; the worker learns the session and connection ids from the injected headers
-            # `model` is the identity the endpoint's SecurityPolicy fixed: the object the request reached (a variant's
-            # own name, or the model id for the base object), never a client header; a targeted session binds there only
-            m = catalog.get(model) or _endpoint_model(model)
-            s = await asyncio.to_thread(sessions.bind, claim, m["name"], model)
+            s = await asyncio.to_thread(sessions.bind, claim, model, obj)
             return JSONResponse(
                 {},
                 headers={
@@ -3128,13 +3130,16 @@ def create_session(
     cluster, region = _deployment_of(m, req.region)  # the request's own deployment: its identity, never its placement
     target, pinned = None, True
     if cfg.SESSION_TARGETED_PLACEMENT:
+        pinned = bool(req.region) or not ((m.get("routing") or {}).get("fallback") or {}).get("regions")
+    if cfg.SESSION_TARGETED_PLACEMENT and existing is None:
+        # a replay (the owner's key names a session already) answers the stored binding: no resolution, no capacity
+        # read, no cluster call at all (a lost answer is recovered even while the clusters cannot be read)
         # targeted placement (docs/API.md "Sessions", "Placement"): the one target an endpoint call would go to NOW,
         # from the SAME walk (declared variants in the operator's class order, routing.default priority/capacity,
         # routing.fallback.regions unless the caller named a region; unknown or stale capacity stays unknown and falls
         # to the first declared target and its ordinary queue): resolved once, before the claim exists, and written
         # on the session as its immutable binding. No fallback list after creation: a session is one stream to one
         # worker; nothing relocates it. The replay of a same-request retry answers the stored binding (sessions.create)
-        pinned = bool(req.region) or not ((m.get("routing") or {}).get("fallback") or {}).get("regions")
         tc, v = _call_targets(m, cluster, {}, bool(req.region))[0]
         target = {**_target_record(m, tc, v), "region": kube.cluster_region(_cluster_id_of(tc))}
     try:

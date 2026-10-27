@@ -126,6 +126,13 @@ def test_a_retry_after_a_capacity_flip_keeps_the_target_and_deadlines_at_the_api
     assert s2["id"] == s1["id"] and s2["replay"] is True and s2["target"] == s1["target"]
     assert (s2["expires_at"], s2["deadline_at"]) == (s1["expires_at"], s1["deadline_at"])
     assert c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 300}).status_code == 409
+    # the replay resolves nothing: with the clusters unreadable the lost answer is still recovered
+    monkeypatch.setattr(appmod, "_call_targets", lambda *a, **k: (_ for _ in ()).throw(OSError("transport down")))
+    r4 = c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 600})
+    assert r4.status_code == 202 and r4.json()["id"] == s1["id"] and r4.json()["target"] == s1["target"]
+    monkeypatch.setattr(
+        appmod, "_call_targets", lambda mm, cl, inp, rg: [(cl, {**base, "name": "spot", "object": "llm-example-spot"})]
+    )
     # a new key is a new request: resolved anew (spot), its own row
     s3 = c.post(
         "/v1/models/llm-example:session", headers={**H, "Idempotency-Key": "flip-2"}, json={"timeout_s": 600}
@@ -160,3 +167,26 @@ def test_readiness_is_the_targets_own_object_never_the_base_or_a_sibling(live, m
     ready["speech-cheap"] = 1
     assert f"{cheap['id']}:ready-seen" in sessions.sweep()
     assert sessions.get(cheap["id"])["ready_seen_at"] is not None
+
+
+def test_a_targeted_row_is_exactly_its_request_the_legacy_hash_stands_for_legacy_rows_only(live):
+    """A pinned targeted session never answers an unpinned retry (nor the reverse: 409 both ways); a row created
+    before targeted placement (no object) still replays an unpinned retry under its legacy hash."""
+    pinned = _targeted(CHEAP, idempotency_key="scope-1", pinned=True)
+    with pytest.raises(HTTPException) as e:
+        _targeted(CHEAP, idempotency_key="scope-1", pinned=False)
+    assert e.value.status_code == 409
+    assert _targeted(CHEAP, idempotency_key="scope-1", pinned=True)["id"] == pinned["id"]
+    unpinned = _targeted(SPOT, idempotency_key="scope-2", pinned=False)
+    assert unpinned["replay"] is False and unpinned["target"]["id"] == "speech-spot"
+    with pytest.raises(HTTPException) as e:
+        _targeted(SPOT, idempotency_key="scope-2", pinned=True)
+    assert e.value.status_code == 409
+    assert (
+        _targeted(CHEAP, idempotency_key="scope-2", pinned=False)["target"]["id"] == "speech-spot"
+    )  # stored binding, no move
+    legacy = sessions.create(KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, idempotency_key="scope-3")
+    again = sessions.create(
+        KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, idempotency_key="scope-3", pinned=False
+    )
+    assert again["id"] == legacy["id"] and again["replay"] is True and again["target"] is None

@@ -196,9 +196,11 @@ def replay(s: dict, h: str, legacy: str | None = None) -> dict:
     no claim is issued here, or finds the old token gone, 401); so exactly one connection ever binds. Once bound,
     attached or ended: the same id, no claim, nothing re-issued. Nothing is extended: `expires_at` and `deadline_at`
     stay as admitted. The key with another request is 409. `legacy`: the hash the same request had before targeted
-    placement (an unpinned request on a fallback model): a session created then replays under it. The row's placement
-    is answered as it is: never re-resolved, never moved."""
-    if s.get("request_hash") not in {x for x in (h, legacy) if x}:
+    placement (an unpinned request on a fallback model): only a session created then (no object on the row) replays
+    under it; a targeted session is exactly its request (a pinned row never answers an unpinned retry, nor the
+    reverse). The row's placement is answered as it is: never re-resolved, never moved."""
+    accepted = {h} | ({legacy} if legacy and not s.get("object") else set())
+    if s.get("request_hash") not in accepted:
         raise HTTPException(
             409, "Idempotency-Key was already used with a different session request (model, region or timeout_s)"
         )
@@ -475,31 +477,44 @@ def verify_worker(token: str, s: dict, endpoint_model) -> dict:
         m = endpoint_model(label)
     except HTTPException:
         raise HTTPException(403, "the pod belongs to no endpoint of this fleet")
-    worker_endpoint_check(s, m, label, ns, [c.image for c in ((obj.spec.containers if obj.spec else None) or [])])
+    worker_endpoint_check(
+        s, m, label, ns, [(c.name, c.image) for c in ((obj.spec.containers if obj.spec else None) or [])]
+    )
     import leases
 
     return {"pod": pod, "namespace": ns, "uid": uid, "region": region, "restart_count": leases.worker_restarts(obj)}
 
 
-def worker_endpoint_check(s: dict, m: dict, label: str, ns: str, images: list[str] | None = None) -> None:
+def worker_endpoint_check(
+    s: dict, m: dict, label: str, ns: str, containers: list[tuple[str, str]] | None = None
+) -> None:
     """The verified pod must serve the session's model in its namespace and, for a targeted session, be a pod of the
-    session's own endpoint object (`label`: the pod's InferenceService or LeaderWorkerSet name) running the image the
-    session was bound to (`images`: the pod SPEC's container images, read from the pod object the TokenReview named,
-    never a worker-supplied assertion; the worker container's reference, normalised as the catalog's, must equal the
-    stored one: an endpoint rolled to another image after the session was created does not attach it, the session
-    ends unattached). A sibling variant's pod never attaches. A session created before targeted placement (no
-    object, no image) accepts any variant's pod, as before."""
+    session's own endpoint object (`label`: the pod's InferenceService or LeaderWorkerSet name) whose WORKER container
+    runs the image the session was bound to (`containers`: (name, image) of the pod SPEC's containers, read from the
+    pod object the TokenReview named, never a worker-supplied assertion; the worker container is the one the renderer
+    names, render_endpoint.WORKER_CONTAINERS: a sidecar carrying the image never stands in for it; its reference,
+    normalised as the catalog's, must equal the stored one: an endpoint rolled to another image after the session was
+    created does not attach it, the session ends unattached). A sibling variant's pod never attaches. A session created
+    before targeted placement (no object, no image) accepts any variant's pod, as before."""
     if m["name"] != s["model"] or ns != m["namespace"]:
         raise HTTPException(403, f"the pod serves {m['name']}, the session is for {s['model']}")
     if s.get("object") and label != s["object"]:
         raise HTTPException(403, f"the pod serves endpoint {label}, the session is bound to {s['object']}")
     if s.get("object") and s.get("image"):
         import models
+        import render_endpoint
 
-        seen = [models.normalise_image(i) for i in (images or []) if i]
-        if s["image"] not in seen:
+        worker = [(n, i) for n, i in (containers or []) if n in render_endpoint.WORKER_CONTAINERS]
+        if len(worker) != 1:  # exactly the one serving container the renderer names: none, or two, is not a worker pod
             raise HTTPException(
-                403, f"the pod runs {', '.join(seen) or 'no known image'}, the session is bound to image {s['image']}"
+                403,
+                f"the pod has {len(worker)} serving containers ({', '.join(n for n, _ in worker) or 'none'}), "
+                "a worker pod has exactly one (kserve-container or endpoint)",
+            )
+        running = models.normalise_image(worker[0][1] or "")
+        if running != s["image"]:
+            raise HTTPException(
+                403, f"the pod's worker runs {running or 'no image'}, the session is bound to image {s['image']}"
             )
 
 
