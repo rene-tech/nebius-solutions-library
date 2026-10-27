@@ -88,7 +88,20 @@ def test_concurrent_same_key_creates_with_different_resolutions_make_one_session
     with db.pool().connection() as c:
         assert c.execute("select count(*) from sessions").fetchone()[0] == 1
         assert c.execute("select count(*) from key_reservations where operation = %s", (sid,)).fetchone()[0] == 1
-    assert sum(1 for o in outs if o.get("claim_token")) >= 1
+    # no losing reservation survives (the losers released theirs: the ledger holds exactly the winner's) and exactly
+    # ONE usable claim: every replay while `claimed` REPLACED the token, so of all tokens handed out only the last one
+    # binds, and a second bind with it (or any earlier one) is refused
+    with db.pool().connection() as c:
+        assert c.execute("select count(*) from key_reservations").fetchone()[0] == 1
+    tokens = [o["claim_token"] for o in outs if o.get("claim_token")]
+    assert len(tokens) >= 1
+    bound = []
+    for t in tokens:
+        try:
+            bound.append(sessions.bind(t, "speech", _state(sid)[1])["id"])
+        except HTTPException as e:
+            assert e.status_code == 401
+    assert bound == [sid]
 
 
 def test_a_retry_after_a_capacity_flip_keeps_the_target_and_deadlines_at_the_api(database, client, monkeypatch):
