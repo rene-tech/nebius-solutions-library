@@ -4,6 +4,20 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## unreleased (source only, 2026-10-27; not cut, not applied)
+
+- Targeted session placement (docs/API.md "Sessions", "Placement"; terraform.tfvars `sessions.targeted_placement`, off
+  by default): `POST /v1/models/{id}:session` resolves the target an endpoint call would take (`_call_targets`: the
+  declared variants in class order, `routing.default`, `routing.fallback.regions` unless a region is named) and binds
+  the session to it, immutably: `target` {cluster, variant, id, image, gpu_class} on the answer and the reads (null on
+  earlier sessions), the selected cluster/region on the row; the gateway hook binds the claim at that endpoint object
+  only (the SecurityPolicy of every object now names the object: a variant's own name, the model id for the base);
+  the worker verification admits that object's pod running that image only (from the pod the TokenReview named); the
+  reconciler reads that object's readiness. The request hash keeps its bytes for every pinned request (earlier
+  sessions replay unchanged); an unpinned request on a fallback model carries a scope marker. Before: sessions always
+  went to the home deployment's base object with no capacity read, no variant on the row, the claim bound at any
+  variant, any variant's pod attached, and readiness was the base's. Migration 33 (additive, nullable).
+
 ## api 0.11.201, jobs 0.1.36, dispatcher 0.2.17 (cut 2026-10-24 as a plan-only candidate on the 200 pins; not applied)
 
 - A run whose newest attempt ended with an exit the Job's failure policy turns into `FailJob` is `FAILED` at once

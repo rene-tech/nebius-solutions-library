@@ -1198,8 +1198,10 @@ async def authorize_endpoint(model: str, request: Request, path: str = ""):
         if claim:
             # a live session (docs/API.md "Sessions"): the claim binds exactly once, the session already holds the
             # key's slot and request; the worker learns the session and connection ids from the injected headers
+            # `model` is the identity the endpoint's SecurityPolicy fixed: the object the request reached (a variant's
+            # own name, or the model id for the base object), never a client header; a targeted session binds there only
             m = catalog.get(model) or _endpoint_model(model)
-            s = await asyncio.to_thread(sessions.bind, claim, m["name"])
+            s = await asyncio.to_thread(sessions.bind, claim, m["name"], model)
             return JSONResponse(
                 {},
                 headers={
@@ -3123,7 +3125,18 @@ def create_session(
             f"timeout_s: Knative ends every request of a single-node endpoint there, WebSocket or NDJSON alike); ask for "
             f"timeout_s <= {bound}, or raise the model's timeout_s within the fleet's Knative revision maximum",
         )
-    cluster, region = _deployment_of(m, req.region)
+    cluster, region = _deployment_of(m, req.region)  # the request's own deployment: its identity, never its placement
+    target, pinned = None, True
+    if cfg.SESSION_TARGETED_PLACEMENT:
+        # targeted placement (docs/API.md "Sessions", "Placement"): the one target an endpoint call would go to NOW,
+        # from the SAME walk (declared variants in the operator's class order, routing.default priority/capacity,
+        # routing.fallback.regions unless the caller named a region; unknown or stale capacity stays unknown and falls
+        # to the first declared target and its ordinary queue): resolved once, before the claim exists, and written
+        # on the session as its immutable binding. No fallback list after creation: a session is one stream to one
+        # worker; nothing relocates it. The replay of a same-request retry answers the stored binding (sessions.create)
+        pinned = bool(req.region) or not ((m.get("routing") or {}).get("fallback") or {}).get("regions")
+        tc, v = _call_targets(m, cluster, {}, bool(req.region))[0]
+        target = {**_target_record(m, tc, v), "region": kube.cluster_region(_cluster_id_of(tc))}
     try:
         return sessions.create(
             keys.key_hash(p.key),
@@ -3135,6 +3148,8 @@ def create_session(
             req.timeout_s,
             sessions.gpus_per_replica(m),
             idempotency_key=idempotency_key,
+            target=target,
+            pinned=pinned,
         )
     except keys.KeyLimit as e:
         raise HTTPException(e.status, e.detail)

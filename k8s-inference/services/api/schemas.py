@@ -207,6 +207,8 @@ class Session(BaseModel):
     ended_at: str | None = None
     gpu_seconds: float | None = None
     usage: str | None = None
+    target: dict | None = None  # the immutable placement {cluster, variant, id, image, gpu_class} (targeted placement);
+    # null on a session created before it
     claim_token: str | None = None  # on creation only
 
 

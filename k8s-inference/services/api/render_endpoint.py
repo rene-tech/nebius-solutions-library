@@ -867,7 +867,10 @@ def _securitypolicy(v: dict, api_backend: bool = False) -> dict:
                     "x-serverless2-connection",
                 ],
                 "http": {
-                    "path": f"/internal/authorize/{v.get('modelId') or name}",
+                    # the object this policy guards (a variant: its own name; the base: the model id, unchanged): the hook
+                    # resolves the model from either and learns which endpoint the request reached, the trusted
+                    # route-derived identity a targeted session's claim must match (docs/API.md "Sessions")
+                    "path": f"/internal/authorize/{name}",
                     "backendRefs": [api],
                     "headersToBackend": [
                         "x-serverless2-tenant",

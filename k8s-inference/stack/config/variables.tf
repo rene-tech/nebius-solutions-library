@@ -289,10 +289,11 @@ variable "fleet" {
     # Live sessions (docs/API.md "Sessions"): admitted streams to endpoints, bound to one connection and one worker pod.
     # Off by default; the workers of a model must implement the attach/release protocol before it is switched on.
     sessions = optional(object({
-      enabled        = optional(bool, false)
-      claim_ttl_s    = optional(number, 120)           # the connection must present its claim within this
-      attach_wait_s  = optional(number, 60)            # from the first Ready replica observed (never from admission; capped by the session deadline): a bound session no worker attached within it ends with usage unknown
-      token_audience = optional(string, "serverless2") # TokenReview audience of the workers' projected tokens (the lease clients' projection uses it)
+      enabled            = optional(bool, false)
+      targeted_placement = optional(bool, false)           # bind each new session to the target the model's routing resolves (variant, region); switch on after the rollout of an API that enforces it and the re-render of the endpoints' policies (docs/API.md "Sessions")
+      claim_ttl_s        = optional(number, 120)           # the connection must present its claim within this
+      attach_wait_s      = optional(number, 60)            # from the first Ready replica observed (never from admission; capped by the session deadline): a bound session no worker attached within it ends with usage unknown
+      token_audience     = optional(string, "serverless2") # TokenReview audience of the workers' projected tokens (the lease clients' projection uses it)
     }), {})
 
     observability = optional(object({

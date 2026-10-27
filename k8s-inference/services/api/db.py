@@ -440,6 +440,16 @@ create table if not exists operation_marks (
     """
     alter table attempts add column if not exists target jsonb;
     """,
+    # 33: the immutable placement of a session (docs/API.md "Sessions", "Placement"): the target the model's routing resolved
+    # at creation (variant, endpoint object, image, GPU class; cluster/region are the existing columns and now name the
+    # SELECTED deployment). Null on every session created before targeted placement: those keep the model-level bind,
+    # attach and readiness semantics
+    """
+    alter table sessions add column if not exists variant text;
+    alter table sessions add column if not exists object text;
+    alter table sessions add column if not exists image text;
+    alter table sessions add column if not exists gpu_class text;
+    """,
 ]
 
 _pool = None

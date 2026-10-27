@@ -155,7 +155,13 @@ def test_each_variant_renders_its_own_objects_under_the_model_label():
     )
     policies = {d["metadata"]["name"]: d for d in docs if d["kind"] == "SecurityPolicy"}
     assert set(policies) == {"chat-authorization", "chat-spot-authorization", "chat-cheap-authorization"}
-    assert all(p["spec"]["extAuth"]["http"]["path"] == "/internal/authorize/chat" for p in policies.values())
+    # every object's policy names ITS object (the base: the model id): the hook learns which endpoint a request
+    # reached, the identity a targeted session's claim must match (docs/API.md "Sessions", "Placement")
+    assert {n: p["spec"]["extAuth"]["http"]["path"] for n, p in policies.items()} == {
+        "chat-authorization": "/internal/authorize/chat",
+        "chat-spot-authorization": "/internal/authorize/chat-spot",
+        "chat-cheap-authorization": "/internal/authorize/chat-cheap",
+    }
     assert (
         policies["chat-spot-authorization"]["spec"]["targetSelectors"][0]["matchLabels"]["serving.knative.dev/route"]
         == "chat-spot-predictor"

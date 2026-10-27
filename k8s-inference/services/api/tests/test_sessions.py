@@ -36,16 +36,31 @@ class FakeSessions:
     def __init__(self):
         self.rows, self.calls = {}, []
 
-    def create(self, key_hash, tenant, owner, model, cluster_, region, timeout_s, gpus, idempotency_key=None):
+    def create(
+        self,
+        key_hash,
+        tenant,
+        owner,
+        model,
+        cluster_,
+        region,
+        timeout_s,
+        gpus,
+        idempotency_key=None,
+        target=None,
+        pinned=True,
+    ):
         sid = f"ses-{len(self.rows) + 1:016x}"
-        self.calls.append(("create", key_hash, tenant, owner, model, cluster_, region, timeout_s, gpus))
+        self.calls.append(("create", key_hash, tenant, owner, model, cluster_, region, timeout_s, gpus, target, pinned))
         self.rows[sid] = {
             "id": sid,
             "tenant": tenant,
             "owner": owner,
             "model": model,
-            "cluster": cluster_,
-            "region": region,
+            "cluster": target["cluster"] if target else cluster_,
+            "region": target["region"] if target else region,
+            "object": target["id"] if target else None,
+            "target": target,
             "state": "claimed",
             "connection": None,
             "pod_uid": None,
@@ -67,9 +82,11 @@ class FakeSessions:
             "id": s["id"],
             "model": s["model"],
             "region": s["region"],
+            "cluster": s["cluster"],
             "status": s["state"],
             "cancel_requested": s["cancel_requested_at"] is not None,
             "attached": s["pod_uid"] is not None,
+            "target": ({k: v for k, v in s["target"].items() if k != "region"} if s.get("target") else None),
         }
 
     def cancel(self, sid, reason):
@@ -79,9 +96,9 @@ class FakeSessions:
             self.rows[sid]["state"] = "ended"
         return dict(self.rows[sid])
 
-    def bind(self, token, model):
+    def bind(self, token, model, obj=None):
         for r in self.rows.values():
-            if r["token"] == token and r["state"] == "claimed" and r["model"] == model:
+            if r["token"] == token and r["state"] == "claimed" and r["model"] == model and r["object"] in (None, obj):
                 r["state"], r["connection"] = "bound", "conn-1"
                 return {"id": r["id"], "tenant": r["tenant"], "key_hash": "h", "connection": "conn-1"}
         raise HTTPException(401, "session claim not accepted")
@@ -150,7 +167,7 @@ def test_create_admits_on_the_key_and_the_hook_binds_the_claim_once(live):
     assert r.status_code == 202, r.text
     s = r.json()
     assert s["status"] == "claimed" and s["claim_token"].startswith("tok-") and s["region"] == "eu-north1"
-    assert fs.calls[0][2] == "demo" and fs.calls[0][4] == "llm-example" and fs.calls[0][6:] == ("eu-north1", 600, 1)
+    assert fs.calls[0][2] == "demo" and fs.calls[0][4] == "llm-example" and fs.calls[0][6:9] == ("eu-north1", 600, 1)
     assert c.post("/v1/models/hello-run:session", headers=H, json={}).status_code == 400  # a run class
     # the owner's view; another principal sees nothing
     assert c.get(f"/v1/sessions/{s['id']}", headers=H).json()["status"] == "claimed"

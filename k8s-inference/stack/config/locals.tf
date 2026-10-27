@@ -258,6 +258,7 @@ locals {
     # live sessions (docs/API.md "Sessions"): off unless `sessions.enabled`
     { name = "ADMITTED_LEGACY", value = local.f.admitted_legacy ? "true" : "false" },
     { name = "SESSIONS_ENABLED", value = local.f.sessions.enabled ? "true" : "false" },
+    { name = "SESSION_TARGETED_PLACEMENT", value = local.f.sessions.targeted_placement ? "true" : "false" },
     { name = "SESSION_CLAIM_TTL_S", value = tostring(local.f.sessions.claim_ttl_s) },
     { name = "SESSION_ATTACH_WAIT_S", value = tostring(local.f.sessions.attach_wait_s) },
     { name = "SESSION_TOKEN_AUDIENCE", value = local.f.sessions.token_audience },

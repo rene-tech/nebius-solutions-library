@@ -556,7 +556,7 @@ worker pod, released once; `services/api/sessions.py`.
 
 | Step | Who | What |
 |---|---|---|
-| `POST /v1/models/<id>:session` `{timeout_s, region}` | the caller (`invoke:sync`) | admission on the key as a run's root: one concurrency slot, one request, and for a key with a GPU-second budget the endpoint's GPUs x `timeout_s` as the bound. `timeout_s` defaults to the endpoint's transport deadline (a single-node endpoint's `timeout_s`; 3600 for a multi-node endpoint) and may not exceed it (400 naming the bound). Answers 202 with a one-time `claim_token`, `expires_at` (the claim must be presented within `sessions.claim_ttl_s`, 120 s by default), `deadline_at` (`timeout_s` after creation) and `replay: false`. With an `Idempotency-Key` header (owner-scoped, 1..200 chars) the same request again answers the same session, see "Idempotent creation" below |
+| `POST /v1/models/<id>:session` `{timeout_s, region}` | the caller (`invoke:sync`) | admission on the key as a run's root: one concurrency slot, one request, and for a key with a GPU-second budget the endpoint's GPUs x `timeout_s` as the bound. `timeout_s` defaults to the endpoint's transport deadline (a single-node endpoint's `timeout_s`; 3600 for a multi-node endpoint) and may not exceed it (400 naming the bound). Answers 202 with a one-time `claim_token`, `expires_at` (the claim must be presented within `sessions.claim_ttl_s`, 120 s by default), `deadline_at` (`timeout_s` after creation), `replay: false` and, with targeted placement (below), `target` and the selected `cluster`/`region`. With an `Idempotency-Key` header (owner-scoped, 1..200 chars) the same request again answers the same session, see "Idempotent creation" below |
 | the connection | the caller | presents the claim once: `Sec-WebSocket-Protocol: s2-session.<token>` on an upgrade, or the header `x-serverless2-session-claim: <token>` on a plain HTTP request (NDJSON streaming). The gateway's authorization hook binds it with a compare-and-swap (`claimed -> bound`, a server-generated connection id): exactly one connection ever binds a session, across API replicas; a second presentation, an expired, cancelled or foreign claim is 401. The hook injects `x-serverless2-session` and `x-serverless2-connection` towards the worker and refuses (403) any client that supplies those headers itself; the claim token is never logged |
 | `POST /internal/sessions/<id>:attach` `{connection, worker_session_id}` | the worker pod, with its own ServiceAccount token | before any decoder, reset, feed or GPU work: `bound -> attached` for the injected connection id only. The pod is verified server-side (TokenReview on the session's cluster with `sessions.token_audience` or the cluster's, the pod's namespace/name/UID from the token's claims, the pod object with the same UID, the endpoint it belongs to = the session's model); nothing is taken from headers. Idempotent for the same connection and pod UID; 409 for another connection, a second worker, or after the attach wait, a cancel or the deadline (fenced for good). Answers `owner: {tenant, owner, model}` from the session's durable row (the admitting principal, resolved at creation; never a header, never the key): the trusted owner group a worker keys its own state on; stable across a duplicate attach |
 | `GET /internal/sessions/<id>` | the attached worker only | `status`, `cancel_requested`, `cancel_reason`, `deadline_at`, `owner`: the worker polls it (or reads its own socket) to learn of a cancellation |
@@ -591,6 +591,34 @@ admitted deadline (the hard bound: never longer than `timeout_s`, no extra reser
 unknown. No GPU time is advertised for a session that never attached (`gpu_seconds` null; the key's bound stays
 unknown, separately). The public view carries no token and no pod identity.
 Settlement on the key's ledger happens exactly once per session (the reconciler retries what a crash left unsettled).
+
+**Placement (`sessions.targeted_placement`, off by default):** a new session is bound, once, to the target an endpoint
+call would go to at that moment: the SAME resolution as a call's (the declared variants of the deployment in the
+operator's class order, `routing.default` `priority` or `capacity`, every reachable deployment with
+`routing.fallback.regions` unless the caller named a `region`, see "Variants"); unknown or stale capacity stays
+unknown and falls to the first declared target and its ordinary queue, as for a call. The binding (`target`:
+`cluster`, `variant`, `id` = the endpoint object, `image`, `gpu_class`; the answer's `cluster`/`region` are the
+selected deployment) is written on the session before the claim exists and never changes: the gateway hook binds the
+claim at that endpoint object only (the object's own SecurityPolicy names it; a claim presented at the base object or
+a sibling variant is 401 and not consumed), the worker verification admits a pod of that object running that image
+only (both read from the pod the TokenReview named, never from the worker; an endpoint rolled to another image after
+the session was created does not attach it: the session ends `unattached`), the reconciler reads that object's
+readiness in the selected region (never the base's or a sibling's). No fallback list after creation and no relocation:
+a session is one stream to one worker. The choice is made from windowed signals (Knative's stable concurrency, pool
+room) and is not a reservation of a slot: two sessions created at once may select the same apparently free target and
+the gateway's own concurrency and queue remain authoritative, as for calls. A session created before the fleet
+switched placement on carries no `target` (null) and keeps the model-level bind, attach and base-object readiness
+rules. An operator switches placement on only after every API replica runs the code that enforces the target and the
+endpoints' SecurityPolicies were re-rendered to name their object (a mixed rollout must never bind a targeted claim on
+a replica that ignores the target); with placement on before that, a targeted claim at a variant is refused (401)
+rather than bound elsewhere.
+**Idempotency with placement:** the request's identity is its own deployment (the `region` named, else the home
+deployment) and `timeout_s`, never the placement the fleet chose, so a retry after capacity changed answers the same
+session with its stored binding (`replay: true`, deadlines unchanged) and never re-resolves or moves it; every pinned
+request hashes exactly as before placement (earlier sessions replay unchanged); a request with no `region` on a model
+whose `routing.fallback.regions` spans deployments is marked as "any declared deployment", so naming a region is
+another request (409 under the same key). Concurrent identical creates may resolve different targets; the unique
+index decides, the losers release their admission and answer the winner's session and target.
 
 **Transport deadline:** a single-node (Knative) endpoint ends every request at its revision timeout (the model's
 `timeout_s`, 600 s by default, within the fleet's Knative maximum), WebSocket or NDJSON alike, with no record on the

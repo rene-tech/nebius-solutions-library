@@ -194,6 +194,11 @@ _trust_file()
 # Off unless the fleet enables it (stack tfvars `sessions.enabled`); the routes answer 404 and the gateway hook ignores
 # session claims while off.
 SESSIONS_ENABLED = os.environ.get("SESSIONS_ENABLED", "false").lower() == "true"
+# targeted placement of new sessions (docs/API.md "Sessions", "Placement"): resolve the declared target (variant, region) as
+# an endpoint call does and bind the session to it. Off by default: switched on only once every API replica runs the
+# code that enforces the target on bind and attach and the endpoints' SecurityPolicies name their object (a mixed
+# rollout must never bind a targeted claim on a replica that ignores the target)
+SESSION_TARGETED_PLACEMENT = os.environ.get("SESSION_TARGETED_PLACEMENT", "false").lower() == "true"
 SESSION_CLAIM_TTL_S = int(os.environ.get("SESSION_CLAIM_TTL_S", "120"))  # the upgrade must bind the claim within it
 SESSION_ATTACH_WAIT_S = int(
     os.environ.get("SESSION_ATTACH_WAIT_S", "60")

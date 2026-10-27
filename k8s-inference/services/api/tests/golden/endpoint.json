@@ -18,7 +18,7 @@
   {
    "kind": "SecurityPolicy",
    "name": "chat-spot-authorization",
-   "sha256": "cceaba192764d87139a87a08a5c9aad0c57ad1adeadb65a027a3e1abe54a545b"
+   "sha256": "f662d03d7f8f59bae8e5a2a7bd9ad142ed310c2f3f0c0677a0e87d9d19e6805c"
   },
   {
    "kind": "InferenceService",
@@ -28,7 +28,7 @@
   {
    "kind": "SecurityPolicy",
    "name": "chat-cheap-authorization",
-   "sha256": "5918eb5afa032d64d835cd5fdfeb59ba51ebef01dc18bcec2cdb0c29e3aa8673"
+   "sha256": "71addfd153ea35ada8ae4ce95eb95fe515aa61023b0399044297f1476e0b72e9"
   }
  ],
  "http-example-hub": [

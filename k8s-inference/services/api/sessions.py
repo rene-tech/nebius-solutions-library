@@ -55,7 +55,7 @@ COLUMNS = (
     "id, tenant, owner, key_hash, model, cluster, region, state, connection, pod, pod_namespace, pod_uid, "
     "worker_session_id, gpu_bound, created_at, expires_at, deadline_at, bound_at, attached_at, cancel_requested_at, "
     "cancel_reason, ended_at, outcome, gpu_seconds, usage, settled_at, ready_seen_at, attach_deadline_at, "
-    "idempotency_key, request_hash"
+    "idempotency_key, request_hash, variant, object, image, gpu_class"
 )
 IDEMPOTENCY_KEY_MAX = 200
 
@@ -114,7 +114,19 @@ def public(s: dict) -> dict:
         "ended_at": _ts(s["ended_at"]),
         "gpu_seconds": float(s["gpu_seconds"]) if s["gpu_seconds"] is not None else None,
         "usage": s["usage"],
+        "target": target_of(s),
     }
+
+
+def target_of(s: dict) -> dict | None:
+    """The immutable placement of a targeted session (docs/API.md "Sessions", "Placement"), the shape of
+    Operation.target: identity only, never live state; None on a session created before targeted placement."""
+    if not s.get("object"):
+        return None
+    out = {"cluster": s["cluster"], "variant": s["variant"], "id": s["object"], "image": s["image"]}
+    if s.get("gpu_class"):
+        out["gpu_class"] = s["gpu_class"]
+    return out
 
 
 def gpus_per_replica(m: dict) -> int:
@@ -153,11 +165,17 @@ def open_on(model: str) -> int:
 
 
 # ---- transitions ------------------------------------------------------------------------------------------------
-def request_hash(model: str, cluster: str | None, region: str, timeout_s: int, gpus: int) -> str:
-    """The semantic identity of a create request: the EFFECTIVE values (defaults applied, the deployment resolved),
-    never the bytes the client sent: `{}` and `{"timeout_s": <the default>}` are one request; another deployment or
-    timeout is another request."""
+def request_hash(model: str, cluster: str | None, region: str, timeout_s: int, gpus: int, pinned: bool = True) -> str:
+    """The semantic identity of a create request: the EFFECTIVE values (defaults applied, the deployment the request
+    names or implies), never the bytes the client sent: `{}` and `{"timeout_s": <the default>}` are one request;
+    another deployment or timeout is another request. `cluster`/`region` are the request's own deployment (the
+    caller's region, else the home deployment), NEVER the placement the fleet chose: availability is not identity.
+    `pinned` False (a request with no region on a model whose routing.fallback.regions spans deployments) marks the
+    request as "any declared deployment": a request that names one is another request. Every pinned request hashes
+    exactly as before targeted placement, so earlier sessions replay unchanged."""
     doc = {"model": model, "cluster": cluster, "region": region, "timeout_s": int(timeout_s), "gpus": int(gpus)}
+    if not pinned:
+        doc["scope"] = None
     return hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()
 
 
@@ -171,14 +189,16 @@ def find_replay(tenant: str, owner: str, idempotency_key: str) -> dict | None:
     return _row(r) if r else None
 
 
-def replay(s: dict, h: str) -> dict:
+def replay(s: dict, h: str, legacy: str | None = None) -> dict:
     """The same request under the key of an existing session: the session as it is (`replay: true`). While it is
     still `claimed` (unexpired, before the deadline, not cancelled) the answer carries a usable claim that REPLACES
     the earlier token (compare-and-swap on `claimed`: a bind racing with this either took the old token first, then
     no claim is issued here, or finds the old token gone, 401); so exactly one connection ever binds. Once bound,
     attached or ended: the same id, no claim, nothing re-issued. Nothing is extended: `expires_at` and `deadline_at`
-    stay as admitted. The key with another request is 409."""
-    if s.get("request_hash") != h:
+    stay as admitted. The key with another request is 409. `legacy`: the hash the same request had before targeted
+    placement (an unpinned request on a fallback model): a session created then replays under it. The row's placement
+    is answered as it is: never re-resolved, never moved."""
+    if s.get("request_hash") not in {x for x in (h, legacy) if x}:
         raise HTTPException(
             409, "Idempotency-Key was already used with a different session request (model, region or timeout_s)"
         )
@@ -206,15 +226,23 @@ def create(
     timeout_s: int,
     gpus: int,
     idempotency_key: str | None = None,
+    target: dict | None = None,
+    pinned: bool = True,
 ) -> dict:
     """Admit and record a session (`replay: false`, a fresh claim). Raises keys.KeyLimit as a run's admission does.
     With an `idempotency_key` (owner-scoped) the same request again answers the existing session (`replay`); a
-    concurrent duplicate loses the unique index, releases its own admission and answers the winner's session."""
-    h = request_hash(model, cluster, region, timeout_s, gpus)
+    concurrent duplicate loses the unique index, releases its own admission and answers the winner's session.
+    `cluster`/`region`: the request's own deployment (the identity, see request_hash). `target` (targeted placement):
+    the placement the model's routing resolved NOW, {cluster, region, variant, id, image, gpu_class}: the row's
+    cluster/region become the SELECTED ones (every later read, verification and readiness keys on them) and the
+    identity columns are written once, immutable; the replay of a concurrent duplicate answers the winner's placement,
+    whatever this caller resolved. None: the request's deployment, no object (the pre-placement row)."""
+    h = request_hash(model, cluster, region, timeout_s, gpus, pinned)
+    legacy = request_hash(model, cluster, region, timeout_s, gpus) if not pinned else None
     if idempotency_key:
         s = find_replay(tenant, owner, idempotency_key)
         if s is not None:
-            return replay(s, h)
+            return replay(s, h, legacy)
     sid = f"ses-{uuid.uuid4().hex[:16]}"
     token = secrets.token_urlsafe(32)
     bound = float(gpus * timeout_s)
@@ -223,22 +251,26 @@ def create(
     try:
         with db.connection() as c, c.transaction():
             c.execute(
-                "insert into sessions (id, tenant, owner, key_hash, model, cluster, region, claim_hash, gpu_bound, expires_at, deadline_at, idempotency_key, request_hash) "
-                "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "insert into sessions (id, tenant, owner, key_hash, model, cluster, region, claim_hash, gpu_bound, expires_at, deadline_at, idempotency_key, request_hash, variant, object, image, gpu_class) "
+                "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     sid,
                     tenant,
                     owner,
                     key_hash,
                     model,
-                    cluster,
-                    region,
+                    target["cluster"] if target else cluster,
+                    target["region"] if target else region,
                     _hash(token),
                     bound,
                     now + timedelta(seconds=cfg.SESSION_CLAIM_TTL_S),
                     now + timedelta(seconds=timeout_s),
                     idempotency_key,
                     h,
+                    target.get("variant") if target else None,
+                    target.get("id") if target else None,
+                    target.get("image") if target else None,
+                    target.get("gpu_class") if target else None,
                 ),
             )
     except Exception as e:
@@ -248,7 +280,7 @@ def create(
         if idempotency_key and isinstance(e, psycopg.errors.UniqueViolation):
             s = find_replay(tenant, owner, idempotency_key)  # the concurrent duplicate that won
             if s is not None:
-                return replay(s, h)
+                return replay(s, h, legacy)
         raise
     s = get(sid)
     return {**public(s), "claim_token": token, "replay": False}
@@ -283,21 +315,26 @@ def claim_of(headers) -> str | None:
     return None
 
 
-def bind(token: str, model: str) -> dict:
+def bind(token: str, model: str, obj: str | None = None) -> dict:
     """The upgrade that carries a claim: exactly one binds (compare-and-swap on `claimed` with the claim's hash,
-    unexpired, before the deadline, for this model). 401 for anything else: an unknown, used, expired or cancelled
-    claim, or a claim for another model."""
+    unexpired, before the deadline, for this model, and for a targeted session at ITS endpoint object only). 401 for
+    anything else: an unknown, used, expired or cancelled claim, a claim for another model, or a targeted claim
+    presented at another variant of the model (the claim is not consumed there: it still binds at its own object).
+    `obj`: the endpoint object the request reached, as the gateway's SecurityPolicy names it (route-derived, never a
+    client header); a session created before targeted placement (no object) binds at any object of its model."""
     connection = uuid.uuid4().hex
     with db.connection() as c, c.transaction():
         r = c.execute(
             "update sessions set state = 'bound', connection = %s, bound_at = now() "
             "where claim_hash = %s and state = 'claimed' and expires_at > now() and deadline_at > now() "
-            "and cancel_requested_at is null and model = %s returning id, tenant, key_hash",
-            (connection, _hash(token), model),
+            "and cancel_requested_at is null and model = %s and (object is null or object = %s) returning id, tenant, key_hash",
+            (connection, _hash(token), model, obj),
         ).fetchone()
     if r is None:
         raise HTTPException(
-            401, "session claim not accepted: unknown, already used, expired, cancelled or another model"
+            401,
+            "session claim not accepted: unknown, already used, expired, cancelled, another model, or another "
+            "endpoint than the session's target",
         )
     return {"id": r[0], "tenant": r[1], "key_hash": r[2], "connection": connection}
 
@@ -438,18 +475,41 @@ def verify_worker(token: str, s: dict, endpoint_model) -> dict:
         m = endpoint_model(label)
     except HTTPException:
         raise HTTPException(403, "the pod belongs to no endpoint of this fleet")
-    if m["name"] != s["model"] or ns != m["namespace"]:
-        raise HTTPException(403, f"the pod serves {m['name']}, the session is for {s['model']}")
+    worker_endpoint_check(s, m, label, ns, [c.image for c in ((obj.spec.containers if obj.spec else None) or [])])
     import leases
 
     return {"pod": pod, "namespace": ns, "uid": uid, "region": region, "restart_count": leases.worker_restarts(obj)}
 
 
+def worker_endpoint_check(s: dict, m: dict, label: str, ns: str, images: list[str] | None = None) -> None:
+    """The verified pod must serve the session's model in its namespace and, for a targeted session, be a pod of the
+    session's own endpoint object (`label`: the pod's InferenceService or LeaderWorkerSet name) running the image the
+    session was bound to (`images`: the pod SPEC's container images, read from the pod object the TokenReview named,
+    never a worker-supplied assertion; the worker container's reference, normalised as the catalog's, must equal the
+    stored one: an endpoint rolled to another image after the session was created does not attach it, the session
+    ends unattached). A sibling variant's pod never attaches. A session created before targeted placement (no
+    object, no image) accepts any variant's pod, as before."""
+    if m["name"] != s["model"] or ns != m["namespace"]:
+        raise HTTPException(403, f"the pod serves {m['name']}, the session is for {s['model']}")
+    if s.get("object") and label != s["object"]:
+        raise HTTPException(403, f"the pod serves endpoint {label}, the session is bound to {s['object']}")
+    if s.get("object") and s.get("image"):
+        import models
+
+        seen = [models.normalise_image(i) for i in (images or []) if i]
+        if s["image"] not in seen:
+            raise HTTPException(
+                403, f"the pod runs {', '.join(seen) or 'no known image'}, the session is bound to image {s['image']}"
+            )
+
+
 # ---- the sweep (reconcile loop) -------------------------------------------------------------------------------------
-def endpoint_ready(model: str, region: str, cache: dict) -> bool | None:
+def endpoint_ready(model: str, region: str, cache: dict, obj: str | None = None) -> bool | None:
     """Whether the session's endpoint has a Ready replica in its region: True, False, or None when the status cannot
-    be read (unknown is unknown: never Ready, never idle). One read per (model, region) per sweep (`cache`)."""
-    key = (model, region)
+    be read (unknown is unknown: never Ready, never idle). `obj`: a targeted session's own endpoint object (its
+    readiness, never a sibling variant's or the base deployment's); None: the model's base object. One read per
+    (object, region) per sweep (`cache`)."""
+    key = (obj or model, region)
     if key in cache:
         return cache[key]
     verdict: bool | None = None
@@ -457,8 +517,8 @@ def endpoint_ready(model: str, region: str, cache: dict) -> bool | None:
         import catalog
 
         m = catalog.get(model)
-        if m and m.get("k8s_name") and m.get("namespace"):
-            st = kube.endpoint_status(m["k8s_name"], m["namespace"], region, nodes=int(m.get("nodes") or 1))
+        if m and (obj or m.get("k8s_name")) and m.get("namespace"):
+            st = kube.endpoint_status(obj or m["k8s_name"], m["namespace"], region, nodes=int(m.get("nodes") or 1))
             status = (st or {}).get("status")
             verdict = (
                 True
@@ -502,7 +562,7 @@ def sweep() -> list[str]:
                         if _end(c, sid, "bound", "unattached", None, "unknown"):
                             out.append(f"{sid}:unattached")
                     elif s["ready_seen_at"] is None:
-                        if endpoint_ready(s["model"], s["region"], ready_cache) is True:
+                        if endpoint_ready(s["model"], s["region"], ready_cache, s.get("object")) is True:
                             # recorded once: a compare-and-swap on ready_seen_at, so concurrent sweeps and later flaps
                             # never move the attach deadline
                             n = c.execute(
