@@ -1109,6 +1109,29 @@ run must checkpoint to object storage itself and `:resume` is not available (`re
 Every run pod carries seccomp `RuntimeDefault`, no capabilities and no privilege escalation; the tenant
 namespace enforces Pod Security `baseline`.
 
+**Trusted launch (`trusted_launch`, a model administrator's declaration; nothing a request can set).** A launcher
+image that isolates authored code itself (drops to an isolated uid/gid with setuid/setgid, confines the writable
+root with Landlock, scrubs the environment, cleans up its own processes) cannot do so with every capability dropped:
+the launch fails closed before any authored code. A definition (job class or endpoint) may declare
+`trusted_launch: {capabilities: [CHOWN, KILL, SETGID, SETUID], user: 0, group: 0}`: `capabilities` is a non-empty
+subset of exactly that platform set (`render.TRUSTED_LAUNCH_CAPABILITIES`, all within Pod Security `baseline`; no
+SYS_ADMIN, SYS_PTRACE, SETPCAP, DAC_OVERRIDE, no arbitrary names), `user`/`group` the launcher's own ids (0 by
+default: it drops privileges itself). The platform projects it onto the MODEL container only, as
+`{runAsUser, runAsGroup, runAsNonRoot: user != 0, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add:
+[...]}, seccompProfile: RuntimeDefault}`: a run's `main` (single-node and every rank of a gang, in every region the
+run may fall back to), an endpoint's serving container (every variant, every region; InferenceService and
+LeaderWorkerSet alike). fetch, uploader, finalizer, scratch/checkpoint provision and the async caller keep their
+contexts. No privileged container, host namespace, host mount or extra device; no `readOnlyRootFilesystem` (the
+launcher confines the root itself). Refused before anything is written: a wrong type, an unknown or duplicate
+capability, a negative id, `runAsNonRoot: true` on the same job class with `user: 0`, an endpoint that also authors
+`containerSecurityContext`/`securityContext`. Without the declaration everything renders exactly as before: a run's
+containers with drop ALL (CONTAINER_HARDENING), an endpoint's serving container with no explicit context at all
+unless its definition authors one (the container runtime's and the namespace's defaults apply, as they do today).
+The declaration is the only change, there is no fleet-wide switch. `user`/`group` are strict integers (a boolean,
+a numeric string or a float is refused, never coerced). The declaration lives in the
+definition (full spec, history, `If-Match` replacement) like every other field and is the administrator's
+statement of trust in that image, as the platform's own provision containers are.
+
 **Durable endpoint calls on the tenant's shared scratch (`call_scratch: shared`, endpoint models, opt-in).** An
 endpoint call with application I/O keeps its capture (request, response, manifest) on a retained volume so a
 replacement attempt delivers it without a second inference POST. By default that volume is a per-call network claim

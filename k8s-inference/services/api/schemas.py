@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SkipValidation, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SkipValidation, StrictInt, field_validator
 
 from config import REGION
 
@@ -412,6 +412,20 @@ class FinalizeSpec(BaseModel):
     memory: str | None = None
 
 
+class TrustedLaunchSpec(BaseModel):
+    """`trusted_launch` of a model definition (docs/JOBS.md "Trusted launch"): a model administrator's declaration
+    that the image is a trusted launcher which isolates authored code itself and needs these capabilities to do so.
+    The capability names are the platform's closed set (render.TRUSTED_LAUNCH_CAPABILITIES), nothing else parses."""
+
+    model_config = ConfigDict(extra="forbid")
+    capabilities: list[Literal["CHOWN", "KILL", "SETGID", "SETUID"]] = Field(min_length=1, max_length=4)
+    # strict integers (a security declaration): `true`, "1000" or 1000.0 are not ids and are refused, never coerced
+    user: StrictInt = Field(
+        default=0, ge=0
+    )  # the launcher's own uid (0: it drops privileges itself before authored code)
+    group: StrictInt = Field(default=0, ge=0)
+
+
 class ModelSpec(BaseModel):
     """Container definition shape; models.validate owns fleet-dependent and cross-field validation.
 
@@ -431,6 +445,9 @@ class ModelSpec(BaseModel):
     env_secrets: SkipValidation[list[str] | None] = None
     pod_metadata: SkipValidation[PodMetadataSpec | None] = None
     automount_service_account_token: SkipValidation[bool | None] = None
+    trusted_launch: SkipValidation[TrustedLaunchSpec | None] = (
+        None  # administrator-only (docs/JOBS.md "Trusted launch")
+    )
     # endpoint calls with application I/O: where the caller keeps its durable capture (docs/JOBS.md "Scratch storage"):
     # `network` (the per-call claim, default) or `shared` (the tenant's shared-scratch leaf, no per-call block device)
     call_scratch: SkipValidation[Literal["network", "shared"] | None] = None

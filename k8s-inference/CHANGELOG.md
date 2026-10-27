@@ -4,6 +4,20 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## unreleased (source only, 2026-10-27, successor of the 203 candidate; not cut, not applied)
+
+- `trusted_launch` (docs/JOBS.md "Trusted launch"): a model administrator's typed declaration on a definition
+  `{capabilities: subset of [CHOWN, KILL, SETGID, SETUID], user, group}` for launcher images that isolate authored
+  code themselves and fail closed under drop-ALL. Validated before persistence (closed capability set, no
+  duplicates, non-negative ids, contradictions with `runAsNonRoot: true` or an endpoint's own
+  `containerSecurityContext`/`securityContext` refused); projected by the platform onto the model container only
+  (a run's `main` incl. every gang rank and fallback region, an endpoint's serving container on every variant and
+  region, InferenceService and LeaderWorkerSet) as drop ALL + the declared adds, the declared uid/gid,
+  allowPrivilegeEscalation false, seccomp RuntimeDefault. Runner, init, uploader, finalizer and caller contexts
+  unchanged; without the declaration every render is byte-identical to before (a run's containers drop ALL as
+  today, an endpoint's serving container keeps its empty/default context as today). `user`/`group` are strict
+  integers. Nothing a request can set.
+
 ## api 0.11.203, jobs 0.1.36, dispatcher 0.2.17 (cut 2026-10-27 as a private candidate on the 201 pins, successor of the unapplied 202 candidate; targeted placement off by default and per-request opt-in; not applied)
 
 - Targeted session placement is per request: `POST /v1/models/{id}:session` takes `placement: "targeted"`; a request

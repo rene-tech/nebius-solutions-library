@@ -22,6 +22,7 @@ import copy
 from fastapi import HTTPException
 
 from config import IMAGES_HOST, LABEL, PUBLIC_API_URL, SESSION_TOKEN_AUDIENCE
+from render import trusted_launch_context
 
 # Lease clients (docs/API.md "Native execution leases", "Lease clients"): what an endpoint pod that attaches to its
 # calls' native executions gets from the platform: a projected ServiceAccount token bound to the pod (audience
@@ -572,7 +573,13 @@ def _inferenceservice(v: dict) -> dict:
     c["resources"] = _resources(v)
     c.update(_probes(v))
     if v.get("containerSecurityContext"):
+        if v.get("trustedLaunch"):
+            raise _fail(
+                "trusted_launch and containerSecurityContext: one author of the serving container's context", v["name"]
+            )
         c["securityContext"] = dict(v["containerSecurityContext"])
+    elif v.get("trustedLaunch"):  # docs/JOBS.md "Trusted launch": the serving container only, the platform's projection
+        c["securityContext"] = trusted_launch_context(v["trustedLaunch"])
     if mounts := _volume_mounts(v):
         c["volumeMounts"] = mounts
     pred["containers"] = [c]
@@ -639,7 +646,13 @@ def _lws_container(v: dict, nodes: int, ib: int, leader: bool, command) -> dict:
     if leader:
         c.update(_probes(v))  # a hung leader is restarted; RecreateGroupOnPodRestart recreates the group
     if v.get("containerSecurityContext"):
+        if v.get("trustedLaunch"):
+            raise _fail(
+                "trusted_launch and containerSecurityContext: one author of the serving container's context", v["name"]
+            )
         c["securityContext"] = dict(v["containerSecurityContext"])
+    elif v.get("trustedLaunch"):  # docs/JOBS.md "Trusted launch": the serving container only, the platform's projection
+        c["securityContext"] = trusted_launch_context(v["trustedLaunch"])
     if mounts := _volume_mounts(v):
         c["volumeMounts"] = mounts
     return c

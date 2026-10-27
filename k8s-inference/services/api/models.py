@@ -78,6 +78,7 @@ from config import (
     ROUTER_KEY,
 )
 from pod_metadata import normalise as normalise_pod_metadata
+from render import TRUSTED_LAUNCH_CAPABILITIES
 from resilience import retry
 from schemas import EphemeralVolumeSpec
 from schemas import ScalingSpec as ScalingSpec
@@ -297,6 +298,36 @@ def pool_for(cid: str, classes: list[str], count: int = 1, nodes: int = 1, inter
     return None
 
 
+def _trusted_launch(s: dict, kind: str) -> dict:
+    """The typed trusted-launch declaration (docs/JOBS.md "Trusted launch"), refused before anything is written:
+    the platform's capability set only (no SYS_ADMIN, SYS_PTRACE, SETPCAP, DAC_OVERRIDE, no arbitrary names), no
+    duplicates, non-negative ids; contradictions refused: a job class that also says `runAsNonRoot: true` while the
+    launcher runs as uid 0, an endpoint that also authors `securityContext`/`containerSecurityContext` (one author of
+    the serving container's context)."""
+    from schemas import TrustedLaunchSpec
+
+    raw = s["trusted_launch"]
+    if not isinstance(raw, dict):
+        raise HTTPException(400, "trusted_launch: {capabilities: [CHOWN|KILL|SETGID|SETUID, ...], user, group}")
+    try:
+        tl = TrustedLaunchSpec.model_validate(raw).model_dump()
+    except ValidationError as exc:
+        e = exc.errors()[0]
+        raise HTTPException(400, f"trusted_launch: {'.'.join(str(x) for x in e['loc'])}: {e['msg']}") from exc
+    if len(set(tl["capabilities"])) != len(tl["capabilities"]):
+        raise HTTPException(400, "trusted_launch.capabilities: duplicate capability")
+    tl["capabilities"] = [c for c in TRUSTED_LAUNCH_CAPABILITIES if c in tl["capabilities"]]
+    nonroot = bool(s.get("runAsNonRoot")) or bool((s.get("job") or {}).get("runAsNonRoot"))
+    if nonroot and tl["user"] == 0:
+        raise HTTPException(400, "trusted_launch.user 0 contradicts runAsNonRoot: true on the same definition")
+    if kind == "endpoint" and (s.get("containerSecurityContext") or s.get("securityContext")):
+        raise HTTPException(
+            400,
+            "trusted_launch and containerSecurityContext/securityContext: one author of the serving container's context",
+        )
+    return tl
+
+
 def validate(spec: dict) -> dict:
     s = dict(spec or {})
     _endpoint_bindings(s)
@@ -340,6 +371,8 @@ def validate(spec: dict) -> dict:
             )
     if not s.get("image") and not (s.get("images") or {}).get("default"):
         raise HTTPException(400, "image is required (or images.default)")
+    if s.get("trusted_launch") is not None:
+        s["trusted_launch"] = _trusted_launch(s, kind)
     gpu = s.get("gpu") or {}
     if gpu and not isinstance(gpu, dict):
         raise HTTPException(400, "gpu: {count, classes}")
@@ -656,6 +689,10 @@ def to_entry(spec: dict, managed_by: str = "api") -> dict:
     for k in RESERVED:
         if k in s:
             entry[k] = s[k]
+    if s.get("trusted_launch"):
+        entry["trustedLaunch"] = s[
+            "trusted_launch"
+        ]  # both kinds: the model container's context (render.trusted_launch_context)
     if kind == "endpoint":
         protocol = s.get("protocol", "http")
         path = s.get("path") or PROTOCOL_PATH[protocol]

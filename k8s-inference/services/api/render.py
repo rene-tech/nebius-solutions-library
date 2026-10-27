@@ -255,6 +255,32 @@ CONTAINER_HARDENING = {
 RUNNER_SECURITY_CONTEXT = {**CONTAINER_HARDENING, "runAsNonRoot": True, "runAsUser": 10001, "runAsGroup": 10001}
 POD_SECURITY_CONTEXT = {"seccompProfile": {"type": "RuntimeDefault"}}
 
+# Trusted launch (docs/JOBS.md "Trusted launch"): a model ADMINISTRATOR's typed declaration on a definition
+# (`trusted_launch: {capabilities, user, group}`) for a launcher image that drops customer code to an isolated UID
+# itself (setuid/setgid, Landlock, scrubbed environment) before any authored code runs. The platform owns the set of
+# capabilities a declaration may name: exactly those Pod Security Admission `baseline` admits that such a launcher
+# needs; never SYS_ADMIN, SYS_PTRACE, SETPCAP, DAC_OVERRIDE, never privileged, host namespaces or mounts. It is
+# projected onto the MODEL container only (a run's `main`, an endpoint's serving container); runner sidecars,
+# init containers, the uploader and the finalizer keep their contexts. Without the declaration every container
+# renders exactly as before (CONTAINER_HARDENING: drop ALL). No request can set or override it.
+TRUSTED_LAUNCH_CAPABILITIES = ("CHOWN", "KILL", "SETGID", "SETUID")
+
+
+def trusted_launch_context(tl: dict) -> dict:
+    """The exact container securityContext of a trusted-launch declaration (validated by models.validate): the
+    declared user/group, drop ALL plus the declared capabilities in the platform's order, no privilege escalation,
+    the runtime's default seccomp profile; `runAsNonRoot` states the truth of the declared user."""
+    user, group = int(tl.get("user", 0)), int(tl.get("group", 0))
+    caps = [c for c in TRUSTED_LAUNCH_CAPABILITIES if c in set(tl.get("capabilities") or [])]
+    return {
+        "runAsUser": user,
+        "runAsGroup": group,
+        "runAsNonRoot": user != 0,
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"], "add": caps},
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+
 
 def _pod_failure_policy() -> dict:
     return {

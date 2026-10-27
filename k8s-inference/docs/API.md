@@ -59,6 +59,15 @@ upload or a binding).
 A model is defined through the API, never in `terraform.tfvars`. `POST /v1/models` (admin key) takes the
 shape of a model definition: a container plus a few knobs.
 
+**`trusted_launch`** (a definition field for both kinds; administrators only; docs/JOBS.md "Trusted launch"):
+`{capabilities: [CHOWN, KILL, SETGID, SETUID] (a non-empty subset), user: 0, group: 0}` for a launcher image that
+isolates authored code itself and fails closed under drop-ALL. Projected by the platform onto the model container
+only (a run's `main`, an endpoint's serving container) as drop ALL + the declared adds, the declared uid/gid (strict
+integers), no privilege escalation, seccomp RuntimeDefault; every other container and every omitted definition render
+as before. Refused before persistence on an unknown or duplicate capability, a non-integer or negative id,
+`runAsNonRoot: true` with `user: 0`, or an endpoint that also authors `containerSecurityContext`/`securityContext`.
+Nothing a request can set.
+
 ```json
 {"id": "my-llm", "kind": "endpoint",
  "image": "vllm/vllm-openai:v0.11.0", "args": ["--model", "<org>/<model>", "--port", "8000"],

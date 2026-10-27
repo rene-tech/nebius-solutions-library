@@ -74,6 +74,7 @@ from render import (
     image_for_class,
     profile_of,
     resource_block,
+    trusted_launch_context,
 )
 from resilience import retry
 from status import is_jobset, is_manager_job, is_mirror, normalise
@@ -483,6 +484,19 @@ def resolved_job(model: dict, params: dict, defaults: dict | None) -> dict:
     return _render(dict(model.get("job") or {}), {**resolve_values(model, params, defaults), "operation": "fit"})
 
 
+def _main_security_context(model: dict, r: dict) -> dict:
+    """The run's `main` container context: CONTAINER_HARDENING (drop ALL; `runAsNonRoot` when the job class says so),
+    exactly as before, unless the definition carries a trusted-launch declaration (docs/JOBS.md "Trusted launch"):
+    then the platform's projection of it, on `main` only. A declaration contradicted by the job class's
+    `runAsNonRoot: true` (uid 0 cannot be non-root) is refused here too, before any pod exists."""
+    tl = model.get("trustedLaunch")
+    if not tl:
+        return {**CONTAINER_HARDENING, **({"runAsNonRoot": True} if r.get("runAsNonRoot") else {})}
+    if r.get("runAsNonRoot") and int(tl.get("user", 0)) == 0:
+        raise HTTPException(400, "trusted_launch.user 0 contradicts runAsNonRoot: true on the job class")
+    return trusted_launch_context(tl)
+
+
 def build_run(
     name: str,
     model: dict,
@@ -576,7 +590,7 @@ def build_run(
         "terminationMessagePolicy": "FallbackToLogsOnError",
         "workingDir": r.get("workDir", "/work"),
         "volumeMounts": [{"name": "work", "mountPath": "/work"}, {"name": "shm", "mountPath": "/dev/shm"}],
-        "securityContext": {**CONTAINER_HARDENING, **({"runAsNonRoot": True} if r.get("runAsNonRoot") else {})},
+        "securityContext": _main_security_context(model, r),
     }
     if r.get("envFrom"):
         main["envFrom"] = r["envFrom"]
