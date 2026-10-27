@@ -4,6 +4,17 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
+## unreleased (source only, 2026-10-27, successor of the 202 candidate; not cut, not applied)
+
+- Targeted session placement is per request: `POST /v1/models/{id}:session` takes `placement: "targeted"`; a request
+  without it keeps the pre-placement semantics (home deployment, base object, no `target`) even on a fleet with
+  `sessions.targeted_placement` on, so an unchanged client that connects to its configured canonical origin is never
+  stranded by a placement it did not ask for (Root's cross-contract finding on the 202 candidate: Speech Live's
+  unchanged request could be bound to a same-region alternate object and then fail bind 401 / attach 403 at the
+  canonical origin). A targeted request on a fleet without the capability is refused (409 naming the knob), never
+  downgraded. The opt-in is part of the request hash (a targeted and an untargeted request under one key are two
+  requests); the legacy hash path is gone (an untargeted request hashes as before, byte for byte).
+
 ## api 0.11.202, jobs 0.1.36, dispatcher 0.2.17 (cut 2026-10-27 as a private candidate on the 201 pins; targeted placement off by default; not applied)
 
 - Targeted session placement (docs/API.md "Sessions", "Placement"; terraform.tfvars `sessions.targeted_placement`, off

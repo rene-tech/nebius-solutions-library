@@ -165,17 +165,30 @@ def open_on(model: str) -> int:
 
 
 # ---- transitions ------------------------------------------------------------------------------------------------
-def request_hash(model: str, cluster: str | None, region: str, timeout_s: int, gpus: int, pinned: bool = True) -> str:
+def request_hash(
+    model: str,
+    cluster: str | None,
+    region: str,
+    timeout_s: int,
+    gpus: int,
+    pinned: bool = True,
+    targeted: bool = False,
+) -> str:
     """The semantic identity of a create request: the EFFECTIVE values (defaults applied, the deployment the request
     names or implies), never the bytes the client sent: `{}` and `{"timeout_s": <the default>}` are one request;
     another deployment or timeout is another request. `cluster`/`region` are the request's own deployment (the
     caller's region, else the home deployment), NEVER the placement the fleet chose: availability is not identity.
     `pinned` False (a request with no region on a model whose routing.fallback.regions spans deployments) marks the
-    request as "any declared deployment": a request that names one is another request. Every pinned request hashes
-    exactly as before targeted placement, so earlier sessions replay unchanged."""
+    request as "any declared deployment": a request that names one is another request. `targeted` (the client's
+    `placement: targeted`) is part of the identity: a targeted and an untargeted request under one key are two
+    requests (409), so a targeted session is never answered to a client that did not opt in and the reverse. An
+    untargeted request hashes exactly as before targeted placement existed, so every earlier session replays
+    unchanged; `pinned` only qualifies a targeted request."""
     doc = {"model": model, "cluster": cluster, "region": region, "timeout_s": int(timeout_s), "gpus": int(gpus)}
-    if not pinned:
-        doc["scope"] = None
+    if targeted:
+        doc["placement"] = "targeted"
+        if not pinned:
+            doc["scope"] = None
     return hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()
 
 
@@ -189,18 +202,15 @@ def find_replay(tenant: str, owner: str, idempotency_key: str) -> dict | None:
     return _row(r) if r else None
 
 
-def replay(s: dict, h: str, legacy: str | None = None) -> dict:
+def replay(s: dict, h: str) -> dict:
     """The same request under the key of an existing session: the session as it is (`replay: true`). While it is
     still `claimed` (unexpired, before the deadline, not cancelled) the answer carries a usable claim that REPLACES
     the earlier token (compare-and-swap on `claimed`: a bind racing with this either took the old token first, then
     no claim is issued here, or finds the old token gone, 401); so exactly one connection ever binds. Once bound,
     attached or ended: the same id, no claim, nothing re-issued. Nothing is extended: `expires_at` and `deadline_at`
-    stay as admitted. The key with another request is 409. `legacy`: the hash the same request had before targeted
-    placement (an unpinned request on a fallback model): only a session created then (no object on the row) replays
-    under it; a targeted session is exactly its request (a pinned row never answers an unpinned retry, nor the
-    reverse). The row's placement is answered as it is: never re-resolved, never moved."""
-    accepted = {h} | ({legacy} if legacy and not s.get("object") else set())
-    if s.get("request_hash") not in accepted:
+    stay as admitted. The key with another request is 409: a targeted session is exactly its request (its opt-in,
+    its scope), an untargeted one too. The row's placement is answered as it is: never re-resolved, never moved."""
+    if s.get("request_hash") != h:
         raise HTTPException(
             409, "Idempotency-Key was already used with a different session request (model, region or timeout_s)"
         )
@@ -230,6 +240,7 @@ def create(
     idempotency_key: str | None = None,
     target: dict | None = None,
     pinned: bool = True,
+    targeted: bool = False,
 ) -> dict:
     """Admit and record a session (`replay: false`, a fresh claim). Raises keys.KeyLimit as a run's admission does.
     With an `idempotency_key` (owner-scoped) the same request again answers the existing session (`replay`); a
@@ -238,13 +249,15 @@ def create(
     the placement the model's routing resolved NOW, {cluster, region, variant, id, image, gpu_class}: the row's
     cluster/region become the SELECTED ones (every later read, verification and readiness keys on them) and the
     identity columns are written once, immutable; the replay of a concurrent duplicate answers the winner's placement,
-    whatever this caller resolved. None: the request's deployment, no object (the pre-placement row)."""
-    h = request_hash(model, cluster, region, timeout_s, gpus, pinned)
-    legacy = request_hash(model, cluster, region, timeout_s, gpus) if not pinned else None
+    whatever this caller resolved. None: the request's deployment, no object (a client that did not opt in, or a
+    pre-placement row). `targeted`: the client's opt-in, part of the request identity (request_hash)."""
+    h = request_hash(model, cluster, region, timeout_s, gpus, pinned, targeted)
     if idempotency_key:
         s = find_replay(tenant, owner, idempotency_key)
         if s is not None:
-            return replay(s, h, legacy)
+            return replay(s, h)
+    if targeted and not target:
+        raise HTTPException(409, "placement: targeted: no target resolved for this request")  # never an untargeted row
     sid = f"ses-{uuid.uuid4().hex[:16]}"
     token = secrets.token_urlsafe(32)
     bound = float(gpus * timeout_s)
@@ -282,7 +295,7 @@ def create(
         if idempotency_key and isinstance(e, psycopg.errors.UniqueViolation):
             s = find_replay(tenant, owner, idempotency_key)  # the concurrent duplicate that won
             if s is not None:
-                return replay(s, h, legacy)
+                return replay(s, h)
         raise
     s = get(sid)
     return {**public(s), "claim_token": token, "replay": False}

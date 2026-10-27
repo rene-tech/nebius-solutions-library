@@ -49,6 +49,7 @@ class FakeSessions:
         idempotency_key=None,
         target=None,
         pinned=True,
+        targeted=False,
     ):
         sid = f"ses-{len(self.rows) + 1:016x}"
         self.calls.append(("create", key_hash, tenant, owner, model, cluster_, region, timeout_s, gpus, target, pinned))

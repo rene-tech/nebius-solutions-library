@@ -3128,13 +3128,21 @@ def create_session(
             f"timeout_s <= {bound}, or raise the model's timeout_s within the fleet's Knative revision maximum",
         )
     cluster, region = _deployment_of(m, req.region)  # the request's own deployment: its identity, never its placement
-    target, pinned = None, True
-    if cfg.SESSION_TARGETED_PLACEMENT:
+    target, pinned, targeted = None, True, req.placement == "targeted"
+    if targeted and not cfg.SESSION_TARGETED_PLACEMENT:
+        # the client asked for a durable exact target the fleet cannot give: refused, never silently downgraded to the
+        # base object (a client that opted in connects to the returned target and would be stranded otherwise)
+        raise HTTPException(
+            409, "placement: targeted is not enabled on this fleet (terraform.tfvars sessions.targeted_placement)"
+        )
+    if targeted:
         pinned = bool(req.region) or not ((m.get("routing") or {}).get("fallback") or {}).get("regions")
-    if cfg.SESSION_TARGETED_PLACEMENT and existing is None:
+    if targeted and existing is None:
         # a replay (the owner's key names a session already) answers the stored binding: no resolution, no capacity
         # read, no cluster call at all (a lost answer is recovered even while the clusters cannot be read)
-        # targeted placement (docs/API.md "Sessions", "Placement"): the one target an endpoint call would go to NOW,
+        # targeted placement (docs/API.md "Sessions", "Placement"), on the client's explicit `placement: targeted` only
+        # (a client that did not opt in keeps the base object at the canonical origin, whatever the fleet enables):
+        # the one target an endpoint call would go to NOW (continued below)
         # from the SAME walk (declared variants in the operator's class order, routing.default priority/capacity,
         # routing.fallback.regions unless the caller named a region; unknown or stale capacity stays unknown and falls
         # to the first declared target and its ordinary queue): resolved once, before the claim exists, and written
@@ -3155,6 +3163,7 @@ def create_session(
             idempotency_key=idempotency_key,
             target=target,
             pinned=pinned,
+            targeted=targeted,
         )
     except keys.KeyLimit as e:
         raise HTTPException(e.status, e.detail)

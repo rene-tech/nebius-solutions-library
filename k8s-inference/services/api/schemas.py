@@ -183,6 +183,9 @@ class SessionRequest(BaseModel):
     )  # the session's deadline from its creation; default: the
     # endpoint's transport deadline (a single-node endpoint's timeout_s), 3600 without one (multi-node)
     region: str | None = None  # a cluster id or region of the model's deployments (docs/API.md)
+    placement: Literal["targeted"] | None = None  # "targeted": bind the session to the target the model's routing
+    # resolves (docs/API.md "Sessions", "Placement"; needs sessions.targeted_placement on the fleet, else 409); omitted:
+    # the home deployment's base object, as every client before, whatever the fleet enables
 
 
 class Session(BaseModel):

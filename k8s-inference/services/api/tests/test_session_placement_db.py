@@ -41,7 +41,7 @@ SPOT = {
 
 
 def _targeted(target, **kw):
-    return sessions.create(KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, target=target, **kw)
+    return sessions.create(KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, target=target, targeted=True, **kw)
 
 
 def _state(sid):
@@ -129,32 +129,58 @@ def test_a_retry_after_a_capacity_flip_keeps_the_target_and_deadlines_at_the_api
         },
     )
     hk = {**H, "Idempotency-Key": "flip-1"}
-    r1 = c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 600})
+    r1 = c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 600, "placement": "targeted"})
     assert r1.status_code == 202, r1.text
     s1 = r1.json()
     assert s1["replay"] is False and s1["target"]["variant"] == "cheap"
-    r2 = c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 600, "region": "eu-north1"})
+    r2 = c.post(
+        "/v1/models/llm-example:session",
+        headers=hk,
+        json={"timeout_s": 600, "region": "eu-north1", "placement": "targeted"},
+    )
     assert r2.status_code == 202, r2.text
     s2 = r2.json()
     assert s2["id"] == s1["id"] and s2["replay"] is True and s2["target"] == s1["target"]
     assert (s2["expires_at"], s2["deadline_at"]) == (s1["expires_at"], s1["deadline_at"])
-    assert c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 300}).status_code == 409
+    assert (
+        c.post(
+            "/v1/models/llm-example:session", headers=hk, json={"timeout_s": 300, "placement": "targeted"}
+        ).status_code
+        == 409
+    )
+    # the same key WITHOUT the opt-in is another request: never answered the targeted session
+    assert c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 600}).status_code == 409
     # the replay resolves nothing: with the clusters unreadable the lost answer is still recovered
     monkeypatch.setattr(appmod, "_call_targets", lambda *a, **k: (_ for _ in ()).throw(OSError("transport down")))
-    r4 = c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 600})
+    r4 = c.post("/v1/models/llm-example:session", headers=hk, json={"timeout_s": 600, "placement": "targeted"})
     assert r4.status_code == 202 and r4.json()["id"] == s1["id"] and r4.json()["target"] == s1["target"]
     monkeypatch.setattr(
         appmod, "_call_targets", lambda mm, cl, inp, rg: [(cl, {**base, "name": "spot", "object": "llm-example-spot"})]
     )
     # a new key is a new request: resolved anew (spot), its own row
     s3 = c.post(
-        "/v1/models/llm-example:session", headers={**H, "Idempotency-Key": "flip-2"}, json={"timeout_s": 600}
+        "/v1/models/llm-example:session",
+        headers={**H, "Idempotency-Key": "flip-2"},
+        json={"timeout_s": 600, "placement": "targeted"},
     ).json()
     assert s3["id"] != s1["id"] and s3["target"]["variant"] == "spot"
-    # an unpinned request on a fallback model is another request than a pinned one (the hash carries the scope)
-    assert sessions.request_hash("llm-example", "hub", "eu-north1", 600, 1, pinned=False) != sessions.request_hash(
-        "llm-example", "hub", "eu-north1", 600, 1
+    # an untargeted create under a new key on the same fleet: no resolution at all (the resolver is made to raise
+    # again), the base object; its untargeted retry replays, a targeted retry under that key is 409
+    monkeypatch.setattr(appmod, "_call_targets", lambda *a, **k: (_ for _ in ()).throw(OSError("transport down")))
+    hk3 = {**H, "Idempotency-Key": "flip-3"}
+    u = c.post("/v1/models/llm-example:session", headers=hk3, json={"timeout_s": 600})
+    assert u.status_code == 202 and u.json()["target"] is None
+    assert c.post("/v1/models/llm-example:session", headers=hk3, json={"timeout_s": 600}).json()["replay"] is True
+    assert (
+        c.post(
+            "/v1/models/llm-example:session", headers=hk3, json={"timeout_s": 600, "placement": "targeted"}
+        ).status_code
+        == 409
     )
+    # the opt-in and the scope are part of the identity; an untargeted request hashes as before placement existed
+    base_h = sessions.request_hash("llm-example", "hub", "eu-north1", 600, 1)
+    assert sessions.request_hash("llm-example", "hub", "eu-north1", 600, 1, pinned=False) == base_h
+    assert sessions.request_hash("llm-example", "hub", "eu-north1", 600, 1, targeted=True) != base_h
 
 
 def test_readiness_is_the_targets_own_object_never_the_base_or_a_sibling(live, monkeypatch):
@@ -182,9 +208,9 @@ def test_readiness_is_the_targets_own_object_never_the_base_or_a_sibling(live, m
     assert sessions.get(cheap["id"])["ready_seen_at"] is not None
 
 
-def test_a_targeted_row_is_exactly_its_request_the_legacy_hash_stands_for_legacy_rows_only(live):
-    """A pinned targeted session never answers an unpinned retry (nor the reverse: 409 both ways); a row created
-    before targeted placement (no object) still replays an unpinned retry under its legacy hash."""
+def test_a_targeted_row_is_exactly_its_request_and_an_untargeted_row_is_exactly_its_own(live):
+    """Pinned vs unpinned targeted retries are 409 both ways; a targeted retry never replays an untargeted row (nor
+    the reverse); an untargeted retry of an untargeted row replays, byte-equal to the pre-placement hash."""
     pinned = _targeted(CHEAP, idempotency_key="scope-1", pinned=True)
     with pytest.raises(HTTPException) as e:
         _targeted(CHEAP, idempotency_key="scope-1", pinned=False)
@@ -198,8 +224,12 @@ def test_a_targeted_row_is_exactly_its_request_the_legacy_hash_stands_for_legacy
     assert (
         _targeted(CHEAP, idempotency_key="scope-2", pinned=False)["target"]["id"] == "speech-spot"
     )  # stored binding, no move
-    legacy = sessions.create(KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, idempotency_key="scope-3")
-    again = sessions.create(
-        KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, idempotency_key="scope-3", pinned=False
-    )
-    assert again["id"] == legacy["id"] and again["replay"] is True and again["target"] is None
+    plain = sessions.create(KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, idempotency_key="scope-3")
+    again = sessions.create(KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, idempotency_key="scope-3")
+    assert again["id"] == plain["id"] and again["replay"] is True and again["target"] is None
+    with pytest.raises(HTTPException) as e:
+        _targeted(CHEAP, idempotency_key="scope-3")
+    assert e.value.status_code == 409
+    with pytest.raises(HTTPException) as e:  # a targeted create without a resolved target never makes an untargeted row
+        sessions.create(KEY, "demo", "p-1", "speech", "hub", "eu-north1", 600, 1, targeted=True)
+    assert e.value.status_code == 409

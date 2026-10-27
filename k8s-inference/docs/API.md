@@ -592,8 +592,8 @@ unknown. No GPU time is advertised for a session that never attached (`gpu_secon
 unknown, separately). The public view carries no token and no pod identity.
 Settlement on the key's ledger happens exactly once per session (the reconciler retries what a crash left unsettled).
 
-**Placement (`sessions.targeted_placement`, off by default):** a new session is bound, once, to the target an endpoint
-call would go to at that moment: the SAME resolution as a call's (the declared variants of the deployment in the
+**Placement (`sessions.targeted_placement`, off by default; per request `placement: "targeted"`):** a client that
+sends `placement: "targeted"` gets a session bound, once, to the target an endpoint call would go to at that moment: the SAME resolution as a call's (the declared variants of the deployment in the
 operator's class order, `routing.default` `priority` or `capacity`, every reachable deployment with
 `routing.fallback.regions` unless the caller named a `region`, see "Variants"); unknown or stale capacity stays
 unknown and falls to the first declared target and its ordinary queue, as for a call. The binding (`target`:
@@ -608,7 +608,12 @@ a session is one stream to one worker. The choice is made from windowed signals 
 room) and is not a reservation of a slot: two sessions created at once may select the same apparently free target and
 the gateway's own concurrency and queue remain authoritative, as for calls. A session created before the fleet
 switched placement on carries no `target` (null) and keeps the model-level bind, attach and base-object readiness
-rules. An operator switches placement on only after every API replica runs the code that enforces the target and the
+rules. A request WITHOUT `placement` keeps the semantics every client had before, whatever the fleet enables: the home
+deployment's base object, no `target`, the claim binds at the canonical origin (an unchanged client that connects to
+its configured origin is never stranded by a placement it did not ask for). A request WITH `placement: "targeted"` on
+a fleet that has not switched placement on is refused (409 naming the knob), never silently given a base session: a
+client that opted in connects to the returned `target`. The opt-in is part of the request identity: the same
+`Idempotency-Key` with and without it is two requests (409). An operator switches placement on only after every API replica runs the code that enforces the target and the
 endpoints' SecurityPolicies were re-rendered to name their object (a mixed rollout must never bind a targeted claim on
 a replica that ignores the target); with placement on before that, a targeted claim at a variant is refused (401)
 rather than bound elsewhere.

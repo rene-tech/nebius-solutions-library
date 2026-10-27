@@ -55,7 +55,7 @@ def targeted(client, admin_keys, fake_keys, monkeypatch):
 
 def test_a_session_is_bound_to_the_target_an_endpoint_call_would_take(targeted, monkeypatch):
     c, fs, e = targeted
-    r = c.post("/v1/models/chat:session", headers=H, json={"timeout_s": 600})
+    r = c.post("/v1/models/chat:session", headers=H, json={"timeout_s": 600, "placement": "targeted"})
     assert r.status_code == 202, r.text
     s = r.json()
     # the same resolution as the call's: the full reserved variant is skipped, the admitting cheap one is taken
@@ -76,18 +76,24 @@ def test_a_session_is_bound_to_the_target_an_endpoint_call_would_take(targeted, 
     # capacity flips: a NEW request resolves anew (spot startable now), the earlier session's binding stands
     _measurements(monkeypatch, {"chat-predictor": 8.0, "chat-cheap-predictor": 4.0}, 4, POOLS)
     monkeypatch.setattr(kube, "pool_entry", lambda cluster, pool: {"max_nodes": 4, "gpu_class": "h100"})
-    s2 = c.post("/v1/models/chat:session", headers=H, json={"timeout_s": 600}).json()
+    s2 = c.post("/v1/models/chat:session", headers=H, json={"timeout_s": 600, "placement": "targeted"}).json()
     assert s2["target"]["id"] == "chat-spot"
     assert c.get(f"/v1/sessions/{s['id']}", headers=H).json()["target"]["id"] == "chat-cheap"
     # an explicit region keeps the request pinned to that deployment (hub is the only one here)
-    s3 = c.post("/v1/models/chat:session", headers=H, json={"timeout_s": 600, "region": "eu-north1"}).json()
+    s3 = c.post(
+        "/v1/models/chat:session", headers=H, json={"timeout_s": 600, "region": "eu-north1", "placement": "targeted"}
+    ).json()
     assert s3["target"]["cluster"] == "hub" and fs.calls[-1][10] is True
-    assert c.post("/v1/models/chat:session", headers=H, json={"region": "elsewhere"}).status_code == 400
+    assert (
+        c.post("/v1/models/chat:session", headers=H, json={"region": "elsewhere", "placement": "targeted"}).status_code
+        == 400
+    )
+    assert c.post("/v1/models/chat:session", headers=H, json={"placement": "anything-else"}).status_code == 422
 
 
 def test_the_claim_binds_at_the_sessions_own_endpoint_object_only(targeted):
     c, fs, e = targeted
-    s = c.post("/v1/models/chat:session", headers=H, json={}).json()
+    s = c.post("/v1/models/chat:session", headers=H, json={"placement": "targeted"}).json()
     assert s["target"]["id"] == "chat-cheap"
     hdr = {"x-serverless2-session-claim": s["claim_token"]}
     # presented at the base object (the model id) or at a sibling variant: refused, the claim is NOT consumed
@@ -122,8 +128,14 @@ def test_off_by_default_the_request_is_placed_and_hashed_exactly_as_before(clien
         ).encode()
     ).hexdigest()
     assert sessions.request_hash("m", "hub", "eu-north1", 600, 1) == legacy
-    assert sessions.request_hash("m", "hub", "eu-north1", 600, 1, pinned=True) == legacy
-    assert sessions.request_hash("m", "hub", "eu-north1", 600, 1, pinned=False) != legacy
+    assert (
+        sessions.request_hash("m", "hub", "eu-north1", 600, 1, pinned=False) == legacy
+    )  # scope qualifies targeted only
+    t = sessions.request_hash("m", "hub", "eu-north1", 600, 1, targeted=True)
+    assert t != legacy and sessions.request_hash("m", "hub", "eu-north1", 600, 1, pinned=False, targeted=True) not in (
+        legacy,
+        t,
+    )
 
 
 def test_the_worker_must_be_the_targets_pod_running_the_targets_image():
@@ -269,3 +281,45 @@ def test_the_hook_decides_on_the_canonical_model_whatever_object_the_policy_name
         assert r.status_code == 200, (obj, r.text)
         assert seen["admitted"] == ("t", "op-1", "chat") and seen["authorize"] == "chat"
     assert c.post("/internal/authorize/no-such-object/v1/x", headers=hdr).status_code == 404
+
+
+def test_a_client_that_did_not_opt_in_keeps_the_canonical_origin_even_with_placement_on(targeted):
+    """Root's cross-contract case (legacy-client-compatibility-r1): the fleet has placement on and a same-region
+    alternate (cheap) admits while the base does not; an unchanged client sends timeout_s + region only and connects to
+    its configured canonical origin. It must get the base object, no target, and bind there."""
+    c, fs, e = targeted
+    r = c.post("/v1/models/chat:session", headers=H, json={"timeout_s": 600, "region": "eu-north1"})
+    assert r.status_code == 202, r.text
+    s = r.json()
+    assert s["target"] is None and fs.calls[-1][9] is None and fs.calls[-1][5:7] == ("eu-north1", "eu-north1")
+    hdr = {"x-serverless2-session-claim": s["claim_token"]}
+    assert c.post("/internal/authorize/chat/v1/ws", headers=hdr).status_code == 200  # the canonical origin binds it
+    # the opted-in client, same fleet, same moment: the alternate, bound there only
+    t = c.post(
+        "/v1/models/chat:session", headers=H, json={"timeout_s": 600, "region": "eu-north1", "placement": "targeted"}
+    ).json()
+    assert t["target"]["id"] == "chat-cheap"
+    assert (
+        c.post("/internal/authorize/chat/v1/ws", headers={"x-serverless2-session-claim": t["claim_token"]}).status_code
+        == 401
+    )
+    assert (
+        c.post(
+            "/internal/authorize/chat-cheap/v1/ws", headers={"x-serverless2-session-claim": t["claim_token"]}
+        ).status_code
+        == 200
+    )
+
+
+def test_opting_in_on_a_fleet_without_the_capability_fails_closed(client, admin_keys, fake_keys, monkeypatch):
+    c, _cl = client
+    _auth(monkeypatch, {"sk-good": _principal("p1")})
+    monkeypatch.setattr(cfg, "SESSIONS_ENABLED", True)
+    assert cfg.SESSION_TARGETED_PLACEMENT is False
+    fs = FakeSessions()
+    for name in ("create", "get", "public"):
+        monkeypatch.setattr(sessions, name, getattr(fs, name))
+    monkeypatch.setattr(kube, "stamp_last_request", lambda *a, **k: None)
+    r = c.post("/v1/models/llm-example:session", headers=H, json={"timeout_s": 600, "placement": "targeted"})
+    assert r.status_code == 409 and "targeted_placement" in r.text and fs.calls == []  # nothing admitted, no downgrade
+    assert c.post("/v1/models/llm-example:session", headers=H, json={"timeout_s": 600}).status_code == 202
