@@ -4,7 +4,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## unreleased (source only, 2026-10-27, successor of the 203 candidate; not cut, not applied)
+## api 0.11.204, jobs 0.1.36, dispatcher 0.2.17 (cut 2026-10-27 as a private candidate on the 201 pins: targeted placement per-request opt-in + trusted_launch; successor of the unapplied 202/203 candidates; not applied)
 
 - `trusted_launch` (docs/JOBS.md "Trusted launch"): a model administrator's typed declaration on a definition
   `{capabilities: subset of [CHOWN, KILL, SETGID, SETUID], user, group}` for launcher images that isolate authored
