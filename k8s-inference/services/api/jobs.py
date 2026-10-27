@@ -484,6 +484,13 @@ def resolved_job(model: dict, params: dict, defaults: dict | None) -> dict:
     return _render(dict(model.get("job") or {}), {**resolve_values(model, params, defaults), "operation": "fit"})
 
 
+def _undeclared_main_context(r: dict) -> dict:
+    """The `main` container context without a trusted-launch declaration, exactly as it always was: CONTAINER_HARDENING
+    (drop ALL) and `runAsNonRoot` when the job class says so. Also the context of every container that stands in
+    for `main` on an export (the CPU finalizer, the transfer-only runner): those never run the declared launcher."""
+    return {**CONTAINER_HARDENING, **({"runAsNonRoot": True} if r.get("runAsNonRoot") else {})}
+
+
 def _main_security_context(model: dict, r: dict) -> dict:
     """The run's `main` container context: CONTAINER_HARDENING (drop ALL; `runAsNonRoot` when the job class says so),
     exactly as before, unless the definition carries a trusted-launch declaration (docs/JOBS.md "Trusted launch"):
@@ -491,7 +498,7 @@ def _main_security_context(model: dict, r: dict) -> dict:
     `runAsNonRoot: true` (uid 0 cannot be non-root) is refused here too, before any pod exists."""
     tl = model.get("trustedLaunch")
     if not tl:
-        return {**CONTAINER_HARDENING, **({"runAsNonRoot": True} if r.get("runAsNonRoot") else {})}
+        return _undeclared_main_context(r)
     if r.get("runAsNonRoot") and int(tl.get("user", 0)) == 0:
         raise HTTPException(400, "trusted_launch.user 0 contradicts runAsNonRoot: true on the job class")
     return trusted_launch_context(tl)
@@ -2645,6 +2652,9 @@ def export_again(
                 }
             )
             c.pop("args", None)
+            # the finalizer is not the declared launcher: a trusted-launch declaration never reaches it (its context is
+            # the undeclared main's, as before the declaration existed; docs/JOBS.md "Trusted launch")
+            c["securityContext"] = _undeclared_main_context(model["job"])
             c["env"] = [
                 e
                 for e in c.get("env", [])
@@ -2670,6 +2680,7 @@ def export_again(
                 }
             )
             c.pop("args", None)
+            c["securityContext"] = _undeclared_main_context(model["job"])  # the runner, never the declared launcher
         elif c["name"] == "uploader":
             # the transfer runs on no GPU: its attempt record must say so (the record stands in for the pod once it is
             # gone, and billing reads the record's gpus; the original class is not this attempt's)

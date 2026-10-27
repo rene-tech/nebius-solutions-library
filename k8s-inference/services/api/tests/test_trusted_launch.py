@@ -14,6 +14,7 @@ import models
 import render
 import render_endpoint
 from test_api import ADMIN, H, _main, admin_keys, client, cluster  # noqa: F401
+from test_finalizer import failed_run  # noqa: F401
 
 PSA_BASELINE_ADDS = {
     "AUDIT_WRITE", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL", "MKNOD", "NET_BIND_SERVICE", "SETFCAP",
@@ -89,6 +90,10 @@ def test_invalid_and_contradictory_declarations_fail_before_write():
         ({"trusted_launch": {"capabilities": ["CHOWN"], "group": True}}, "group"),
         ({"trusted_launch": {"capabilities": ["CHOWN"], "group": "0"}}, "group"),
         ({"trusted_launch": {"capabilities": ["CHOWN"], "group": 1.5}}, "group"),
+        # representable ids only: Kubernetes runAsUser/runAsGroup are int64 (Root's review); max+1 is refused pre-write
+        ({"trusted_launch": {"capabilities": ["CHOWN"], "user": 2**63}}, "user"),
+        ({"trusted_launch": {"capabilities": ["CHOWN"], "group": 2**63}}, "group"),
+        ({"trusted_launch": {"capabilities": ["CHOWN"], "user": 2**64}}, "user"),
         ({"trusted_launch": {"capabilities": [True]}}, "capabilities"),
         ({"trusted_launch": {"capabilities": "CHOWN"}}, "capabilities"),
         ({"trusted_launch": {"capabilities": ["CHOWN"], "privileged": True}}, "privileged"),
@@ -104,6 +109,10 @@ def test_invalid_and_contradictory_declarations_fail_before_write():
         with pytest.raises(HTTPException) as e:
             models.validate({**ENDPOINT, "trusted_launch": TL, **extra})
         assert e.value.status_code == 400 and "one author" in e.value.detail
+    # the representable boundary is accepted exactly, for both ids
+    big = models.validate({**JOB, "trusted_launch": {"capabilities": ["KILL"], "user": 2**63 - 1, "group": 2**63 - 1}})
+    assert big["trusted_launch"] == {"capabilities": ["KILL"], "user": 2**63 - 1, "group": 2**63 - 1}
+    assert render.trusted_launch_context(big["trusted_launch"])["runAsUser"] == 2**63 - 1
     # a non-root launcher uid is consistent with runAsNonRoot
     ok = models.validate(
         {**JOB, "trusted_launch": {"capabilities": ["SETUID", "SETGID"], "user": 1000}, "runAsNonRoot": True}
@@ -133,7 +142,9 @@ def test_declared_runs_render_main_only_and_omitted_runs_are_byte_identical(clie
     assert r.status_code == 200, r.text
     assert c.get("/v1/models/launcher-batch", headers=ADMIN).json()["spec"]["trusted_launch"] == TL
     hist = c.get("/v1/models/launcher-batch/history", headers=ADMIN).json()
-    assert any((h.get("spec") or {}).get("trusted_launch") == TL for h in hist) or len(hist) >= 2
+    by_version = {h["version"]: h for h in hist}
+    assert by_version[2]["spec"]["trusted_launch"] == TL and by_version[2]["action"] == "update"
+    assert "trusted_launch" not in by_version[1]["spec"] and by_version[1]["action"] == "create"
     # a stale If-Match never writes a declaration
     stale = c.put(
         "/v1/models/launcher-batch",
@@ -192,30 +203,70 @@ def test_declared_runs_render_main_only_and_omitted_runs_are_byte_identical(clie
     assert e.value.status_code == 400
 
 
-def test_a_gang_renders_the_declaration_on_every_ranks_main_and_fallback_regions_alike(client, admin_keys):
+def test_a_gang_renders_the_declaration_on_every_ranks_main_and_fallback_regions_alike(client, admin_keys, monkeypatch):
+    """`job.nodes: 2` (the documented gang projection on the entry's job block; the API's top-level `nodes` is an
+    endpoint projection) renders a JobSet: one indexed Job of exactly `nodes` whole-node pods; every rank's main
+    carries the projection; everything but main (init and provision containers with their own existing contexts,
+    sidecars, pod-level context, volumes) is byte-identical to the undeclared render of the same class; the same in
+    every region the run may land in or fall back to, and under fleet placement."""
+    import kube
+    from test_api import MULTINODE_FLEET
+
     c, fake = client
-    spec = {**JOB, "id": "launcher-gang", "nodes": 2, "interconnect": "none", "trusted_launch": TL}
+    monkeypatch.setattr(kube, "fleet", lambda: MULTINODE_FLEET)
+    spec = {**JOB, "id": "launcher-gang", "gpu": {"count": 8, "classes": ["h100"]}, "trusted_launch": TL}
     assert c.post("/v1/models", json=spec, headers=ADMIN).status_code == 201, "gang definition"
-    m = catalog.get("launcher-gang")
-    for cluster_id in m["regions"]:
-        rendered = jobs.build_run("op-gang", m, {}, "demo", None, None, None, None, region=None) if False else None  # noqa: F841
+    m = copy.deepcopy(catalog.get("launcher-gang"))
+    m["job"].update({"nodes": 2, "interconnect": "none"})  # as a catalog-managed gang class declares it
+    assert int(m["job"]["nodes"]) == 2 and m["trustedLaunch"] == TL
+    u = copy.deepcopy(m)
+    u.pop("trustedLaunch")  # the same class without the declaration: the byte reference for everything but main
+    monkeypatch.setattr(catalog, "get", lambda name, _m=m, _g=catalog.get: _m if name == "launcher-gang" else _g(name))
+
+    def pod_of(doc):
+        assert doc["kind"] == "JobSet"
+        rjs = doc["spec"]["replicatedJobs"]
+        assert len(rjs) == 1 and rjs[0]["replicas"] == 1
+        tmpl = rjs[0]["template"]["spec"]
+        assert tmpl["parallelism"] == 2 and tmpl["completions"] == 2  # exactly `nodes` ranks
+        return tmpl["template"]["spec"]
+
+    def split(pod):
+        mains = [ctn for ctn in pod["containers"] if ctn["name"] == "main"]
+        assert len(mains) == 1
+        rest = {
+            **{k: v for k, v in pod.items() if k not in ("containers", "initContainers")},
+            "containers": [ctn for ctn in pod["containers"] if ctn["name"] != "main"],
+            "initContainers": pod.get("initContainers", []),
+            "main_without_security": {k: v for k, v in mains[0].items() if k != "securityContext"},
+        }
+        return mains[0]["securityContext"], rest
+
+    def render_in(model, region):
+        return jobs.build_run(
+            "op-gang-render",
+            model,
+            {},
+            "demo",
+            None,
+            None,
+            None,
+            None,
+            region,
+            {"output_prefix": "s3://b/operations/op-gang-render"},
+        )
+
     r = c.post("/v1/models/launcher-gang:invoke", json={"mode": "run", "input": {}}, headers=H)
     assert r.status_code == 202, r.text
-    objs = [v for k, v in fake.jobs.items() if k[1].startswith(r.json()["id"])] + list(
-        getattr(fake, "jobsets", {}).values()
-    )
-    mains = []
-    for o in objs:
-        doc = o
-        # a JobSet: every replicated job's template; a Job: its template
-        templates = [rj["template"] for rj in (doc.get("spec", {}).get("replicatedJobs") or [])] or [doc]
-        for t in templates:
-            pod = t["spec"]["template"]["spec"]
-            mains += [ctn for ctn in pod["containers"] if ctn["name"] == "main"]
-            for ctn in pod["initContainers"] + pod["containers"]:
-                if ctn["name"] != "main":
-                    assert ctn["securityContext"]["capabilities"] == {"drop": ["ALL"]}
-    assert mains and all(mn["securityContext"] == EXPECTED for mn in mains)
+    sc, _rest = split(pod_of(fake.custom[("tenant-demo", "jobsets", r.json()["id"])]))
+    assert sc == EXPECTED
+    regions = list(dict.fromkeys(list(m["regions"]) + [None]))
+    assert len([x for x in regions if x]) >= 1
+    for region in regions:
+        declared_sc, declared_rest = split(pod_of(render_in(m, region)))
+        undeclared_sc, undeclared_rest = split(pod_of(render_in(u, region)))
+        assert declared_sc == EXPECTED and undeclared_sc == render.CONTAINER_HARDENING, region
+        assert declared_rest == undeclared_rest, region  # byte parity of everything but main's context
 
 
 def test_endpoints_render_the_serving_container_on_every_variant_and_region_and_omitted_is_unchanged(monkeypatch):
@@ -284,3 +335,54 @@ def test_endpoints_render_the_serving_container_on_every_variant_and_region_and_
     both["containerSecurityContext"] = {"readOnlyRootFilesystem": True}
     with pytest.raises(HTTPException):
         objects(both)
+
+
+def _export_main(fake, xid):
+    spec = fake.jobs[(NS_FIN, xid)]["spec"]["template"]["spec"]
+    return spec, {ctn["name"]: ctn for ctn in spec["initContainers"] + spec["containers"]}
+
+
+NS_FIN = "tenant-demo"
+
+
+def test_an_export_never_inherits_the_declaration_finalizer_mode(failed_run, monkeypatch):
+    """jobs.export_again rebuilds the original Job (main carries the declaration) and then makes main the CPU
+    finalizer: its context must be exactly the undeclared main's (drop ALL, no adds, no uid 0 by declaration), as
+    before the declaration existed; uploader and bridge-reset unchanged."""
+    from test_finalizer import SPEC as FIN_SPEC
+    from test_finalizer import _model as fin_model
+
+    c, fake, op, rows, marks = failed_run
+    declared = fin_model({**FIN_SPEC, "trusted_launch": TL})
+    assert declared["trustedLaunch"] == TL
+    monkeypatch.setattr(catalog, "get", lambda name: declared if name == "md" else None)
+    r = c.post(f"/v1/operations/{op}:export", headers=H)
+    assert r.status_code == 202, r.text
+    spec, by = _export_main(fake, r.json()["id"])
+    assert by["main"]["command"][-1] == FIN_SPEC["finalize"]["command"]  # the finalizer, CPU only
+    assert by["main"]["securityContext"] == render.CONTAINER_HARDENING
+    assert (
+        "add" not in by["main"]["securityContext"]["capabilities"] and "runAsUser" not in by["main"]["securityContext"]
+    )
+    assert by["uploader"]["securityContext"] == render.RUNNER_SECURITY_CONTEXT
+    assert all(ctn["securityContext"]["capabilities"] == {"drop": ["ALL"]} for ctn in spec["initContainers"])
+
+
+def test_an_export_never_inherits_the_declaration_transfer_mode(failed_run, monkeypatch):
+    """The transfer-only export (jobs.export_again without a finalizer): main is the runner image that exits 0; its
+    context must be exactly the undeclared main's, never the declared launcher's; the uploader unchanged."""
+    from test_finalizer import SPEC as FIN_SPEC
+    from test_finalizer import _model as fin_model
+
+    c, fake, op, rows, marks = failed_run
+    base = {k: v for k, v in FIN_SPEC.items() if k != "finalize"}
+    for model, label in ((fin_model(base), "undeclared"), (fin_model({**base, "trusted_launch": TL}), "declared")):
+        doc, _ = jobs.export_again(
+            "tenant-demo", op, "eu-north1", model, {"output_prefix": "s3://b/operations/x"}, None
+        )
+        spec = doc["spec"]["template"]["spec"]
+        by = {ctn["name"]: ctn for ctn in spec["initContainers"] + spec["containers"]}
+        assert by["main"]["image"] == jobs.RUNNER_IMAGE and by["main"]["command"] == ["/bin/sh", "-c", "true"], label
+        assert by["main"]["securityContext"] == render.CONTAINER_HARDENING, label
+        assert by["uploader"]["securityContext"] == render.RUNNER_SECURITY_CONTEXT, label
+        assert all(ctn["securityContext"]["capabilities"] == {"drop": ["ALL"]} for ctn in spec["initContainers"]), label

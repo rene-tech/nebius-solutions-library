@@ -419,11 +419,10 @@ class TrustedLaunchSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     capabilities: list[Literal["CHOWN", "KILL", "SETGID", "SETUID"]] = Field(min_length=1, max_length=4)
-    # strict integers (a security declaration): `true`, "1000" or 1000.0 are not ids and are refused, never coerced
-    user: StrictInt = Field(
-        default=0, ge=0
-    )  # the launcher's own uid (0: it drops privileges itself before authored code)
-    group: StrictInt = Field(default=0, ge=0)
+    # strict integers (a security declaration): `true`, "1000" or 1000.0 are not ids and are refused, never coerced;
+    # bounded to what a Kubernetes SecurityContext carries (runAsUser/runAsGroup are int64); nothing smaller is policy
+    user: StrictInt = Field(default=0, ge=0, le=2**63 - 1)  # the launcher's own uid (0: it drops privileges itself)
+    group: StrictInt = Field(default=0, ge=0, le=2**63 - 1)
 
 
 class ModelSpec(BaseModel):
