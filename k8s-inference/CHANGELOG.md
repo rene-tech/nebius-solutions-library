@@ -4,7 +4,7 @@ The platform images (`services/api`, `services/dispatcher`, `services/jobs`, `se
 `stack/config/variables.tf` `images.versions`) and the charts (`charts/fleet`, `charts/platform`, `charts/tenant`;
 `version` in each `Chart.yaml`). The current versions are in `README.md` "Versions".
 
-## unreleased (source only, 2026-10-27; not cut, not applied)
+## api 0.11.202, jobs 0.1.36, dispatcher 0.2.17 (cut 2026-10-27 as a private candidate on the 201 pins; targeted placement off by default; not applied)
 
 - Targeted session placement (docs/API.md "Sessions", "Placement"; terraform.tfvars `sessions.targeted_placement`, off
   by default): `POST /v1/models/{id}:session` resolves the target an endpoint call would take (`_call_targets`: the
